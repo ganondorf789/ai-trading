@@ -1,0 +1,326 @@
+"""
+自动交易系统主入口
+"""
+import os
+import sys
+import asyncio
+import argparse
+from datetime import datetime, timedelta
+from loguru import logger
+
+# 配置日志
+logger.remove()
+logger.add(sys.stderr, level="INFO")
+logger.add("logs/trading_{time}.log", rotation="1 day", retention="30 days")
+
+
+def setup_environment():
+    """设置环境"""
+    # 创建必要目录
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
+    
+    # 加载环境变量
+    from dotenv import load_dotenv
+    load_dotenv()
+
+
+def run_backtest(args):
+    """运行回测"""
+    from config import settings
+    from clients import BirdeyeSyncClient, HyperliquidClient
+    from strategies import SMAStrategy, RSIStrategy, MACDStrategy, BollingerBandsStrategy
+    from engine import BacktestEngine, BacktestConfig
+    
+    logger.info("=" * 50)
+    logger.info("开始回测")
+    logger.info("=" * 50)
+    
+    # 配置
+    symbol = args.symbol or "ETH"
+    days = args.days or 30
+    initial_capital = args.capital or 10000.0
+    
+    # 获取历史数据
+    # 优先使用 Hyperliquid 获取数据（如果可用）
+    logger.info(f"获取 {symbol} {days} 天历史数据...")
+    
+    client = HyperliquidClient()
+    end_time = datetime.now()
+    start_time = end_time - timedelta(days=days)
+    
+    data = client.get_candles_dataframe(
+        symbol,
+        args.timeframe or "1h",
+        start_time,
+        end_time
+    )
+    
+    logger.info(f"获取到 {len(data)} 条数据")
+    
+    # 创建策略
+    strategies = []
+    
+    if args.strategy == "all" or args.strategy == "sma":
+        strategies.append(SMAStrategy(fast_period=10, slow_period=30))
+    
+    if args.strategy == "all" or args.strategy == "rsi":
+        strategies.append(RSIStrategy(period=14, overbought=70, oversold=30))
+    
+    if args.strategy == "all" or args.strategy == "macd":
+        strategies.append(MACDStrategy())
+    
+    if args.strategy == "all" or args.strategy == "bb":
+        strategies.append(BollingerBandsStrategy(period=20, std_dev=2.0))
+    
+    if not strategies:
+        strategies.append(SMAStrategy())
+    
+    # 创建回测引擎
+    backtest_config = BacktestConfig(
+        initial_capital=initial_capital,
+        commission_rate=0.0006,
+        slippage=0.0001,
+        leverage=args.leverage or 1,
+        allow_short=True
+    )
+    
+    engine = BacktestEngine(backtest_config)
+    
+    # 运行回测
+    results = engine.run_multiple(strategies, data, symbol)
+    
+    # 输出结果
+    for result in results:
+        print(result.summary())
+    
+    # 比较结果
+    if len(results) > 1:
+        print("\n策略比较:")
+        comparison = engine.compare_strategies(results)
+        print(comparison.to_string())
+    
+    return results
+
+
+async def run_live(args):
+    """运行实盘交易"""
+    from config import settings
+    from clients import HyperliquidClient
+    from strategies import SMAStrategy, RSIStrategy, MACDStrategy
+    from engine import LiveEngine, LiveEngineConfig
+    from risk import RiskManager, RiskConfig
+    
+    logger.info("=" * 50)
+    logger.info("启动实盘交易")
+    logger.info("=" * 50)
+    
+    # 验证配置
+    if not settings.hyperliquid.private_key and not args.dry_run:
+        logger.error("未配置私钥，请设置 HYPERLIQUID_PRIVATE_KEY 环境变量")
+        return
+    
+    # 创建客户端
+    client = HyperliquidClient(
+        private_key=settings.hyperliquid.private_key if not args.dry_run else None,
+        testnet=settings.system.testnet_mode
+    )
+    
+    # 创建策略
+    if args.strategy == "sma":
+        strategy = SMAStrategy(fast_period=10, slow_period=30)
+    elif args.strategy == "rsi":
+        strategy = RSIStrategy()
+    elif args.strategy == "macd":
+        strategy = MACDStrategy()
+    else:
+        strategy = SMAStrategy()
+    
+    # 更新策略配置
+    strategy.config.symbols = [args.symbol or "ETH"]
+    
+    # 创建风险管理器
+    risk_config = RiskConfig(
+        max_drawdown_percent=0.1,
+        max_daily_loss_percent=0.05,
+        max_position_size_usd=args.max_position or 1000.0,
+        max_leverage=args.leverage or 5
+    )
+    risk_manager = RiskManager(risk_config)
+    
+    # 创建引擎
+    engine_config = LiveEngineConfig(
+        symbols=[args.symbol or "ETH"],
+        timeframe=args.timeframe or "1h",
+        update_interval=args.interval or 60.0,
+        leverage=args.leverage or 5,
+        dry_run=args.dry_run
+    )
+    
+    engine = LiveEngine(client, strategy, engine_config)
+    
+    # 设置风险检查
+    def risk_check(signal):
+        positions = client.get_positions() if not args.dry_run else []
+        return risk_manager.check_signal(signal, positions)
+    
+    engine.set_risk_check(risk_check)
+    
+    # 设置回调
+    def on_signal(signal):
+        logger.info(f"信号: {signal.signal_type.value} @ {signal.price}")
+    
+    def on_error(error):
+        logger.error(f"错误: {error}")
+    
+    engine.set_on_signal(on_signal)
+    engine.set_on_error(on_error)
+    
+    # 运行
+    try:
+        await engine.run()
+    except KeyboardInterrupt:
+        logger.info("收到停止信号")
+        engine.stop()
+
+
+def run_monitor(args):
+    """运行监控"""
+    from clients import HyperliquidClient
+    
+    logger.info("=" * 50)
+    logger.info("启动监控模式")
+    logger.info("=" * 50)
+    
+    client = HyperliquidClient()
+    
+    symbol = args.symbol or "ETH"
+    
+    def on_trade(message):
+        if 'data' in message:
+            for trade in message['data']:
+                side = "买入" if trade.get('side') == 'B' else "卖出"
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                      f"{symbol} {side} {trade.get('sz')} @ {trade.get('px')}")
+    
+    def on_orderbook(message):
+        if 'data' in message and 'levels' in message['data']:
+            bids, asks = message['data']['levels']
+            if bids and asks:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                      f"{symbol} 买一: {bids[0]['px']} ({bids[0]['sz']}) | "
+                      f"卖一: {asks[0]['px']} ({asks[0]['sz']})")
+    
+    print(f"开始监控 {symbol}...")
+    print("按 Ctrl+C 停止\n")
+    
+    try:
+        client.subscribe_trades(symbol, on_trade)
+        
+        # 保持运行
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n监控已停止")
+
+
+def show_account(args):
+    """显示账户信息"""
+    from config import settings
+    from clients import HyperliquidClient
+    
+    if not settings.hyperliquid.private_key:
+        logger.error("未配置私钥")
+        return
+    
+    client = HyperliquidClient(
+        private_key=settings.hyperliquid.private_key,
+        testnet=settings.system.testnet_mode
+    )
+    
+    account = client.get_account_info()
+    positions = client.get_positions()
+    orders = client.get_open_orders()
+    
+    print("\n" + "=" * 50)
+    print("账户信息")
+    print("=" * 50)
+    print(f"账户权益: ${account.equity:,.2f}")
+    print(f"可用保证金: ${account.available_margin:,.2f}")
+    print(f"已用保证金: ${account.used_margin:,.2f}")
+    print(f"未实现盈亏: ${account.unrealized_pnl:,.2f}")
+    
+    if positions:
+        print("\n持仓:")
+        for pos in positions:
+            print(f"  {pos.symbol}: {pos.side.value} {pos.size} @ {pos.entry_price} "
+                  f"(PnL: ${pos.unrealized_pnl:,.2f})")
+    else:
+        print("\n无持仓")
+    
+    if orders:
+        print("\n挂单:")
+        for order in orders:
+            print(f"  {order.symbol}: {order.side.value} {order.size} @ {order.price}")
+    else:
+        print("\n无挂单")
+
+
+def main():
+    """主函数"""
+    setup_environment()
+    
+    parser = argparse.ArgumentParser(description="自动交易系统")
+    subparsers = parser.add_subparsers(dest="command", help="命令")
+    
+    # 回测命令
+    backtest_parser = subparsers.add_parser("backtest", help="运行回测")
+    backtest_parser.add_argument("--symbol", "-s", default="ETH", help="交易对")
+    backtest_parser.add_argument("--strategy", default="all", 
+                                 choices=["all", "sma", "rsi", "macd", "bb"],
+                                 help="策略")
+    backtest_parser.add_argument("--days", "-d", type=int, default=30, help="回测天数")
+    backtest_parser.add_argument("--timeframe", "-t", default="1h", help="时间周期")
+    backtest_parser.add_argument("--capital", "-c", type=float, default=10000.0, 
+                                 help="初始资金")
+    backtest_parser.add_argument("--leverage", "-l", type=int, default=1, help="杠杆")
+    
+    # 实盘命令
+    live_parser = subparsers.add_parser("live", help="运行实盘交易")
+    live_parser.add_argument("--symbol", "-s", default="ETH", help="交易对")
+    live_parser.add_argument("--strategy", default="sma",
+                             choices=["sma", "rsi", "macd"],
+                             help="策略")
+    live_parser.add_argument("--timeframe", "-t", default="1h", help="时间周期")
+    live_parser.add_argument("--leverage", "-l", type=int, default=5, help="杠杆")
+    live_parser.add_argument("--max-position", type=float, default=1000.0,
+                             help="最大仓位价值(USD)")
+    live_parser.add_argument("--interval", type=float, default=60.0,
+                             help="更新间隔(秒)")
+    live_parser.add_argument("--dry-run", action="store_true", help="模拟运行")
+    
+    # 监控命令
+    monitor_parser = subparsers.add_parser("monitor", help="监控市场")
+    monitor_parser.add_argument("--symbol", "-s", default="ETH", help="交易对")
+    
+    # 账户命令
+    account_parser = subparsers.add_parser("account", help="显示账户信息")
+    
+    args = parser.parse_args()
+    
+    if args.command == "backtest":
+        run_backtest(args)
+    elif args.command == "live":
+        asyncio.run(run_live(args))
+    elif args.command == "monitor":
+        run_monitor(args)
+    elif args.command == "account":
+        show_account(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
+

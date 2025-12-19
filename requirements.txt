@@ -1,0 +1,47 @@
+# Hyperliquid SDK
+hyperliquid-python-sdk>=0.8.0
+
+# HTTP requests
+httpx>=0.25.0
+aiohttp>=3.9.0
+requests>=2.31.0
+
+# WebSocket
+websockets>=12.0
+
+# Data processing
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Ethereum account management
+eth-account>=0.11.0
+
+# Async support
+asyncio-atexit>=1.0.1
+
+# Configuration
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Logging
+loguru>=0.7.2
+
+# Technical analysis
+ta>=0.11.0
+pandas-ta>=0.3.14b
+
+# Plotting (for backtest visualization)
+matplotlib>=3.8.0
+plotly>=5.18.0
+
+# Rate limiting
+aiolimiter>=1.1.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Time handling
+python-dateutil>=2.8.2
+
