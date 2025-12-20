@@ -29,50 +29,73 @@ def run_backtest(args):
     """运行回测"""
     from config import settings
     from clients import BirdeyeSyncClient, HyperliquidClient
-    from strategies import SMAStrategy, RSIStrategy, MACDStrategy, BollingerBandsStrategy
+    from strategies import (
+        SMAStrategy, RSIStrategy, MACDStrategy, BollingerBandsStrategy,
+        SuperTrendStrategy, MomentumBreakoutStrategy, TrendFollowingEMAStrategy,
+        ScalpingStrategy, VWAPMomentumStrategy, AdaptiveTrendStrategy
+    )
     from engine import BacktestEngine, BacktestConfig
-    
+
     logger.info("=" * 50)
     logger.info("开始回测")
     logger.info("=" * 50)
-    
+
     # 配置
     symbol = args.symbol or "ETH"
     days = args.days or 30
     initial_capital = args.capital or 10000.0
-    
+
     # 获取历史数据
     # 优先使用 Hyperliquid 获取数据（如果可用）
     logger.info(f"获取 {symbol} {days} 天历史数据...")
-    
+
     client = HyperliquidClient()
     end_time = datetime.now()
     start_time = end_time - timedelta(days=days)
-    
+
     data = client.get_candles_dataframe(
         symbol,
         args.timeframe or "1h",
         start_time,
         end_time
     )
-    
+
     logger.info(f"获取到 {len(data)} 条数据")
-    
+
     # 创建策略
     strategies = []
-    
+
     if args.strategy == "all" or args.strategy == "sma":
         strategies.append(SMAStrategy(fast_period=10, slow_period=30))
-    
+
     if args.strategy == "all" or args.strategy == "rsi":
         strategies.append(RSIStrategy(period=14, overbought=70, oversold=30))
-    
+
     if args.strategy == "all" or args.strategy == "macd":
         strategies.append(MACDStrategy())
-    
+
     if args.strategy == "all" or args.strategy == "bb":
         strategies.append(BollingerBandsStrategy(period=20, std_dev=2.0))
-    
+
+    # ETH 合约交易优化策略
+    if args.strategy == "supertrend":
+        strategies.append(SuperTrendStrategy(atr_period=10, multiplier=3.0))
+
+    if args.strategy == "momentum":
+        strategies.append(MomentumBreakoutStrategy(breakout_period=20, volume_multiplier=2.0))
+
+    if args.strategy == "ema":
+        strategies.append(TrendFollowingEMAStrategy(fast_ema=8, medium_ema=21, slow_ema=55))
+
+    if args.strategy == "scalping":
+        strategies.append(ScalpingStrategy(ema_period=9, rsi_period=7))
+
+    if args.strategy == "vwap":
+        strategies.append(VWAPMomentumStrategy(vwap_period=20, momentum_period=10))
+
+    if args.strategy == "adaptive":
+        strategies.append(AdaptiveTrendStrategy(base_period=20, atr_period=14))
+
     if not strategies:
         strategies.append(SMAStrategy())
     
@@ -107,34 +130,44 @@ async def run_live(args):
     """运行实盘交易"""
     from config import settings
     from clients import HyperliquidClient
-    from strategies import SMAStrategy, RSIStrategy, MACDStrategy
+    from strategies import (
+        SMAStrategy, RSIStrategy, MACDStrategy, BollingerBandsStrategy,
+        SuperTrendStrategy, MomentumBreakoutStrategy, TrendFollowingEMAStrategy,
+        ScalpingStrategy, VWAPMomentumStrategy, AdaptiveTrendStrategy
+    )
     from engine import LiveEngine, LiveEngineConfig
     from risk import RiskManager, RiskConfig
-    
+
     logger.info("=" * 50)
     logger.info("启动实盘交易")
     logger.info("=" * 50)
-    
+
     # 验证配置
     if not settings.hyperliquid.private_key and not args.dry_run:
         logger.error("未配置私钥，请设置 HYPERLIQUID_PRIVATE_KEY 环境变量")
         return
-    
+
     # 创建客户端
     client = HyperliquidClient(
         private_key=settings.hyperliquid.private_key if not args.dry_run else None,
         testnet=settings.system.testnet_mode
     )
-    
+
     # 创建策略
-    if args.strategy == "sma":
-        strategy = SMAStrategy(fast_period=10, slow_period=30)
-    elif args.strategy == "rsi":
-        strategy = RSIStrategy()
-    elif args.strategy == "macd":
-        strategy = MACDStrategy()
-    else:
-        strategy = SMAStrategy()
+    strategy_map = {
+        "sma": lambda: SMAStrategy(fast_period=10, slow_period=30),
+        "rsi": lambda: RSIStrategy(),
+        "macd": lambda: MACDStrategy(),
+        "bb": lambda: BollingerBandsStrategy(period=20, std_dev=2.0),
+        "supertrend": lambda: SuperTrendStrategy(atr_period=10, multiplier=3.0),
+        "momentum": lambda: MomentumBreakoutStrategy(breakout_period=20, volume_multiplier=2.0),
+        "ema": lambda: TrendFollowingEMAStrategy(fast_ema=8, medium_ema=21, slow_ema=55),
+        "scalping": lambda: ScalpingStrategy(ema_period=9, rsi_period=7),
+        "vwap": lambda: VWAPMomentumStrategy(vwap_period=20, momentum_period=10),
+        "adaptive": lambda: AdaptiveTrendStrategy(base_period=20, atr_period=14),
+    }
+
+    strategy = strategy_map.get(args.strategy, strategy_map["sma"])()
     
     # 更新策略配置
     strategy.config.symbols = [args.symbol or "ETH"]
@@ -274,24 +307,30 @@ def main():
     parser = argparse.ArgumentParser(description="自动交易系统")
     subparsers = parser.add_subparsers(dest="command", help="命令")
     
+    # 策略选项
+    backtest_strategies = ["all", "sma", "rsi", "macd", "bb",
+                           "supertrend", "momentum", "ema", "scalping", "vwap", "adaptive"]
+    live_strategies = ["sma", "rsi", "macd", "bb",
+                       "supertrend", "momentum", "ema", "scalping", "vwap", "adaptive"]
+
     # 回测命令
     backtest_parser = subparsers.add_parser("backtest", help="运行回测")
     backtest_parser.add_argument("--symbol", "-s", default="ETH", help="交易对")
-    backtest_parser.add_argument("--strategy", default="all", 
-                                 choices=["all", "sma", "rsi", "macd", "bb"],
-                                 help="策略")
+    backtest_parser.add_argument("--strategy", default="all",
+                                 choices=backtest_strategies,
+                                 help="策略 (supertrend/momentum/ema/scalping/vwap/adaptive 为 ETH 优化策略)")
     backtest_parser.add_argument("--days", "-d", type=int, default=30, help="回测天数")
     backtest_parser.add_argument("--timeframe", "-t", default="1h", help="时间周期")
-    backtest_parser.add_argument("--capital", "-c", type=float, default=10000.0, 
+    backtest_parser.add_argument("--capital", "-c", type=float, default=10000.0,
                                  help="初始资金")
     backtest_parser.add_argument("--leverage", "-l", type=int, default=1, help="杠杆")
-    
+
     # 实盘命令
     live_parser = subparsers.add_parser("live", help="运行实盘交易")
     live_parser.add_argument("--symbol", "-s", default="ETH", help="交易对")
     live_parser.add_argument("--strategy", default="sma",
-                             choices=["sma", "rsi", "macd"],
-                             help="策略")
+                             choices=live_strategies,
+                             help="策略 (supertrend/momentum/ema/scalping/vwap/adaptive 为 ETH 优化策略)")
     live_parser.add_argument("--timeframe", "-t", default="1h", help="时间周期")
     live_parser.add_argument("--leverage", "-l", type=int, default=5, help="杠杆")
     live_parser.add_argument("--max-position", type=float, default=1000.0,

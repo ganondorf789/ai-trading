@@ -5,12 +5,26 @@ from .examples import (
     RSIStrategy,
     MACDStrategy,
     BollingerBandsStrategy,
-    CombinedStrategy
+    CombinedStrategy,
+    # ETH 合约交易优化策略
+    SuperTrendStrategy,
+    MomentumBreakoutStrategy,
+    TrendFollowingEMAStrategy,
+    ScalpingStrategy,
+    VWAPMomentumStrategy,
+    AdaptiveTrendStrategy
 )
 
 __all__ = [
     'BaseStrategy', 'StrategyConfig', 'StrategyState',
     'SMAStrategy', 'RSIStrategy', 'MACDStrategy',
-    'BollingerBandsStrategy', 'CombinedStrategy'
+    'BollingerBandsStrategy', 'CombinedStrategy',
+    # ETH 合约交易优化策略
+    'SuperTrendStrategy',
+    'MomentumBreakoutStrategy',
+    'TrendFollowingEMAStrategy',
+    'ScalpingStrategy',
+    'VWAPMomentumStrategy',
+    'AdaptiveTrendStrategy'
 ]
 
