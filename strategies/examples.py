@@ -647,56 +647,55 @@ class SuperTrendStrategy(BaseStrategy):
         return atr
 
     def calculate_indicators(self, data: OHLCVDataFrame) -> Dict[str, pd.Series]:
-        """计算 SuperTrend 指标"""
-        df = data.df.copy()
+        """计算 SuperTrend 指标 (NumPy 向量化优化版)"""
+        df = data.df
+        n = len(df)
 
         atr = self.calculate_atr(df, self.atr_period)
-        hl2 = (df['high'] + df['low']) / 2
+        hl2 = (df['high'].values + df['low'].values) / 2
+        close = df['close'].values
+        atr_values = atr.values
 
-        # 上轨和下轨
-        upper_band = hl2 + (self.multiplier * atr)
-        lower_band = hl2 - (self.multiplier * atr)
+        # 初始化数组
+        upper_band = hl2 + (self.multiplier * atr_values)
+        lower_band = hl2 - (self.multiplier * atr_values)
+        direction = np.ones(n, dtype=np.int32)
+        supertrend = np.empty(n)
+        supertrend[:] = np.nan
 
-        # 计算 SuperTrend
-        supertrend = pd.Series(index=df.index, dtype=float)
-        direction = pd.Series(index=df.index, dtype=int)
-
-        for i in range(1, len(df)):
-            if pd.isna(atr.iloc[i]):
-                continue
-
+        # 使用 NumPy 循环 (比 pandas iloc 快 10-100 倍)
+        for i in range(self.atr_period, n):
             # 调整上下轨
-            if df['close'].iloc[i-1] <= upper_band.iloc[i-1]:
-                upper_band.iloc[i] = min(upper_band.iloc[i], upper_band.iloc[i-1])
-
-            if df['close'].iloc[i-1] >= lower_band.iloc[i-1]:
-                lower_band.iloc[i] = max(lower_band.iloc[i], lower_band.iloc[i-1])
+            if close[i-1] <= upper_band[i-1]:
+                upper_band[i] = min(upper_band[i], upper_band[i-1])
+            if close[i-1] >= lower_band[i-1]:
+                lower_band[i] = max(lower_band[i], lower_band[i-1])
 
             # 判断方向
-            if i == 1 or pd.isna(supertrend.iloc[i-1]):
-                direction.iloc[i] = 1
-                supertrend.iloc[i] = lower_band.iloc[i]
-            elif supertrend.iloc[i-1] == upper_band.iloc[i-1]:
-                if df['close'].iloc[i] > upper_band.iloc[i]:
-                    direction.iloc[i] = 1
-                    supertrend.iloc[i] = lower_band.iloc[i]
+            if i == self.atr_period:
+                direction[i] = 1
+                supertrend[i] = lower_band[i]
+            elif direction[i-1] == 1:
+                if close[i] < lower_band[i]:
+                    direction[i] = -1
+                    supertrend[i] = upper_band[i]
                 else:
-                    direction.iloc[i] = -1
-                    supertrend.iloc[i] = upper_band.iloc[i]
+                    direction[i] = 1
+                    supertrend[i] = lower_band[i]
             else:
-                if df['close'].iloc[i] < lower_band.iloc[i]:
-                    direction.iloc[i] = -1
-                    supertrend.iloc[i] = upper_band.iloc[i]
+                if close[i] > upper_band[i]:
+                    direction[i] = 1
+                    supertrend[i] = lower_band[i]
                 else:
-                    direction.iloc[i] = 1
-                    supertrend.iloc[i] = lower_band.iloc[i]
+                    direction[i] = -1
+                    supertrend[i] = upper_band[i]
 
         return {
-            "supertrend": supertrend,
-            "direction": direction,
+            "supertrend": pd.Series(supertrend, index=df.index),
+            "direction": pd.Series(direction, index=df.index),
             "atr": atr,
-            "upper_band": upper_band,
-            "lower_band": lower_band
+            "upper_band": pd.Series(upper_band, index=df.index),
+            "lower_band": pd.Series(lower_band, index=df.index)
         }
 
     def generate_signal(

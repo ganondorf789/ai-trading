@@ -363,38 +363,59 @@ class BacktestEngine:
         symbol: str = "ETH"
     ) -> BacktestResult:
         """
-        运行回测
-        
+        运行回测 (优化版 - 预计算指标)
+
         Args:
             strategy: 交易策略
             data: OHLCV 历史数据
             symbol: 交易对符号
-        
+
         Returns:
             回测结果
         """
         self._reset()
-        
+
         df = data.df
         if df.empty:
             raise ValueError("数据为空")
-        
+
         logger.info(f"开始回测: {strategy.name}, 数据量: {len(df)}")
-        
+
         # 初始化策略
         strategy.on_init()
         strategy.on_start()
-        
+
+        # ===== 优化：预计算所有指标 =====
+        logger.debug("预计算指标...")
+        all_indicators = strategy.calculate_indicators(data)
+
+        # 预先转换为 numpy 数组加速访问
+        close_prices = df['close'].values
+        high_prices = df['high'].values
+        low_prices = df['low'].values
+        timestamps = df.index.tolist()
+
         # 用于追踪止损止盈
         current_stop_loss: Optional[float] = None
         current_take_profit: Optional[float] = None
-        
-        # 遍历历史数据
+
+        warmup_period = max(30, strategy.config.params.get('slow_period', 30),
+                           strategy.config.params.get('atr_period', 10) + 10)
+
+        # 遍历历史数据 (使用 numpy 数组加速)
         for i in range(len(df)):
-            # 获取到当前为止的数据
-            current_data = OHLCVDataFrame.from_dataframe(df.iloc[:i+1])
-            candle = current_data.latest
-            
+            current_price = close_prices[i]
+
+            # 构造当前 K 线
+            candle = OHLCV(
+                timestamp=timestamps[i],
+                open=df['open'].iloc[i],
+                high=high_prices[i],
+                low=low_prices[i],
+                close=current_price,
+                volume=df['volume'].iloc[i]
+            )
+
             # 检查止损止盈
             if self._position:
                 if self._check_stop_loss_take_profit(
@@ -402,14 +423,22 @@ class BacktestEngine:
                 ):
                     current_stop_loss = None
                     current_take_profit = None
-            
+
             # 需要足够的数据才能生成信号
-            if i < 30:  # 预热期
-                self._equity_curve.append(self._calculate_equity(candle.close))
+            if i < warmup_period:
+                self._equity_curve.append(self._calculate_equity(current_price))
                 continue
-            
-            # 生成信号
-            signal = strategy.update(symbol, current_data, self._position)
+
+            # ===== 优化：使用预计算的指标生成信号 =====
+            # 截取到当前位置的指标
+            current_indicators = {
+                name: series.iloc[:i+1] for name, series in all_indicators.items()
+            }
+
+            # 创建轻量级数据对象 (只包含最新数据用于信号生成)
+            current_data = OHLCVDataFrame.from_dataframe(df.iloc[max(0, i-100):i+1])
+
+            signal = strategy.generate_signal(current_data, current_indicators, self._position)
             self._signals.append(signal)
             
             # 处理信号

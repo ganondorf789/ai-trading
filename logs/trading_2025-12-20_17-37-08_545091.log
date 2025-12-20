@@ -1,0 +1,41 @@
+2025-12-20 17:37:09.200 | INFO     | __main__:run_backtest:39 - ==================================================
+2025-12-20 17:37:09.201 | INFO     | __main__:run_backtest:40 - 开始回测
+2025-12-20 17:37:09.201 | INFO     | __main__:run_backtest:41 - ==================================================
+2025-12-20 17:37:09.201 | INFO     | __main__:run_backtest:50 - 获取 ETH 30 天历史数据...
+2025-12-20 17:37:10.523 | INFO     | __main__:run_backtest:63 - 获取到 721 条数据
+2025-12-20 17:37:10.524 | INFO     | strategies.base:__init__:61 - 策略初始化: MomentumBreakout_Strategy
+2025-12-20 17:37:10.528 | INFO     | engine.backtest:run:382 - 开始回测: MomentumBreakout_Strategy, 数据量: 721
+2025-12-20 17:37:10.528 | INFO     | strategies.base:on_init:106 - 策略 MomentumBreakout_Strategy 初始化
+2025-12-20 17:37:10.529 | INFO     | strategies.base:on_start:113 - 策略 MomentumBreakout_Strategy 启动
+2025-12-20 17:37:10.529 | DEBUG    | engine.backtest:run:389 - 预计算指标...
+2025-12-20 17:37:10.571 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.3586157432311278 @ 2788.77885, 手续费: 0.6001
+2025-12-20 17:37:10.714 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3042.5957100000005, PnL: 455.1136, 手续费: 0.6547
+2025-12-20 17:37:10.714 | DEBUG    | engine.backtest:_check_stop_loss_take_profit:263 - 触发止盈: 3042.9000000000005
+2025-12-20 17:37:10.716 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.3446819504709789 @ 3033.20329, 手续费: 0.6273
+2025-12-20 17:37:10.885 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2887.7112, PnL: -250.7425, 手续费: 0.5972
+2025-12-20 17:37:10.885 | DEBUG    | engine.backtest:_check_stop_loss_take_profit:252 - 触发止损: 2888.0
+2025-12-20 17:37:10.887 | DEBUG    | engine.backtest:_open_position:190 - 开仓: short 0.35981701723362025 @ 2835.01647, 手续费: 0.6121
+2025-12-20 17:37:10.951 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2894.2894, PnL: -106.6370, 手续费: 0.6248
+2025-12-20 17:37:10.951 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.34879122129229345 @ 2894.2894, 手续费: 0.6057
+2025-12-20 17:37:11.040 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3116.8882799999997, PnL: 388.2027, 手续费: 0.6523
+2025-12-20 17:37:11.040 | DEBUG    | engine.backtest:_open_position:190 - 开仓: short 0.33623003441113203 @ 3116.8882799999997, 手续费: 0.6288
+2025-12-20 17:37:11.158 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3113.5113199999996, PnL: 5.6772, 手续费: 0.6281
+2025-12-20 17:37:11.158 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.3368040248318673 @ 3113.5113199999996, 手续费: 0.6292
+2025-12-20 17:37:11.317 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3159.98397, PnL: 78.2609, 手续费: 0.6386
+2025-12-20 17:37:11.317 | DEBUG    | engine.backtest:_open_position:190 - 开仓: short 0.33422067575263875 @ 3159.98397, 手续费: 0.6337
+2025-12-20 17:37:11.459 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3121.71214, PnL: 63.9562, 手续费: 0.6260
+2025-12-20 17:37:11.459 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.34039445494341763 @ 3121.71214, 手续费: 0.6376
+2025-12-20 17:37:11.479 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 3029.697, PnL: -156.6072, 手续费: 0.6188
+2025-12-20 17:37:11.479 | DEBUG    | engine.backtest:_check_stop_loss_take_profit:252 - 触发止损: 3030.0
+2025-12-20 17:37:11.481 | DEBUG    | engine.backtest:_open_position:190 - 开仓: short 0.3475745959200671 @ 3011.19885, 手续费: 0.6280
+2025-12-20 17:37:11.559 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2994.59943, PnL: 28.8477, 手续费: 0.6245
+2025-12-20 17:37:11.559 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.3504927416051047 @ 2994.59943, 手续费: 0.6298
+2025-12-20 17:37:11.559 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2907.10926, PnL: -153.3233, 手续费: 0.6114
+2025-12-20 17:37:11.559 | DEBUG    | engine.backtest:_check_stop_loss_take_profit:252 - 触发止损: 2907.4
+2025-12-20 17:37:11.563 | DEBUG    | engine.backtest:_open_position:190 - 开仓: short 0.3611427672014641 @ 2862.9136799999997, 手续费: 0.6204
+2025-12-20 17:37:11.599 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2962.79625, PnL: -180.3593, 手续费: 0.6420
+2025-12-20 17:37:11.599 | DEBUG    | engine.backtest:_open_position:190 - 开仓: long 0.3429069375218339 @ 2962.79625, 手续费: 0.6096
+2025-12-20 17:37:11.607 | DEBUG    | engine.backtest:_close_position:231 - 平仓: 2789.721, PnL: -296.7435, 手续费: 0.5740
+2025-12-20 17:37:11.608 | DEBUG    | engine.backtest:_check_stop_loss_take_profit:252 - 触发止损: 2790.0
+2025-12-20 17:37:11.673 | INFO     | strategies.base:on_stop:120 - 策略 MomentumBreakout_Strategy 停止
+2025-12-20 17:37:11.674 | INFO     | engine.backtest:run:512 - 回测完成: 总收益率 -1.39%

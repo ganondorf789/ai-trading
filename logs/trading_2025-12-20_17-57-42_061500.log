@@ -1,0 +1,1 @@
+2025-12-20 17:57:46.225 | ERROR    | clients.hyperliquid_client:_init_trading:77 - 初始化交易功能失败: The private key must be exactly 32 bytes long, instead of 20 bytes.
