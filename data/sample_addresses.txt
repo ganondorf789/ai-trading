@@ -1,0 +1,10 @@
+# Hyperliquid 候选交易者地址列表
+# 每行一个地址，以 # 开头的行为注释
+# 请将以下示例地址替换为真实地址
+
+# 从 Hyperliquid 排行榜获取地址: https://app.hyperliquid.xyz/leaderboard
+# 0x1234567890abcdef1234567890abcdef12345678
+
+# 社区推荐的交易者
+# 0xabcdefabcdefabcdefabcdefabcdefabcdefabcd
+

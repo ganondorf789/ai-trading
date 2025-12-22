@@ -33,6 +33,11 @@ python main.py account
 # Run tests
 pytest
 pytest tests/test_specific.py -v
+
+# Screen quality traders
+python screen_traders.py -a 0x1234...           # Analyze single trader
+python screen_traders.py -f addresses.txt       # Batch screen from file
+python screen_traders.py -f addresses.json --min-win-rate 0.55 --min-pnl 1000
 ```
 
 ## Architecture
@@ -69,6 +74,8 @@ pytest tests/test_specific.py -v
 | `engine/backtest.py` | Historical simulation with metrics (Sharpe, Sortino, drawdown) |
 | `engine/live.py` | Live trading loop with `LiveEngineWithWebSocket` variant |
 | `risk/manager.py` | Risk checks, position sizing (fixed %, Kelly criterion) |
+| `screener/trader_screener.py` | Trader screening with multi-dimensional scoring |
+| `screener/address_sources.py` | Trader address discovery and management |
 
 ## Configuration
 
@@ -123,3 +130,34 @@ Risk level escalation: LOW → MEDIUM → HIGH → CRITICAL (trading paused)
 - `stop_order(symbol, is_buy, size, trigger_price)` - Stop loss/take profit
 - `set_leverage(symbol, leverage)` - Configure leverage
 - `subscribe_trades/orderbook/candles()` - WebSocket subscriptions
+
+## Trader Screening
+
+`TraderScreener` analyzes and scores Hyperliquid traders:
+
+**Metrics Calculated:**
+- Win rate, profit factor, total PnL
+- Sharpe ratio, Sortino ratio, max drawdown
+- Trade frequency, active days, average leverage
+
+**Scoring System (0-100):**
+- Profitability (35%): Win rate, profit factor, total profits
+- Risk Control (30%): Max drawdown, Sharpe ratio
+- Consistency (20%): Trade count, active days
+- Activity (15%): Recent trades, current positions
+
+**Quality Ratings:** S (≥85) → A (≥70) → B (≥55) → C (≥40) → D (≥25) → F
+
+```python
+from screener.trader_screener import TraderScreener, ScreenerConfig
+
+config = ScreenerConfig(
+    min_win_rate=0.55,
+    min_profit_factor=1.5,
+    min_total_pnl=1000.0,
+    max_drawdown=0.3,
+    lookback_days=60
+)
+screener = TraderScreener(config)
+qualified = screener.screen_traders(addresses)
+```
