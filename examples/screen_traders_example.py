@@ -301,22 +301,25 @@ def example_from_file():
     db = TraderDatabase()
     saved_count = [0]  # 使用列表以便在回调中修改
 
+    fills_count = [0]  # 保存的交易记录总数
+
     def progress_callback_with_save(current: int, total: int, address: str, result):
-        """进度回调函数，每分析完一个就保存到数据库"""
+        """进度回调函数，每分析完一个就保存到数据库（包括交易记录）"""
         status = "✓" if result else "✗"
         score = f"{result.overall_score:.1f}" if result else "N/A"
 
-        # 如果分析成功，立即保存到数据库
+        # 如果分析成功，立即保存到数据库（包括交易记录）
         if result:
-            db.save_trader(result)
+            _, fills_saved = db.save_trader_with_fills(result, result.fills)
             saved_count[0] += 1
-            print(f"\r[{current}/{total}] {status} {address[:10]}... Score: {score} (已保存 {saved_count[0]} 个)", end="", flush=True)
+            fills_count[0] += fills_saved
+            print(f"\r[{current}/{total}] {status} {address[:10]}... Score: {score} (已保存 {saved_count[0]} 个, {fills_count[0]} 条交易)", end="", flush=True)
         else:
             print(f"\r[{current}/{total}] {status} {address[:10]}... Score: {score}", end="", flush=True)
 
     qualified = screener.screen_traders(addresses, progress_callback_with_save)
     print()
-    print(f"\n已实时保存 {saved_count[0]} 个交易者到数据库")
+    print(f"\n已实时保存 {saved_count[0]} 个交易者，{fills_count[0]} 条交易记录到数据库")
     screener.print_summary(qualified)
 
 

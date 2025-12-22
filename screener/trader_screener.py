@@ -73,14 +73,17 @@ class TraderMetrics:
     # 综合评分
     overall_score: float = 0.0
     rating: QualityRating = QualityRating.F_TIER
-    
+
     # 分项评分
     profitability_score: float = 0.0
     risk_score: float = 0.0
     consistency_score: float = 0.0
     activity_score: float = 0.0
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    # 原始交易记录（可选，用于保存到数据库）
+    fills: List[Dict] = field(default_factory=list)
+
+    def to_dict(self, include_fills: bool = False) -> Dict[str, Any]:
         """转换为字典"""
         result = asdict(self)
         result['rating'] = self.rating.value
@@ -88,6 +91,9 @@ class TraderMetrics:
             result['last_trade_time'] = self.last_trade_time.isoformat()
         if self.first_trade_time:
             result['first_trade_time'] = self.first_trade_time.isoformat()
+        # 默认不包含 fills（数据量可能很大）
+        if not include_fills:
+            result.pop('fills', None)
         return result
 
 
@@ -492,18 +498,19 @@ class TraderScreener:
         
         return True
     
-    def analyze_trader(self, address: str) -> Optional[TraderMetrics]:
+    def analyze_trader(self, address: str, store_fills: bool = True) -> Optional[TraderMetrics]:
         """
         分析单个交易者
-        
+
         Args:
             address: 交易者地址
-        
+            store_fills: 是否在 metrics 中存储原始交易记录
+
         Returns:
             TraderMetrics 或 None
         """
         logger.debug(f"分析交易者: {address[:10]}...")
-        
+
         try:
             # 获取用户状态
             user_state = self._get_user_state(address)
@@ -518,18 +525,22 @@ class TraderScreener:
             if not fills:
                 logger.debug(f"交易者 {address[:10]}... 无成交记录")
                 return None
-            
+
             # 计算指标
             metrics = self._calculate_metrics_from_fills(address, fills, user_state)
-            
+
             # 计算评分
             metrics = self._calculate_scores(metrics)
-            
+
+            # 存储原始交易记录
+            if store_fills:
+                metrics.fills = fills
+
             # 缓存结果
             self._analyzed_traders[address] = metrics
-            
+
             return metrics
-            
+
         except Exception as e:
             logger.error(f"分析交易者失败 {address[:10]}...: {e}")
             self._failed_addresses.append(address)
