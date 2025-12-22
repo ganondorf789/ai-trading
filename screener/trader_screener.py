@@ -4,6 +4,7 @@ Hyperliquid 优质交易者筛选器
 """
 import asyncio
 import json
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field, asdict
@@ -121,8 +122,11 @@ class ScreenerConfig:
     output_file: str = "qualified_traders.json"
     
     # 并发配置
-    max_concurrent_requests: int = 5
-    request_delay: float = 0.2  # 请求间隔（秒）
+    max_concurrent_requests: int = 3
+    request_delay: float = 0.5  # 请求间隔（秒）
+    api_call_delay: float = 0.3  # API调用之间的延迟（秒）
+    max_retries: int = 3  # 最大重试次数
+    retry_delay: float = 2.0  # 重试延迟（秒）
 
 
 class TraderScreener:
@@ -152,24 +156,47 @@ class TraderScreener:
         
         logger.info(f"交易者筛选器初始化完成，API: {self.api_url}")
     
+    def _api_call_with_retry(self, func, *args, **kwargs):
+        """带重试的 API 调用"""
+        for attempt in range(self.config.max_retries):
+            try:
+                result = func(*args, **kwargs)
+                return result
+            except Exception as e:
+                error_str = str(e)
+                # 检查是否是 429 错误
+                if "429" in error_str:
+                    wait_time = self.config.retry_delay * (attempt + 1)
+                    logger.warning(f"请求频率过高，等待 {wait_time} 秒后重试... (尝试 {attempt + 1}/{self.config.max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.debug(f"API 调用失败: {e}")
+                    if attempt < self.config.max_retries - 1:
+                        time.sleep(self.config.retry_delay)
+                    else:
+                        raise
+        return None
+
     def _get_user_state(self, address: str) -> Optional[Dict[str, Any]]:
         """获取用户状态"""
         try:
-            return self.info.user_state(address)
+            return self._api_call_with_retry(self.info.user_state, address)
         except Exception as e:
             logger.debug(f"获取用户状态失败 {address[:10]}...: {e}")
             return None
-    
+
     def _get_user_fills(self, address: str, limit: int = None) -> List[Dict]:
         """获取用户成交记录"""
         try:
             limit = limit or self.config.max_fills_per_trader
-            fills = self.info.user_fills(address)
+            fills = self._api_call_with_retry(self.info.user_fills, address)
+            if fills is None:
+                return []
             return fills[:limit] if len(fills) > limit else fills
         except Exception as e:
             logger.debug(f"获取用户成交记录失败 {address[:10]}...: {e}")
             return []
-    
+
     def _get_user_fills_by_time(
         self,
         address: str,
@@ -180,12 +207,15 @@ class TraderScreener:
         try:
             start_ms = int(start_time.timestamp() * 1000)
             end_ms = int((end_time or datetime.now()).timestamp() * 1000)
-            
-            fills = self.info.user_fills_by_time(address, start_ms, end_ms)
-            return fills
+
+            fills = self._api_call_with_retry(
+                self.info.user_fills_by_time, address, start_ms, end_ms
+            )
+            return fills if fills else []
         except Exception as e:
             logger.debug(f"按时间获取成交记录失败 {address[:10]}...: {e}")
             # 回退到普通方法
+            time.sleep(self.config.api_call_delay)
             return self._get_user_fills(address)
     
     def _calculate_metrics_from_fills(
@@ -477,11 +507,14 @@ class TraderScreener:
         try:
             # 获取用户状态
             user_state = self._get_user_state(address)
-            
+
+            # API 调用间延迟
+            time.sleep(self.config.api_call_delay)
+
             # 获取成交记录
             start_time = datetime.now() - timedelta(days=self.config.lookback_days)
             fills = self._get_user_fills_by_time(address, start_time)
-            
+
             if not fills:
                 logger.debug(f"交易者 {address[:10]}... 无成交记录")
                 return None
@@ -564,16 +597,20 @@ class TraderScreener:
         """
         results = []
         total = len(addresses)
-        
+
         for i, address in enumerate(addresses):
             metrics = self.analyze_trader(address)
-            
+
             if metrics:
                 results.append(metrics)
-            
+
             if progress_callback:
                 progress_callback(i + 1, total, address, metrics)
-        
+
+            # 每个交易者分析完后等待，避免 API 频率限制
+            if i < total - 1:  # 最后一个不需要等待
+                time.sleep(self.config.request_delay)
+
         return results
     
     def screen_traders(

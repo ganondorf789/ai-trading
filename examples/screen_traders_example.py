@@ -2,7 +2,6 @@
 Hyperliquid 优质交易者筛选示例
 演示如何使用 TraderScreener 筛选优质交易者
 """
-import asyncio
 import sys
 from pathlib import Path
 
@@ -119,32 +118,52 @@ def example_custom_config():
     screener.print_summary(qualified)
 
 
-async def example_async_screening():
+def example_batch_screening():
     """
-    异步筛选示例
-    
-    使用异步方式加速筛选大量地址
+    批量筛选示例
+
+    逐个分析交易者，完成一个后再分析下一个
     """
     print("\n" + "=" * 60)
-    print("示例 3: 异步批量筛选")
+    print("示例 3: 批量筛选（逐个分析）")
     print("=" * 60)
-    
+
     config = ScreenerConfig(
-        max_concurrent_requests=10,  # 并发请求数
-        request_delay=0.1,  # 请求间隔
+        lookback_days=30,
+        min_total_trades=20,
+        min_win_rate=0.5,
     )
-    
+
     screener = TraderScreener(config)
-    
+
     addresses = [
         # 大量候选地址...
     ]
-    
+
     if not addresses:
         print("请添加候选交易者地址")
         return
-    
-    qualified = await screener.screen_traders_async(addresses, progress_callback)
+
+    # 逐个分析交易者，完成一个后再分析下一个
+    results = []
+    total = len(addresses)
+
+    for i, address in enumerate(addresses):
+        print(f"\n[{i+1}/{total}] 正在分析: {address}")
+
+        # 分析单个交易者（阻塞直到完成）
+        metrics = screener.analyze_trader(address)
+
+        if metrics:
+            results.append(metrics)
+            print(f"  ✓ 完成 - 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}")
+        else:
+            print(f"  ✗ 无法获取数据")
+
+    # 筛选符合条件的交易者
+    qualified = [m for m in results if screener._passes_filters(m)]
+    qualified.sort(key=lambda x: x.overall_score, reverse=True)
+
     print()
     screener.print_summary(qualified)
 
@@ -226,7 +245,7 @@ def example_from_file():
     source = AddressSource()
     
     # 从文件加载（支持 JSON 或文本格式）
-    # source.load_from_file("data/addresses.json")
+    source.load_from_file("data/sample_addresses.txt")
     # source.load_from_file("data/addresses.txt")
     
     # 或手动添加
@@ -261,22 +280,22 @@ def main():
     print("\n选择要运行的示例:")
     print("1. 基础筛选")
     print("2. 自定义配置筛选")
-    print("3. 异步批量筛选")
+    print("3. 批量筛选")
     print("4. 分析单个交易者")
     print("5. 从文件加载地址")
     print("0. 运行所有示例")
-    
+
     try:
         choice = input("\n请输入选项 (0-5): ").strip()
     except EOFError:
         choice = "0"
-    
+
     if choice == "1":
         example_basic_screening()
     elif choice == "2":
         example_custom_config()
     elif choice == "3":
-        asyncio.run(example_async_screening())
+        example_batch_screening()
     elif choice == "4":
         example_analyze_single()
     elif choice == "5":
@@ -284,6 +303,7 @@ def main():
     elif choice == "0":
         example_basic_screening()
         example_custom_config()
+        example_batch_screening()
         example_analyze_single()
         example_from_file()
     else:

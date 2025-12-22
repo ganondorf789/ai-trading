@@ -4,10 +4,14 @@ Hyperliquid Leaderboard Scraper
 """
 import requests
 import json
+import os
 from typing import List, Dict, Any, Optional
 
+# 获取当前脚本所在目录
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def fetch_leaderboard(save_to_file: bool = True) -> List[Dict[str, Any]]:
+
+def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> List[Dict[str, Any]]:
     """
     获取Hyperliquid排行榜数据
 
@@ -24,17 +28,28 @@ def fetch_leaderboard(save_to_file: bool = True) -> List[Dict[str, Any]]:
         leaderboard_rows = data.get("leaderboardRows", [])
         print(f"获取到 {len(leaderboard_rows)} 个交易者")
 
-        if save_to_file:
-            # 保存完整数据
-            with open("leaderboard_full.json", "w", encoding="utf-8") as f:
-                json.dump(leaderboard_rows, f, indent=2, ensure_ascii=False)
-            print("完整数据已保存到 leaderboard_full.json")
+        # 按 month pnl 从大到小排序
+        if sort_by_pnl:
+            for row in leaderboard_rows:
+                performances = dict(row.get("windowPerformances", []))
+                month_data = performances.get("month", {})
+                row["_pnl"] = float(month_data.get("pnl", 0))
+            leaderboard_rows.sort(key=lambda x: x.get("_pnl", 0), reverse=True)
+            print("已按 month PnL 从大到小排序")
 
-            # 只保存地址
+        if save_to_file:
+            # 保存完整数据到 leaderboard 目录
+            full_path = os.path.join(SCRIPT_DIR, "leaderboard_full.json")
+            with open(full_path, "w", encoding="utf-8") as f:
+                json.dump(leaderboard_rows, f, indent=2, ensure_ascii=False)
+            print(f"完整数据已保存到 {full_path}")
+
+            # 只保存地址到 leaderboard 目录
             addresses = [row["ethAddress"] for row in leaderboard_rows]
-            with open("leaderboard_addresses.txt", "w") as f:
+            addr_path = os.path.join(SCRIPT_DIR, "leaderboard_addresses.txt")
+            with open(addr_path, "w") as f:
                 f.write("\n".join(addresses))
-            print(f"地址已保存到 leaderboard_addresses.txt")
+            print(f"地址已保存到 {addr_path}")
 
         return leaderboard_rows
 
