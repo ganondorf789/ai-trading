@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(findstr:*)",
+      "Bash(Select-String -Path \"D:\\\\auto-trading\\\\web\\\\*.js\" -Pattern \"leaderboardRows\" -Context 0,0)",
+      "Bash(Select-Object -First 5)",
+      "Bash(curl:*)",
+      "Bash(python fetch_leaderboard.py:*)"
+    ]
+  }
+}
