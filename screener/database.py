@@ -154,6 +154,51 @@ class TraderDatabase:
                 )
             """)
 
+            # 创建交易记录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_fills (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    address TEXT NOT NULL,
+
+                    -- 交易信息
+                    coin TEXT,
+                    side TEXT,
+                    px REAL,
+                    sz REAL,
+                    time INTEGER,
+                    trade_time TIMESTAMP,
+
+                    -- 盈亏
+                    closed_pnl REAL DEFAULT 0.0,
+
+                    -- 其他信息
+                    hash TEXT,
+                    start_position REAL,
+                    dir TEXT,
+                    crossed BOOLEAN,
+                    fee REAL DEFAULT 0.0,
+                    oid INTEGER,
+                    tid INTEGER,
+
+                    -- 唯一约束：同一地址同一时间同一交易
+                    UNIQUE(address, time, oid)
+                )
+            """)
+
+            # 创建交易记录索引
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fills_address
+                ON trader_fills(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fills_time
+                ON trader_fills(trade_time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fills_coin
+                ON trader_fills(coin)
+            """)
+
     def save_trader(self, metrics: TraderMetrics) -> int:
         """
         保存或更新交易者指标（使用 address 作为唯一键）
@@ -261,6 +306,178 @@ class TraderDatabase:
             ids.append(trader_id)
         logger.info(f"已保存 {len(ids)} 个交易者到数据库")
         return ids
+
+    def save_fills(self, address: str, fills: List[Dict]) -> int:
+        """
+        保存交易者的交易记录
+
+        Args:
+            address: 交易者地址
+            fills: 交易记录列表
+
+        Returns:
+            保存的记录数
+        """
+        if not fills:
+            return 0
+
+        saved_count = 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            for fill in fills:
+                try:
+                    time_ms = fill.get('time', 0)
+                    trade_time = datetime.fromtimestamp(time_ms / 1000).isoformat() if time_ms else None
+
+                    cursor.execute("""
+                        INSERT INTO trader_fills (
+                            address, coin, side, px, sz, time, trade_time,
+                            closed_pnl, hash, start_position, dir, crossed, fee, oid, tid
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(address, time, oid) DO UPDATE SET
+                            closed_pnl = excluded.closed_pnl,
+                            px = excluded.px,
+                            sz = excluded.sz
+                    """, (
+                        address,
+                        fill.get('coin'),
+                        fill.get('side'),
+                        float(fill.get('px', 0)),
+                        float(fill.get('sz', 0)),
+                        time_ms,
+                        trade_time,
+                        float(fill.get('closedPnl', 0)),
+                        fill.get('hash'),
+                        float(fill.get('startPosition', 0)) if fill.get('startPosition') else None,
+                        fill.get('dir'),
+                        fill.get('crossed'),
+                        float(fill.get('fee', 0)),
+                        fill.get('oid'),
+                        fill.get('tid')
+                    ))
+                    saved_count += 1
+                except Exception as e:
+                    logger.debug(f"保存交易记录失败: {e}")
+
+        return saved_count
+
+    def save_trader_with_fills(
+        self,
+        metrics: TraderMetrics,
+        fills: List[Dict]
+    ) -> tuple[int, int]:
+        """
+        保存交易者指标和交易记录
+
+        Args:
+            metrics: 交易者指标
+            fills: 交易记录列表
+
+        Returns:
+            (trader_id, fills_count) 元组
+        """
+        trader_id = self.save_trader(metrics)
+        fills_count = self.save_fills(metrics.address, fills)
+        return trader_id, fills_count
+
+    def get_trader_fills(
+        self,
+        address: str,
+        limit: int = 100,
+        coin: str = None
+    ) -> List[Dict]:
+        """
+        获取交易者的交易记录
+
+        Args:
+            address: 交易者地址
+            limit: 返回数量
+            coin: 筛选特定币种
+
+        Returns:
+            交易记录列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            if coin:
+                cursor.execute("""
+                    SELECT * FROM trader_fills
+                    WHERE address = ? AND coin = ?
+                    ORDER BY time DESC
+                    LIMIT ?
+                """, (address, coin, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM trader_fills
+                    WHERE address = ?
+                    ORDER BY time DESC
+                    LIMIT ?
+                """, (address, limit))
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_fills_summary(self, address: str) -> Dict[str, Any]:
+        """
+        获取交易者交易记录汇总
+
+        Args:
+            address: 交易者地址
+
+        Returns:
+            汇总信息字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 总交易数
+            cursor.execute(
+                "SELECT COUNT(*) FROM trader_fills WHERE address = ?",
+                (address,)
+            )
+            total_fills = cursor.fetchone()[0]
+
+            # 按币种统计
+            cursor.execute("""
+                SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
+                FROM trader_fills
+                WHERE address = ?
+                GROUP BY coin
+                ORDER BY count DESC
+            """, (address,))
+            by_coin = [dict(row) for row in cursor.fetchall()]
+
+            # 总盈亏
+            cursor.execute(
+                "SELECT SUM(closed_pnl) FROM trader_fills WHERE address = ?",
+                (address,)
+            )
+            total_pnl = cursor.fetchone()[0] or 0
+
+            return {
+                'total_fills': total_fills,
+                'total_pnl': total_pnl,
+                'by_coin': by_coin
+            }
+
+    def delete_trader_fills(self, address: str) -> int:
+        """
+        删除交易者的所有交易记录
+
+        Args:
+            address: 交易者地址
+
+        Returns:
+            删除的记录数
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM trader_fills WHERE address = ?",
+                (address,)
+            )
+            return cursor.rowcount
 
     def save_screening_session(
         self,
