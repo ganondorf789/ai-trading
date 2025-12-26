@@ -6,7 +6,9 @@
       "Bash(Select-Object -First 5)",
       "Bash(curl:*)",
       "Bash(python fetch_leaderboard.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm add:*)"
     ]
   }
 }
