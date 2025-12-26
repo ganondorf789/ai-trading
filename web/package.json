@@ -19,6 +19,7 @@
     "@heroui/link": "^2.2.25",
     "@heroui/navbar": "^2.2.27",
     "@heroui/pagination": "^2.2.26",
+    "@heroui/select": "^2.4.30",
     "@heroui/snippet": "^2.2.30",
     "@heroui/spinner": "^2.2.26",
     "@heroui/switch": "^2.2.26",

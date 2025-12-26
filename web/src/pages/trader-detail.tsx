@@ -5,6 +5,7 @@ import { Tabs, Tab } from '@heroui/tabs';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
+import { Select, SelectItem } from '@heroui/select';
 import {
   Table,
   TableHeader,
@@ -36,6 +37,7 @@ export default function TraderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
+  const [allCoins, setAllCoins] = useState<string[]>([]); // 保存完整的币种列表
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [timeRange, setTimeRange] = useState<number>(30); // 默认30天
   const [chartLoading, setChartLoading] = useState(false);
@@ -71,6 +73,9 @@ export default function TraderDetailPage() {
 
         if (fillsRes.success && fillsRes.data) {
           setFills(fillsRes.data);
+          // 初次加载时保存完整的币种列表
+          const coinSet = new Set(fillsRes.data.map((f: TraderFill) => f.coin));
+          setAllCoins(Array.from(coinSet).sort());
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
@@ -127,7 +132,14 @@ export default function TraderDetailPage() {
         });
 
         if (fillsRes.success && fillsRes.data) {
-          setFills(fillsRes.data);
+          const fillsData = fillsRes.data;
+          setFills(fillsData);
+          // 累积收集新发现的币种
+          setAllCoins((prev) => {
+            const newCoins = fillsData.map((f: TraderFill) => f.coin);
+            const combined = new Set([...prev, ...newCoins]);
+            return Array.from(combined).sort();
+          });
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
@@ -190,10 +202,10 @@ export default function TraderDetailPage() {
     return (fill.closed_pnl / tradeValue) * 100;
   };
 
-  // 获取所有币种（需要从后端获取，这里先用当前页的数据）
+  // 使用初次加载保存的完整币种列表
   const coins = useMemo(() => {
-    return ['all', ...Array.from(new Set(fills.map((f) => f.coin)))];
-  }, [fills]);
+    return ['all', ...allCoins];
+  }, [allCoins]);
 
   // 统计信息（基于当前筛选条件的全部数据）
   const fillsStats = useMemo(() => ({
@@ -230,7 +242,7 @@ export default function TraderDetailPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col gap-4 py-8 md:py-10">
+      <div className="flex flex-col gap-4 py-8 md:py-10">
         <div className="max-w-7xl w-full mx-auto">
           <Button
             size="sm"
@@ -376,7 +388,7 @@ export default function TraderDetailPage() {
                             tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
                           />
                           <Tooltip
-                            formatter={(value: number) => [`${formatPercent(value)}`, 'ROI']}
+                            formatter={(value) => [`${formatPercent(value as number)}`, 'ROI']}
                             labelStyle={{ color: '#000' }}
                             contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
                           />
@@ -414,7 +426,7 @@ export default function TraderDetailPage() {
                           />
                           <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
                           <Tooltip
-                            formatter={(value: number) => [`$${formatNumber(value)}`, 'PnL']}
+                            formatter={(value) => [`$${formatNumber(value as number)}`, 'PnL']}
                             labelStyle={{ color: '#000' }}
                             contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
                           />
@@ -452,8 +464,8 @@ export default function TraderDetailPage() {
                           />
                           <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
                           <Tooltip
-                            formatter={(value: number) => [
-                              `$${formatNumber(value)}`,
+                            formatter={(value) => [
+                              `$${formatNumber(value as number)}`,
                               'Equity',
                             ]}
                             labelStyle={{ color: '#000' }}
@@ -521,45 +533,58 @@ export default function TraderDetailPage() {
                 </div>
 
                 {/* 筛选器 */}
-                <div className="flex gap-3 flex-wrap">
-                  <div className="flex gap-2 items-center">
-                    <span className="text-sm text-gray-500">币种:</span>
-                    <select
-                      className="px-3 py-1 border rounded-lg text-sm bg-white dark:bg-gray-800"
-                      value={selectedCoin}
-                      onChange={(e) => setSelectedCoin(e.target.value)}
-                    >
-                      {coins.map((coin) => (
-                        <option key={coin} value={coin}>
-                          {coin === 'all' ? '全部' : coin}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="flex gap-3 flex-wrap items-end">
+                  <Select
+                    label="币种"
+                    size="sm"
+                    selectedKeys={[selectedCoin]}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys)[0] as string;
+                      if (selected) setSelectedCoin(selected);
+                    }}
+                    className="w-40"
+                  >
+                    {coins.map((coin) => (
+                      <SelectItem key={coin}>
+                        {coin === 'all' ? '全部' : coin}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                  <Select
+                    label="盈亏"
+                    size="sm"
+                    selectedKeys={[pnlFilter]}
+                    onSelectionChange={(keys) => {
+                      const selected = Array.from(keys)[0] as 'all' | 'profit' | 'loss';
+                      if (selected) setPnlFilter(selected);
+                    }}
+                    className="w-32"
+                  >
+                    <SelectItem key="all">全部</SelectItem>
+                    <SelectItem key="profit">盈利</SelectItem>
+                    <SelectItem key="loss">亏损</SelectItem>
+                  </Select>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      variant={pnlFilter === 'all' ? 'solid' : 'bordered'}
-                      color={pnlFilter === 'all' ? 'primary' : 'default'}
-                      onPress={() => setPnlFilter('all')}
+                      color="primary"
+                      onPress={() => {
+                        setPage(1);
+                      }}
+                      isLoading={fillsLoading}
                     >
-                      全部
+                      查询
                     </Button>
                     <Button
                       size="sm"
-                      variant={pnlFilter === 'profit' ? 'solid' : 'bordered'}
-                      color={pnlFilter === 'profit' ? 'success' : 'default'}
-                      onPress={() => setPnlFilter('profit')}
+                      variant="bordered"
+                      onPress={() => {
+                        setSelectedCoin('all');
+                        setPnlFilter('all');
+                        setPage(1);
+                      }}
                     >
-                      盈利
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={pnlFilter === 'loss' ? 'solid' : 'bordered'}
-                      color={pnlFilter === 'loss' ? 'danger' : 'default'}
-                      onPress={() => setPnlFilter('loss')}
-                    >
-                      亏损
+                      重置
                     </Button>
                   </div>
                 </div>
@@ -668,7 +693,7 @@ export default function TraderDetailPage() {
             </CardBody>
           </Card>
         </div>
-      </section>
+      </div>
     </DefaultLayout>
   );
 }
