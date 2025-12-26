@@ -24,22 +24,33 @@ db = TraderDatabase()
 @app.route('/api/traders', methods=['GET'])
 def get_traders():
     """
-    获取交易者列表
+    获取交易者列表（支持分页）
     Query Parameters:
-        - limit: int, 返回数量，默认50
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
         - min_rating: str, 最低评级 (S/A/B/C/D/F)
-        - offset: int, 分页偏移量，默认0
+        - search: str, 地址搜索
     """
     try:
-        limit = int(request.args.get('limit', 50))
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
         min_rating = request.args.get('min_rating')
-        offset = int(request.args.get('offset', 0))
+        search = request.args.get('search', '').strip()
 
-        # 获取交易者列表
-        traders = db.get_top_traders(limit=limit + offset, min_rating=min_rating)
+        # 获取所有交易者
+        all_traders = db.get_top_traders(limit=100000, min_rating=min_rating)
 
-        # 应用分页
-        traders = traders[offset:offset + limit]
+        # 应用搜索过滤
+        if search:
+            all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
+
+        total_count = len(all_traders)
+        total_pages = (total_count + limit - 1) // limit
+
+        # 分页
+        start = (page - 1) * limit
+        end = start + limit
+        traders = all_traders[start:end]
 
         # 格式化数据
         result = []
@@ -65,7 +76,14 @@ def get_traders():
         return jsonify({
             'success': True,
             'data': result,
-            'count': len(result)
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
         })
 
     except Exception as e:
@@ -300,9 +318,13 @@ def get_trader_history(address: str):
 @app.route('/api/traders/rating/<rating>', methods=['GET'])
 def get_traders_by_rating(rating: str):
     """
-    根据评级获取交易者
+    根据评级获取交易者（支持分页）
     Path Parameters:
         - rating: str, 评级 (S/A/B/C/D/F)
+    Query Parameters:
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
+        - search: str, 地址搜索
     """
     try:
         if rating not in ['S', 'A', 'B', 'C', 'D', 'F']:
@@ -311,12 +333,36 @@ def get_traders_by_rating(rating: str):
                 'error': 'Invalid rating. Must be S/A/B/C/D/F'
             }), 400
 
-        traders = db.get_traders_by_rating(rating)
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '').strip()
+
+        # 获取所有符合评级的交易者
+        all_traders = db.get_traders_by_rating(rating)
+
+        # 应用搜索过滤
+        if search:
+            all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
+
+        total_count = len(all_traders)
+        total_pages = (total_count + limit - 1) // limit
+
+        # 分页
+        start = (page - 1) * limit
+        end = start + limit
+        traders = all_traders[start:end]
 
         return jsonify({
             'success': True,
             'data': traders,
-            'count': len(traders)
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
         })
 
     except Exception as e:
