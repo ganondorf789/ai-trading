@@ -145,6 +145,24 @@ export default function TradersPage() {
                     classNames={{
                       wrapper: 'min-h-[400px]',
                     }}
+                    bottomContent={
+                      totalPages > 1 ? (
+                        <div className="flex justify-between items-center px-2 py-2">
+                          <span className="text-sm text-gray-500">
+                            显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
+                            {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
+                          </span>
+                          <Pagination
+                            total={totalPages}
+                            page={page}
+                            onChange={setPage}
+                            showControls
+                            color="primary"
+                            size="sm"
+                          />
+                        </div>
+                      ) : null
+                    }
                   >
                     <TableHeader>
                       <TableColumn>Rating</TableColumn>
@@ -200,24 +218,6 @@ export default function TradersPage() {
                       ))}
                     </TableBody>
                   </Table>
-
-                  {/* 分页控件 */}
-                  {totalPages > 1 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-500">
-                        显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
-                        {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
-                      </span>
-                      <Pagination
-                        total={totalPages}
-                        page={page}
-                        onChange={setPage}
-                        showControls
-                        color="primary"
-                        size="sm"
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </CardBody>
