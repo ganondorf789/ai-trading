@@ -112,8 +112,13 @@ export interface ApiResponse<T> {
 
 // API 方法
 export const traderApi = {
-  // 获取交易者列表
-  getTraders: (params?: { limit?: number; min_rating?: string; offset?: number }) =>
+  // 获取交易者列表（支持分页）
+  getTraders: (params?: {
+    page?: number;
+    limit?: number;
+    min_rating?: string;
+    search?: string;
+  }) =>
     api.get<any, ApiResponse<Trader[]>>('/traders', { params }),
 
   // 获取交易者详情
@@ -133,9 +138,13 @@ export const traderApi = {
   getTraderHistory: (address: string, params?: { days?: number }) =>
     api.get<any, ApiResponse<TraderHistory>>(`/traders/${address}/history`, { params }),
 
-  // 按评级筛选
-  getTradersByRating: (rating: string) =>
-    api.get<any, ApiResponse<Trader[]>>(`/traders/rating/${rating}`),
+  // 按评级筛选（支持分页）
+  getTradersByRating: (rating: string, params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }) =>
+    api.get<any, ApiResponse<Trader[]>>(`/traders/rating/${rating}`, { params }),
 
   // 获取统计信息
   getStatistics: () =>

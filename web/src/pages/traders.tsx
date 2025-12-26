@@ -25,18 +25,30 @@ export default function TradersPage() {
   const [selectedRating, setSelectedRating] = useState<string>('');
   const [page, setPage] = useState(1);
   const rowsPerPage = 20;
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const loadTraders = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      const params = {
+        page,
+        limit: rowsPerPage,
+        search: searchAddress || undefined,
+      };
+
       const response = selectedRating
-        ? await traderApi.getTradersByRating(selectedRating)
-        : await traderApi.getTraders({ limit: 100 });
+        ? await traderApi.getTradersByRating(selectedRating, params)
+        : await traderApi.getTraders({ ...params, min_rating: undefined });
 
       if (response.success && response.data) {
         setTraders(response.data);
+        if (response.pagination) {
+          setTotalPages(response.pagination.total_pages);
+          setTotalCount(response.pagination.total_count);
+        }
       } else {
         setError(response.error || 'Failed to load traders');
       }
@@ -49,21 +61,9 @@ export default function TradersPage() {
 
   useEffect(() => {
     loadTraders();
-  }, [selectedRating]);
+  }, [selectedRating, page, searchAddress]);
 
-  const filteredTraders = traders.filter((trader) =>
-    trader.address.toLowerCase().includes(searchAddress.toLowerCase())
-  );
-
-  // 分页计算
-  const pages = Math.ceil(filteredTraders.length / rowsPerPage);
-  const paginatedTraders = useMemo(() => {
-    const start = (page - 1) * rowsPerPage;
-    const end = start + rowsPerPage;
-    return filteredTraders.slice(start, end);
-  }, [filteredTraders, page]);
-
-  // 当筛选条件改变时重置页码
+  // 筛选条件改变时重置页码
   useEffect(() => {
     setPage(1);
   }, [searchAddress, selectedRating]);
@@ -125,6 +125,8 @@ export default function TradersPage() {
                 onValueChange={setSearchAddress}
                 size="sm"
                 className="max-w-md"
+                isClearable
+                onClear={() => setSearchAddress('')}
               />
             </CardHeader>
             <CardBody>
@@ -158,7 +160,7 @@ export default function TradersPage() {
                       <TableColumn>Equity</TableColumn>
                     </TableHeader>
                     <TableBody>
-                      {paginatedTraders.map((trader) => (
+                      {traders.map((trader) => (
                         <TableRow
                           key={trader.address}
                           className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -200,15 +202,14 @@ export default function TradersPage() {
                   </Table>
 
                   {/* 分页控件 */}
-                  {pages > 1 && (
+                  {totalPages > 1 && (
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-500">
-                        显示 {Math.min((page - 1) * rowsPerPage + 1, filteredTraders.length)} -{' '}
-                        {Math.min(page * rowsPerPage, filteredTraders.length)} 条，共{' '}
-                        {filteredTraders.length} 条记录
+                        显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
+                        {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
                       </span>
                       <Pagination
-                        total={pages}
+                        total={totalPages}
                         page={page}
                         onChange={setPage}
                         showControls
