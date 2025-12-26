@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Tabs, Tab } from '@heroui/tabs';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
+import { Pagination } from '@heroui/pagination';
 import {
   Table,
   TableHeader,
@@ -36,6 +37,13 @@ export default function TraderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [timeRange, setTimeRange] = useState<number>(30); // 默认30天
+  const [chartLoading, setChartLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 20;
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [fillsLoading, setFillsLoading] = useState(false);
 
   useEffect(() => {
     if (!address) return;
@@ -48,8 +56,13 @@ export default function TraderDetailPage() {
         // 并行加载数据
         const [detailRes, fillsRes, historyRes] = await Promise.all([
           traderApi.getTraderDetail(address),
-          traderApi.getTraderFills(address, { limit: 200 }),
-          traderApi.getTraderHistory(address, { limit: 30 }),
+          traderApi.getTraderFills(address, {
+            page: 1,
+            limit: rowsPerPage,
+            coin: selectedCoin !== 'all' ? selectedCoin : undefined,
+            pnl_filter: pnlFilter,
+          }),
+          traderApi.getTraderHistory(address, { days: timeRange }),
         ]);
 
         if (detailRes.success && detailRes.data) {
@@ -58,6 +71,10 @@ export default function TraderDetailPage() {
 
         if (fillsRes.success && fillsRes.data) {
           setFills(fillsRes.data);
+          if (fillsRes.pagination) {
+            setTotalPages(fillsRes.pagination.total_pages);
+            setTotalCount(fillsRes.pagination.total_count);
+          }
         }
 
         if (historyRes.success && historyRes.data) {
@@ -72,6 +89,64 @@ export default function TraderDetailPage() {
 
     loadData();
   }, [address]);
+
+  // 时间范围改变时重新加载图表数据
+  useEffect(() => {
+    if (!address || loading) return;
+
+    const loadChartData = async () => {
+      try {
+        setChartLoading(true);
+        const historyRes = await traderApi.getTraderHistory(address, { days: timeRange });
+
+        if (historyRes.success && historyRes.data) {
+          setHistory(historyRes.data);
+        }
+      } catch (err: any) {
+        console.error('Failed to load chart data:', err);
+      } finally {
+        setChartLoading(false);
+      }
+    };
+
+    loadChartData();
+  }, [timeRange, address, loading]);
+
+  // 筛选条件或分页改变时加载交易记录
+  useEffect(() => {
+    if (!address || loading) return;
+
+    const loadFills = async () => {
+      try {
+        setFillsLoading(true);
+        const fillsRes = await traderApi.getTraderFills(address, {
+          page,
+          limit: rowsPerPage,
+          coin: selectedCoin !== 'all' ? selectedCoin : undefined,
+          pnl_filter: pnlFilter,
+        });
+
+        if (fillsRes.success && fillsRes.data) {
+          setFills(fillsRes.data);
+          if (fillsRes.pagination) {
+            setTotalPages(fillsRes.pagination.total_pages);
+            setTotalCount(fillsRes.pagination.total_count);
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to load fills:', err);
+      } finally {
+        setFillsLoading(false);
+      }
+    };
+
+    loadFills();
+  }, [address, page, selectedCoin, pnlFilter, loading]);
+
+  // 筛选条件改变时重置页码
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCoin, pnlFilter]);
 
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -115,33 +190,20 @@ export default function TraderDetailPage() {
     return (fill.closed_pnl / tradeValue) * 100;
   };
 
-  // 获取所有币种
-  const coins = ['all', ...Array.from(new Set(fills.map((f) => f.coin)))];
+  // 获取所有币种（需要从后端获取，这里先用当前页的数据）
+  const coins = useMemo(() => {
+    return ['all', ...Array.from(new Set(fills.map((f) => f.coin)))];
+  }, [fills]);
 
-  // 过滤交易记录
-  const filteredFills = fills.filter((fill) => {
-    const coinMatch = selectedCoin === 'all' || fill.coin === selectedCoin;
-    const pnlMatch =
-      pnlFilter === 'all' ||
-      (pnlFilter === 'profit' && fill.closed_pnl > 0) ||
-      (pnlFilter === 'loss' && fill.closed_pnl < 0);
-    return coinMatch && pnlMatch;
-  });
-
-  // 统计信息
-  const fillsStats = {
-    total: filteredFills.length,
-    profitable: filteredFills.filter((f) => f.closed_pnl > 0).length,
-    losing: filteredFills.filter((f) => f.closed_pnl < 0).length,
-    totalPnl: filteredFills.reduce((sum, f) => sum + f.closed_pnl, 0),
-    totalFees: filteredFills.reduce((sum, f) => sum + f.fee, 0),
-    winRate:
-      filteredFills.length > 0
-        ? (filteredFills.filter((f) => f.closed_pnl > 0).length /
-            filteredFills.length) *
-          100
-        : 0,
-  };
+  // 统计信息（基于当前筛选条件的全部数据）
+  const fillsStats = useMemo(() => ({
+    total: totalCount,
+    profitable: fills.filter((f) => f.closed_pnl > 0).length, // 当前页
+    losing: fills.filter((f) => f.closed_pnl < 0).length, // 当前页
+    totalPnl: fills.reduce((sum, f) => sum + f.closed_pnl, 0), // 当前页
+    totalFees: fills.reduce((sum, f) => sum + f.fee, 0), // 当前页
+    winRate: totalCount > 0 ? (fills.filter((f) => f.closed_pnl > 0).length / fills.length) * 100 : 0,
+  }), [fills, totalCount]);
 
   if (loading) {
     return (
@@ -268,79 +330,148 @@ export default function TraderDetailPage() {
           {/* Tabs: 收益率、收益额、资产 */}
           <Card>
             <CardBody>
+              {/* 时间范围选择器 */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                <span className="text-sm text-gray-500 self-center">时间范围:</span>
+                {[
+                  { label: '7天', value: 7 },
+                  { label: '30天', value: 30 },
+                  { label: '90天', value: 90 },
+                  { label: '180天', value: 180 },
+                  { label: '1年', value: 365 },
+                  { label: '全部', value: 0 },
+                ].map((range) => (
+                  <Button
+                    key={range.value}
+                    size="sm"
+                    variant={timeRange === range.value ? 'solid' : 'bordered'}
+                    color={timeRange === range.value ? 'primary' : 'default'}
+                    onPress={() => setTimeRange(range.value)}
+                    isDisabled={chartLoading}
+                  >
+                    {range.label}
+                  </Button>
+                ))}
+              </div>
+
               <Tabs aria-label="Performance charts">
                 <Tab key="roi" title="收益率 (ROI)">
                   <div className="py-4">
-                    <ResponsiveContainer width="100%" height={400}>
-                      <LineChart data={formatChartData(history?.roi || [])}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis
-                          tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
-                        />
-                        <Tooltip
-                          formatter={(value: number) => [`${formatPercent(value)}`, 'ROI']}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="value"
-                          stroke="#8b5cf6"
-                          strokeWidth={2}
-                          name="ROI"
-                          dot={{ r: 4 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {chartLoading ? (
+                      <div className="flex justify-center items-center h-[400px]">
+                        <Spinner size="lg" />
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={formatChartData(history?.roi || [])}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={80}
+                          />
+                          <YAxis
+                            tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+                          />
+                          <Tooltip
+                            formatter={(value: number) => [`${formatPercent(value)}`, 'ROI']}
+                            labelStyle={{ color: '#000' }}
+                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
+                          />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#8b5cf6"
+                            strokeWidth={2}
+                            name="ROI"
+                            dot={{ r: 3 }}
+                            activeDot={{ r: 5 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </Tab>
                 <Tab key="pnl" title="收益额 (PnL)">
                   <div className="py-4">
-                    <ResponsiveContainer width="100%" height={400}>
-                      <LineChart data={formatChartData(history?.pnl || [])}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
-                        <Tooltip
-                          formatter={(value: number) => [`$${formatNumber(value)}`, 'PnL']}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="value"
-                          stroke="#10b981"
-                          strokeWidth={2}
-                          name="Total PnL"
-                          dot={{ r: 4 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {chartLoading ? (
+                      <div className="flex justify-center items-center h-[400px]">
+                        <Spinner size="lg" />
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={formatChartData(history?.pnl || [])}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={80}
+                          />
+                          <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
+                          <Tooltip
+                            formatter={(value: number) => [`$${formatNumber(value)}`, 'PnL']}
+                            labelStyle={{ color: '#000' }}
+                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
+                          />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#10b981"
+                            strokeWidth={2}
+                            name="Total PnL"
+                            dot={{ r: 3 }}
+                            activeDot={{ r: 5 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </Tab>
                 <Tab key="equity" title="资产 (Equity)">
                   <div className="py-4">
-                    <ResponsiveContainer width="100%" height={400}>
-                      <LineChart data={formatChartData(history?.equity || [])}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
-                        <Tooltip
-                          formatter={(value: number) => [
-                            `$${formatNumber(value)}`,
-                            'Equity',
-                          ]}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="value"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          name="Current Equity"
-                          dot={{ r: 4 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    {chartLoading ? (
+                      <div className="flex justify-center items-center h-[400px]">
+                        <Spinner size="lg" />
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={formatChartData(history?.equity || [])}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={80}
+                          />
+                          <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
+                          <Tooltip
+                            formatter={(value: number) => [
+                              `$${formatNumber(value)}`,
+                              'Equity',
+                            ]}
+                            labelStyle={{ color: '#000' }}
+                            contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc' }}
+                          />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            name="Current Equity"
+                            dot={{ r: 3 }}
+                            activeDot={{ r: 5 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </Tab>
               </Tabs>
@@ -435,77 +566,105 @@ export default function TraderDetailPage() {
               </div>
             </CardHeader>
             <CardBody>
-              <Table aria-label="Trade history table">
-                <TableHeader>
-                  <TableColumn>Time</TableColumn>
-                  <TableColumn>Coin</TableColumn>
-                  <TableColumn>Side</TableColumn>
-                  <TableColumn>Price</TableColumn>
-                  <TableColumn>Size</TableColumn>
-                  <TableColumn>Value</TableColumn>
-                  <TableColumn>PnL</TableColumn>
-                  <TableColumn>ROI</TableColumn>
-                  <TableColumn>Fee</TableColumn>
-                </TableHeader>
-                <TableBody>
-                  {filteredFills.map((fill) => (
-                    <TableRow key={fill.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-xs">
-                            {new Date(fill.trade_time).toLocaleDateString()}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {new Date(fill.trade_time).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-bold">{fill.coin}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={
-                            fill.side === 'B'
-                              ? 'text-green-500 font-bold'
-                              : 'text-red-500 font-bold'
-                          }
-                        >
-                          {fill.side === 'B' ? 'BUY' : 'SELL'}
-                        </span>
-                      </TableCell>
-                      <TableCell>${formatNumber(fill.px, 4)}</TableCell>
-                      <TableCell>{formatNumber(fill.sz, 4)}</TableCell>
-                      <TableCell>${formatNumber(fill.px * fill.sz, 2)}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
+              <div className="flex flex-col gap-4">
+                {fillsLoading ? (
+                  <div className="flex justify-center items-center h-64">
+                    <Spinner size="lg" />
+                  </div>
+                ) : (
+                  <>
+                    <Table aria-label="Trade history table">
+                      <TableHeader>
+                        <TableColumn>Time</TableColumn>
+                        <TableColumn>Coin</TableColumn>
+                        <TableColumn>Side</TableColumn>
+                        <TableColumn>Price</TableColumn>
+                        <TableColumn>Size</TableColumn>
+                        <TableColumn>Value</TableColumn>
+                        <TableColumn>PnL</TableColumn>
+                        <TableColumn>ROI</TableColumn>
+                        <TableColumn>Fee</TableColumn>
+                      </TableHeader>
+                      <TableBody>
+                        {fills.map((fill) => (
+                      <TableRow key={fill.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-xs">
+                              {new Date(fill.trade_time).toLocaleDateString()}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(fill.trade_time).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-bold">{fill.coin}</span>
+                        </TableCell>
+                        <TableCell>
                           <span
                             className={
-                              fill.closed_pnl >= 0 ? 'text-green-500' : 'text-red-500'
+                              fill.side === 'B'
+                                ? 'text-green-500 font-bold'
+                                : 'text-red-500 font-bold'
                             }
                           >
-                            ${formatNumber(fill.closed_pnl)}
+                            {fill.side === 'B' ? 'BUY' : 'SELL'}
                           </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={
-                            fill.closed_pnl >= 0
-                              ? 'text-green-500 font-bold'
-                              : 'text-red-500 font-bold'
-                          }
-                        >
-                          {calculateROI(fill).toFixed(2)}%
+                        </TableCell>
+                        <TableCell>${formatNumber(fill.px, 4)}</TableCell>
+                        <TableCell>{formatNumber(fill.sz, 4)}</TableCell>
+                        <TableCell>${formatNumber(fill.px * fill.sz, 2)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span
+                              className={
+                                fill.closed_pnl >= 0 ? 'text-green-500' : 'text-red-500'
+                              }
+                            >
+                              ${formatNumber(fill.closed_pnl)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={
+                              fill.closed_pnl >= 0
+                                ? 'text-green-500 font-bold'
+                                : 'text-red-500 font-bold'
+                            }
+                          >
+                            {calculateROI(fill).toFixed(2)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-orange-500">
+                          ${formatNumber(fill.fee, 4)}
+                        </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {/* 分页控件 */}
+                    {totalPages > 1 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-500">
+                          显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
+                          {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
                         </span>
-                      </TableCell>
-                      <TableCell className="text-orange-500">
-                        ${formatNumber(fill.fee, 4)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                        <Pagination
+                          total={totalPages}
+                          page={page}
+                          onChange={setPage}
+                          showControls
+                          color="primary"
+                          size="sm"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </CardBody>
           </Card>
         </div>

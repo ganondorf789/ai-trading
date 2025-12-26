@@ -93,11 +93,21 @@ export interface TraderHistory {
   equity: ChartDataPoint[];
 }
 
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total_count: number;
+  total_pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
   count?: number;
+  pagination?: PaginationInfo;
 }
 
 // API 方法
@@ -110,12 +120,17 @@ export const traderApi = {
   getTraderDetail: (address: string) =>
     api.get<any, ApiResponse<{ trader: Trader; fills_summary: FillsSummary }>>(`/traders/${address}`),
 
-  // 获取交易记录
-  getTraderFills: (address: string, params?: { limit?: number; coin?: string }) =>
+  // 获取交易记录（支持分页）
+  getTraderFills: (address: string, params?: {
+    page?: number;
+    limit?: number;
+    coin?: string;
+    pnl_filter?: 'all' | 'profit' | 'loss';
+  }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 
   // 获取历史图表数据
-  getTraderHistory: (address: string, params?: { limit?: number }) =>
+  getTraderHistory: (address: string, params?: { days?: number }) =>
     api.get<any, ApiResponse<TraderHistory>>(`/traders/${address}/history`, { params }),
 
   // 按评级筛选
