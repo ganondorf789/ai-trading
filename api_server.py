@@ -24,18 +24,22 @@ db = TraderDatabase()
 @app.route('/api/traders', methods=['GET'])
 def get_traders():
     """
-    获取交易者列表（支持分页）
+    获取交易者列表（支持分页和排序）
     Query Parameters:
         - page: int, 页码，默认1
         - limit: int, 每页数量，默认20
         - min_rating: str, 最低评级 (S/A/B/C/D/F)
         - search: str, 地址搜索
+        - sort_by: str, 排序字段
+        - sort_order: str, 排序方向 (asc/desc)
     """
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         min_rating = request.args.get('min_rating')
         search = request.args.get('search', '').strip()
+        sort_by = request.args.get('sort_by', 'overall_score')
+        sort_order = request.args.get('sort_order', 'desc')
 
         # 获取所有交易者
         all_traders = db.get_top_traders(limit=100000, min_rating=min_rating)
@@ -43,6 +47,27 @@ def get_traders():
         # 应用搜索过滤
         if search:
             all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
+
+        # 应用排序
+        valid_sort_fields = {
+            'overall_score', 'rating', 'total_trades', 'win_rate',
+            'total_pnl', 'roi', 'profit_factor', 'max_drawdown',
+            'sharpe_ratio', 'current_equity', 'active_days', 'last_trade_time'
+        }
+        if sort_by in valid_sort_fields:
+            reverse = sort_order.lower() != 'asc'
+            # 处理 rating 特殊排序（S > A > B > C > D > F）
+            if sort_by == 'rating':
+                rating_order = {'S': 1, 'A': 2, 'B': 3, 'C': 4, 'D': 5, 'F': 6}
+                all_traders.sort(
+                    key=lambda x: rating_order.get(x.get('rating', 'F'), 6),
+                    reverse=reverse
+                )
+            else:
+                all_traders.sort(
+                    key=lambda x: x.get(sort_by) or 0,
+                    reverse=reverse
+                )
 
         total_count = len(all_traders)
         total_pages = (total_count + limit - 1) // limit
