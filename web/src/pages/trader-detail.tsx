@@ -1,11 +1,25 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import type { Selection, SortDescriptor } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Tabs, Tab } from '@heroui/tabs';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
-import { Select, SelectItem } from '@heroui/select';
+import { Input } from '@heroui/input';
+import { Chip } from '@heroui/chip';
+import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from '@heroui/dropdown';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@heroui/popover';
+import { RadioGroup, Radio } from '@heroui/radio';
 import {
   Table,
   TableHeader,
@@ -14,6 +28,9 @@ import {
   TableRow,
   TableCell,
 } from '@heroui/table';
+import { SearchIcon } from '@heroui/shared-icons';
+import { Divider } from '@heroui/divider';
+import { Icon } from '@iconify/react';
 import {
   LineChart,
   Line,
@@ -26,6 +43,29 @@ import {
 } from 'recharts';
 import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader, TraderFill, TraderHistory } from '@/services/api';
+
+// 表格列配置
+type ColumnKey = 'trade_time' | 'coin' | 'side' | 'px' | 'sz' | 'value' | 'closed_pnl' | 'roi' | 'fee';
+
+interface Column {
+  uid: ColumnKey;
+  name: string;
+  sortable?: boolean;
+}
+
+const columns: Column[] = [
+  { uid: 'trade_time', name: '时间', sortable: true },
+  { uid: 'coin', name: '币种', sortable: true },
+  { uid: 'side', name: '方向', sortable: true },
+  { uid: 'px', name: '价格', sortable: true },
+  { uid: 'sz', name: '数量', sortable: true },
+  { uid: 'value', name: '价值', sortable: true },
+  { uid: 'closed_pnl', name: '盈亏', sortable: true },
+  { uid: 'roi', name: 'ROI', sortable: true },
+  { uid: 'fee', name: '手续费', sortable: true },
+];
+
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['trade_time', 'coin', 'side', 'px', 'sz', 'closed_pnl', 'roi', 'fee'];
 
 export default function TraderDetailPage() {
   const { address } = useParams<{ address: string }>();
@@ -46,6 +86,14 @@ export default function TraderDetailPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [fillsLoading, setFillsLoading] = useState(false);
+
+  // 高级表格状态
+  const [searchValue, setSearchValue] = useState('');
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'trade_time',
+    direction: 'descending',
+  });
 
   useEffect(() => {
     if (!address) return;
@@ -216,6 +264,332 @@ export default function TraderDetailPage() {
     totalFees: fills.reduce((sum, f) => sum + f.fee, 0), // 当前页
     winRate: totalCount > 0 ? (fills.filter((f) => f.closed_pnl > 0).length / fills.length) * 100 : 0,
   }), [fills, totalCount]);
+
+  // 可见列
+  const headerColumns = useMemo(() => {
+    if (visibleColumns === 'all') return columns;
+    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
+
+  // 本地过滤和排序
+  const filteredAndSortedItems = useMemo(() => {
+    let result = [...fills];
+
+    // 搜索过滤（按币种）
+    if (searchValue) {
+      result = result.filter((fill) =>
+        fill.coin.toLowerCase().includes(searchValue.toLowerCase())
+      );
+    }
+
+    // 排序
+    if (sortDescriptor.column) {
+      result.sort((a, b) => {
+        let first: number | string;
+        let second: number | string;
+
+        switch (sortDescriptor.column) {
+          case 'trade_time':
+            first = new Date(a.trade_time).getTime();
+            second = new Date(b.trade_time).getTime();
+            break;
+          case 'value':
+            first = a.px * a.sz;
+            second = b.px * b.sz;
+            break;
+          case 'roi':
+            first = calculateROI(a);
+            second = calculateROI(b);
+            break;
+          default:
+            first = a[sortDescriptor.column as keyof TraderFill] as number;
+            second = b[sortDescriptor.column as keyof TraderFill] as number;
+        }
+
+        const cmp = first < second ? -1 : first > second ? 1 : 0;
+        return sortDescriptor.direction === 'descending' ? -cmp : cmp;
+      });
+    }
+
+    return result;
+  }, [fills, searchValue, sortDescriptor]);
+
+  // 单元格渲染
+  const renderCell = useCallback((fill: TraderFill, columnKey: ColumnKey) => {
+    switch (columnKey) {
+      case 'trade_time':
+        return (
+          <div className="flex flex-col">
+            <span className="text-xs">{new Date(fill.trade_time).toLocaleDateString()}</span>
+            <span className="text-xs text-gray-500">{new Date(fill.trade_time).toLocaleTimeString()}</span>
+          </div>
+        );
+      case 'coin':
+        return <span className="font-bold">{fill.coin}</span>;
+      case 'side':
+        return (
+          <Chip
+            size="sm"
+            color={fill.side === 'B' ? 'success' : 'danger'}
+            variant="flat"
+          >
+            {fill.side === 'B' ? 'BUY' : 'SELL'}
+          </Chip>
+        );
+      case 'px':
+        return <span>${formatNumber(fill.px, 4)}</span>;
+      case 'sz':
+        return <span>{formatNumber(fill.sz, 4)}</span>;
+      case 'value':
+        return <span>${formatNumber(fill.px * fill.sz, 2)}</span>;
+      case 'closed_pnl':
+        return (
+          <span className={fill.closed_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+            ${formatNumber(fill.closed_pnl)}
+          </span>
+        );
+      case 'roi':
+        const roi = calculateROI(fill);
+        return (
+          <span className={`font-bold ${roi >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {roi.toFixed(2)}%
+          </span>
+        );
+      case 'fee':
+        return <span className="text-orange-500">${formatNumber(fill.fee, 4)}</span>;
+      default:
+        return null;
+    }
+  }, []);
+
+  // 搜索变化处理
+  const onSearchChange = useCallback((value?: string) => {
+    setSearchValue(value || '');
+    setPage(1);
+  }, []);
+
+  // 重置筛选
+  const handleReset = useCallback(() => {
+    setSelectedCoin('all');
+    setPnlFilter('all');
+    setSearchValue('');
+    setPage(1);
+  }, []);
+
+  // 获取当前筛选状态文本
+  const getActiveFiltersCount = useCallback(() => {
+    let count = 0;
+    if (selectedCoin !== 'all') count++;
+    if (pnlFilter !== 'all') count++;
+    if (searchValue) count++;
+    return count;
+  }, [selectedCoin, pnlFilter, searchValue]);
+
+  // 表格顶部内容
+  const topContent = useMemo(() => {
+    const activeFilters = getActiveFiltersCount();
+
+    return (
+      <div className="flex flex-col gap-4">
+        {/* 统计信息 */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 p-4 bg-default-100 rounded-lg">
+          <div>
+            <p className="text-xs text-default-500">总交易</p>
+            <p className="text-lg font-bold text-default-800">{fillsStats.total}</p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">盈利笔数</p>
+            <p className="text-lg font-bold text-success">{fillsStats.profitable}</p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">亏损笔数</p>
+            <p className="text-lg font-bold text-danger">{fillsStats.losing}</p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">胜率</p>
+            <p className="text-lg font-bold text-default-800">{fillsStats.winRate.toFixed(2)}%</p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">总盈亏</p>
+            <p className={`text-lg font-bold ${fillsStats.totalPnl >= 0 ? 'text-success' : 'text-danger'}`}>
+              ${formatNumber(fillsStats.totalPnl)}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">总手续费</p>
+            <p className="text-lg font-bold text-warning">${formatNumber(fillsStats.totalFees)}</p>
+          </div>
+        </div>
+
+        {/* 筛选工具栏 */}
+        <div className="flex items-center gap-4 overflow-auto px-[6px] py-[4px]">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
+              <Input
+                className="min-w-[200px]"
+                endContent={<SearchIcon className="text-default-400" width={16} />}
+                placeholder="搜索币种..."
+                size="sm"
+                value={searchValue}
+                onValueChange={onSearchChange}
+                isClearable
+                onClear={() => setSearchValue('')}
+              />
+
+              {/* Filter 弹窗 */}
+              <div>
+                <Popover placement="bottom">
+                  <PopoverTrigger>
+                    <Button
+                      className="bg-default-100 text-default-800"
+                      size="sm"
+                      startContent={
+                        <Icon className="text-default-400" icon="solar:tuning-2-linear" width={16} />
+                      }
+                    >
+                      筛选
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80">
+                    <div className="flex w-full flex-col gap-6 px-2 py-4">
+                      <RadioGroup
+                        label="币种"
+                        value={selectedCoin}
+                        onValueChange={setSelectedCoin}
+                      >
+                        {coins.map((coin) => (
+                          <Radio key={coin} value={coin}>
+                            {coin === 'all' ? '全部' : coin}
+                          </Radio>
+                        ))}
+                      </RadioGroup>
+
+                      <RadioGroup
+                        label="盈亏"
+                        value={pnlFilter}
+                        onValueChange={(value) => setPnlFilter(value as 'all' | 'profit' | 'loss')}
+                      >
+                        <Radio value="all">全部</Radio>
+                        <Radio value="profit">盈利</Radio>
+                        <Radio value="loss">亏损</Radio>
+                      </RadioGroup>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Sort 下拉 */}
+              <div>
+                <Dropdown>
+                  <DropdownTrigger>
+                    <Button
+                      className="bg-default-100 text-default-800"
+                      size="sm"
+                      startContent={
+                        <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                      }
+                    >
+                      排序
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    aria-label="Sort"
+                    items={columns.filter((c) => c.sortable)}
+                  >
+                    {(item) => (
+                      <DropdownItem
+                        key={item.uid}
+                        onPress={() => {
+                          setSortDescriptor({
+                            column: item.uid,
+                            direction:
+                              sortDescriptor.direction === 'ascending' ? 'descending' : 'ascending',
+                          });
+                        }}
+                      >
+                        {item.name}
+                      </DropdownItem>
+                    )}
+                  </DropdownMenu>
+                </Dropdown>
+              </div>
+
+              {/* Columns 下拉 */}
+              <div>
+                <Dropdown closeOnSelect={false}>
+                  <DropdownTrigger>
+                    <Button
+                      className="bg-default-100 text-default-800"
+                      size="sm"
+                      startContent={
+                        <Icon
+                          className="text-default-400"
+                          icon="solar:sort-horizontal-linear"
+                          width={16}
+                        />
+                      }
+                    >
+                      列
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    disallowEmptySelection
+                    aria-label="Columns"
+                    items={columns}
+                    selectedKeys={visibleColumns}
+                    selectionMode="multiple"
+                    onSelectionChange={setVisibleColumns}
+                  >
+                    {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+                  </DropdownMenu>
+                </Dropdown>
+              </div>
+            </div>
+
+            <Divider className="h-5" orientation="vertical" />
+
+            <div className="text-default-500 text-sm whitespace-nowrap">
+              {activeFilters > 0 ? `${activeFilters} 个筛选条件` : '无筛选条件'}
+            </div>
+
+            {activeFilters > 0 && (
+              <Button
+                className="bg-default-100 text-default-800"
+                size="sm"
+                variant="flat"
+                onPress={handleReset}
+                startContent={
+                  <Icon className="text-default-400" icon="solar:restart-linear" width={16} />
+                }
+              >
+                重置
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }, [fillsStats, searchValue, selectedCoin, pnlFilter, coins, sortDescriptor, visibleColumns, onSearchChange, handleReset, getActiveFiltersCount]);
+
+  // 表格底部内容
+  const bottomContent = useMemo(() => {
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
+        <span className="text-sm text-gray-500">
+          显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
+        </span>
+        <Pagination
+          isCompact
+          showControls
+          showShadow
+          color="primary"
+          page={page}
+          total={totalPages}
+          onChange={setPage}
+        />
+      </div>
+    );
+  }, [page, totalPages, totalCount, rowsPerPage]);
 
   if (loading) {
     return (
@@ -493,203 +867,58 @@ export default function TraderDetailPage() {
           {/* 历史交易表格 */}
           <Card className="mt-6">
             <CardHeader>
-              <div className="flex flex-col gap-4 w-full">
-                <h2 className="text-xl font-bold">历史交易记录</h2>
-
-                {/* 统计信息 */}
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div>
-                    <p className="text-xs text-gray-500">总交易</p>
-                    <p className="text-lg font-bold">{fillsStats.total}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">盈利笔数</p>
-                    <p className="text-lg font-bold text-green-500">
-                      {fillsStats.profitable}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">亏损笔数</p>
-                    <p className="text-lg font-bold text-red-500">{fillsStats.losing}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">胜率</p>
-                    <p className="text-lg font-bold">{fillsStats.winRate.toFixed(2)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">总盈亏</p>
-                    <p
-                      className={`text-lg font-bold ${fillsStats.totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}
-                    >
-                      ${formatNumber(fillsStats.totalPnl)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">总手续费</p>
-                    <p className="text-lg font-bold text-orange-500">
-                      ${formatNumber(fillsStats.totalFees)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 筛选器 */}
-                <div className="flex gap-3 flex-wrap items-end">
-                  <Select
-                    label="币种"
-                    size="sm"
-                    selectedKeys={[selectedCoin]}
-                    onSelectionChange={(keys) => {
-                      const selected = Array.from(keys)[0] as string;
-                      if (selected) setSelectedCoin(selected);
-                    }}
-                    className="w-40"
-                  >
-                    {coins.map((coin) => (
-                      <SelectItem key={coin}>
-                        {coin === 'all' ? '全部' : coin}
-                      </SelectItem>
-                    ))}
-                  </Select>
-                  <Select
-                    label="盈亏"
-                    size="sm"
-                    selectedKeys={[pnlFilter]}
-                    onSelectionChange={(keys) => {
-                      const selected = Array.from(keys)[0] as 'all' | 'profit' | 'loss';
-                      if (selected) setPnlFilter(selected);
-                    }}
-                    className="w-32"
-                  >
-                    <SelectItem key="all">全部</SelectItem>
-                    <SelectItem key="profit">盈利</SelectItem>
-                    <SelectItem key="loss">亏损</SelectItem>
-                  </Select>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      color="primary"
-                      onPress={() => {
-                        setPage(1);
-                      }}
-                      isLoading={fillsLoading}
-                    >
-                      查询
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="bordered"
-                      onPress={() => {
-                        setSelectedCoin('all');
-                        setPnlFilter('all');
-                        setPage(1);
-                      }}
-                    >
-                      重置
-                    </Button>
-                  </div>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">历史交易记录</h2>
+                  <Chip size="sm" variant="flat" className="text-default-500">
+                    {totalCount}
+                  </Chip>
                 </div>
               </div>
             </CardHeader>
             <CardBody>
-              <div className="flex flex-col gap-4">
-                {fillsLoading ? (
-                  <div className="flex justify-center items-center h-64">
-                    <Spinner size="lg" />
-                  </div>
-                ) : (
-                  <>
-                    <Table aria-label="Trade history table">
-                      <TableHeader>
-                        <TableColumn>Time</TableColumn>
-                        <TableColumn>Coin</TableColumn>
-                        <TableColumn>Side</TableColumn>
-                        <TableColumn>Price</TableColumn>
-                        <TableColumn>Size</TableColumn>
-                        <TableColumn>Value</TableColumn>
-                        <TableColumn>PnL</TableColumn>
-                        <TableColumn>ROI</TableColumn>
-                        <TableColumn>Fee</TableColumn>
-                      </TableHeader>
-                      <TableBody>
-                        {fills.map((fill) => (
-                      <TableRow key={fill.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-xs">
-                              {new Date(fill.trade_time).toLocaleDateString()}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {new Date(fill.trade_time).toLocaleTimeString()}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-bold">{fill.coin}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={
-                              fill.side === 'B'
-                                ? 'text-green-500 font-bold'
-                                : 'text-red-500 font-bold'
-                            }
-                          >
-                            {fill.side === 'B' ? 'BUY' : 'SELL'}
-                          </span>
-                        </TableCell>
-                        <TableCell>${formatNumber(fill.px, 4)}</TableCell>
-                        <TableCell>{formatNumber(fill.sz, 4)}</TableCell>
-                        <TableCell>${formatNumber(fill.px * fill.sz, 2)}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span
-                              className={
-                                fill.closed_pnl >= 0 ? 'text-green-500' : 'text-red-500'
-                              }
-                            >
-                              ${formatNumber(fill.closed_pnl)}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={
-                              fill.closed_pnl >= 0
-                                ? 'text-green-500 font-bold'
-                                : 'text-red-500 font-bold'
-                            }
-                          >
-                            {calculateROI(fill).toFixed(2)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-orange-500">
-                          ${formatNumber(fill.fee, 4)}
-                        </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-
-                    {/* 分页控件 */}
-                    {totalPages > 1 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-500">
-                          显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
-                          {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
-                        </span>
-                        <Pagination
-                          total={totalPages}
-                          page={page}
-                          onChange={setPage}
-                          showControls
-                          color="primary"
-                          size="sm"
-                        />
-                      </div>
+              {fillsLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <Spinner size="lg" />
+                </div>
+              ) : (
+                <Table
+                  isHeaderSticky
+                  aria-label="Trade history table"
+                  topContent={topContent}
+                  topContentPlacement="outside"
+                  bottomContent={bottomContent}
+                  bottomContentPlacement="outside"
+                  sortDescriptor={sortDescriptor}
+                  onSortChange={setSortDescriptor}
+                  classNames={{
+                    wrapper: 'max-h-[600px]',
+                  }}
+                >
+                  <TableHeader columns={headerColumns}>
+                    {(column) => (
+                      <TableColumn
+                        key={column.uid}
+                        allowsSorting={column.sortable}
+                      >
+                        {column.name}
+                      </TableColumn>
                     )}
-                  </>
-                )}
-              </div>
+                  </TableHeader>
+                  <TableBody
+                    items={filteredAndSortedItems}
+                    emptyContent="暂无交易记录"
+                  >
+                    {(item) => (
+                      <TableRow key={item.id}>
+                        {(columnKey) => (
+                          <TableCell>{renderCell(item, columnKey as ColumnKey)}</TableCell>
+                        )}
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              )}
             </CardBody>
           </Card>
         </div>

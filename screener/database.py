@@ -418,6 +418,27 @@ class TraderDatabase:
 
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_trader_coins(self, address: str) -> List[str]:
+        """
+        获取交易者交易过的所有币种
+
+        Args:
+            address: 交易者地址
+
+        Returns:
+            币种列表（按交易次数降序排列）
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT coin, COUNT(*) as count
+                FROM trader_fills
+                WHERE address = ?
+                GROUP BY coin
+                ORDER BY count DESC
+            """, (address,))
+            return [row['coin'] for row in cursor.fetchall()]
+
     def get_fills_summary(self, address: str) -> Dict[str, Any]:
         """
         获取交易者交易记录汇总
