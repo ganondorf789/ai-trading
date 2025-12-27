@@ -102,12 +102,22 @@ export interface PaginationInfo {
   has_prev: boolean;
 }
 
+export interface FillsStats {
+  total: number;
+  profitable: number;
+  losing: number;
+  total_pnl: number;
+  total_fees: number;
+  win_rate: number;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
   count?: number;
   pagination?: PaginationInfo;
+  stats?: FillsStats;
 }
 
 // API 方法

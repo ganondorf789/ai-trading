@@ -42,7 +42,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import DefaultLayout from '@/layouts/default';
-import { traderApi, Trader, TraderFill, TraderHistory } from '@/services/api';
+import { traderApi, Trader, TraderFill, TraderHistory, FillsStats } from '@/services/api';
 
 // 表格列配置
 type ColumnKey = 'trade_time' | 'coin' | 'side' | 'px' | 'sz' | 'value' | 'closed_pnl' | 'roi' | 'fee';
@@ -86,6 +86,7 @@ export default function TraderDetailPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [fillsLoading, setFillsLoading] = useState(false);
+  const [fillsStats, setFillsStats] = useState<FillsStats | null>(null);
 
   // 高级表格状态
   const [searchValue, setSearchValue] = useState('');
@@ -127,6 +128,9 @@ export default function TraderDetailPage() {
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
+          }
+          if (fillsRes.stats) {
+            setFillsStats(fillsRes.stats);
           }
         }
 
@@ -194,6 +198,9 @@ export default function TraderDetailPage() {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
           }
+          if (fillsRes.stats) {
+            setFillsStats(fillsRes.stats);
+          }
         }
       } catch (err: any) {
         console.error('Failed to load fills:', err);
@@ -256,16 +263,6 @@ export default function TraderDetailPage() {
   const coins = useMemo(() => {
     return ['all', ...allCoins];
   }, [allCoins]);
-
-  // 统计信息（基于当前筛选条件的全部数据）
-  const fillsStats = useMemo(() => ({
-    total: totalCount,
-    profitable: fills.filter((f) => f.closed_pnl > 0).length, // 当前页
-    losing: fills.filter((f) => f.closed_pnl < 0).length, // 当前页
-    totalPnl: fills.reduce((sum, f) => sum + f.closed_pnl, 0), // 当前页
-    totalFees: fills.reduce((sum, f) => sum + f.fee, 0), // 当前页
-    winRate: totalCount > 0 ? (fills.filter((f) => f.closed_pnl > 0).length / fills.length) * 100 : 0,
-  }), [fills, totalCount]);
 
   // 可见列
   const headerColumns = useMemo(() => {
@@ -364,29 +361,29 @@ export default function TraderDetailPage() {
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 p-4 bg-default-100 rounded-lg">
           <div>
             <p className="text-xs text-default-500">总交易</p>
-            <p className="text-lg font-bold text-default-800">{fillsStats.total}</p>
+            <p className="text-lg font-bold text-default-800">{fillsStats?.total ?? 0}</p>
           </div>
           <div>
             <p className="text-xs text-default-500">盈利笔数</p>
-            <p className="text-lg font-bold text-success">{fillsStats.profitable}</p>
+            <p className="text-lg font-bold text-success">{fillsStats?.profitable ?? 0}</p>
           </div>
           <div>
             <p className="text-xs text-default-500">亏损笔数</p>
-            <p className="text-lg font-bold text-danger">{fillsStats.losing}</p>
+            <p className="text-lg font-bold text-danger">{fillsStats?.losing ?? 0}</p>
           </div>
           <div>
             <p className="text-xs text-default-500">胜率</p>
-            <p className="text-lg font-bold text-default-800">{fillsStats.winRate.toFixed(2)}%</p>
+            <p className="text-lg font-bold text-default-800">{(fillsStats?.win_rate ?? 0).toFixed(2)}%</p>
           </div>
           <div>
             <p className="text-xs text-default-500">总盈亏</p>
-            <p className={`text-lg font-bold ${fillsStats.totalPnl >= 0 ? 'text-success' : 'text-danger'}`}>
-              ${formatNumber(fillsStats.totalPnl)}
+            <p className={`text-lg font-bold ${(fillsStats?.total_pnl ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+              ${formatNumber(fillsStats?.total_pnl ?? 0)}
             </p>
           </div>
           <div>
             <p className="text-xs text-default-500">总手续费</p>
-            <p className="text-lg font-bold text-warning">${formatNumber(fillsStats.totalFees)}</p>
+            <p className="text-lg font-bold text-warning">${formatNumber(fillsStats?.total_fees ?? 0)}</p>
           </div>
         </div>
 

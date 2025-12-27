@@ -191,6 +191,22 @@ def get_trader_fills(address: str):
         total_count = len(all_fills)
         total_pages = (total_count + limit - 1) // limit  # 向上取整
 
+        # 计算基于全部筛选数据的统计信息
+        profitable_count = sum(1 for f in all_fills if f.get('closed_pnl', 0) > 0)
+        losing_count = sum(1 for f in all_fills if f.get('closed_pnl', 0) < 0)
+        total_pnl = sum(f.get('closed_pnl', 0) for f in all_fills)
+        total_fees = sum(f.get('fee', 0) for f in all_fills)
+        win_rate = (profitable_count / total_count * 100) if total_count > 0 else 0
+
+        stats = {
+            'total': total_count,
+            'profitable': profitable_count,
+            'losing': losing_count,
+            'total_pnl': total_pnl,
+            'total_fees': total_fees,
+            'win_rate': win_rate
+        }
+
         # 分页
         start = (page - 1) * limit
         end = start + limit
@@ -199,6 +215,7 @@ def get_trader_fills(address: str):
         return jsonify({
             'success': True,
             'data': fills,
+            'stats': stats,
             'pagination': {
                 'page': page,
                 'limit': limit,
