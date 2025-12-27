@@ -134,6 +134,10 @@ export const traderApi = {
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 
+  // 获取交易者交易过的所有币种
+  getTraderCoins: (address: string) =>
+    api.get<any, ApiResponse<string[]>>(`/traders/${address}/coins`),
+
   // 获取历史图表数据
   getTraderHistory: (address: string, params?: { days?: number }) =>
     api.get<any, ApiResponse<TraderHistory>>(`/traders/${address}/history`, { params }),
