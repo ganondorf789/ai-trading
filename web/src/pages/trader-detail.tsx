@@ -165,7 +165,7 @@ export default function TraderDetailPage() {
     loadChartData();
   }, [timeRange, address, loading]);
 
-  // 筛选条件或分页改变时加载交易记录
+  // 筛选条件、分页或排序改变时加载交易记录
   useEffect(() => {
     if (!address || loading) return;
 
@@ -177,6 +177,8 @@ export default function TraderDetailPage() {
           limit: rowsPerPage,
           coin: selectedCoin !== 'all' ? selectedCoin : undefined,
           pnl_filter: pnlFilter,
+          sort_by: sortDescriptor.column as string,
+          sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
         });
 
         if (fillsRes.success && fillsRes.data) {
@@ -201,12 +203,12 @@ export default function TraderDetailPage() {
     };
 
     loadFills();
-  }, [address, page, selectedCoin, pnlFilter, loading]);
+  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading]);
 
-  // 筛选条件改变时重置页码
+  // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [selectedCoin, pnlFilter]);
+  }, [selectedCoin, pnlFilter, sortDescriptor]);
 
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -271,48 +273,15 @@ export default function TraderDetailPage() {
     return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
   }, [visibleColumns]);
 
-  // 本地过滤和排序
-  const filteredAndSortedItems = useMemo(() => {
-    let result = [...fills];
-
-    // 搜索过滤（按币种）
-    if (searchValue) {
-      result = result.filter((fill) =>
-        fill.coin.toLowerCase().includes(searchValue.toLowerCase())
-      );
+  // 本地搜索过滤（排序已由 API 完成）
+  const filteredItems = useMemo(() => {
+    if (!searchValue) {
+      return fills;
     }
-
-    // 排序
-    if (sortDescriptor.column) {
-      result.sort((a, b) => {
-        let first: number | string;
-        let second: number | string;
-
-        switch (sortDescriptor.column) {
-          case 'trade_time':
-            first = new Date(a.trade_time).getTime();
-            second = new Date(b.trade_time).getTime();
-            break;
-          case 'value':
-            first = a.px * a.sz;
-            second = b.px * b.sz;
-            break;
-          case 'roi':
-            first = calculateROI(a);
-            second = calculateROI(b);
-            break;
-          default:
-            first = a[sortDescriptor.column as keyof TraderFill] as number;
-            second = b[sortDescriptor.column as keyof TraderFill] as number;
-        }
-
-        const cmp = first < second ? -1 : first > second ? 1 : 0;
-        return sortDescriptor.direction === 'descending' ? -cmp : cmp;
-      });
-    }
-
-    return result;
-  }, [fills, searchValue, sortDescriptor]);
+    return fills.filter((fill) =>
+      fill.coin.toLowerCase().includes(searchValue.toLowerCase())
+    );
+  }, [fills, searchValue]);
 
   // 单元格渲染
   const renderCell = useCallback((fill: TraderFill, columnKey: ColumnKey) => {
@@ -544,12 +513,6 @@ export default function TraderDetailPage() {
                   </DropdownMenu>
                 </Dropdown>
               </div>
-            </div>
-
-            <Divider className="h-5" orientation="vertical" />
-
-            <div className="text-default-500 text-sm whitespace-nowrap">
-              {activeFilters > 0 ? `${activeFilters} 个筛选条件` : '无筛选条件'}
             </div>
 
             {activeFilters > 0 && (
@@ -906,7 +869,7 @@ export default function TraderDetailPage() {
                     )}
                   </TableHeader>
                   <TableBody
-                    items={filteredAndSortedItems}
+                    items={filteredItems}
                     emptyContent="暂无交易记录"
                   >
                     {(item) => (

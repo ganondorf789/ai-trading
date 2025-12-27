@@ -131,21 +131,31 @@ def get_trader_detail(address: str):
 @app.route('/api/traders/<address>/fills', methods=['GET'])
 def get_trader_fills(address: str):
     """
-    获取交易者的历史交易记录（支持分页）
+    获取交易者的历史交易记录（支持分页和排序）
     Query Parameters:
         - page: int, 页码，默认1
         - limit: int, 每页数量，默认20
         - coin: str, 筛选特定币种
         - pnl_filter: str, 盈亏筛选 (all/profit/loss)
+        - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
+        - sort_order: str, 排序方向 (asc/desc)
     """
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         coin = request.args.get('coin')
         pnl_filter = request.args.get('pnl_filter', 'all')
+        sort_by = request.args.get('sort_by', 'trade_time')
+        sort_order = request.args.get('sort_order', 'desc')
 
         # 获取所有符合条件的交易记录（用于计算总数）
-        all_fills = db.get_trader_fills(address, limit=100000, coin=coin)
+        all_fills = db.get_trader_fills(
+            address,
+            limit=100000,
+            coin=coin,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
 
         # 应用盈亏筛选
         if pnl_filter == 'profit':

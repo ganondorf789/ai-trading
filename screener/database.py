@@ -385,7 +385,9 @@ class TraderDatabase:
         self,
         address: str,
         limit: int = 100,
-        coin: str = None
+        coin: str = None,
+        sort_by: str = 'time',
+        sort_order: str = 'desc'
     ) -> List[Dict]:
         """
         获取交易者的交易记录
@@ -394,25 +396,43 @@ class TraderDatabase:
             address: 交易者地址
             limit: 返回数量
             coin: 筛选特定币种
+            sort_by: 排序字段 (time, coin, side, px, sz, closed_pnl, fee)
+            sort_order: 排序方向 (asc, desc)
 
         Returns:
             交易记录列表
         """
+        # 验证排序字段（防止 SQL 注入）
+        valid_sort_columns = {
+            'time': 'time',
+            'trade_time': 'time',
+            'coin': 'coin',
+            'side': 'side',
+            'px': 'px',
+            'sz': 'sz',
+            'closed_pnl': 'closed_pnl',
+            'fee': 'fee',
+            'value': 'px * sz',
+            'roi': 'CASE WHEN px * sz > 0 THEN closed_pnl / (px * sz) ELSE 0 END'
+        }
+        sort_column = valid_sort_columns.get(sort_by, 'time')
+        order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
             if coin:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT * FROM trader_fills
                     WHERE address = ? AND coin = ?
-                    ORDER BY time DESC
+                    ORDER BY {sort_column} {order_direction}
                     LIMIT ?
                 """, (address, coin, limit))
             else:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT * FROM trader_fills
                     WHERE address = ?
-                    ORDER BY time DESC
+                    ORDER BY {sort_column} {order_direction}
                     LIMIT ?
                 """, (address, limit))
 
