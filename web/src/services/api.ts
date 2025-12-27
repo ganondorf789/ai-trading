@@ -125,12 +125,14 @@ export const traderApi = {
   getTraderDetail: (address: string) =>
     api.get<any, ApiResponse<{ trader: Trader; fills_summary: FillsSummary }>>(`/traders/${address}`),
 
-  // 获取交易记录（支持分页）
+  // 获取交易记录（支持分页和排序）
   getTraderFills: (address: string, params?: {
     page?: number;
     limit?: number;
     coin?: string;
     pnl_filter?: 'all' | 'profit' | 'loss';
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 
