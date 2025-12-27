@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Selection, SortDescriptor } from '@heroui/react';
 import {
   Table,
   TableHeader,
@@ -13,8 +14,47 @@ import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Input } from '@heroui/input';
 import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
+import { Chip } from '@heroui/chip';
+import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from '@heroui/dropdown';
+import { Divider } from '@heroui/divider';
+import { SearchIcon } from '@heroui/shared-icons';
+import { Icon } from '@iconify/react';
 import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader } from '@/services/api';
+
+// 表格列配置
+type ColumnKey = 'rating' | 'address' | 'overall_score' | 'total_trades' | 'win_rate' | 'total_pnl' | 'roi' | 'profit_factor' | 'max_drawdown' | 'sharpe_ratio' | 'current_equity' | 'active_days';
+
+interface Column {
+  uid: ColumnKey;
+  name: string;
+  sortable?: boolean;
+}
+
+const columns: Column[] = [
+  { uid: 'rating', name: '评级', sortable: true },
+  { uid: 'address', name: '地址', sortable: false },
+  { uid: 'overall_score', name: '评分', sortable: true },
+  { uid: 'total_trades', name: '交易次数', sortable: true },
+  { uid: 'win_rate', name: '胜率', sortable: true },
+  { uid: 'total_pnl', name: '总盈亏', sortable: true },
+  { uid: 'roi', name: 'ROI', sortable: true },
+  { uid: 'profit_factor', name: '盈亏比', sortable: true },
+  { uid: 'max_drawdown', name: '最大回撤', sortable: true },
+  { uid: 'sharpe_ratio', name: '夏普', sortable: true },
+  { uid: 'current_equity', name: '当前权益', sortable: true },
+  { uid: 'active_days', name: '活跃天数', sortable: true },
+];
+
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
+  'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
+  'total_pnl', 'roi', 'profit_factor', 'max_drawdown', 'sharpe_ratio', 'current_equity'
+];
 
 export default function TradersPage() {
   const navigate = useNavigate();
@@ -28,7 +68,14 @@ export default function TradersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  const loadTraders = async () => {
+  // 高级表格状态
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'overall_score',
+    direction: 'descending',
+  });
+
+  const loadTraders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -37,11 +84,12 @@ export default function TradersPage() {
         page,
         limit: rowsPerPage,
         search: searchAddress || undefined,
+        min_rating: selectedRating || undefined,
+        sort_by: sortDescriptor.column as string,
+        sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
       };
 
-      const response = selectedRating
-        ? await traderApi.getTradersByRating(selectedRating, params)
-        : await traderApi.getTraders({ ...params, min_rating: undefined });
+      const response = await traderApi.getTraders(params);
 
       if (response.success && response.data) {
         setTraders(response.data);
@@ -57,16 +105,16 @@ export default function TradersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, searchAddress, selectedRating, sortDescriptor]);
 
   useEffect(() => {
     loadTraders();
-  }, [selectedRating, page, searchAddress]);
+  }, [loadTraders]);
 
-  // 筛选条件改变时重置页码
+  // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [searchAddress, selectedRating]);
+  }, [searchAddress, selectedRating, sortDescriptor]);
 
   const getRatingColor = (rating: string) => {
     const colors: Record<string, string> = {
@@ -95,6 +143,236 @@ export default function TradersPage() {
     navigate(`/traders/${address}`);
   };
 
+  // 可见列
+  const headerColumns = useMemo(() => {
+    if (visibleColumns === 'all') return columns;
+    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
+
+  // 搜索变化处理
+  const onSearchChange = useCallback((value?: string) => {
+    setSearchAddress(value || '');
+    setPage(1);
+  }, []);
+
+  // 重置筛选
+  const handleReset = useCallback(() => {
+    setSelectedRating('');
+    setSearchAddress('');
+    setSortDescriptor({ column: 'overall_score', direction: 'descending' });
+    setPage(1);
+  }, []);
+
+  // 获取当前筛选状态数量
+  const getActiveFiltersCount = useCallback(() => {
+    let count = 0;
+    if (selectedRating) count++;
+    if (searchAddress) count++;
+    return count;
+  }, [selectedRating, searchAddress]);
+
+  // 单元格渲染
+  const renderCell = useCallback((trader: Trader, columnKey: ColumnKey) => {
+    switch (columnKey) {
+      case 'rating':
+        return (
+          <span className={`font-bold text-lg ${getRatingColor(trader.rating)}`}>
+            {trader.rating}
+          </span>
+        );
+      case 'address':
+        return (
+          <span className="font-mono text-sm">
+            {trader.address.slice(0, 6)}...{trader.address.slice(-4)}
+          </span>
+        );
+      case 'overall_score':
+        return <span className="font-bold">{formatNumber(trader.overall_score)}</span>;
+      case 'total_trades':
+        return <span>{trader.total_trades}</span>;
+      case 'win_rate':
+        return <span>{formatPercent(trader.win_rate)}</span>;
+      case 'total_pnl':
+        return (
+          <span className={trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+            ${formatNumber(trader.total_pnl)}
+          </span>
+        );
+      case 'roi':
+        return (
+          <span className={trader.roi >= 0 ? 'text-green-500' : 'text-red-500'}>
+            {formatPercent(trader.roi)}
+          </span>
+        );
+      case 'profit_factor':
+        return <span>{formatNumber(trader.profit_factor)}</span>;
+      case 'max_drawdown':
+        return <span className="text-red-500">{formatPercent(trader.max_drawdown)}</span>;
+      case 'sharpe_ratio':
+        return <span>{formatNumber(trader.sharpe_ratio)}</span>;
+      case 'current_equity':
+        return <span>${formatNumber(trader.current_equity)}</span>;
+      case 'active_days':
+        return <span>{trader.active_days}</span>;
+      default:
+        return null;
+    }
+  }, []);
+
+  // 表格顶部内容
+  const topContent = useMemo(() => {
+    const activeFilters = getActiveFiltersCount();
+
+    return (
+      <div className="flex flex-col gap-4">
+        {/* 筛选工具栏 */}
+        <div className="flex items-center gap-4 overflow-auto px-[6px] py-[4px]">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
+              <Input
+                className="min-w-[200px]"
+                endContent={<SearchIcon className="text-default-400" width={16} />}
+                placeholder="搜索地址..."
+                size="sm"
+                value={searchAddress}
+                onValueChange={onSearchChange}
+                isClearable
+                onClear={() => setSearchAddress('')}
+              />
+
+              {/* Rating 筛选 */}
+              <div className="flex gap-1">
+                {['S', 'A', 'B', 'C', 'D', 'F'].map((rating) => (
+                  <Button
+                    key={rating}
+                    size="sm"
+                    variant={selectedRating === rating ? 'solid' : 'bordered'}
+                    color={selectedRating === rating ? 'primary' : 'default'}
+                    className="min-w-8 px-2"
+                    onPress={() =>
+                      setSelectedRating(selectedRating === rating ? '' : rating)
+                    }
+                  >
+                    {rating}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Sort 下拉 */}
+              <div>
+                <Dropdown>
+                  <DropdownTrigger>
+                    <Button
+                      className="bg-default-100 text-default-800"
+                      size="sm"
+                      startContent={
+                        <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                      }
+                    >
+                      排序
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    aria-label="Sort"
+                    items={columns.filter((c) => c.sortable)}
+                  >
+                    {(item) => (
+                      <DropdownItem
+                        key={item.uid}
+                        onPress={() => {
+                          setSortDescriptor({
+                            column: item.uid,
+                            direction:
+                              sortDescriptor.column === item.uid && sortDescriptor.direction === 'descending'
+                                ? 'ascending'
+                                : 'descending',
+                          });
+                        }}
+                      >
+                        {item.name}
+                      </DropdownItem>
+                    )}
+                  </DropdownMenu>
+                </Dropdown>
+              </div>
+
+              {/* Columns 下拉 */}
+              <div>
+                <Dropdown closeOnSelect={false}>
+                  <DropdownTrigger>
+                    <Button
+                      className="bg-default-100 text-default-800"
+                      size="sm"
+                      startContent={
+                        <Icon
+                          className="text-default-400"
+                          icon="solar:sort-horizontal-linear"
+                          width={16}
+                        />
+                      }
+                    >
+                      列
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    disallowEmptySelection
+                    aria-label="Columns"
+                    items={columns}
+                    selectedKeys={visibleColumns}
+                    selectionMode="multiple"
+                    onSelectionChange={setVisibleColumns}
+                  >
+                    {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+                  </DropdownMenu>
+                </Dropdown>
+              </div>
+            </div>
+
+            <Divider className="h-5" orientation="vertical" />
+
+            <div className="text-default-500 text-sm whitespace-nowrap">
+              {activeFilters > 0 ? `${activeFilters} 个筛选条件` : '无筛选条件'}
+            </div>
+
+            {activeFilters > 0 && (
+              <Button
+                className="bg-default-100 text-default-800"
+                size="sm"
+                variant="flat"
+                onPress={handleReset}
+                startContent={
+                  <Icon className="text-default-400" icon="solar:restart-linear" width={16} />
+                }
+              >
+                重置
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, onSearchChange, handleReset, getActiveFiltersCount]);
+
+  // 表格底部内容
+  const bottomContent = useMemo(() => {
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
+        <span className="text-sm text-gray-500">
+          显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
+        </span>
+        <Pagination
+          isCompact
+          showControls
+          showShadow
+          color="primary"
+          page={page}
+          total={totalPages}
+          onChange={setPage}
+        />
+      </div>
+    );
+  }, [page, totalPages, totalCount]);
+
   return (
     <DefaultLayout>
       <section className="flex flex-col gap-4 py-8 md:py-10">
@@ -102,123 +380,61 @@ export default function TradersPage() {
           <Card>
             <CardHeader className="flex flex-col gap-3">
               <div className="flex justify-between items-center w-full">
-                <h1 className="text-2xl font-bold">Trader Analytics</h1>
-                <div className="flex gap-2">
-                  {['S', 'A', 'B', 'C', 'D', 'F'].map((rating) => (
-                    <Button
-                      key={rating}
-                      size="sm"
-                      variant={selectedRating === rating ? 'solid' : 'bordered'}
-                      color={selectedRating === rating ? 'primary' : 'default'}
-                      onPress={() =>
-                        setSelectedRating(selectedRating === rating ? '' : rating)
-                      }
-                    >
-                      {rating}
-                    </Button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">Trader Analytics</h1>
+                  <Chip size="sm" variant="flat" className="text-default-500">
+                    {totalCount}
+                  </Chip>
                 </div>
               </div>
-              <Input
-                placeholder="Search by address..."
-                value={searchAddress}
-                onValueChange={setSearchAddress}
-                size="sm"
-                className="max-w-md"
-                isClearable
-                onClear={() => setSearchAddress('')}
-              />
             </CardHeader>
             <CardBody>
-              {loading ? (
-                <div className="flex justify-center items-center h-64">
-                  <Spinner size="lg" />
-                </div>
-              ) : error ? (
+              {error ? (
                 <div className="text-center text-red-500 p-8">{error}</div>
               ) : (
-                <div className="flex flex-col gap-4">
-                  <Table
-                    aria-label="Traders table"
-                    selectionMode="single"
-                    onRowAction={(key) => handleRowClick(key.toString())}
-                    classNames={{
-                      wrapper: 'min-h-[400px]',
-                    }}
-                    bottomContent={
-                      totalPages > 1 ? (
-                        <div className="flex justify-between items-center px-2 py-2">
-                          <span className="text-sm text-gray-500">
-                            显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} -{' '}
-                            {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
-                          </span>
-                          <Pagination
-                            total={totalPages}
-                            page={page}
-                            onChange={setPage}
-                            showControls
-                            color="primary"
-                            size="sm"
-                          />
-                        </div>
-                      ) : null
-                    }
+                <Table
+                  isHeaderSticky
+                  aria-label="Traders table"
+                  selectionMode="single"
+                  onRowAction={(key) => handleRowClick(key.toString())}
+                  topContent={topContent}
+                  topContentPlacement="outside"
+                  bottomContent={bottomContent}
+                  bottomContentPlacement="outside"
+                  sortDescriptor={sortDescriptor}
+                  onSortChange={setSortDescriptor}
+                  classNames={{
+                    wrapper: 'min-h-[400px] max-h-[600px]',
+                  }}
+                >
+                  <TableHeader columns={headerColumns}>
+                    {(column) => (
+                      <TableColumn
+                        key={column.uid}
+                        allowsSorting={column.sortable}
+                      >
+                        {column.name}
+                      </TableColumn>
+                    )}
+                  </TableHeader>
+                  <TableBody
+                    items={traders}
+                    isLoading={loading}
+                    loadingContent={<Spinner size="lg" />}
+                    emptyContent="暂无交易者数据"
                   >
-                    <TableHeader>
-                      <TableColumn>Rating</TableColumn>
-                      <TableColumn>Address</TableColumn>
-                      <TableColumn>Score</TableColumn>
-                      <TableColumn>Total Trades</TableColumn>
-                      <TableColumn>Win Rate</TableColumn>
-                      <TableColumn>Total PnL</TableColumn>
-                      <TableColumn>ROI</TableColumn>
-                      <TableColumn>Profit Factor</TableColumn>
-                      <TableColumn>Max DD</TableColumn>
-                      <TableColumn>Sharpe</TableColumn>
-                      <TableColumn>Equity</TableColumn>
-                    </TableHeader>
-                    <TableBody>
-                      {traders.map((trader) => (
-                        <TableRow
-                          key={trader.address}
-                          className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <TableCell>
-                            <span
-                              className={`font-bold text-lg ${getRatingColor(trader.rating)}`}
-                            >
-                              {trader.rating}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-mono text-sm">
-                              {trader.address.slice(0, 6)}...{trader.address.slice(-4)}
-                            </span>
-                          </TableCell>
-                          <TableCell>{formatNumber(trader.overall_score)}</TableCell>
-                          <TableCell>{trader.total_trades}</TableCell>
-                          <TableCell>{formatPercent(trader.win_rate)}</TableCell>
-                          <TableCell
-                            className={trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}
-                          >
-                            ${formatNumber(trader.total_pnl)}
-                          </TableCell>
-                          <TableCell
-                            className={trader.roi >= 0 ? 'text-green-500' : 'text-red-500'}
-                          >
-                            {formatPercent(trader.roi)}
-                          </TableCell>
-                          <TableCell>{formatNumber(trader.profit_factor)}</TableCell>
-                          <TableCell className="text-red-500">
-                            {formatPercent(trader.max_drawdown)}
-                          </TableCell>
-                          <TableCell>{formatNumber(trader.sharpe_ratio)}</TableCell>
-                          <TableCell>${formatNumber(trader.current_equity)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                    {(item) => (
+                      <TableRow
+                        key={item.address}
+                        className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                      >
+                        {(columnKey) => (
+                          <TableCell>{renderCell(item, columnKey as ColumnKey)}</TableCell>
+                        )}
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               )}
             </CardBody>
           </Card>

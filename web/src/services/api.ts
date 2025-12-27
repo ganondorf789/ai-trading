@@ -112,12 +112,14 @@ export interface ApiResponse<T> {
 
 // API 方法
 export const traderApi = {
-  // 获取交易者列表（支持分页）
+  // 获取交易者列表（支持分页和排序）
   getTraders: (params?: {
     page?: number;
     limit?: number;
     min_rating?: string;
     search?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
   }) =>
     api.get<any, ApiResponse<Trader[]>>('/traders', { params }),
 
