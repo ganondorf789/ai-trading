@@ -102,6 +102,23 @@ export interface FillsSummary {
   }>;
 }
 
+export interface AssetPosition {
+  id: number;
+  address: string;
+  updated_at: string;
+  coin: string;
+  szi: number;  // 持仓数量（正=多，负=空）
+  entry_px: number;  // 开仓均价
+  position_value: number;  // 持仓价值
+  unrealized_pnl: number;  // 未实现盈亏
+  return_on_equity: number;  // 权益回报率
+  liquidation_px: number | null;  // 清算价格
+  margin_used: number;  // 使用保证金
+  max_leverage: number;  // 最大杠杆
+  leverage_type: string;  // 杠杆类型
+  leverage_value: number;  // 当前杠杆
+}
+
 export interface ChartDataPoint {
   timestamp: string;
   value: number;
@@ -178,9 +195,17 @@ export const traderApi = {
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 
-  // 获取交易者交易过的所有币种
-  getTraderCoins: (address: string) =>
-    api.get<any, ApiResponse<string[]>>(`/traders/${address}/coins`),
+  // 获取币种列表
+  getCoins: (params?: {
+    address?: string;
+    exclude_user_perps?: boolean;
+    include_stats?: boolean;
+  }) =>
+    api.get<any, ApiResponse<string[] | Array<{ coin: string; count: number; total_pnl: number; is_user_perp: boolean }>>>('/coins', { params }),
+
+  // 获取当前持仓（来自 assetPositions）
+  getTraderPositions: (address: string) =>
+    api.get<any, ApiResponse<AssetPosition[]>>(`/traders/${address}/positions`),
 
   // 获取历史图表数据
   getTraderHistory: (address: string, params?: { days?: number }) =>

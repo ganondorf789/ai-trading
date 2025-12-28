@@ -217,6 +217,36 @@ class TraderDatabase:
                 ON trader_fills(coin)
             """)
 
+            # 创建持仓表（存储 assetPositions）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS asset_positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    address TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- 持仓信息
+                    coin TEXT NOT NULL,
+                    szi REAL DEFAULT 0.0,
+                    entry_px REAL DEFAULT 0.0,
+                    position_value REAL DEFAULT 0.0,
+                    unrealized_pnl REAL DEFAULT 0.0,
+                    return_on_equity REAL DEFAULT 0.0,
+                    liquidation_px REAL,
+                    margin_used REAL DEFAULT 0.0,
+                    max_leverage INTEGER DEFAULT 1,
+                    leverage_type TEXT,
+                    leverage_value INTEGER DEFAULT 1,
+
+                    -- 唯一约束：同一地址同一币种只保留一条记录
+                    UNIQUE(address, coin)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_address
+                ON asset_positions(address)
+            """)
+
     def _migrate_add_new_columns(self, cursor):
         """为现有表添加新列（数据库迁移）"""
         # 获取现有列
@@ -556,16 +586,23 @@ class TraderDatabase:
             """, (address,))
             return [row['coin'] for row in cursor.fetchall()]
 
-    def get_fills_summary(self, address: str) -> Dict[str, Any]:
+    def get_fills_summary(
+        self,
+        address: str,
+        exclude_user_perps: bool = True
+    ) -> Dict[str, Any]:
         """
         获取交易者交易记录汇总
 
         Args:
             address: 交易者地址
+            exclude_user_perps: 是否排除用户创建的永续合约（@数字格式）
 
         Returns:
             汇总信息字典
         """
+        import re
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
@@ -584,14 +621,25 @@ class TraderDatabase:
                 GROUP BY coin
                 ORDER BY count DESC
             """, (address,))
-            by_coin = [dict(row) for row in cursor.fetchall()]
 
-            # 总盈亏
-            cursor.execute(
-                "SELECT SUM(closed_pnl) FROM trader_fills WHERE address = ?",
-                (address,)
-            )
-            total_pnl = cursor.fetchone()[0] or 0
+            # 过滤 @数字 格式的用户永续合约
+            user_perp_pattern = re.compile(r'^@\d+$')
+            by_coin = []
+            for row in cursor.fetchall():
+                coin = row['coin']
+                if exclude_user_perps and coin and user_perp_pattern.match(coin):
+                    continue
+                by_coin.append(dict(row))
+
+            # 总盈亏（基于过滤后的币种）
+            if exclude_user_perps:
+                total_pnl = sum(c['total_pnl'] or 0 for c in by_coin)
+            else:
+                cursor.execute(
+                    "SELECT SUM(closed_pnl) FROM trader_fills WHERE address = ?",
+                    (address,)
+                )
+                total_pnl = cursor.fetchone()[0] or 0
 
             return {
                 'total_fills': total_fills,
@@ -861,3 +909,148 @@ class TraderDatabase:
             """, (f'-{days} days',))
             deleted = cursor.rowcount
             logger.info(f"已删除 {deleted} 条旧记录")
+
+    def get_all_coins(
+        self,
+        exclude_user_perps: bool = True,
+        address: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        获取所有币种及其统计信息
+
+        Args:
+            exclude_user_perps: 是否排除用户创建的永续合约（@数字格式）
+            address: 可选，筛选特定交易者的币种
+
+        Returns:
+            币种列表，包含交易次数和总盈亏
+        """
+        import re
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            if address:
+                cursor.execute("""
+                    SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
+                    FROM trader_fills
+                    WHERE address = ?
+                    GROUP BY coin
+                    ORDER BY count DESC
+                """, (address,))
+            else:
+                cursor.execute("""
+                    SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
+                    FROM trader_fills
+                    GROUP BY coin
+                    ORDER BY count DESC
+                """)
+
+            results = []
+            # 匹配 @数字 格式的用户创建永续合约
+            user_perp_pattern = re.compile(r'^@\d+$')
+
+            for row in cursor.fetchall():
+                coin = row['coin']
+                is_user_perp = bool(user_perp_pattern.match(coin)) if coin else False
+
+                # 如果需要排除用户永续合约且当前是用户永续合约，则跳过
+                if exclude_user_perps and is_user_perp:
+                    continue
+
+                results.append({
+                    'coin': coin,
+                    'count': row['count'],
+                    'total_pnl': row['total_pnl'] or 0,
+                    'is_user_perp': is_user_perp
+                })
+
+            return results
+
+    def save_positions(self, address: str, positions: List[Dict]) -> int:
+        """
+        保存交易者的当前持仓（来自 assetPositions）
+
+        Args:
+            address: 交易者地址
+            positions: 持仓列表（从 user_state['assetPositions'] 获取）
+
+        Returns:
+            保存的记录数
+        """
+        if not positions:
+            # 清空该地址的所有持仓
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM asset_positions WHERE address = ?",
+                    (address,)
+                )
+            return 0
+
+        saved_count = 0
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 先删除旧持仓
+            cursor.execute(
+                "DELETE FROM asset_positions WHERE address = ?",
+                (address,)
+            )
+
+            for pos_data in positions:
+                try:
+                    pos = pos_data.get('position', {})
+                    leverage = pos.get('leverage', {})
+
+                    # 跳过空仓位
+                    szi = float(pos.get('szi', 0))
+                    if szi == 0:
+                        continue
+
+                    cursor.execute("""
+                        INSERT INTO asset_positions (
+                            address, coin, szi, entry_px, position_value,
+                            unrealized_pnl, return_on_equity, liquidation_px,
+                            margin_used, max_leverage, leverage_type, leverage_value,
+                            updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        address,
+                        pos.get('coin'),
+                        szi,
+                        float(pos.get('entryPx', 0)),
+                        float(pos.get('positionValue', 0)),
+                        float(pos.get('unrealizedPnl', 0)),
+                        float(pos.get('returnOnEquity', 0)),
+                        float(pos.get('liquidationPx')) if pos.get('liquidationPx') else None,
+                        float(pos.get('marginUsed', 0)),
+                        int(pos.get('maxLeverage', 1)),
+                        leverage.get('type'),
+                        int(leverage.get('value', 1)),
+                        datetime.now().isoformat()
+                    ))
+                    saved_count += 1
+                except Exception as e:
+                    logger.debug(f"保存持仓记录失败: {e}")
+
+        return saved_count
+
+    def get_positions(self, address: str) -> List[Dict]:
+        """
+        获取交易者的当前持仓
+
+        Args:
+            address: 交易者地址
+
+        Returns:
+            持仓列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM asset_positions
+                WHERE address = ?
+                ORDER BY ABS(position_value) DESC
+            """, (address,))
+            return [dict(row) for row in cursor.fetchall()]

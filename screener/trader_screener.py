@@ -98,7 +98,10 @@ class TraderMetrics:
     # 原始交易记录（可选，用于保存到数据库）
     fills: List[Dict] = field(default_factory=list)
 
-    def to_dict(self, include_fills: bool = False) -> Dict[str, Any]:
+    # 当前持仓（来自 assetPositions）
+    asset_positions: List[Dict] = field(default_factory=list)
+
+    def to_dict(self, include_fills: bool = False, include_positions: bool = False) -> Dict[str, Any]:
         """转换为字典"""
         result = asdict(self)
         result['rating'] = self.rating.value
@@ -109,6 +112,9 @@ class TraderMetrics:
         # 默认不包含 fills（数据量可能很大）
         if not include_fills:
             result.pop('fills', None)
+        # 默认不包含 asset_positions
+        if not include_positions:
+            result.pop('asset_positions', None)
         return result
 
 
@@ -634,6 +640,10 @@ class TraderScreener:
             # 存储原始交易记录
             if store_fills:
                 metrics.fills = fills
+
+            # 存储当前持仓（来自 assetPositions）
+            if user_state:
+                metrics.asset_positions = user_state.get('assetPositions', [])
 
             # 缓存结果
             self._analyzed_traders[address] = metrics

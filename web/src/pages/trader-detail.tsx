@@ -42,7 +42,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import DefaultLayout from '@/layouts/default';
-import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary } from '@/services/api';
+import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
 
 // 表格列配置
 type ColumnKey = 'trade_time' | 'coin' | 'side' | 'px' | 'sz' | 'value' | 'closed_pnl' | 'roi' | 'fee';
@@ -98,13 +98,9 @@ export default function TraderDetailPage() {
     direction: 'descending',
   });
 
-  // 当前持仓状态
-  const [openPositions, setOpenPositions] = useState<TraderFill[]>([]);
-  const [openPositionsPage, setOpenPositionsPage] = useState(1);
-  const [openPositionsTotalPages, setOpenPositionsTotalPages] = useState(1);
-  const [openPositionsTotalCount, setOpenPositionsTotalCount] = useState(0);
-  const [openPositionsLoading, setOpenPositionsLoading] = useState(false);
-  const openPositionsRowsPerPage = 20;
+  // 当前持仓状态（使用 assetPositions）
+  const [assetPositions, setAssetPositions] = useState<AssetPosition[]>([]);
+  const [assetPositionsLoading, setAssetPositionsLoading] = useState(false);
 
   useEffect(() => {
     if (!address) return;
@@ -115,7 +111,7 @@ export default function TraderDetailPage() {
         setError(null);
 
         // 并行加载数据
-        const [detailRes, fillsRes, historyRes, openPositionsRes] = await Promise.all([
+        const [detailRes, fillsRes, historyRes, positionsRes, coinsRes] = await Promise.all([
           traderApi.getTraderDetail(address),
           traderApi.getTraderFills(address, {
             page: 1,
@@ -125,11 +121,10 @@ export default function TraderDetailPage() {
             position_type: 'closed',
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
-          traderApi.getTraderFills(address, {
-            page: 1,
-            limit: openPositionsRowsPerPage,
-            position_type: 'open',
-          }),
+          // 获取当前持仓（来自 assetPositions）
+          traderApi.getTraderPositions(address),
+          // 获取币种列表（排除 @数字 格式的用户永续合约）
+          traderApi.getCoins({ address, exclude_user_perps: true }),
         ]);
 
         if (detailRes.success && detailRes.data) {
@@ -141,9 +136,6 @@ export default function TraderDetailPage() {
 
         if (fillsRes.success && fillsRes.data) {
           setFills(fillsRes.data);
-          // 初次加载时保存完整的币种列表
-          const coinSet = new Set(fillsRes.data.map((f: TraderFill) => f.coin));
-          setAllCoins(Array.from(coinSet).sort());
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
@@ -153,16 +145,18 @@ export default function TraderDetailPage() {
           }
         }
 
+        // 使用 API 返回的币种列表（已过滤非标准币种）
+        if (coinsRes.success && coinsRes.data) {
+          setAllCoins(coinsRes.data as string[]);
+        }
+
         if (historyRes.success && historyRes.data) {
           setHistory(historyRes.data);
         }
 
-        if (openPositionsRes.success && openPositionsRes.data) {
-          setOpenPositions(openPositionsRes.data);
-          if (openPositionsRes.pagination) {
-            setOpenPositionsTotalPages(openPositionsRes.pagination.total_pages);
-            setOpenPositionsTotalCount(openPositionsRes.pagination.total_count);
-          }
+        // 设置当前持仓
+        if (positionsRes.success && positionsRes.data) {
+          setAssetPositions(positionsRes.data);
         }
       } catch (err: any) {
         setError(err.message || 'Failed to load trader data');
@@ -190,8 +184,8 @@ export default function TraderDetailPage() {
         if (res.data.fills_summary) {
           setFillsSummary(res.data.fills_summary);
         }
-        // 重新加载交易记录和图表数据
-        const [fillsRes, historyRes, openPositionsRes] = await Promise.all([
+        // 重新加载交易记录、图表数据、持仓和币种列表
+        const [fillsRes, historyRes, positionsRes, coinsRes] = await Promise.all([
           traderApi.getTraderFills(address, {
             page: 1,
             limit: rowsPerPage,
@@ -200,17 +194,12 @@ export default function TraderDetailPage() {
             position_type: 'closed',
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
-          traderApi.getTraderFills(address, {
-            page: 1,
-            limit: openPositionsRowsPerPage,
-            position_type: 'open',
-          }),
+          traderApi.getTraderPositions(address),
+          traderApi.getCoins({ address, exclude_user_perps: true }),
         ]);
 
         if (fillsRes.success && fillsRes.data) {
           setFills(fillsRes.data);
-          const coinSet = new Set(fillsRes.data.map((f: TraderFill) => f.coin));
-          setAllCoins(Array.from(coinSet).sort());
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
@@ -220,20 +209,19 @@ export default function TraderDetailPage() {
           }
         }
 
+        if (coinsRes.success && coinsRes.data) {
+          setAllCoins(coinsRes.data as string[]);
+        }
+
         if (historyRes.success && historyRes.data) {
           setHistory(historyRes.data);
         }
 
-        if (openPositionsRes.success && openPositionsRes.data) {
-          setOpenPositions(openPositionsRes.data);
-          if (openPositionsRes.pagination) {
-            setOpenPositionsTotalPages(openPositionsRes.pagination.total_pages);
-            setOpenPositionsTotalCount(openPositionsRes.pagination.total_count);
-          }
+        if (positionsRes.success && positionsRes.data) {
+          setAssetPositions(positionsRes.data);
         }
 
         setPage(1);
-        setOpenPositionsPage(1);
       } else {
         setError(res.error || '刷新失败');
       }
@@ -285,14 +273,7 @@ export default function TraderDetailPage() {
         });
 
         if (fillsRes.success && fillsRes.data) {
-          const fillsData = fillsRes.data;
-          setFills(fillsData);
-          // 累积收集新发现的币种
-          setAllCoins((prev) => {
-            const newCoins = fillsData.map((f: TraderFill) => f.coin);
-            const combined = new Set([...prev, ...newCoins]);
-            return Array.from(combined).sort();
-          });
+          setFills(fillsRes.data);
           if (fillsRes.pagination) {
             setTotalPages(fillsRes.pagination.total_pages);
             setTotalCount(fillsRes.pagination.total_count);
@@ -316,35 +297,6 @@ export default function TraderDetailPage() {
     setPage(1);
   }, [selectedCoin, pnlFilter, sortDescriptor]);
 
-  // 当前持仓分页变化时加载数据
-  useEffect(() => {
-    if (!address || loading) return;
-
-    const loadOpenPositions = async () => {
-      try {
-        setOpenPositionsLoading(true);
-        const res = await traderApi.getTraderFills(address, {
-          page: openPositionsPage,
-          limit: openPositionsRowsPerPage,
-          position_type: 'open',
-        });
-
-        if (res.success && res.data) {
-          setOpenPositions(res.data);
-          if (res.pagination) {
-            setOpenPositionsTotalPages(res.pagination.total_pages);
-            setOpenPositionsTotalCount(res.pagination.total_count);
-          }
-        }
-      } catch (err: any) {
-        console.error('Failed to load open positions:', err);
-      } finally {
-        setOpenPositionsLoading(false);
-      }
-    };
-
-    loadOpenPositions();
-  }, [address, openPositionsPage, loading]);
 
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -667,16 +619,6 @@ export default function TraderDetailPage() {
     if (pageNum >= 1 && pageNum <= totalPages) {
       setPage(pageNum);
       setJumpPage('');
-    }
-  };
-
-  // 当前持仓页码跳转
-  const [openPositionsJumpPage, setOpenPositionsJumpPage] = useState('');
-  const handleOpenPositionsJumpPage = () => {
-    const pageNum = parseInt(openPositionsJumpPage);
-    if (pageNum >= 1 && pageNum <= openPositionsTotalPages) {
-      setOpenPositionsPage(pageNum);
-      setOpenPositionsJumpPage('');
     }
   };
 
@@ -1205,96 +1147,75 @@ export default function TraderDetailPage() {
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold">当前持仓</h2>
                 <Chip size="sm" variant="flat" color="warning">
-                  {openPositionsTotalCount}
+                  {assetPositions.length}
                 </Chip>
+                {assetPositions.length > 0 && assetPositions[0]?.updated_at && (
+                  <span className="text-xs text-gray-500">
+                    更新于 {new Date(assetPositions[0].updated_at).toLocaleString()}
+                  </span>
+                )}
               </div>
             </CardHeader>
             <CardBody>
-              {openPositionsLoading ? (
+              {assetPositionsLoading ? (
                 <div className="flex justify-center items-center h-64">
                   <Spinner size="lg" />
                 </div>
-              ) : openPositions.length > 0 ? (
-                <>
-                  <Table
-                    isHeaderSticky
-                    aria-label="Open positions table"
-                    classNames={{
-                      wrapper: 'max-h-[400px]',
-                    }}
-                  >
-                    <TableHeader>
-                      <TableColumn key="trade_time">开仓时间</TableColumn>
-                      <TableColumn key="coin">币种</TableColumn>
-                      <TableColumn key="side">方向</TableColumn>
-                      <TableColumn key="px">开仓价格</TableColumn>
-                      <TableColumn key="sz">数量</TableColumn>
-                      <TableColumn key="value">持仓价值</TableColumn>
-                      <TableColumn key="fee">手续费</TableColumn>
-                    </TableHeader>
-                    <TableBody items={openPositions}>
-                      {(item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="text-xs">{new Date(item.trade_time).toLocaleDateString()}</span>
-                              <span className="text-xs text-gray-500">{new Date(item.trade_time).toLocaleTimeString()}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-bold">{item.coin}</span>
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              size="sm"
-                              color={item.side === 'B' ? 'success' : 'danger'}
-                              variant="flat"
-                            >
-                              {item.side === 'B' ? 'LONG' : 'SHORT'}
-                            </Chip>
-                          </TableCell>
-                          <TableCell>${formatNumber(item.px, 4)}</TableCell>
-                          <TableCell>{formatNumber(item.sz, 4)}</TableCell>
-                          <TableCell>${formatNumber(item.px * item.sz, 2)}</TableCell>
-                          <TableCell>
-                            <span className="text-orange-500">${formatNumber(item.fee, 4)}</span>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                  {/* 当前持仓分页 */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2 mt-4">
-                    <span className="text-sm text-gray-500">
-                      显示 {Math.min((openPositionsPage - 1) * openPositionsRowsPerPage + 1, openPositionsTotalCount)} - {Math.min(openPositionsPage * openPositionsRowsPerPage, openPositionsTotalCount)} 条，共 {openPositionsTotalCount} 条记录
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <Pagination
-                        isCompact
-                        showControls
-                        showShadow
-                        color="primary"
-                        page={openPositionsPage}
-                        total={openPositionsTotalPages}
-                        onChange={setOpenPositionsPage}
-                      />
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm text-gray-500">跳转</span>
-                        <Input
-                          type="number"
-                          size="sm"
-                          className="w-16"
-                          min={1}
-                          max={openPositionsTotalPages}
-                          value={openPositionsJumpPage}
-                          onValueChange={setOpenPositionsJumpPage}
-                          onKeyDown={(e) => e.key === 'Enter' && handleOpenPositionsJumpPage()}
-                        />
-                        <span className="text-sm text-gray-500">页</span>
-                      </div>
-                    </div>
-                  </div>
-                </>
+              ) : assetPositions.length > 0 ? (
+                <Table
+                  isHeaderSticky
+                  aria-label="Asset positions table"
+                  classNames={{
+                    wrapper: 'max-h-[400px]',
+                  }}
+                >
+                  <TableHeader>
+                    <TableColumn key="coin">币种</TableColumn>
+                    <TableColumn key="side">方向</TableColumn>
+                    <TableColumn key="szi">数量</TableColumn>
+                    <TableColumn key="entry_px">开仓均价</TableColumn>
+                    <TableColumn key="position_value">持仓价值</TableColumn>
+                    <TableColumn key="unrealized_pnl">未实现盈亏</TableColumn>
+                    <TableColumn key="roe">ROE</TableColumn>
+                    <TableColumn key="leverage">杠杆</TableColumn>
+                    <TableColumn key="liquidation_px">清算价格</TableColumn>
+                  </TableHeader>
+                  <TableBody items={assetPositions}>
+                    {(item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <span className="font-bold">{item.coin}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="sm"
+                            color={item.szi > 0 ? 'success' : 'danger'}
+                            variant="flat"
+                          >
+                            {item.szi > 0 ? 'LONG' : 'SHORT'}
+                          </Chip>
+                        </TableCell>
+                        <TableCell>{formatNumber(Math.abs(item.szi), 4)}</TableCell>
+                        <TableCell>${formatNumber(item.entry_px, 4)}</TableCell>
+                        <TableCell>${formatNumber(Math.abs(item.position_value), 2)}</TableCell>
+                        <TableCell>
+                          <span className={item.unrealized_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            ${formatNumber(item.unrealized_pnl, 2)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={item.return_on_equity >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            {formatPercent(item.return_on_equity)}
+                          </span>
+                        </TableCell>
+                        <TableCell>{item.leverage_value}x</TableCell>
+                        <TableCell>
+                          {item.liquidation_px ? `$${formatNumber(item.liquidation_px, 2)}` : '-'}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               ) : (
                 <div className="text-center text-gray-500 py-8">暂无当前持仓</div>
               )}

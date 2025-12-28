@@ -261,7 +261,10 @@ def refresh_trader(address: str):
         # 保存到数据库
         _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
 
-        logger.info(f"交易者分析完成: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}")
+        # 保存持仓数据
+        positions_saved = db.save_positions(address, metrics.asset_positions)
+
+        logger.info(f"交易者分析完成: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}, 持仓: {positions_saved}")
 
         # 返回更新后的数据
         trader = db.get_trader_by_address(address)
@@ -363,6 +366,28 @@ def get_trader_fills(address: str):
 
     except Exception as e:
         logger.error(f"获取交易记录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/traders/<address>/positions', methods=['GET'])
+def get_trader_positions(address: str):
+    """
+    获取交易者的当前持仓（来自 assetPositions）
+    """
+    try:
+        positions = db.get_positions(address)
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'count': len(positions)
+        })
+
+    except Exception as e:
+        logger.error(f"获取持仓数据失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -581,6 +606,49 @@ def get_statistics():
         }), 500
 
 
+@app.route('/api/coins', methods=['GET'])
+def get_coins():
+    """
+    获取所有币种列表
+    Query Parameters:
+        - address: str, 可选，筛选特定交易者的币种
+        - exclude_user_perps: bool, 是否排除用户创建的永续合约(@数字格式)，默认true
+        - include_stats: bool, 是否包含统计信息，默认false
+    """
+    try:
+        address = request.args.get('address')
+        exclude_user_perps = request.args.get('exclude_user_perps', 'true').lower() == 'true'
+        include_stats = request.args.get('include_stats', 'false').lower() == 'true'
+
+        coins_data = db.get_all_coins(
+            exclude_user_perps=exclude_user_perps,
+            address=address
+        )
+
+        if include_stats:
+            # 返回完整的统计信息
+            return jsonify({
+                'success': True,
+                'data': coins_data,
+                'count': len(coins_data)
+            })
+        else:
+            # 只返回币种名称列表
+            coins = [c['coin'] for c in coins_data]
+            return jsonify({
+                'success': True,
+                'data': coins,
+                'count': len(coins)
+            })
+
+    except Exception as e:
+        logger.error(f"获取币种列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/sessions', methods=['GET'])
 def get_sessions():
     """
@@ -642,9 +710,12 @@ if __name__ == '__main__':
     logger.info("API 文档:")
     logger.info("  GET  /api/traders - 获取交易者列表")
     logger.info("  GET  /api/traders/<address> - 获取交易者详情")
+    logger.info("  POST /api/traders/<address>/refresh - 刷新分析")
     logger.info("  GET  /api/traders/<address>/fills - 获取历史交易")
+    logger.info("  GET  /api/traders/<address>/positions - 获取当前持仓")
     logger.info("  GET  /api/traders/<address>/history - 获取历史图表数据")
     logger.info("  GET  /api/traders/rating/<rating> - 按评级筛选")
+    logger.info("  GET  /api/coins - 获取币种列表")
     logger.info("  GET  /api/stats - 获取统计信息")
     logger.info("  GET  /api/sessions - 获取筛选会话")
     logger.info("  GET  /health - 健康检查")
