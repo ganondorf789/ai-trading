@@ -144,7 +144,33 @@ def analyze_single_trader(screener: TraderScreener, address: str):
     print(f"  • 账户权益: ${metrics.current_equity:,.2f}")
     print(f"  • 平均杠杆: {metrics.avg_leverage}x")
     print()
-    
+
+    # 交易特征
+    print("【交易特征】")
+    print(f"  • 平均交易价格: ${metrics.avg_trade_price:,.2f}")
+    print(f"  • 平均交易规模: ${metrics.avg_trade_size:,.2f}")
+    print(f"  • 最大单笔盈利: ${metrics.max_single_win:,.2f}")
+    print(f"  • 最大单笔亏损: ${metrics.max_single_loss:,.2f}")
+    print(f"  • 平均盈利金额: ${metrics.avg_win_amount:,.2f}")
+    print(f"  • 平均亏损金额: ${metrics.avg_loss_amount:,.2f}")
+    print(f"  • 最大连赢次数: {metrics.max_consecutive_wins}")
+    print(f"  • 最大连亏次数: {metrics.max_consecutive_losses}")
+    print()
+
+    # 交易偏好
+    print("【交易偏好】")
+    print(f"  • 交易品种数: {metrics.unique_symbols}")
+    print(f"  • 最常交易: {metrics.favorite_symbol or 'N/A'}")
+    print(f"  • 多空比例: {metrics.long_short_ratio:.1%} (多单占比)")
+    print()
+
+    # 近期表现
+    print("【近7天表现】")
+    r7d_pnl_sign = "+" if metrics.recent_7d_pnl >= 0 else ""
+    print(f"  • 近7天PnL: {r7d_pnl_sign}${metrics.recent_7d_pnl:,.2f}")
+    print(f"  • 近7天胜率: {metrics.recent_7d_win_rate:.1%}")
+    print()
+
     # 分项评分
     print("【分项评分】")
     print(f"  • 盈利能力: {metrics.profitability_score:.1f}/100 {'🔥' if metrics.profitability_score >= 70 else ''}")
@@ -190,9 +216,9 @@ def screen_traders_batch(screener: TraderScreener, addresses: list, args):
         qualified = screener.screen_traders(addresses, progress_callback)
     
     print()  # 换行
-    
+
     # 打印结果
-    screener.print_summary(qualified)
+    screener.print_summary(qualified, detailed=args.detailed)
     
     # 保存结果
     if args.output:
@@ -303,6 +329,11 @@ def main():
         "--json",
         action="store_true",
         help="以 JSON 格式输出到标准输出"
+    )
+    output_group.add_argument(
+        "--detailed",
+        action="store_true",
+        help="显示详细指标信息"
     )
     
     # 性能配置

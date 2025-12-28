@@ -80,6 +80,21 @@ class TraderMetrics:
     consistency_score: float = 0.0
     activity_score: float = 0.0
 
+    # 新增分析字段
+    avg_trade_price: float = 0.0  # 平均交易价格
+    avg_trade_size: float = 0.0  # 平均交易规模（USD）
+    max_single_win: float = 0.0  # 最大单笔盈利
+    max_single_loss: float = 0.0  # 最大单笔亏损
+    max_consecutive_wins: int = 0  # 最大连续盈利次数
+    max_consecutive_losses: int = 0  # 最大连续亏损次数
+    avg_win_amount: float = 0.0  # 盈利交易平均收益
+    avg_loss_amount: float = 0.0  # 亏损交易平均损失
+    unique_symbols: int = 0  # 交易品种数量
+    favorite_symbol: str = ""  # 最常交易的品种
+    recent_7d_pnl: float = 0.0  # 最近7天PnL
+    recent_7d_win_rate: float = 0.0  # 最近7天胜率
+    long_short_ratio: float = 0.0  # 多空比例（多单占比）
+
     # 原始交易记录（可选，用于保存到数据库）
     fills: List[Dict] = field(default_factory=list)
 
@@ -267,30 +282,113 @@ class TraderScreener:
         total_loss = 0.0
         pnl_list = []
         daily_pnl: Dict[str, float] = {}
-        
+
+        # 新增统计变量
+        total_price = 0.0
+        total_size_usd = 0.0
+        symbol_counts: Dict[str, int] = {}
+        long_count = 0
+        short_count = 0
+        win_amounts = []
+        loss_amounts = []
+        recent_7d_start = datetime.now() - timedelta(days=7)
+        recent_7d_pnl = 0.0
+        recent_7d_wins = 0
+        recent_7d_trades = 0
+
         for fill in fills:
             pnl = float(fill.get('closedPnl', 0))
-            volume = float(fill.get('px', 0)) * float(fill.get('sz', 0))
-            
+            price = float(fill.get('px', 0))
+            size = float(fill.get('sz', 0))
+            volume = price * size
+
             metrics.total_volume += volume
             metrics.realized_pnl += pnl
             pnl_list.append(pnl)
-            
+
+            # 新增：价格和规模统计
+            total_price += price
+            total_size_usd += volume
+
+            # 新增：品种统计
+            symbol = fill.get('coin', '')
+            symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+
+            # 新增：多空统计
+            side = fill.get('side', '').upper()
+            if side == 'B' or side == 'BUY':
+                long_count += 1
+            elif side == 'A' or side == 'SELL':
+                short_count += 1
+
             if pnl > 0:
                 metrics.winning_trades += 1
                 total_profit += pnl
+                win_amounts.append(pnl)
             elif pnl < 0:
                 metrics.losing_trades += 1
                 total_loss += abs(pnl)
-            
+                loss_amounts.append(abs(pnl))
+
             # 按天统计
             trade_time = datetime.fromtimestamp(fill.get('time', 0) / 1000)
             day_key = trade_time.strftime('%Y-%m-%d')
             daily_pnl[day_key] = daily_pnl.get(day_key, 0) + pnl
+
+            # 新增：最近7天统计
+            if trade_time >= recent_7d_start:
+                recent_7d_trades += 1
+                recent_7d_pnl += pnl
+                if pnl > 0:
+                    recent_7d_wins += 1
         
         # 活跃天数
         metrics.active_days = len(daily_pnl)
-        
+
+        # 新增指标计算
+        if metrics.total_trades > 0:
+            metrics.avg_trade_price = total_price / metrics.total_trades
+            metrics.avg_trade_size = total_size_usd / metrics.total_trades
+
+        # 最大单笔盈亏
+        if pnl_list:
+            metrics.max_single_win = max(pnl_list) if max(pnl_list) > 0 else 0
+            metrics.max_single_loss = abs(min(pnl_list)) if min(pnl_list) < 0 else 0
+
+        # 平均盈亏金额
+        if win_amounts:
+            metrics.avg_win_amount = sum(win_amounts) / len(win_amounts)
+        if loss_amounts:
+            metrics.avg_loss_amount = sum(loss_amounts) / len(loss_amounts)
+
+        # 连续盈亏计算
+        current_wins = 0
+        current_losses = 0
+        for pnl in pnl_list:
+            if pnl > 0:
+                current_wins += 1
+                current_losses = 0
+                metrics.max_consecutive_wins = max(metrics.max_consecutive_wins, current_wins)
+            elif pnl < 0:
+                current_losses += 1
+                current_wins = 0
+                metrics.max_consecutive_losses = max(metrics.max_consecutive_losses, current_losses)
+
+        # 品种统计
+        metrics.unique_symbols = len(symbol_counts)
+        if symbol_counts:
+            metrics.favorite_symbol = max(symbol_counts, key=symbol_counts.get)
+
+        # 多空比例
+        total_sides = long_count + short_count
+        if total_sides > 0:
+            metrics.long_short_ratio = long_count / total_sides
+
+        # 最近7天统计
+        metrics.recent_7d_pnl = recent_7d_pnl
+        if recent_7d_trades > 0:
+            metrics.recent_7d_win_rate = recent_7d_wins / recent_7d_trades
+
         # 胜率
         if metrics.total_trades > 0:
             metrics.win_rate = metrics.winning_trades / metrics.total_trades
@@ -712,46 +810,75 @@ class TraderScreener:
         
         logger.info(f"结果已保存至: {filepath}")
     
-    def print_summary(self, traders: List[TraderMetrics]):
+    def print_summary(self, traders: List[TraderMetrics], detailed: bool = False):
         """
         打印筛选结果摘要
-        
+
         Args:
             traders: 交易者列表
+            detailed: 是否显示详细信息
         """
-        print("\n" + "=" * 80)
+        print("\n" + "=" * 120)
         print("Hyperliquid 优质交易者筛选结果")
-        print("=" * 80)
+        print("=" * 120)
         print(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"筛选条件: 胜率≥{self.config.min_win_rate:.0%}, "
               f"盈亏比≥{self.config.min_profit_factor:.1f}, "
               f"交易次数≥{self.config.min_total_trades}")
-        print("-" * 80)
-        
+        print("-" * 120)
+
         if not traders:
             print("未找到符合条件的交易者")
             return
-        
-        print(f"{'排名':<4} {'评级':<4} {'地址':<14} {'评分':<6} {'胜率':<8} "
-              f"{'盈亏比':<8} {'总PnL':<12} {'交易数':<8} {'回撤':<8}")
-        print("-" * 80)
-        
-        for i, trader in enumerate(traders, 1):
-            addr_short = f"{trader.address[:6]}...{trader.address[-4:]}"
-            pnl_str = f"${trader.total_pnl:,.2f}" if trader.total_pnl >= 0 else f"-${abs(trader.total_pnl):,.2f}"
-            pf_str = f"{trader.profit_factor:.2f}" if trader.profit_factor != float('inf') else "∞"
-            
-            print(f"{i:<4} {trader.rating.value:<4} {addr_short:<14} "
-                  f"{trader.overall_score:>5.1f} {trader.win_rate:>7.1%} "
-                  f"{pf_str:>7} {pnl_str:>11} {trader.total_trades:>7} "
-                  f"{trader.max_drawdown:>7.1%}")
-        
-        print("=" * 80)
-        print(f"\n💡 建议跟单的交易者地址 (评级 A 及以上):")
+
+        # 主要指标表格
+        print(f"{'#':<3} {'等级':<3} {'地址':<14} {'评分':<6} {'胜率':<7} "
+              f"{'盈亏比':<7} {'总PnL':<11} {'交易数':<6} {'回撤':<6} "
+              f"{'Sharpe':<7} {'活跃天':<6} {'杠杆':<5} {'持仓':<4}")
+        print("-" * 120)
+
+        for i, t in enumerate(traders, 1):
+            addr_short = f"{t.address[:6]}...{t.address[-4:]}"
+            pnl_str = f"${t.total_pnl:,.0f}" if t.total_pnl >= 0 else f"-${abs(t.total_pnl):,.0f}"
+            pf_str = f"{t.profit_factor:.2f}" if t.profit_factor != float('inf') else "∞"
+            sharpe_str = f"{t.sharpe_ratio:.2f}" if t.sharpe_ratio else "N/A"
+
+            print(f"{i:<3} {t.rating.value:<3} {addr_short:<14} "
+                  f"{t.overall_score:>5.1f} {t.win_rate:>6.1%} "
+                  f"{pf_str:>6} {pnl_str:>10} {t.total_trades:>5} "
+                  f"{t.max_drawdown:>5.1%} {sharpe_str:>6} "
+                  f"{t.active_days:>5} {t.avg_leverage:>4.0f}x {t.current_positions:>3}")
+
+        print("=" * 120)
+
+        # 详细信息（可选）
+        if detailed:
+            print("\n详细指标:")
+            print("-" * 120)
+            for i, t in enumerate(traders, 1):
+                last_trade = t.last_trade_time.strftime('%m-%d %H:%M') if t.last_trade_time else "N/A"
+                print(f"\n[{i}] {t.address}")
+                print(f"    基础: 胜率={t.win_rate:.1%}, 盈亏比={t.profit_factor:.2f}, "
+                      f"总PnL=${t.total_pnl:,.2f}, 交易数={t.total_trades}")
+                print(f"    风险: Sharpe={t.sharpe_ratio:.2f}, Sortino={t.sortino_ratio:.2f}, "
+                      f"回撤={t.max_drawdown:.1%}, 最大单亏=${t.max_single_loss:,.2f}")
+                print(f"    活跃: 活跃天={t.active_days}, 最后交易={last_trade}, "
+                      f"杠杆={t.avg_leverage:.0f}x, 持仓数={t.current_positions}")
+                print(f"    交易: 平均价格=${t.avg_trade_price:,.2f}, 平均规模=${t.avg_trade_size:,.2f}, "
+                      f"连赢={t.max_consecutive_wins}, 连亏={t.max_consecutive_losses}")
+                print(f"    偏好: 品种数={t.unique_symbols}, 最爱={t.favorite_symbol or 'N/A'}, "
+                      f"多空比={t.long_short_ratio:.1%}")
+                print(f"    近7天: PnL=${t.recent_7d_pnl:,.2f}, 胜率={t.recent_7d_win_rate:.1%}")
+                print(f"    平均盈利=${t.avg_win_amount:,.2f}, 平均亏损=${t.avg_loss_amount:,.2f}")
+
+        # 推荐列表
+        print(f"\n建议跟单的交易者地址 (评级 A 及以上):")
         for trader in traders:
             if trader.rating in [QualityRating.S_TIER, QualityRating.A_TIER]:
-                print(f"  [{trader.rating.value}] {trader.address}")
-        
+                last_trade = trader.last_trade_time.strftime('%m-%d') if trader.last_trade_time else "N/A"
+                print(f"  [{trader.rating.value}] {trader.address} "
+                      f"(胜率:{trader.win_rate:.0%}, PnL:${trader.total_pnl:,.0f}, 最后:{last_trade})")
+
         print()
     
     def get_sample_addresses(self) -> List[str]:
