@@ -21,7 +21,8 @@ import {
   DropdownMenu,
   DropdownItem,
 } from '@heroui/dropdown';
-import { Divider } from '@heroui/divider';
+import { Select, SelectItem } from '@heroui/select';
+import { Form } from '@heroui/form';
 import { SearchIcon } from '@heroui/shared-icons';
 import { Icon } from '@iconify/react';
 import DefaultLayout from '@/layouts/default';
@@ -77,8 +78,11 @@ const columns: Column[] = [
 
 const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
   'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
-  'total_pnl', 'profit_factor', 'max_drawdown', 'sharpe_ratio',
-  'active_days', 'recent_7d_pnl', 'last_trade_time'
+  'total_pnl', 'roi', 'profit_factor', 'max_drawdown', 'sharpe_ratio',
+  'sortino_ratio', 'current_equity', 'active_days', 'avg_leverage',
+  'current_positions', 'recent_7d_pnl', 'recent_7d_win_rate',
+  'max_consecutive_wins', 'max_consecutive_losses', 'unique_symbols',
+  'favorite_symbol', 'long_short_ratio', 'last_trade_time'
 ];
 
 // 高级筛选器配置
@@ -105,8 +109,7 @@ export default function TradersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // 高级筛选状态
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  // 筛选状态
   const [filters, setFilters] = useState<FilterConfig>({});
 
   // 高级表格状态
@@ -214,22 +217,6 @@ export default function TradersPage() {
     setPage(1);
   }, []);
 
-  // 获取当前筛选状态数量
-  const getActiveFiltersCount = useCallback(() => {
-    let count = 0;
-    if (selectedRating) count++;
-    if (searchAddress) count++;
-    if (filters.minWinRate !== undefined) count++;
-    if (filters.minProfitFactor !== undefined) count++;
-    if (filters.minPnl !== undefined) count++;
-    if (filters.maxDrawdown !== undefined) count++;
-    if (filters.minSharpe !== undefined) count++;
-    if (filters.minTrades !== undefined) count++;
-    if (filters.minActiveDays !== undefined) count++;
-    if (filters.hasRecentTrade !== undefined) count++;
-    return count;
-  }, [selectedRating, searchAddress, filters]);
-
   // 格式化日期
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
@@ -318,153 +305,108 @@ export default function TradersPage() {
 
   // 表格顶部内容
   const topContent = useMemo(() => {
-    const activeFilters = getActiveFiltersCount();
-
     return (
       <div className="flex flex-col gap-4">
-        {/* 筛选工具栏 */}
-        <div className="flex items-center gap-4 overflow-auto px-[6px] py-[4px]">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-4">
-              <Input
-                className="min-w-[200px]"
-                endContent={<SearchIcon className="text-default-400" width={16} />}
-                placeholder="搜索地址..."
-                size="sm"
-                value={searchAddress}
-                onValueChange={onSearchChange}
-                isClearable
-                onClear={() => setSearchAddress('')}
-              />
+        <Form className="flex flex-col gap-4">
+          {/* 第一行：地址搜索 + 评级 + 排序 + 列选择 */}
+          <div className="flex flex-wrap items-end gap-3">
+            <Input
+              className="w-[220px]"
+              endContent={<SearchIcon className="text-default-400" width={16} />}
+              label="地址"
+              labelPlacement="outside"
+              placeholder="搜索地址..."
+              size="sm"
+              value={searchAddress}
+              onValueChange={onSearchChange}
+              isClearable
+              onClear={() => setSearchAddress('')}
+            />
 
-              {/* Rating 筛选 */}
-              <div className="flex gap-1">
-                {['S', 'A', 'B', 'C', 'D', 'F'].map((rating) => (
+            <Select
+              className="w-[120px]"
+              label="评级"
+              labelPlacement="outside"
+              placeholder="全部"
+              size="sm"
+              selectedKeys={selectedRating ? [selectedRating] : []}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as string;
+                setSelectedRating(selected || '');
+              }}
+            >
+              <SelectItem key="S">S</SelectItem>
+              <SelectItem key="A">A</SelectItem>
+              <SelectItem key="B">B</SelectItem>
+              <SelectItem key="C">C</SelectItem>
+              <SelectItem key="D">D</SelectItem>
+              <SelectItem key="F">F</SelectItem>
+            </Select>
+
+            <Select
+              className="w-[140px]"
+              label="排序"
+              labelPlacement="outside"
+              placeholder="选择排序"
+              size="sm"
+              selectedKeys={sortDescriptor.column ? [sortDescriptor.column as string] : []}
+              onSelectionChange={(keys) => {
+                const selected = Array.from(keys)[0] as string;
+                if (selected) {
+                  setSortDescriptor({
+                    column: selected,
+                    direction: sortDescriptor.column === selected && sortDescriptor.direction === 'descending'
+                      ? 'ascending'
+                      : 'descending',
+                  });
+                }
+              }}
+            >
+              {columns.filter((c) => c.sortable).map((col) => (
+                <SelectItem key={col.uid}>{col.name}</SelectItem>
+              ))}
+            </Select>
+
+            {/* Columns 下拉 */}
+            <div className="flex flex-col">
+              <span className="text-xs text-default-600 mb-1">显示列</span>
+              <Dropdown closeOnSelect={false}>
+                <DropdownTrigger>
                   <Button
-                    key={rating}
+                    className="bg-default-100 text-default-800"
                     size="sm"
-                    variant={selectedRating === rating ? 'solid' : 'bordered'}
-                    color={selectedRating === rating ? 'primary' : 'default'}
-                    className="min-w-8 px-2"
-                    onPress={() =>
-                      setSelectedRating(selectedRating === rating ? '' : rating)
+                    startContent={
+                      <Icon
+                        className="text-default-400"
+                        icon="solar:sort-horizontal-linear"
+                        width={16}
+                      />
                     }
                   >
-                    {rating}
+                    列
                   </Button>
-                ))}
-              </div>
-
-              {/* Sort 下拉 */}
-              <div>
-                <Dropdown>
-                  <DropdownTrigger>
-                    <Button
-                      className="bg-default-100 text-default-800"
-                      size="sm"
-                      startContent={
-                        <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
-                      }
-                    >
-                      排序
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    aria-label="Sort"
-                    items={columns.filter((c) => c.sortable)}
-                  >
-                    {(item) => (
-                      <DropdownItem
-                        key={item.uid}
-                        onPress={() => {
-                          setSortDescriptor({
-                            column: item.uid,
-                            direction:
-                              sortDescriptor.column === item.uid && sortDescriptor.direction === 'descending'
-                                ? 'ascending'
-                                : 'descending',
-                          });
-                        }}
-                      >
-                        {item.name}
-                      </DropdownItem>
-                    )}
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
-
-              {/* Columns 下拉 */}
-              <div>
-                <Dropdown closeOnSelect={false}>
-                  <DropdownTrigger>
-                    <Button
-                      className="bg-default-100 text-default-800"
-                      size="sm"
-                      startContent={
-                        <Icon
-                          className="text-default-400"
-                          icon="solar:sort-horizontal-linear"
-                          width={16}
-                        />
-                      }
-                    >
-                      列
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    disallowEmptySelection
-                    aria-label="Columns"
-                    items={columns}
-                    selectedKeys={visibleColumns}
-                    selectionMode="multiple"
-                    onSelectionChange={setVisibleColumns}
-                  >
-                    {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
-
-              {/* 高级筛选按钮 */}
-              <Button
-                className={showAdvancedFilters ? 'bg-primary-100 text-primary-800' : 'bg-default-100 text-default-800'}
-                size="sm"
-                startContent={
-                  <Icon className="text-default-400" icon="solar:filter-linear" width={16} />
-                }
-                onPress={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              >
-                高级筛选
-                {activeFilters > 0 && (
-                  <Chip size="sm" color="primary" variant="flat" className="ml-1">
-                    {activeFilters}
-                  </Chip>
-                )}
-              </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  disallowEmptySelection
+                  aria-label="Columns"
+                  items={columns}
+                  selectedKeys={visibleColumns}
+                  selectionMode="multiple"
+                  onSelectionChange={setVisibleColumns}
+                >
+                  {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+                </DropdownMenu>
+              </Dropdown>
             </div>
-
-            {activeFilters > 0 && (
-              <Button
-                className="bg-default-100 text-default-800"
-                size="sm"
-                variant="flat"
-                onPress={handleReset}
-                startContent={
-                  <Icon className="text-default-400" icon="solar:restart-linear" width={16} />
-                }
-              >
-                重置
-              </Button>
-            )}
           </div>
-        </div>
 
-        {/* 高级筛选面板 */}
-        {showAdvancedFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 p-4 bg-default-50 rounded-lg">
+          {/* 第二行：数值筛选条件 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
             <Input
               type="number"
               size="sm"
               label="最小胜率"
+              labelPlacement="outside"
               placeholder="0.5"
               value={filters.minWinRate?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minWinRate: v ? parseFloat(v) : undefined })}
@@ -474,6 +416,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最小盈亏比"
+              labelPlacement="outside"
               placeholder="1.5"
               value={filters.minProfitFactor?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minProfitFactor: v ? parseFloat(v) : undefined })}
@@ -482,6 +425,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最小PnL"
+              labelPlacement="outside"
               placeholder="1000"
               value={filters.minPnl?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minPnl: v ? parseFloat(v) : undefined })}
@@ -491,6 +435,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最大回撤"
+              labelPlacement="outside"
               placeholder="0.3"
               value={filters.maxDrawdown?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, maxDrawdown: v ? parseFloat(v) : undefined })}
@@ -500,6 +445,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最小Sharpe"
+              labelPlacement="outside"
               placeholder="1.0"
               value={filters.minSharpe?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minSharpe: v ? parseFloat(v) : undefined })}
@@ -508,6 +454,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最小交易数"
+              labelPlacement="outside"
               placeholder="50"
               value={filters.minTrades?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minTrades: v ? parseInt(v) : undefined })}
@@ -516,6 +463,7 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最小活跃天"
+              labelPlacement="outside"
               placeholder="7"
               value={filters.minActiveDays?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, minActiveDays: v ? parseInt(v) : undefined })}
@@ -524,16 +472,37 @@ export default function TradersPage() {
               type="number"
               size="sm"
               label="最近N天活跃"
+              labelPlacement="outside"
               placeholder="7"
               value={filters.hasRecentTrade?.toString() || ''}
               onValueChange={(v) => setFilters({ ...filters, hasRecentTrade: v ? parseInt(v) : undefined })}
               endContent={<span className="text-xs text-default-400">天</span>}
             />
           </div>
-        )}
+
+          {/* 第三行：搜索和重置按钮 */}
+          <div className="flex gap-2">
+            <Button
+              color="primary"
+              size="sm"
+              startContent={<SearchIcon width={16} />}
+              onPress={loadTraders}
+            >
+              搜索
+            </Button>
+            <Button
+              variant="flat"
+              size="sm"
+              startContent={<Icon icon="solar:restart-linear" width={16} />}
+              onPress={handleReset}
+            >
+              重置
+            </Button>
+          </div>
+        </Form>
       </div>
     );
-  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, showAdvancedFilters, filters, onSearchChange, handleReset, getActiveFiltersCount]);
+  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, filters, onSearchChange, handleReset, loadTraders]);
 
   // 表格底部内容
   const bottomContent = useMemo(() => {
@@ -557,19 +526,9 @@ export default function TradersPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col gap-4 py-8 md:py-10">
-        <div className="max-w-7xl w-full mx-auto">
+      <section className="flex flex-col gap-4 py-4">
+        <div className="w-full">
           <Card>
-            <CardHeader className="flex flex-col gap-3">
-              <div className="flex justify-between items-center w-full">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold">Trader Analytics</h1>
-                  <Chip size="sm" variant="flat" className="text-default-500">
-                    {totalCount}
-                  </Chip>
-                </div>
-              </div>
-            </CardHeader>
             <CardBody>
               {error ? (
                 <div className="text-center text-red-500 p-8">{error}</div>
