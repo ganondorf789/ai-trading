@@ -82,12 +82,19 @@ const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
 // 高级筛选器配置
 interface FilterConfig {
   minWinRate?: number;
+  maxWinRate?: number;
   minProfitFactor?: number;
+  maxProfitFactor?: number;
   minPnl?: number;
+  maxPnl?: number;
+  minDrawdown?: number;
   maxDrawdown?: number;
   minSharpe?: number;
+  maxSharpe?: number;
   minTrades?: number;
+  maxTrades?: number;
   minActiveDays?: number;
+  maxActiveDays?: number;
   hasRecentTrade?: number;
 }
 
@@ -125,14 +132,21 @@ export default function TradersPage() {
         rating: selectedRating || undefined,
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
-        // 高级筛选
+        // 高级筛选 - 区间查询
         min_win_rate: filters.minWinRate,
+        max_win_rate: filters.maxWinRate,
         min_profit_factor: filters.minProfitFactor,
+        max_profit_factor: filters.maxProfitFactor,
         min_pnl: filters.minPnl,
+        max_pnl: filters.maxPnl,
+        min_drawdown: filters.minDrawdown,
         max_drawdown: filters.maxDrawdown,
         min_sharpe: filters.minSharpe,
+        max_sharpe: filters.maxSharpe,
         min_trades: filters.minTrades,
+        max_trades: filters.maxTrades,
         min_active_days: filters.minActiveDays,
+        max_active_days: filters.maxActiveDays,
         has_recent_trade: filters.hasRecentTrade,
       };
 
@@ -377,84 +391,180 @@ export default function TradersPage() {
             </Select>
           </div>
 
-          {/* 第二行：数值筛选条件 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-            <Input
-              type="number"
-              size="sm"
-              label="最小胜率"
-              labelPlacement="outside"
-              placeholder="0.5"
-              value={filters.minWinRate?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minWinRate: v ? parseFloat(v) : undefined })}
-              endContent={<span className="text-xs text-default-400">%</span>}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最小盈亏比"
-              labelPlacement="outside"
-              placeholder="1.5"
-              value={filters.minProfitFactor?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minProfitFactor: v ? parseFloat(v) : undefined })}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最小PnL"
-              labelPlacement="outside"
-              placeholder="1000"
-              value={filters.minPnl?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minPnl: v ? parseFloat(v) : undefined })}
-              startContent={<span className="text-xs text-default-400">$</span>}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最大回撤"
-              labelPlacement="outside"
-              placeholder="0.3"
-              value={filters.maxDrawdown?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, maxDrawdown: v ? parseFloat(v) : undefined })}
-              endContent={<span className="text-xs text-default-400">%</span>}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最小Sharpe"
-              labelPlacement="outside"
-              placeholder="1.0"
-              value={filters.minSharpe?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minSharpe: v ? parseFloat(v) : undefined })}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最小交易数"
-              labelPlacement="outside"
-              placeholder="50"
-              value={filters.minTrades?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minTrades: v ? parseInt(v) : undefined })}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最小活跃天"
-              labelPlacement="outside"
-              placeholder="7"
-              value={filters.minActiveDays?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, minActiveDays: v ? parseInt(v) : undefined })}
-            />
-            <Input
-              type="number"
-              size="sm"
-              label="最近N天活跃"
-              labelPlacement="outside"
-              placeholder="7"
-              value={filters.hasRecentTrade?.toString() || ''}
-              onValueChange={(v) => setFilters({ ...filters, hasRecentTrade: v ? parseInt(v) : undefined })}
-              endContent={<span className="text-xs text-default-400">天</span>}
-            />
+          {/* 第二行：数值筛选条件（区间查询） */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 胜率区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">胜率</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minWinRate?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minWinRate: v ? parseFloat(v) : undefined })}
+                  endContent={<span className="text-xs text-default-400">%</span>}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxWinRate?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxWinRate: v ? parseFloat(v) : undefined })}
+                  endContent={<span className="text-xs text-default-400">%</span>}
+                />
+              </div>
+            </div>
+
+            {/* 盈亏比区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">盈亏比</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minProfitFactor?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minProfitFactor: v ? parseFloat(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxProfitFactor?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxProfitFactor: v ? parseFloat(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* PnL区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">总盈亏 ($)</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minPnl?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minPnl: v ? parseFloat(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxPnl?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxPnl: v ? parseFloat(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* 回撤区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">回撤</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minDrawdown?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minDrawdown: v ? parseFloat(v) : undefined })}
+                  endContent={<span className="text-xs text-default-400">%</span>}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxDrawdown?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxDrawdown: v ? parseFloat(v) : undefined })}
+                  endContent={<span className="text-xs text-default-400">%</span>}
+                />
+              </div>
+            </div>
+
+            {/* Sharpe区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">Sharpe</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minSharpe?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minSharpe: v ? parseFloat(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxSharpe?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxSharpe: v ? parseFloat(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* 交易数区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">交易数</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minTrades?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minTrades: v ? parseInt(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxTrades?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxTrades: v ? parseInt(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* 活跃天区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">活跃天数</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minActiveDays?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minActiveDays: v ? parseInt(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxActiveDays?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxActiveDays: v ? parseInt(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* 最近活跃 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">最近活跃</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="N天内"
+                  value={filters.hasRecentTrade?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, hasRecentTrade: v ? parseInt(v) : undefined })}
+                  endContent={<span className="text-xs text-default-400">天</span>}
+                />
+              </div>
+            </div>
           </div>
 
           {/* 第三行：搜索和重置按钮 */}

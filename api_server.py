@@ -53,30 +53,59 @@ def get_traders():
         if search:
             all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
 
-        # 应用高级筛选
+        # 应用高级筛选（区间查询）
         min_win_rate = request.args.get('min_win_rate', type=float)
+        max_win_rate = request.args.get('max_win_rate', type=float)
         min_profit_factor = request.args.get('min_profit_factor', type=float)
+        max_profit_factor = request.args.get('max_profit_factor', type=float)
         min_pnl = request.args.get('min_pnl', type=float)
+        max_pnl = request.args.get('max_pnl', type=float)
+        min_drawdown = request.args.get('min_drawdown', type=float)
         max_drawdown = request.args.get('max_drawdown', type=float)
         min_sharpe = request.args.get('min_sharpe', type=float)
+        max_sharpe = request.args.get('max_sharpe', type=float)
         min_trades = request.args.get('min_trades', type=int)
+        max_trades = request.args.get('max_trades', type=int)
         min_active_days = request.args.get('min_active_days', type=int)
+        max_active_days = request.args.get('max_active_days', type=int)
         has_recent_trade = request.args.get('has_recent_trade', type=int)  # 最近N天有交易
 
+        # 胜率区间
         if min_win_rate is not None:
             all_traders = [t for t in all_traders if t.get('win_rate', 0) >= min_win_rate]
+        if max_win_rate is not None:
+            all_traders = [t for t in all_traders if t.get('win_rate', 0) <= max_win_rate]
+        # 盈亏比区间
         if min_profit_factor is not None:
             all_traders = [t for t in all_traders if t.get('profit_factor', 0) >= min_profit_factor]
+        if max_profit_factor is not None:
+            all_traders = [t for t in all_traders if t.get('profit_factor', 0) <= max_profit_factor]
+        # PnL区间
         if min_pnl is not None:
             all_traders = [t for t in all_traders if t.get('total_pnl', 0) >= min_pnl]
+        if max_pnl is not None:
+            all_traders = [t for t in all_traders if t.get('total_pnl', 0) <= max_pnl]
+        # 回撤区间
+        if min_drawdown is not None:
+            all_traders = [t for t in all_traders if t.get('max_drawdown', 0) >= min_drawdown]
         if max_drawdown is not None:
             all_traders = [t for t in all_traders if t.get('max_drawdown', 1) <= max_drawdown]
+        # Sharpe区间
         if min_sharpe is not None:
             all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) >= min_sharpe]
+        if max_sharpe is not None:
+            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) <= max_sharpe]
+        # 交易数区间
         if min_trades is not None:
             all_traders = [t for t in all_traders if t.get('total_trades', 0) >= min_trades]
+        if max_trades is not None:
+            all_traders = [t for t in all_traders if t.get('total_trades', 0) <= max_trades]
+        # 活跃天区间
         if min_active_days is not None:
             all_traders = [t for t in all_traders if t.get('active_days', 0) >= min_active_days]
+        if max_active_days is not None:
+            all_traders = [t for t in all_traders if t.get('active_days', 0) <= max_active_days]
+        # 最近活跃
         if has_recent_trade is not None:
             from datetime import timedelta
             cutoff = datetime.now() - timedelta(days=has_recent_trade)
