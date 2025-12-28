@@ -15,12 +15,6 @@ import { Input } from '@heroui/input';
 import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
 import { Chip } from '@heroui/chip';
-import {
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
-} from '@heroui/dropdown';
 import { Select, SelectItem } from '@heroui/select';
 import { Form } from '@heroui/form';
 import { SearchIcon } from '@heroui/shared-icons';
@@ -128,7 +122,7 @@ export default function TradersPage() {
         page,
         limit: rowsPerPage,
         search: searchAddress || undefined,
-        min_rating: selectedRating || undefined,
+        rating: selectedRating || undefined,
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
         // 高级筛选
@@ -367,37 +361,20 @@ export default function TradersPage() {
               ))}
             </Select>
 
-            {/* Columns 下拉 */}
-            <div className="flex flex-col">
-              <span className="text-xs text-default-600 mb-1">显示列</span>
-              <Dropdown closeOnSelect={false}>
-                <DropdownTrigger>
-                  <Button
-                    className="bg-default-100 text-default-800"
-                    size="sm"
-                    startContent={
-                      <Icon
-                        className="text-default-400"
-                        icon="solar:sort-horizontal-linear"
-                        width={16}
-                      />
-                    }
-                  >
-                    列
-                  </Button>
-                </DropdownTrigger>
-                <DropdownMenu
-                  disallowEmptySelection
-                  aria-label="Columns"
-                  items={columns}
-                  selectedKeys={visibleColumns}
-                  selectionMode="multiple"
-                  onSelectionChange={setVisibleColumns}
-                >
-                  {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
-                </DropdownMenu>
-              </Dropdown>
-            </div>
+            <Select
+              className="w-[160px]"
+              label="显示列"
+              labelPlacement="outside"
+              placeholder="选择列"
+              size="sm"
+              selectionMode="multiple"
+              selectedKeys={visibleColumns}
+              onSelectionChange={setVisibleColumns}
+            >
+              {columns.map((col) => (
+                <SelectItem key={col.uid}>{col.name}</SelectItem>
+              ))}
+            </Select>
           </div>
 
           {/* 第二行：数值筛选条件 */}

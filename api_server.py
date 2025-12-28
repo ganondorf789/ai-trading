@@ -29,7 +29,7 @@ def get_traders():
     Query Parameters:
         - page: int, 页码，默认1
         - limit: int, 每页数量，默认20
-        - min_rating: str, 最低评级 (S/A/B/C/D/F)
+        - rating: str, 精确评级筛选 (S/A/B/C/D/F)
         - search: str, 地址搜索
         - sort_by: str, 排序字段
         - sort_order: str, 排序方向 (asc/desc)
@@ -37,13 +37,17 @@ def get_traders():
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
-        min_rating = request.args.get('min_rating')
+        rating = request.args.get('rating')
         search = request.args.get('search', '').strip()
         sort_by = request.args.get('sort_by', 'overall_score')
         sort_order = request.args.get('sort_order', 'desc')
 
         # 获取所有交易者
-        all_traders = db.get_top_traders(limit=100000, min_rating=min_rating)
+        all_traders = db.get_top_traders(limit=100000)
+
+        # 应用精确评级筛选
+        if rating:
+            all_traders = [t for t in all_traders if t.get('rating') == rating]
 
         # 应用搜索过滤
         if search:
