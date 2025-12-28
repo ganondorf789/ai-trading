@@ -99,6 +99,11 @@ export default function TraderDetailPage() {
 
   // 当前持仓状态
   const [openPositions, setOpenPositions] = useState<TraderFill[]>([]);
+  const [openPositionsPage, setOpenPositionsPage] = useState(1);
+  const [openPositionsTotalPages, setOpenPositionsTotalPages] = useState(1);
+  const [openPositionsTotalCount, setOpenPositionsTotalCount] = useState(0);
+  const [openPositionsLoading, setOpenPositionsLoading] = useState(false);
+  const openPositionsRowsPerPage = 20;
 
   useEffect(() => {
     if (!address) return;
@@ -120,7 +125,8 @@ export default function TraderDetailPage() {
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
           traderApi.getTraderFills(address, {
-            limit: 1000,
+            page: 1,
+            limit: openPositionsRowsPerPage,
             position_type: 'open',
           }),
         ]);
@@ -152,6 +158,10 @@ export default function TraderDetailPage() {
 
         if (openPositionsRes.success && openPositionsRes.data) {
           setOpenPositions(openPositionsRes.data);
+          if (openPositionsRes.pagination) {
+            setOpenPositionsTotalPages(openPositionsRes.pagination.total_pages);
+            setOpenPositionsTotalCount(openPositionsRes.pagination.total_count);
+          }
         }
       } catch (err: any) {
         setError(err.message || 'Failed to load trader data');
@@ -233,6 +243,36 @@ export default function TraderDetailPage() {
   useEffect(() => {
     setPage(1);
   }, [selectedCoin, pnlFilter, sortDescriptor]);
+
+  // 当前持仓分页变化时加载数据
+  useEffect(() => {
+    if (!address || loading) return;
+
+    const loadOpenPositions = async () => {
+      try {
+        setOpenPositionsLoading(true);
+        const res = await traderApi.getTraderFills(address, {
+          page: openPositionsPage,
+          limit: openPositionsRowsPerPage,
+          position_type: 'open',
+        });
+
+        if (res.success && res.data) {
+          setOpenPositions(res.data);
+          if (res.pagination) {
+            setOpenPositionsTotalPages(res.pagination.total_pages);
+            setOpenPositionsTotalCount(res.pagination.total_count);
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to load open positions:', err);
+      } finally {
+        setOpenPositionsLoading(false);
+      }
+    };
+
+    loadOpenPositions();
+  }, [address, openPositionsPage, loading]);
 
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -548,6 +588,26 @@ export default function TraderDetailPage() {
     );
   }, [fillsStats, searchValue, selectedCoin, pnlFilter, coins, sortDescriptor, visibleColumns, onSearchChange, handleReset, getActiveFiltersCount]);
 
+  // 历史交易页码跳转
+  const [jumpPage, setJumpPage] = useState('');
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setPage(pageNum);
+      setJumpPage('');
+    }
+  };
+
+  // 当前持仓页码跳转
+  const [openPositionsJumpPage, setOpenPositionsJumpPage] = useState('');
+  const handleOpenPositionsJumpPage = () => {
+    const pageNum = parseInt(openPositionsJumpPage);
+    if (pageNum >= 1 && pageNum <= openPositionsTotalPages) {
+      setOpenPositionsPage(pageNum);
+      setOpenPositionsJumpPage('');
+    }
+  };
+
   // 表格底部内容
   const bottomContent = useMemo(() => {
     return (
@@ -555,18 +615,34 @@ export default function TraderDetailPage() {
         <span className="text-sm text-gray-500">
           显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
         </span>
-        <Pagination
-          isCompact
-          showControls
-          showShadow
-          color="primary"
-          page={page}
-          total={totalPages}
-          onChange={setPage}
-        />
+        <div className="flex items-center gap-3">
+          <Pagination
+            isCompact
+            showControls
+            showShadow
+            color="primary"
+            page={page}
+            total={totalPages}
+            onChange={setPage}
+          />
+          <div className="flex items-center gap-1">
+            <span className="text-sm text-gray-500">跳转</span>
+            <Input
+              type="number"
+              size="sm"
+              className="w-16"
+              min={1}
+              max={totalPages}
+              value={jumpPage}
+              onValueChange={setJumpPage}
+              onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
+            />
+            <span className="text-sm text-gray-500">页</span>
+          </div>
+        </div>
       </div>
     );
-  }, [page, totalPages, totalCount, rowsPerPage]);
+  }, [page, totalPages, totalCount, rowsPerPage, jumpPage]);
 
   if (loading) {
     return (
@@ -1047,59 +1123,96 @@ export default function TraderDetailPage() {
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold">当前持仓</h2>
                 <Chip size="sm" variant="flat" color="warning">
-                  {openPositions.length}
+                  {openPositionsTotalCount}
                 </Chip>
               </div>
             </CardHeader>
             <CardBody>
-              {openPositions.length > 0 ? (
-                <Table
-                  isHeaderSticky
-                  aria-label="Open positions table"
-                  classNames={{
-                    wrapper: 'max-h-[400px]',
-                  }}
-                >
-                  <TableHeader>
-                    <TableColumn key="trade_time">开仓时间</TableColumn>
-                    <TableColumn key="coin">币种</TableColumn>
-                    <TableColumn key="side">方向</TableColumn>
-                    <TableColumn key="px">开仓价格</TableColumn>
-                    <TableColumn key="sz">数量</TableColumn>
-                    <TableColumn key="value">持仓价值</TableColumn>
-                    <TableColumn key="fee">手续费</TableColumn>
-                  </TableHeader>
-                  <TableBody items={openPositions}>
-                    {(item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-xs">{new Date(item.trade_time).toLocaleDateString()}</span>
-                            <span className="text-xs text-gray-500">{new Date(item.trade_time).toLocaleTimeString()}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-bold">{item.coin}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="sm"
-                            color={item.side === 'B' ? 'success' : 'danger'}
-                            variant="flat"
-                          >
-                            {item.side === 'B' ? 'LONG' : 'SHORT'}
-                          </Chip>
-                        </TableCell>
-                        <TableCell>${formatNumber(item.px, 4)}</TableCell>
-                        <TableCell>{formatNumber(item.sz, 4)}</TableCell>
-                        <TableCell>${formatNumber(item.px * item.sz, 2)}</TableCell>
-                        <TableCell>
-                          <span className="text-orange-500">${formatNumber(item.fee, 4)}</span>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              {openPositionsLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <Spinner size="lg" />
+                </div>
+              ) : openPositions.length > 0 ? (
+                <>
+                  <Table
+                    isHeaderSticky
+                    aria-label="Open positions table"
+                    classNames={{
+                      wrapper: 'max-h-[400px]',
+                    }}
+                  >
+                    <TableHeader>
+                      <TableColumn key="trade_time">开仓时间</TableColumn>
+                      <TableColumn key="coin">币种</TableColumn>
+                      <TableColumn key="side">方向</TableColumn>
+                      <TableColumn key="px">开仓价格</TableColumn>
+                      <TableColumn key="sz">数量</TableColumn>
+                      <TableColumn key="value">持仓价值</TableColumn>
+                      <TableColumn key="fee">手续费</TableColumn>
+                    </TableHeader>
+                    <TableBody items={openPositions}>
+                      {(item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-xs">{new Date(item.trade_time).toLocaleDateString()}</span>
+                              <span className="text-xs text-gray-500">{new Date(item.trade_time).toLocaleTimeString()}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-bold">{item.coin}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="sm"
+                              color={item.side === 'B' ? 'success' : 'danger'}
+                              variant="flat"
+                            >
+                              {item.side === 'B' ? 'LONG' : 'SHORT'}
+                            </Chip>
+                          </TableCell>
+                          <TableCell>${formatNumber(item.px, 4)}</TableCell>
+                          <TableCell>{formatNumber(item.sz, 4)}</TableCell>
+                          <TableCell>${formatNumber(item.px * item.sz, 2)}</TableCell>
+                          <TableCell>
+                            <span className="text-orange-500">${formatNumber(item.fee, 4)}</span>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  {/* 当前持仓分页 */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2 mt-4">
+                    <span className="text-sm text-gray-500">
+                      显示 {Math.min((openPositionsPage - 1) * openPositionsRowsPerPage + 1, openPositionsTotalCount)} - {Math.min(openPositionsPage * openPositionsRowsPerPage, openPositionsTotalCount)} 条，共 {openPositionsTotalCount} 条记录
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <Pagination
+                        isCompact
+                        showControls
+                        showShadow
+                        color="primary"
+                        page={openPositionsPage}
+                        total={openPositionsTotalPages}
+                        onChange={setOpenPositionsPage}
+                      />
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-gray-500">跳转</span>
+                        <Input
+                          type="number"
+                          size="sm"
+                          className="w-16"
+                          min={1}
+                          max={openPositionsTotalPages}
+                          value={openPositionsJumpPage}
+                          onValueChange={setOpenPositionsJumpPage}
+                          onKeyDown={(e) => e.key === 'Enter' && handleOpenPositionsJumpPage()}
+                        />
+                        <span className="text-sm text-gray-500">页</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
               ) : (
                 <div className="text-center text-gray-500 py-8">暂无当前持仓</div>
               )}

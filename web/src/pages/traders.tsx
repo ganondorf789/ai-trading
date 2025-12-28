@@ -504,6 +504,16 @@ export default function TradersPage() {
     );
   }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, filters, onSearchChange, handleReset, loadTraders]);
 
+  // 页码跳转
+  const [jumpPage, setJumpPage] = useState('');
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setPage(pageNum);
+      setJumpPage('');
+    }
+  };
+
   // 表格底部内容
   const bottomContent = useMemo(() => {
     return (
@@ -511,18 +521,34 @@ export default function TradersPage() {
         <span className="text-sm text-gray-500">
           显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
         </span>
-        <Pagination
-          isCompact
-          showControls
-          showShadow
-          color="primary"
-          page={page}
-          total={totalPages}
-          onChange={setPage}
-        />
+        <div className="flex items-center gap-3">
+          <Pagination
+            isCompact
+            showControls
+            showShadow
+            color="primary"
+            page={page}
+            total={totalPages}
+            onChange={setPage}
+          />
+          <div className="flex items-center gap-1">
+            <span className="text-sm text-gray-500">跳转</span>
+            <Input
+              type="number"
+              size="sm"
+              className="w-16"
+              min={1}
+              max={totalPages}
+              value={jumpPage}
+              onValueChange={setJumpPage}
+              onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
+            />
+            <span className="text-sm text-gray-500">页</span>
+          </div>
+        </div>
       </div>
     );
-  }, [page, totalPages, totalCount]);
+  }, [page, totalPages, totalCount, jumpPage]);
 
   return (
     <DefaultLayout>
