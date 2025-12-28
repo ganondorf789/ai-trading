@@ -100,7 +100,22 @@ class TraderDatabase:
                     profitability_score REAL DEFAULT 0.0,
                     risk_score REAL DEFAULT 0.0,
                     consistency_score REAL DEFAULT 0.0,
-                    activity_score REAL DEFAULT 0.0
+                    activity_score REAL DEFAULT 0.0,
+
+                    -- 新增分析字段
+                    avg_trade_price REAL DEFAULT 0.0,
+                    avg_trade_size REAL DEFAULT 0.0,
+                    max_single_win REAL DEFAULT 0.0,
+                    max_single_loss REAL DEFAULT 0.0,
+                    max_consecutive_wins INTEGER DEFAULT 0,
+                    max_consecutive_losses INTEGER DEFAULT 0,
+                    avg_win_amount REAL DEFAULT 0.0,
+                    avg_loss_amount REAL DEFAULT 0.0,
+                    unique_symbols INTEGER DEFAULT 0,
+                    favorite_symbol TEXT DEFAULT '',
+                    recent_7d_pnl REAL DEFAULT 0.0,
+                    recent_7d_win_rate REAL DEFAULT 0.0,
+                    long_short_ratio REAL DEFAULT 0.0
                 )
             """)
 
@@ -194,10 +209,47 @@ class TraderDatabase:
                 CREATE INDEX IF NOT EXISTS idx_fills_time
                 ON trader_fills(trade_time DESC)
             """)
+
+            # 迁移：为现有表添加新列（如果不存在）
+            self._migrate_add_new_columns(cursor)
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_fills_coin
                 ON trader_fills(coin)
             """)
+
+    def _migrate_add_new_columns(self, cursor):
+        """为现有表添加新列（数据库迁移）"""
+        # 获取现有列
+        cursor.execute("PRAGMA table_info(trader_metrics)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # 需要添加的新列及其默认值
+        new_columns = [
+            ("avg_trade_price", "REAL DEFAULT 0.0"),
+            ("avg_trade_size", "REAL DEFAULT 0.0"),
+            ("max_single_win", "REAL DEFAULT 0.0"),
+            ("max_single_loss", "REAL DEFAULT 0.0"),
+            ("max_consecutive_wins", "INTEGER DEFAULT 0"),
+            ("max_consecutive_losses", "INTEGER DEFAULT 0"),
+            ("avg_win_amount", "REAL DEFAULT 0.0"),
+            ("avg_loss_amount", "REAL DEFAULT 0.0"),
+            ("unique_symbols", "INTEGER DEFAULT 0"),
+            ("favorite_symbol", "TEXT DEFAULT ''"),
+            ("recent_7d_pnl", "REAL DEFAULT 0.0"),
+            ("recent_7d_win_rate", "REAL DEFAULT 0.0"),
+            ("long_short_ratio", "REAL DEFAULT 0.0"),
+        ]
+
+        # 添加缺失的列
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(
+                        f"ALTER TABLE trader_metrics ADD COLUMN {col_name} {col_type}"
+                    )
+                    logger.debug(f"已添加新列: {col_name}")
+                except Exception as e:
+                    logger.debug(f"添加列 {col_name} 失败（可能已存在）: {e}")
 
     def save_trader(self, metrics: TraderMetrics) -> int:
         """
@@ -223,8 +275,13 @@ class TraderDatabase:
                     active_days, last_trade_time, first_trade_time,
                     current_positions, current_equity,
                     overall_score, rating,
-                    profitability_score, risk_score, consistency_score, activity_score
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    profitability_score, risk_score, consistency_score, activity_score,
+                    avg_trade_price, avg_trade_size, max_single_win, max_single_loss,
+                    max_consecutive_wins, max_consecutive_losses,
+                    avg_win_amount, avg_loss_amount,
+                    unique_symbols, favorite_symbol,
+                    recent_7d_pnl, recent_7d_win_rate, long_short_ratio
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(address) DO UPDATE SET
                     analyzed_at = excluded.analyzed_at,
                     total_trades = excluded.total_trades,
@@ -254,7 +311,20 @@ class TraderDatabase:
                     profitability_score = excluded.profitability_score,
                     risk_score = excluded.risk_score,
                     consistency_score = excluded.consistency_score,
-                    activity_score = excluded.activity_score
+                    activity_score = excluded.activity_score,
+                    avg_trade_price = excluded.avg_trade_price,
+                    avg_trade_size = excluded.avg_trade_size,
+                    max_single_win = excluded.max_single_win,
+                    max_single_loss = excluded.max_single_loss,
+                    max_consecutive_wins = excluded.max_consecutive_wins,
+                    max_consecutive_losses = excluded.max_consecutive_losses,
+                    avg_win_amount = excluded.avg_win_amount,
+                    avg_loss_amount = excluded.avg_loss_amount,
+                    unique_symbols = excluded.unique_symbols,
+                    favorite_symbol = excluded.favorite_symbol,
+                    recent_7d_pnl = excluded.recent_7d_pnl,
+                    recent_7d_win_rate = excluded.recent_7d_win_rate,
+                    long_short_ratio = excluded.long_short_ratio
             """, (
                 metrics.address,
                 datetime.now().isoformat(),
@@ -285,7 +355,20 @@ class TraderDatabase:
                 metrics.profitability_score,
                 metrics.risk_score,
                 metrics.consistency_score,
-                metrics.activity_score
+                metrics.activity_score,
+                metrics.avg_trade_price,
+                metrics.avg_trade_size,
+                metrics.max_single_win,
+                metrics.max_single_loss,
+                metrics.max_consecutive_wins,
+                metrics.max_consecutive_losses,
+                metrics.avg_win_amount,
+                metrics.avg_loss_amount,
+                metrics.unique_symbols,
+                metrics.favorite_symbol,
+                metrics.recent_7d_pnl,
+                metrics.recent_7d_win_rate,
+                metrics.long_short_ratio
             ))
 
             return cursor.lastrowid
@@ -562,54 +645,8 @@ class TraderDatabase:
 
             # 保存交易者并关联到会话
             for rank, trader in enumerate(traders, 1):
-                # 保存交易者
-                cursor.execute("""
-                    INSERT INTO trader_metrics (
-                        address, analyzed_at,
-                        total_trades, winning_trades, losing_trades,
-                        total_pnl, realized_pnl, unrealized_pnl, total_volume,
-                        roi, avg_profit_per_trade,
-                        win_rate, profit_factor, max_drawdown, sharpe_ratio, sortino_ratio,
-                        avg_holding_time_hours, trade_frequency_per_day, avg_leverage,
-                        active_days, last_trade_time, first_trade_time,
-                        current_positions, current_equity,
-                        overall_score, rating,
-                        profitability_score, risk_score, consistency_score, activity_score
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    trader.address,
-                    datetime.now().isoformat(),
-                    trader.total_trades,
-                    trader.winning_trades,
-                    trader.losing_trades,
-                    trader.total_pnl,
-                    trader.realized_pnl,
-                    trader.unrealized_pnl,
-                    trader.total_volume,
-                    trader.roi,
-                    trader.avg_profit_per_trade,
-                    trader.win_rate,
-                    trader.profit_factor if trader.profit_factor != float('inf') else 999999.0,
-                    trader.max_drawdown,
-                    trader.sharpe_ratio,
-                    trader.sortino_ratio,
-                    trader.avg_holding_time_hours,
-                    trader.trade_frequency_per_day,
-                    trader.avg_leverage,
-                    trader.active_days,
-                    trader.last_trade_time.isoformat() if trader.last_trade_time else None,
-                    trader.first_trade_time.isoformat() if trader.first_trade_time else None,
-                    trader.current_positions,
-                    trader.current_equity,
-                    trader.overall_score,
-                    trader.rating.value,
-                    trader.profitability_score,
-                    trader.risk_score,
-                    trader.consistency_score,
-                    trader.activity_score
-                ))
-
-                trader_id = cursor.lastrowid
+                # 保存交易者（复用 save_trader 的逻辑）
+                trader_id = self.save_trader(trader)
 
                 # 关联到会话
                 cursor.execute("""
