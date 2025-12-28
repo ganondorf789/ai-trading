@@ -9,6 +9,7 @@ from typing import Optional
 import logging
 
 from screener.database import TraderDatabase
+from screener.trader_screener import TraderScreener, ScreenerConfig
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -219,6 +220,65 @@ def get_trader_detail(address: str):
 
     except Exception as e:
         logger.error(f"获取交易者详情失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/traders/<address>/refresh', methods=['POST'])
+def refresh_trader(address: str):
+    """
+    重新分析交易者数据
+    Query Parameters:
+        - lookback_days: int, 分析回溯天数，默认30
+        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """
+    try:
+        lookback_days = int(request.args.get('lookback_days', 30))
+        max_fills = int(request.args.get('max_fills', 0))
+
+        logger.info(f"开始重新分析交易者: {address}")
+
+        # 初始化筛选器
+        config = ScreenerConfig(
+            lookback_days=lookback_days,
+            max_fills_per_trader=max_fills,
+            api_call_delay=0.5,
+            max_retries=3,
+        )
+        screener = TraderScreener(config)
+
+        # 分析交易者
+        metrics = screener.analyze_trader(address)
+
+        if not metrics or metrics.total_trades == 0:
+            return jsonify({
+                'success': False,
+                'error': '无法获取交易者数据或该交易者无交易记录'
+            }), 404
+
+        # 保存到数据库
+        _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
+
+        logger.info(f"交易者分析完成: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}")
+
+        # 返回更新后的数据
+        trader = db.get_trader_by_address(address)
+        fills_summary = db.get_fills_summary(address)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'trader': trader,
+                'fills_summary': fills_summary,
+                'fills_saved': fills_saved
+            },
+            'message': f'分析完成，保存了 {fills_saved} 条交易记录'
+        })
+
+    except Exception as e:
+        logger.error(f"重新分析交易者失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

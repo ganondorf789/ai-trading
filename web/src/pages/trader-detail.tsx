@@ -88,6 +88,7 @@ export default function TraderDetailPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [fillsLoading, setFillsLoading] = useState(false);
   const [fillsStats, setFillsStats] = useState<FillsStats | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // 高级表格状态
   const [searchValue, setSearchValue] = useState('');
@@ -172,6 +173,77 @@ export default function TraderDetailPage() {
 
     loadData();
   }, [address]);
+
+  // 刷新交易者数据
+  const handleRefresh = async () => {
+    if (!address || refreshing) return;
+
+    try {
+      setRefreshing(true);
+      const res = await traderApi.refreshTrader(address, {
+        lookback_days: 30,
+        max_fills: 0,
+      });
+
+      if (res.success && res.data) {
+        setTrader(res.data.trader);
+        if (res.data.fills_summary) {
+          setFillsSummary(res.data.fills_summary);
+        }
+        // 重新加载交易记录和图表数据
+        const [fillsRes, historyRes, openPositionsRes] = await Promise.all([
+          traderApi.getTraderFills(address, {
+            page: 1,
+            limit: rowsPerPage,
+            coin: selectedCoin !== 'all' ? selectedCoin : undefined,
+            pnl_filter: pnlFilter,
+            position_type: 'closed',
+          }),
+          traderApi.getTraderHistory(address, { days: timeRange }),
+          traderApi.getTraderFills(address, {
+            page: 1,
+            limit: openPositionsRowsPerPage,
+            position_type: 'open',
+          }),
+        ]);
+
+        if (fillsRes.success && fillsRes.data) {
+          setFills(fillsRes.data);
+          const coinSet = new Set(fillsRes.data.map((f: TraderFill) => f.coin));
+          setAllCoins(Array.from(coinSet).sort());
+          if (fillsRes.pagination) {
+            setTotalPages(fillsRes.pagination.total_pages);
+            setTotalCount(fillsRes.pagination.total_count);
+          }
+          if (fillsRes.stats) {
+            setFillsStats(fillsRes.stats);
+          }
+        }
+
+        if (historyRes.success && historyRes.data) {
+          setHistory(historyRes.data);
+        }
+
+        if (openPositionsRes.success && openPositionsRes.data) {
+          setOpenPositions(openPositionsRes.data);
+          if (openPositionsRes.pagination) {
+            setOpenPositionsTotalPages(openPositionsRes.pagination.total_pages);
+            setOpenPositionsTotalCount(openPositionsRes.pagination.total_count);
+          }
+        }
+
+        setPage(1);
+        setOpenPositionsPage(1);
+      } else {
+        setError(res.error || '刷新失败');
+      }
+    } catch (err: any) {
+      console.error('Failed to refresh trader:', err);
+      setError(err.message || '刷新失败');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // 时间范围改变时重新加载图表数据
   useEffect(() => {
@@ -688,6 +760,16 @@ export default function TraderDetailPage() {
                   <p className="text-sm text-gray-500 font-mono mt-1">{address}</p>
                 </div>
                 <div className="flex items-center gap-4">
+                  <Button
+                    size="sm"
+                    color="primary"
+                    variant="flat"
+                    isLoading={refreshing}
+                    onPress={handleRefresh}
+                    startContent={!refreshing && <Icon icon="solar:refresh-linear" width={16} />}
+                  >
+                    {refreshing ? '分析中...' : '刷新分析'}
+                  </Button>
                   <div className="text-right">
                     <p className="text-sm text-gray-500">Rating</p>
                     <p className={`text-4xl font-bold ${getRatingColor(trader.rating)}`}>

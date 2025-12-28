@@ -210,6 +210,17 @@ export const traderApi = {
   // 获取会话的交易者
   getSessionTraders: (sessionId: number) =>
     api.get<any, ApiResponse<Trader[]>>(`/sessions/${sessionId}/traders`),
+
+  // 重新分析交易者（分析可能需要较长时间，设置更长超时）
+  refreshTrader: (address: string, params?: {
+    lookback_days?: number;
+    max_fills?: number;
+  }) =>
+    api.post<any, ApiResponse<{ trader: Trader; fills_summary: FillsSummary; fills_saved: number }> & { message?: string }>(
+      `/traders/${address}/refresh`,
+      null,
+      { params, timeout: 120000 }  // 2分钟超时
+    ),
 };
 
 export default api;
