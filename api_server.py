@@ -48,11 +48,52 @@ def get_traders():
         if search:
             all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
 
+        # 应用高级筛选
+        min_win_rate = request.args.get('min_win_rate', type=float)
+        min_profit_factor = request.args.get('min_profit_factor', type=float)
+        min_pnl = request.args.get('min_pnl', type=float)
+        max_drawdown = request.args.get('max_drawdown', type=float)
+        min_sharpe = request.args.get('min_sharpe', type=float)
+        min_trades = request.args.get('min_trades', type=int)
+        min_active_days = request.args.get('min_active_days', type=int)
+        has_recent_trade = request.args.get('has_recent_trade', type=int)  # 最近N天有交易
+
+        if min_win_rate is not None:
+            all_traders = [t for t in all_traders if t.get('win_rate', 0) >= min_win_rate]
+        if min_profit_factor is not None:
+            all_traders = [t for t in all_traders if t.get('profit_factor', 0) >= min_profit_factor]
+        if min_pnl is not None:
+            all_traders = [t for t in all_traders if t.get('total_pnl', 0) >= min_pnl]
+        if max_drawdown is not None:
+            all_traders = [t for t in all_traders if t.get('max_drawdown', 1) <= max_drawdown]
+        if min_sharpe is not None:
+            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) >= min_sharpe]
+        if min_trades is not None:
+            all_traders = [t for t in all_traders if t.get('total_trades', 0) >= min_trades]
+        if min_active_days is not None:
+            all_traders = [t for t in all_traders if t.get('active_days', 0) >= min_active_days]
+        if has_recent_trade is not None:
+            from datetime import timedelta
+            cutoff = datetime.now() - timedelta(days=has_recent_trade)
+            def is_recent(t):
+                last_trade = t.get('last_trade_time')
+                if not last_trade:
+                    return False
+                try:
+                    trade_time = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
+                    return trade_time.replace(tzinfo=None) >= cutoff
+                except:
+                    return False
+            all_traders = [t for t in all_traders if is_recent(t)]
+
         # 应用排序
         valid_sort_fields = {
             'overall_score', 'rating', 'total_trades', 'win_rate',
             'total_pnl', 'roi', 'profit_factor', 'max_drawdown',
-            'sharpe_ratio', 'current_equity', 'active_days', 'last_trade_time'
+            'sharpe_ratio', 'sortino_ratio', 'current_equity', 'active_days',
+            'last_trade_time', 'avg_leverage', 'current_positions',
+            'recent_7d_pnl', 'recent_7d_win_rate', 'unique_symbols',
+            'max_consecutive_wins', 'max_consecutive_losses', 'long_short_ratio'
         }
         if sort_by in valid_sort_fields:
             reverse = sort_order.lower() != 'asc'
@@ -77,25 +118,56 @@ def get_traders():
         end = start + limit
         traders = all_traders[start:end]
 
-        # 格式化数据
+        # 格式化数据（返回所有可用字段）
         result = []
         for trader in traders:
             result.append({
-                'id': trader['id'],
-                'address': trader['address'],
-                'analyzed_at': trader['analyzed_at'],
-                'total_trades': trader['total_trades'],
-                'win_rate': trader['win_rate'],
-                'total_pnl': trader['total_pnl'],
-                'roi': trader['roi'],
-                'profit_factor': trader['profit_factor'],
-                'max_drawdown': trader['max_drawdown'],
-                'sharpe_ratio': trader['sharpe_ratio'],
-                'overall_score': trader['overall_score'],
-                'rating': trader['rating'],
-                'current_equity': trader['current_equity'],
-                'active_days': trader['active_days'],
-                'last_trade_time': trader['last_trade_time']
+                'id': trader.get('id'),
+                'address': trader.get('address'),
+                'analyzed_at': trader.get('analyzed_at'),
+                # 基础统计
+                'total_trades': trader.get('total_trades', 0),
+                'winning_trades': trader.get('winning_trades', 0),
+                'losing_trades': trader.get('losing_trades', 0),
+                'win_rate': trader.get('win_rate', 0),
+                # 盈亏指标
+                'total_pnl': trader.get('total_pnl', 0),
+                'realized_pnl': trader.get('realized_pnl', 0),
+                'unrealized_pnl': trader.get('unrealized_pnl', 0),
+                'roi': trader.get('roi', 0),
+                'profit_factor': trader.get('profit_factor', 0),
+                # 风险指标
+                'max_drawdown': trader.get('max_drawdown', 0),
+                'sharpe_ratio': trader.get('sharpe_ratio', 0),
+                'sortino_ratio': trader.get('sortino_ratio', 0),
+                # 评分
+                'overall_score': trader.get('overall_score', 0),
+                'rating': trader.get('rating', 'F'),
+                'profitability_score': trader.get('profitability_score', 0),
+                'risk_score': trader.get('risk_score', 0),
+                'consistency_score': trader.get('consistency_score', 0),
+                'activity_score': trader.get('activity_score', 0),
+                # 活跃度
+                'current_equity': trader.get('current_equity', 0),
+                'current_positions': trader.get('current_positions', 0),
+                'active_days': trader.get('active_days', 0),
+                'avg_leverage': trader.get('avg_leverage', 1),
+                'last_trade_time': trader.get('last_trade_time'),
+                'first_trade_time': trader.get('first_trade_time'),
+                # 新增分析字段
+                'avg_trade_price': trader.get('avg_trade_price', 0),
+                'avg_trade_size': trader.get('avg_trade_size', 0),
+                'max_single_win': trader.get('max_single_win', 0),
+                'max_single_loss': trader.get('max_single_loss', 0),
+                'max_consecutive_wins': trader.get('max_consecutive_wins', 0),
+                'max_consecutive_losses': trader.get('max_consecutive_losses', 0),
+                'avg_win_amount': trader.get('avg_win_amount', 0),
+                'avg_loss_amount': trader.get('avg_loss_amount', 0),
+                'unique_symbols': trader.get('unique_symbols', 0),
+                'favorite_symbol': trader.get('favorite_symbol', ''),
+                'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
+                'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
+                'long_short_ratio': trader.get('long_short_ratio', 0),
             })
 
         return jsonify({

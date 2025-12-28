@@ -28,33 +28,70 @@ import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader } from '@/services/api';
 
 // 表格列配置
-type ColumnKey = 'rating' | 'address' | 'overall_score' | 'total_trades' | 'win_rate' | 'total_pnl' | 'roi' | 'profit_factor' | 'max_drawdown' | 'sharpe_ratio' | 'current_equity' | 'active_days';
+type ColumnKey =
+  | 'rating' | 'address' | 'overall_score' | 'total_trades' | 'win_rate'
+  | 'total_pnl' | 'roi' | 'profit_factor' | 'max_drawdown' | 'sharpe_ratio'
+  | 'sortino_ratio' | 'current_equity' | 'active_days' | 'avg_leverage'
+  | 'current_positions' | 'recent_7d_pnl' | 'recent_7d_win_rate'
+  | 'max_consecutive_wins' | 'max_consecutive_losses' | 'unique_symbols'
+  | 'favorite_symbol' | 'long_short_ratio' | 'last_trade_time';
 
 interface Column {
   uid: ColumnKey;
   name: string;
   sortable?: boolean;
+  group?: string;
 }
 
 const columns: Column[] = [
-  { uid: 'rating', name: '评级', sortable: true },
-  { uid: 'address', name: '地址', sortable: false },
-  { uid: 'overall_score', name: '评分', sortable: true },
-  { uid: 'total_trades', name: '交易次数', sortable: true },
-  { uid: 'win_rate', name: '胜率', sortable: true },
-  { uid: 'total_pnl', name: '总盈亏', sortable: true },
-  { uid: 'roi', name: 'ROI', sortable: true },
-  { uid: 'profit_factor', name: '盈亏比', sortable: true },
-  { uid: 'max_drawdown', name: '最大回撤', sortable: true },
-  { uid: 'sharpe_ratio', name: '夏普', sortable: true },
-  { uid: 'current_equity', name: '当前权益', sortable: true },
-  { uid: 'active_days', name: '活跃天数', sortable: true },
+  // 基础
+  { uid: 'rating', name: '评级', sortable: true, group: '基础' },
+  { uid: 'address', name: '地址', sortable: false, group: '基础' },
+  { uid: 'overall_score', name: '评分', sortable: true, group: '基础' },
+  // 交易统计
+  { uid: 'total_trades', name: '交易数', sortable: true, group: '统计' },
+  { uid: 'win_rate', name: '胜率', sortable: true, group: '统计' },
+  { uid: 'total_pnl', name: '总盈亏', sortable: true, group: '盈亏' },
+  { uid: 'roi', name: 'ROI', sortable: true, group: '盈亏' },
+  { uid: 'profit_factor', name: '盈亏比', sortable: true, group: '盈亏' },
+  // 风险
+  { uid: 'max_drawdown', name: '回撤', sortable: true, group: '风险' },
+  { uid: 'sharpe_ratio', name: 'Sharpe', sortable: true, group: '风险' },
+  { uid: 'sortino_ratio', name: 'Sortino', sortable: true, group: '风险' },
+  // 活跃度
+  { uid: 'active_days', name: '活跃天', sortable: true, group: '活跃' },
+  { uid: 'current_equity', name: '权益', sortable: true, group: '活跃' },
+  { uid: 'avg_leverage', name: '杠杆', sortable: true, group: '活跃' },
+  { uid: 'current_positions', name: '持仓', sortable: true, group: '活跃' },
+  { uid: 'last_trade_time', name: '最后交易', sortable: true, group: '活跃' },
+  // 近期表现
+  { uid: 'recent_7d_pnl', name: '7天PnL', sortable: true, group: '近期' },
+  { uid: 'recent_7d_win_rate', name: '7天胜率', sortable: true, group: '近期' },
+  // 交易特征
+  { uid: 'max_consecutive_wins', name: '连赢', sortable: true, group: '特征' },
+  { uid: 'max_consecutive_losses', name: '连亏', sortable: true, group: '特征' },
+  { uid: 'unique_symbols', name: '品种数', sortable: true, group: '特征' },
+  { uid: 'favorite_symbol', name: '常用品种', sortable: false, group: '特征' },
+  { uid: 'long_short_ratio', name: '多空比', sortable: true, group: '特征' },
 ];
 
 const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
   'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
-  'total_pnl', 'roi', 'profit_factor', 'max_drawdown', 'sharpe_ratio', 'current_equity'
+  'total_pnl', 'profit_factor', 'max_drawdown', 'sharpe_ratio',
+  'active_days', 'recent_7d_pnl', 'last_trade_time'
 ];
+
+// 高级筛选器配置
+interface FilterConfig {
+  minWinRate?: number;
+  minProfitFactor?: number;
+  minPnl?: number;
+  maxDrawdown?: number;
+  minSharpe?: number;
+  minTrades?: number;
+  minActiveDays?: number;
+  hasRecentTrade?: number;
+}
 
 export default function TradersPage() {
   const navigate = useNavigate();
@@ -67,6 +104,10 @@ export default function TradersPage() {
   const rowsPerPage = 20;
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // 高级筛选状态
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterConfig>({});
 
   // 高级表格状态
   const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
@@ -87,6 +128,15 @@ export default function TradersPage() {
         min_rating: selectedRating || undefined,
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
+        // 高级筛选
+        min_win_rate: filters.minWinRate,
+        min_profit_factor: filters.minProfitFactor,
+        min_pnl: filters.minPnl,
+        max_drawdown: filters.maxDrawdown,
+        min_sharpe: filters.minSharpe,
+        min_trades: filters.minTrades,
+        min_active_days: filters.minActiveDays,
+        has_recent_trade: filters.hasRecentTrade,
       };
 
       const response = await traderApi.getTraders(params);
@@ -105,7 +155,7 @@ export default function TradersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, searchAddress, selectedRating, sortDescriptor]);
+  }, [page, searchAddress, selectedRating, sortDescriptor, filters]);
 
   useEffect(() => {
     loadTraders();
@@ -114,7 +164,7 @@ export default function TradersPage() {
   // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [searchAddress, selectedRating, sortDescriptor]);
+  }, [searchAddress, selectedRating, sortDescriptor, filters]);
 
   const getRatingColor = (rating: string) => {
     const colors: Record<string, string> = {
@@ -159,6 +209,7 @@ export default function TradersPage() {
   const handleReset = useCallback(() => {
     setSelectedRating('');
     setSearchAddress('');
+    setFilters({});
     setSortDescriptor({ column: 'overall_score', direction: 'descending' });
     setPage(1);
   }, []);
@@ -168,8 +219,27 @@ export default function TradersPage() {
     let count = 0;
     if (selectedRating) count++;
     if (searchAddress) count++;
+    if (filters.minWinRate !== undefined) count++;
+    if (filters.minProfitFactor !== undefined) count++;
+    if (filters.minPnl !== undefined) count++;
+    if (filters.maxDrawdown !== undefined) count++;
+    if (filters.minSharpe !== undefined) count++;
+    if (filters.minTrades !== undefined) count++;
+    if (filters.minActiveDays !== undefined) count++;
+    if (filters.hasRecentTrade !== undefined) count++;
     return count;
-  }, [selectedRating, searchAddress]);
+  }, [selectedRating, searchAddress, filters]);
+
+  // 格式化日期
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '-';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+    } catch {
+      return '-';
+    }
+  };
 
   // 单元格渲染
   const renderCell = useCallback((trader: Trader, columnKey: ColumnKey) => {
@@ -195,7 +265,7 @@ export default function TradersPage() {
       case 'total_pnl':
         return (
           <span className={trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
-            ${formatNumber(trader.total_pnl)}
+            ${formatNumber(trader.total_pnl, 0)}
           </span>
         );
       case 'roi':
@@ -210,10 +280,37 @@ export default function TradersPage() {
         return <span className="text-red-500">{formatPercent(trader.max_drawdown)}</span>;
       case 'sharpe_ratio':
         return <span>{formatNumber(trader.sharpe_ratio)}</span>;
+      case 'sortino_ratio':
+        return <span>{formatNumber(trader.sortino_ratio || 0)}</span>;
       case 'current_equity':
-        return <span>${formatNumber(trader.current_equity)}</span>;
+        return <span>${formatNumber(trader.current_equity, 0)}</span>;
       case 'active_days':
         return <span>{trader.active_days}</span>;
+      case 'avg_leverage':
+        return <span>{trader.avg_leverage || 1}x</span>;
+      case 'current_positions':
+        return <span>{trader.current_positions || 0}</span>;
+      case 'last_trade_time':
+        return <span className="text-sm">{formatDate(trader.last_trade_time)}</span>;
+      case 'recent_7d_pnl':
+        const pnl7d = trader.recent_7d_pnl || 0;
+        return (
+          <span className={pnl7d >= 0 ? 'text-green-500' : 'text-red-500'}>
+            ${formatNumber(pnl7d, 0)}
+          </span>
+        );
+      case 'recent_7d_win_rate':
+        return <span>{formatPercent(trader.recent_7d_win_rate || 0)}</span>;
+      case 'max_consecutive_wins':
+        return <span className="text-green-500">{trader.max_consecutive_wins || 0}</span>;
+      case 'max_consecutive_losses':
+        return <span className="text-red-500">{trader.max_consecutive_losses || 0}</span>;
+      case 'unique_symbols':
+        return <span>{trader.unique_symbols || 0}</span>;
+      case 'favorite_symbol':
+        return <span className="text-sm">{trader.favorite_symbol || '-'}</span>;
+      case 'long_short_ratio':
+        return <span>{formatPercent(trader.long_short_ratio || 0)}</span>;
       default:
         return null;
     }
@@ -326,6 +423,23 @@ export default function TradersPage() {
                   </DropdownMenu>
                 </Dropdown>
               </div>
+
+              {/* 高级筛选按钮 */}
+              <Button
+                className={showAdvancedFilters ? 'bg-primary-100 text-primary-800' : 'bg-default-100 text-default-800'}
+                size="sm"
+                startContent={
+                  <Icon className="text-default-400" icon="solar:filter-linear" width={16} />
+                }
+                onPress={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              >
+                高级筛选
+                {activeFilters > 0 && (
+                  <Chip size="sm" color="primary" variant="flat" className="ml-1">
+                    {activeFilters}
+                  </Chip>
+                )}
+              </Button>
             </div>
 
             {activeFilters > 0 && (
@@ -343,9 +457,83 @@ export default function TradersPage() {
             )}
           </div>
         </div>
+
+        {/* 高级筛选面板 */}
+        {showAdvancedFilters && (
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 p-4 bg-default-50 rounded-lg">
+            <Input
+              type="number"
+              size="sm"
+              label="最小胜率"
+              placeholder="0.5"
+              value={filters.minWinRate?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minWinRate: v ? parseFloat(v) : undefined })}
+              endContent={<span className="text-xs text-default-400">%</span>}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最小盈亏比"
+              placeholder="1.5"
+              value={filters.minProfitFactor?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minProfitFactor: v ? parseFloat(v) : undefined })}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最小PnL"
+              placeholder="1000"
+              value={filters.minPnl?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minPnl: v ? parseFloat(v) : undefined })}
+              startContent={<span className="text-xs text-default-400">$</span>}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最大回撤"
+              placeholder="0.3"
+              value={filters.maxDrawdown?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, maxDrawdown: v ? parseFloat(v) : undefined })}
+              endContent={<span className="text-xs text-default-400">%</span>}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最小Sharpe"
+              placeholder="1.0"
+              value={filters.minSharpe?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minSharpe: v ? parseFloat(v) : undefined })}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最小交易数"
+              placeholder="50"
+              value={filters.minTrades?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minTrades: v ? parseInt(v) : undefined })}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最小活跃天"
+              placeholder="7"
+              value={filters.minActiveDays?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, minActiveDays: v ? parseInt(v) : undefined })}
+            />
+            <Input
+              type="number"
+              size="sm"
+              label="最近N天活跃"
+              placeholder="7"
+              value={filters.hasRecentTrade?.toString() || ''}
+              onValueChange={(v) => setFilters({ ...filters, hasRecentTrade: v ? parseInt(v) : undefined })}
+              endContent={<span className="text-xs text-default-400">天</span>}
+            />
+          </div>
+        )}
       </div>
     );
-  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, onSearchChange, handleReset, getActiveFiltersCount]);
+  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, showAdvancedFilters, filters, onSearchChange, handleReset, getActiveFiltersCount]);
 
   // 表格底部内容
   const bottomContent = useMemo(() => {

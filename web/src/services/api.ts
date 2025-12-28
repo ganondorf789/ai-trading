@@ -23,10 +23,12 @@ export interface Trader {
   id: number;
   address: string;
   analyzed_at: string;
+  // 基础统计
   total_trades: number;
   winning_trades?: number;
   losing_trades?: number;
   win_rate: number;
+  // 盈亏指标
   total_pnl: number;
   realized_pnl?: number;
   unrealized_pnl?: number;
@@ -34,23 +36,41 @@ export interface Trader {
   roi: number;
   avg_profit_per_trade?: number;
   profit_factor: number;
+  // 风险指标
   max_drawdown: number;
   sharpe_ratio: number;
   sortino_ratio?: number;
+  // 交易特征
   avg_holding_time_hours?: number;
   trade_frequency_per_day?: number;
   avg_leverage?: number;
+  // 活跃度
   active_days: number;
   last_trade_time: string;
   first_trade_time?: string;
   current_positions?: number;
   current_equity: number;
+  // 评分
   overall_score: number;
   rating: string;
   profitability_score?: number;
   risk_score?: number;
   consistency_score?: number;
   activity_score?: number;
+  // 新增分析字段
+  avg_trade_price?: number;
+  avg_trade_size?: number;
+  max_single_win?: number;
+  max_single_loss?: number;
+  max_consecutive_wins?: number;
+  max_consecutive_losses?: number;
+  avg_win_amount?: number;
+  avg_loss_amount?: number;
+  unique_symbols?: number;
+  favorite_symbol?: string;
+  recent_7d_pnl?: number;
+  recent_7d_win_rate?: number;
+  long_short_ratio?: number;
 }
 
 export interface TraderFill {
@@ -122,7 +142,7 @@ export interface ApiResponse<T> {
 
 // API 方法
 export const traderApi = {
-  // 获取交易者列表（支持分页和排序）
+  // 获取交易者列表（支持分页、排序和高级筛选）
   getTraders: (params?: {
     page?: number;
     limit?: number;
@@ -130,6 +150,15 @@ export const traderApi = {
     search?: string;
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
+    // 高级筛选
+    min_win_rate?: number;
+    min_profit_factor?: number;
+    min_pnl?: number;
+    max_drawdown?: number;
+    min_sharpe?: number;
+    min_trades?: number;
+    min_active_days?: number;
+    has_recent_trade?: number;
   }) =>
     api.get<any, ApiResponse<Trader[]>>('/traders', { params }),
 
