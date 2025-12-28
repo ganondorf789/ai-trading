@@ -394,6 +394,51 @@ def get_trader_positions(address: str):
         }), 500
 
 
+@app.route('/api/traders/<address>/positions/refresh', methods=['POST'])
+def refresh_trader_positions(address: str):
+    """
+    刷新交易者的当前持仓（从 Hyperliquid API 获取最新数据）
+    """
+    try:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+
+        logger.info(f"刷新持仓数据: {address}")
+
+        # 获取最新持仓
+        info = Info(constants.MAINNET_API_URL, skip_ws=True)
+        user_state = info.user_state(address)
+
+        if not user_state:
+            return jsonify({
+                'success': False,
+                'error': '无法获取用户状态'
+            }), 404
+
+        # 保存持仓数据
+        asset_positions = user_state.get('assetPositions', [])
+        positions_saved = db.save_positions(address, asset_positions)
+
+        # 返回更新后的数据
+        positions = db.get_positions(address)
+
+        logger.info(f"持仓数据刷新完成: {address}, 持仓数: {positions_saved}")
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'count': len(positions),
+            'message': f'已更新 {positions_saved} 个持仓'
+        })
+
+    except Exception as e:
+        logger.error(f"刷新持仓数据失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/traders/<address>/history', methods=['GET'])
 def get_trader_history(address: str):
     """

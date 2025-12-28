@@ -207,6 +207,10 @@ export const traderApi = {
   getTraderPositions: (address: string) =>
     api.get<any, ApiResponse<AssetPosition[]>>(`/traders/${address}/positions`),
 
+  // 刷新当前持仓（从 Hyperliquid API 获取最新数据）
+  refreshTraderPositions: (address: string) =>
+    api.post<any, ApiResponse<AssetPosition[]> & { message?: string }>(`/traders/${address}/positions/refresh`),
+
   // 获取历史图表数据
   getTraderHistory: (address: string, params?: { days?: number }) =>
     api.get<any, ApiResponse<TraderHistory>>(`/traders/${address}/history`, { params }),

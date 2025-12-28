@@ -101,6 +101,27 @@ export default function TraderDetailPage() {
   // 当前持仓状态（使用 assetPositions）
   const [assetPositions, setAssetPositions] = useState<AssetPosition[]>([]);
   const [assetPositionsLoading, setAssetPositionsLoading] = useState(false);
+  const [positionsRefreshing, setPositionsRefreshing] = useState(false);
+
+  // 刷新持仓数据
+  const handleRefreshPositions = async () => {
+    if (!address || positionsRefreshing) return;
+
+    try {
+      setPositionsRefreshing(true);
+      const res = await traderApi.refreshTraderPositions(address);
+
+      if (res.success && res.data) {
+        setAssetPositions(res.data);
+      } else {
+        console.error('刷新持仓失败:', res.error);
+      }
+    } catch (err: any) {
+      console.error('Failed to refresh positions:', err);
+    } finally {
+      setPositionsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!address) return;
@@ -1144,16 +1165,28 @@ export default function TraderDetailPage() {
           {/* 当前持仓表格 */}
           <Card className="mt-6">
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold">当前持仓</h2>
-                <Chip size="sm" variant="flat" color="warning">
-                  {assetPositions.length}
-                </Chip>
-                {assetPositions.length > 0 && assetPositions[0]?.updated_at && (
-                  <span className="text-xs text-gray-500">
-                    更新于 {new Date(assetPositions[0].updated_at).toLocaleString()}
-                  </span>
-                )}
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">当前持仓</h2>
+                  <Chip size="sm" variant="flat" color="warning">
+                    {assetPositions.length}
+                  </Chip>
+                  {assetPositions.length > 0 && assetPositions[0]?.updated_at && (
+                    <span className="text-xs text-gray-500">
+                      更新于 {new Date(assetPositions[0].updated_at).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  color="primary"
+                  variant="flat"
+                  isLoading={positionsRefreshing}
+                  onPress={handleRefreshPositions}
+                  startContent={!positionsRefreshing && <Icon icon="solar:refresh-linear" width={16} />}
+                >
+                  {positionsRefreshing ? '刷新中...' : '刷新持仓'}
+                </Button>
               </div>
             </CardHeader>
             <CardBody>
