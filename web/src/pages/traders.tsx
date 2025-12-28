@@ -328,12 +328,6 @@ export default function TradersPage() {
               </div>
             </div>
 
-            <Divider className="h-5" orientation="vertical" />
-
-            <div className="text-default-500 text-sm whitespace-nowrap">
-              {activeFilters > 0 ? `${activeFilters} 个筛选条件` : '无筛选条件'}
-            </div>
-
             {activeFilters > 0 && (
               <Button
                 className="bg-default-100 text-default-800"
