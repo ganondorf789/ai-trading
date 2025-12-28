@@ -236,6 +236,7 @@ def get_trader_fills(address: str):
         - pnl_filter: str, 盈亏筛选 (all/profit/loss)
         - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
         - sort_order: str, 排序方向 (asc/desc)
+        - position_type: str, 持仓类型 (all/open/closed)
     """
     try:
         page = int(request.args.get('page', 1))
@@ -244,6 +245,7 @@ def get_trader_fills(address: str):
         pnl_filter = request.args.get('pnl_filter', 'all')
         sort_by = request.args.get('sort_by', 'trade_time')
         sort_order = request.args.get('sort_order', 'desc')
+        position_type = request.args.get('position_type', 'all')
 
         # 获取所有符合条件的交易记录（用于计算总数）
         all_fills = db.get_trader_fills(
@@ -251,7 +253,8 @@ def get_trader_fills(address: str):
             limit=100000,
             coin=coin,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
+            position_type=position_type
         )
 
         # 应用盈亏筛选

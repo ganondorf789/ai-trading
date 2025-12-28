@@ -42,7 +42,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import DefaultLayout from '@/layouts/default';
-import { traderApi, Trader, TraderFill, TraderHistory, FillsStats } from '@/services/api';
+import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary } from '@/services/api';
 
 // 表格列配置
 type ColumnKey = 'trade_time' | 'coin' | 'side' | 'px' | 'sz' | 'value' | 'closed_pnl' | 'roi' | 'fee';
@@ -65,7 +65,7 @@ const columns: Column[] = [
   { uid: 'fee', name: '手续费', sortable: true },
 ];
 
-const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['trade_time', 'coin', 'side', 'px', 'sz', 'closed_pnl', 'roi', 'fee'];
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['trade_time', 'coin', 'side', 'px', 'sz', 'value', 'closed_pnl', 'roi', 'fee'];
 
 export default function TraderDetailPage() {
   const { address } = useParams<{ address: string }>();
@@ -74,6 +74,7 @@ export default function TraderDetailPage() {
   const [trader, setTrader] = useState<Trader | null>(null);
   const [fills, setFills] = useState<TraderFill[]>([]);
   const [history, setHistory] = useState<TraderHistory | null>(null);
+  const [fillsSummary, setFillsSummary] = useState<FillsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
@@ -96,6 +97,9 @@ export default function TraderDetailPage() {
     direction: 'descending',
   });
 
+  // 当前持仓状态
+  const [openPositions, setOpenPositions] = useState<TraderFill[]>([]);
+
   useEffect(() => {
     if (!address) return;
 
@@ -105,19 +109,27 @@ export default function TraderDetailPage() {
         setError(null);
 
         // 并行加载数据
-        const [detailRes, fillsRes, historyRes] = await Promise.all([
+        const [detailRes, fillsRes, historyRes, openPositionsRes] = await Promise.all([
           traderApi.getTraderDetail(address),
           traderApi.getTraderFills(address, {
             page: 1,
             limit: rowsPerPage,
             coin: selectedCoin !== 'all' ? selectedCoin : undefined,
             pnl_filter: pnlFilter,
+            position_type: 'closed',
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
+          traderApi.getTraderFills(address, {
+            limit: 1000,
+            position_type: 'open',
+          }),
         ]);
 
         if (detailRes.success && detailRes.data) {
           setTrader(detailRes.data.trader);
+          if (detailRes.data.fills_summary) {
+            setFillsSummary(detailRes.data.fills_summary);
+          }
         }
 
         if (fillsRes.success && fillsRes.data) {
@@ -136,6 +148,10 @@ export default function TraderDetailPage() {
 
         if (historyRes.success && historyRes.data) {
           setHistory(historyRes.data);
+        }
+
+        if (openPositionsRes.success && openPositionsRes.data) {
+          setOpenPositions(openPositionsRes.data);
         }
       } catch (err: any) {
         setError(err.message || 'Failed to load trader data');
@@ -183,6 +199,7 @@ export default function TraderDetailPage() {
           pnl_filter: pnlFilter,
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
+          position_type: 'closed',
         });
 
         if (fillsRes.success && fillsRes.data) {
@@ -575,9 +592,8 @@ export default function TraderDetailPage() {
   }
 
   return (
-    <DefaultLayout>
-      <div className="flex flex-col gap-4 py-8 md:py-10">
-        <div className="max-w-7xl w-full mx-auto">
+      <div className="flex flex-col gap-4 py-4 px-6 max-w-[1800px] mx-auto w-full">
+        <div className="w-full">
           <Button
             size="sm"
             variant="light"
@@ -610,64 +626,205 @@ export default function TraderDetailPage() {
               </div>
             </CardHeader>
             <CardBody>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Total Trades</p>
-                  <p className="text-xl font-bold">{trader.total_trades}</p>
+              {/* 基础统计 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">基础统计</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">总交易数</p>
+                    <p className="text-lg font-bold">{trader.total_trades}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">盈利笔数</p>
+                    <p className="text-lg font-bold text-green-500">{trader.winning_trades || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">亏损笔数</p>
+                    <p className="text-lg font-bold text-red-500">{trader.losing_trades || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">胜率</p>
+                    <p className="text-lg font-bold">{formatPercent(trader.win_rate)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">活跃天数</p>
+                    <p className="text-lg font-bold">{trader.active_days}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">交易品种数</p>
+                    <p className="text-lg font-bold">{trader.unique_symbols || 0}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Win Rate</p>
-                  <p className="text-xl font-bold">{formatPercent(trader.win_rate)}</p>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 盈亏指标 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">盈亏指标</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">总盈亏</p>
+                    <p className={`text-lg font-bold ${trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      ${formatNumber(trader.total_pnl)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">已实现盈亏</p>
+                    <p className={`text-lg font-bold ${(trader.realized_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      ${formatNumber(trader.realized_pnl || 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">未实现盈亏</p>
+                    <p className={`text-lg font-bold ${(trader.unrealized_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      ${formatNumber(trader.unrealized_pnl || 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">ROI</p>
+                    <p className={`text-lg font-bold ${trader.roi >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {formatPercent(trader.roi)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">盈亏比</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.profit_factor)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">7天盈亏</p>
+                    <p className={`text-lg font-bold ${(trader.recent_7d_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      ${formatNumber(trader.recent_7d_pnl || 0)}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total PnL</p>
-                  <p
-                    className={`text-xl font-bold ${trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}
-                  >
-                    ${formatNumber(trader.total_pnl)}
-                  </p>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 风险指标 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">风险指标</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">最大回撤</p>
+                    <p className="text-lg font-bold text-red-500">{formatPercent(trader.max_drawdown)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Sharpe Ratio</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.sharpe_ratio)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Sortino Ratio</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.sortino_ratio || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">平均杠杆</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.avg_leverage || 1)}x</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">最大单笔盈利</p>
+                    <p className="text-lg font-bold text-green-500">${formatNumber(trader.max_single_win || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">最大单笔亏损</p>
+                    <p className="text-lg font-bold text-red-500">${formatNumber(trader.max_single_loss || 0)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Current Equity</p>
-                  <p className="text-xl font-bold">${formatNumber(trader.current_equity)}</p>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 交易特征 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">交易特征</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">最大连赢</p>
+                    <p className="text-lg font-bold text-green-500">{trader.max_consecutive_wins || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">最大连亏</p>
+                    <p className="text-lg font-bold text-red-500">{trader.max_consecutive_losses || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">平均盈利金额</p>
+                    <p className="text-lg font-bold text-green-500">${formatNumber(trader.avg_win_amount || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">平均亏损金额</p>
+                    <p className="text-lg font-bold text-red-500">${formatNumber(trader.avg_loss_amount || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">多空比</p>
+                    <p className="text-lg font-bold">{formatPercent(trader.long_short_ratio || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">常用品种</p>
+                    <p className="text-lg font-bold">{trader.favorite_symbol || '-'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">ROI</p>
-                  <p
-                    className={`text-xl font-bold ${trader.roi >= 0 ? 'text-green-500' : 'text-red-500'}`}
-                  >
-                    {formatPercent(trader.roi)}
-                  </p>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 账户状态 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">账户状态</h3>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">当前权益</p>
+                    <p className="text-lg font-bold">${formatNumber(trader.current_equity)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">当前持仓</p>
+                    <p className="text-lg font-bold">{trader.current_positions || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">7天胜率</p>
+                    <p className="text-lg font-bold">{formatPercent(trader.recent_7d_win_rate || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">首次交易</p>
+                    <p className="text-sm">{trader.first_trade_time ? formatDateTime(trader.first_trade_time) : '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">最后交易</p>
+                    <p className="text-sm">{formatDateTime(trader.last_trade_time)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">分析时间</p>
+                    <p className="text-sm">{trader.analyzed_at ? formatDateTime(trader.analyzed_at) : '-'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">Profit Factor</p>
-                  <p className="text-xl font-bold">{formatNumber(trader.profit_factor)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Max Drawdown</p>
-                  <p className="text-xl font-bold text-red-500">
-                    {formatPercent(trader.max_drawdown)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Sharpe Ratio</p>
-                  <p className="text-xl font-bold">{formatNumber(trader.sharpe_ratio)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Active Days</p>
-                  <p className="text-xl font-bold">{trader.active_days}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Last Trade</p>
-                  <p className="text-sm">{formatDateTime(trader.last_trade_time)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Avg Leverage</p>
-                  <p className="text-xl font-bold">{formatNumber(trader.avg_leverage || 1)}x</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Current Positions</p>
-                  <p className="text-xl font-bold">{trader.current_positions || 0}</p>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 评分详情 */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">评分详情</h3>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div>
+                    <p className="text-xs text-gray-500">综合评分</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.overall_score)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">盈利能力</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.profitability_score || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">风险控制</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.risk_score || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">一致性</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.consistency_score || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">活跃度</p>
+                    <p className="text-lg font-bold">{formatNumber(trader.activity_score || 0)}</p>
+                  </div>
                 </div>
               </div>
             </CardBody>
@@ -824,6 +981,131 @@ export default function TraderDetailPage() {
             </CardBody>
           </Card>
 
+          {/* 币种统计 */}
+          <Card className="mt-6">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold">币种统计</h2>
+                <Chip size="sm" variant="flat" className="text-default-500">
+                  {fillsSummary?.by_coin?.length || 0} 个币种
+                </Chip>
+              </div>
+            </CardHeader>
+            <CardBody>
+              {fillsSummary?.by_coin && fillsSummary.by_coin.length > 0 ? (
+                <Table
+                  isHeaderSticky
+                  aria-label="Coin statistics table"
+                  classNames={{
+                    wrapper: 'max-h-[400px]',
+                  }}
+                >
+                  <TableHeader>
+                    <TableColumn key="coin" allowsSorting>币种</TableColumn>
+                    <TableColumn key="count" allowsSorting>交易次数</TableColumn>
+                    <TableColumn key="total_pnl" allowsSorting>总盈亏</TableColumn>
+                    <TableColumn key="avg_pnl">平均盈亏</TableColumn>
+                    <TableColumn key="pnl_ratio">盈亏占比</TableColumn>
+                  </TableHeader>
+                  <TableBody items={fillsSummary.by_coin}>
+                    {(item) => (
+                      <TableRow key={item.coin}>
+                        <TableCell>
+                          <span className="font-bold">{item.coin}</span>
+                        </TableCell>
+                        <TableCell>{item.count}</TableCell>
+                        <TableCell>
+                          <span className={item.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            ${formatNumber(item.total_pnl)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={(item.total_pnl / item.count) >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            ${formatNumber(item.total_pnl / item.count)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={item.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            {fillsSummary.total_pnl !== 0
+                              ? formatPercent(Math.abs(item.total_pnl) / Math.abs(fillsSummary.total_pnl))
+                              : '0%'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center text-gray-500 py-8">暂无币种统计数据</div>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* 当前持仓表格 */}
+          <Card className="mt-6">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold">当前持仓</h2>
+                <Chip size="sm" variant="flat" color="warning">
+                  {openPositions.length}
+                </Chip>
+              </div>
+            </CardHeader>
+            <CardBody>
+              {openPositions.length > 0 ? (
+                <Table
+                  isHeaderSticky
+                  aria-label="Open positions table"
+                  classNames={{
+                    wrapper: 'max-h-[400px]',
+                  }}
+                >
+                  <TableHeader>
+                    <TableColumn key="trade_time">开仓时间</TableColumn>
+                    <TableColumn key="coin">币种</TableColumn>
+                    <TableColumn key="side">方向</TableColumn>
+                    <TableColumn key="px">开仓价格</TableColumn>
+                    <TableColumn key="sz">数量</TableColumn>
+                    <TableColumn key="value">持仓价值</TableColumn>
+                    <TableColumn key="fee">手续费</TableColumn>
+                  </TableHeader>
+                  <TableBody items={openPositions}>
+                    {(item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-xs">{new Date(item.trade_time).toLocaleDateString()}</span>
+                            <span className="text-xs text-gray-500">{new Date(item.trade_time).toLocaleTimeString()}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-bold">{item.coin}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            size="sm"
+                            color={item.side === 'B' ? 'success' : 'danger'}
+                            variant="flat"
+                          >
+                            {item.side === 'B' ? 'LONG' : 'SHORT'}
+                          </Chip>
+                        </TableCell>
+                        <TableCell>${formatNumber(item.px, 4)}</TableCell>
+                        <TableCell>{formatNumber(item.sz, 4)}</TableCell>
+                        <TableCell>${formatNumber(item.px * item.sz, 2)}</TableCell>
+                        <TableCell>
+                          <span className="text-orange-500">${formatNumber(item.fee, 4)}</span>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center text-gray-500 py-8">暂无当前持仓</div>
+              )}
+            </CardBody>
+          </Card>
+
           {/* 历史交易表格 */}
           <Card className="mt-6">
             <CardHeader>
@@ -883,6 +1165,5 @@ export default function TraderDetailPage() {
           </Card>
         </div>
       </div>
-    </DefaultLayout>
   );
 }

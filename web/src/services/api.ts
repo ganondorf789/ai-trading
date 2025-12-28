@@ -174,6 +174,7 @@ export const traderApi = {
     pnl_filter?: 'all' | 'profit' | 'loss';
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
+    position_type?: 'all' | 'open' | 'closed';
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 

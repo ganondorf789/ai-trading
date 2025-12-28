@@ -470,7 +470,8 @@ class TraderDatabase:
         limit: int = 100,
         coin: str = None,
         sort_by: str = 'time',
-        sort_order: str = 'desc'
+        sort_order: str = 'desc',
+        position_type: str = 'all'
     ) -> List[Dict]:
         """
         获取交易者的交易记录
@@ -481,6 +482,10 @@ class TraderDatabase:
             coin: 筛选特定币种
             sort_by: 排序字段 (time, coin, side, px, sz, closed_pnl, fee)
             sort_order: 排序方向 (asc, desc)
+            position_type: 持仓类型 (all/open/closed)
+                - all: 所有记录
+                - open: 当前持仓 (closed_pnl = 0)
+                - closed: 已平仓 (closed_pnl != 0)
 
         Returns:
             交易记录列表
@@ -504,20 +509,29 @@ class TraderDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
+            # 构建查询条件
+            conditions = ["address = ?"]
+            params = [address]
+
             if coin:
-                cursor.execute(f"""
-                    SELECT * FROM trader_fills
-                    WHERE address = ? AND coin = ?
-                    ORDER BY {sort_column} {order_direction}
-                    LIMIT ?
-                """, (address, coin, limit))
-            else:
-                cursor.execute(f"""
-                    SELECT * FROM trader_fills
-                    WHERE address = ?
-                    ORDER BY {sort_column} {order_direction}
-                    LIMIT ?
-                """, (address, limit))
+                conditions.append("coin = ?")
+                params.append(coin)
+
+            # 根据 position_type 筛选
+            if position_type == 'open':
+                conditions.append("closed_pnl = 0")
+            elif position_type == 'closed':
+                conditions.append("closed_pnl != 0")
+
+            where_clause = " AND ".join(conditions)
+            params.append(limit)
+
+            cursor.execute(f"""
+                SELECT * FROM trader_fills
+                WHERE {where_clause}
+                ORDER BY {sort_column} {order_direction}
+                LIMIT ?
+            """, params)
 
             return [dict(row) for row in cursor.fetchall()]
 
