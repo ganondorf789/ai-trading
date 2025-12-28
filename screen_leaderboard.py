@@ -22,7 +22,7 @@ from screener.database import TraderDatabase
 def screen_leaderboard_traders(
     limit: int = 5000,
     lookback_days: int = 30,
-    max_fills: int = 2000,
+    max_fills: int = 0,
     resume_from: int = 0
 ):
     """
@@ -31,7 +31,7 @@ def screen_leaderboard_traders(
     Args:
         limit: 获取前N名交易者
         lookback_days: 分析回溯天数
-        max_fills: 每个交易者最大获取的交易记录数
+        max_fills: 每个交易者最大获取的交易记录数 (0=不限制)
         resume_from: 从第N个地址开始（用于断点续传）
     """
     print("=" * 70)
@@ -155,8 +155,8 @@ def main():
     parser.add_argument(
         "--max-fills", "-m",
         type=int,
-        default=2000,
-        help="每个交易者最大获取的交易记录数 (默认: 2000)"
+        default=0,
+        help="每个交易者最大获取的交易记录数 (0=不限制, 默认: 0)"
     )
     parser.add_argument(
         "--resume", "-r",

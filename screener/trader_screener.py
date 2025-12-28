@@ -105,7 +105,7 @@ class ScreenerConfig:
     testnet: bool = False
     
     # 数据获取配置
-    max_fills_per_trader: int = 2000  # 每个交易者最大获取成交数
+    max_fills_per_trader: int = 0  # 每个交易者最大获取成交数 (0=不限制)
     lookback_days: int = 30  # 回溯天数
     
     # 筛选条件
@@ -194,11 +194,12 @@ class TraderScreener:
     def _get_user_fills(self, address: str, limit: int = None) -> List[Dict]:
         """获取用户成交记录"""
         try:
-            limit = limit or self.config.max_fills_per_trader
+            limit = limit if limit is not None else self.config.max_fills_per_trader
             fills = self._api_call_with_retry(self.info.user_fills, address)
             if fills is None:
                 return []
-            return fills[:limit] if len(fills) > limit else fills
+            # limit=0 表示不限制
+            return fills[:limit] if limit > 0 and len(fills) > limit else fills
         except Exception as e:
             logger.debug(f"获取用户成交记录失败 {address[:10]}...: {e}")
             return []
