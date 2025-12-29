@@ -98,6 +98,9 @@ export default function CopyTradingPage() {
     color: "#3B82F6",
   });
 
+  // 页码跳转
+  const [jumpPage, setJumpPage] = useState("");
+
   // 币种输入临时状态
   const [whitelistInput, setWhitelistInput] = useState("");
   const [blacklistInput, setBlacklistInput] = useState("");
@@ -257,7 +260,7 @@ export default function CopyTradingPage() {
     try {
       const params: Record<string, any> = {
         page,
-        limit: 20,
+        limit: 10,
         sort_by: sortBy,
         sort_order: sortOrder,
       };
@@ -525,6 +528,15 @@ export default function CopyTradingPage() {
       newSet.delete(address);
     }
     setSelectedAddresses(newSet);
+  };
+
+  // 页码跳转
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pagination && pageNum >= 1 && pageNum <= pagination.total_pages) {
+      setPage(pageNum);
+      setJumpPage("");
+    }
   };
 
   // 格式化地址
@@ -837,13 +849,35 @@ export default function CopyTradingPage() {
 
             {/* 分页 */}
             {pagination && pagination.total_pages > 1 && (
-              <div className="flex justify-center mt-4">
-                <Pagination
-                  total={pagination.total_pages}
-                  page={page}
-                  onChange={setPage}
-                  showControls
-                />
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2 mt-4">
+                <span className="text-sm text-default-500">
+                  显示 {Math.min((page - 1) * 10 + 1, pagination.total_count)} - {Math.min(page * 10, pagination.total_count)} 条，共 {pagination.total_count} 条记录
+                </span>
+                <div className="flex items-center gap-3">
+                  <Pagination
+                    isCompact
+                    showControls
+                    showShadow
+                    color="primary"
+                    total={pagination.total_pages}
+                    page={page}
+                    onChange={setPage}
+                  />
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-default-500">跳转</span>
+                    <Input
+                      type="number"
+                      size="sm"
+                      className="w-16"
+                      min={1}
+                      max={pagination.total_pages}
+                      value={jumpPage}
+                      onValueChange={setJumpPage}
+                      onKeyDown={(e) => e.key === "Enter" && handleJumpPage()}
+                    />
+                    <span className="text-sm text-default-500">页</span>
+                  </div>
+                </div>
               </div>
             )}
           </>
