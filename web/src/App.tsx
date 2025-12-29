@@ -7,6 +7,7 @@ import BlogPage from "@/pages/blog";
 import AboutPage from "@/pages/about";
 import TradersPage from "@/pages/traders";
 import TraderDetailPage from "@/pages/trader-detail";
+import CopyTradingPage from "@/pages/copy-trading";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
       <Route element={<AboutPage />} path="/about" />
       <Route element={<TradersPage />} path="/traders" />
       <Route element={<TraderDetailPage />} path="/traders/:address" />
+      <Route element={<CopyTradingPage />} path="/copy-trading" />
     </Routes>
   );
 }

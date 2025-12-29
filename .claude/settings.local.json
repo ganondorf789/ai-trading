@@ -12,7 +12,10 @@
       "mcp__ide__getDiagnostics",
       "Bash(npm run build:*)",
       "Bash(git push:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(tree /F \"D:\\\\UGit\\\\ai-trading\\\\web\\\\src\")",
+      "Bash(dir:*)",
+      "Bash(find:*)"
     ]
   }
 }

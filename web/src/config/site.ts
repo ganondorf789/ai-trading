@@ -13,6 +13,10 @@ export const siteConfig = {
       href: "/traders",
     },
     {
+      label: "Copy Trading",
+      href: "/copy-trading",
+    },
+    {
       label: "Docs",
       href: "/docs",
     },

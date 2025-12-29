@@ -1,0 +1,798 @@
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Table,
+  TableHeader,
+  TableColumn,
+  TableBody,
+  TableRow,
+  TableCell,
+  Pagination,
+  Input,
+  Button,
+  Chip,
+  Spinner,
+  Select,
+  SelectItem,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  Switch,
+  Checkbox,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+  Tooltip,
+  addToast,
+} from "@heroui/react";
+import { Icon } from "@iconify/react";
+
+import DefaultLayout from "@/layouts/default";
+import { copyTradingApi, CopyTradingAddress, CopyTradingGroup, PaginationInfo } from "@/services/api";
+
+// 评级颜色映射
+const ratingColors: Record<string, "success" | "primary" | "secondary" | "warning" | "danger" | "default"> = {
+  S: "success",
+  A: "primary",
+  B: "secondary",
+  C: "warning",
+  D: "danger",
+  F: "default",
+};
+
+export default function CopyTradingPage() {
+  const navigate = useNavigate();
+
+  // 数据状态
+  const [addresses, setAddresses] = useState<CopyTradingAddress[]>([]);
+  const [groups, setGroups] = useState<CopyTradingGroup[]>([]);
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // 筛选状态
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState("updated_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // 选择状态
+  const [selectedAddresses, setSelectedAddresses] = useState<Set<string>>(new Set());
+
+  // Modal 状态
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<CopyTradingAddress | null>(null);
+
+  // 表单状态
+  const [formData, setFormData] = useState<Partial<CopyTradingAddress>>({
+    address: "",
+    name: "",
+    group_id: null,
+    is_enabled: true,
+    copy_ratio: 0.1,
+    max_position_size_usd: 500,
+    min_position_size_usd: 20,
+    copy_leverage: true,
+    max_leverage: 10,
+    default_leverage: 5,
+    max_total_positions: 10,
+    max_daily_trades: 50,
+    slippage: 0.01,
+    symbols_whitelist: [],
+    symbols_blacklist: [],
+    check_interval: 10,
+    dry_run: true,
+  });
+
+  // 分组表单
+  const [groupFormData, setGroupFormData] = useState({
+    name: "",
+    description: "",
+    color: "#3B82F6",
+  });
+
+  // 加载数据
+  const loadAddresses = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, any> = {
+        page,
+        limit: 20,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      };
+
+      if (search) params.search = search;
+      if (selectedGroup !== null) params.group_id = selectedGroup;
+      if (statusFilter !== "all") params.is_enabled = statusFilter === "enabled";
+
+      const response = await copyTradingApi.getAddresses(params);
+      if (response.success && response.data) {
+        setAddresses(response.data);
+        if (response.pagination) {
+          setPagination(response.pagination);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load addresses:", error);
+      addToast({ title: "加载失败", description: "无法获取跟单地址列表", color: "danger" });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search, selectedGroup, statusFilter, sortBy, sortOrder]);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      const response = await copyTradingApi.getGroups();
+      if (response.success && response.data) {
+        setGroups(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load groups:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAddresses();
+  }, [loadAddresses]);
+
+  useEffect(() => {
+    loadGroups();
+  }, [loadGroups]);
+
+  // 处理搜索
+  const handleSearch = useCallback(() => {
+    setPage(1);
+    loadAddresses();
+  }, [loadAddresses]);
+
+  // 处理添加/编辑
+  const handleOpenAddModal = (address?: CopyTradingAddress) => {
+    if (address) {
+      setEditingAddress(address);
+      setFormData({
+        address: address.address,
+        name: address.name,
+        group_id: address.group_id,
+        is_enabled: address.is_enabled,
+        copy_ratio: address.copy_ratio,
+        max_position_size_usd: address.max_position_size_usd,
+        min_position_size_usd: address.min_position_size_usd,
+        copy_leverage: address.copy_leverage,
+        max_leverage: address.max_leverage,
+        default_leverage: address.default_leverage,
+        max_total_positions: address.max_total_positions,
+        max_daily_trades: address.max_daily_trades,
+        slippage: address.slippage,
+        symbols_whitelist: address.symbols_whitelist || [],
+        symbols_blacklist: address.symbols_blacklist || [],
+        check_interval: address.check_interval,
+        dry_run: address.dry_run,
+      });
+    } else {
+      setEditingAddress(null);
+      setFormData({
+        address: "",
+        name: "",
+        group_id: null,
+        is_enabled: true,
+        copy_ratio: 0.1,
+        max_position_size_usd: 500,
+        min_position_size_usd: 20,
+        copy_leverage: true,
+        max_leverage: 10,
+        default_leverage: 5,
+        max_total_positions: 10,
+        max_daily_trades: 50,
+        slippage: 0.01,
+        symbols_whitelist: [],
+        symbols_blacklist: [],
+        check_interval: 10,
+        dry_run: true,
+      });
+    }
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveAddress = async () => {
+    try {
+      if (editingAddress) {
+        await copyTradingApi.updateAddress(editingAddress.address, formData);
+        addToast({ title: "更新成功", color: "success" });
+      } else {
+        await copyTradingApi.createAddress(formData);
+        addToast({ title: "添加成功", color: "success" });
+      }
+      setIsAddModalOpen(false);
+      loadAddresses();
+    } catch (error) {
+      console.error("Failed to save address:", error);
+      addToast({ title: "保存失败", color: "danger" });
+    }
+  };
+
+  // 处理删除
+  const handleDelete = async (address: string) => {
+    if (!confirm("确定要删除这个跟单地址吗？")) return;
+    try {
+      await copyTradingApi.deleteAddress(address);
+      addToast({ title: "删除成功", color: "success" });
+      loadAddresses();
+    } catch (error) {
+      console.error("Failed to delete address:", error);
+      addToast({ title: "删除失败", color: "danger" });
+    }
+  };
+
+  // 处理启用/禁用
+  const handleToggle = async (address: string, isEnabled: boolean) => {
+    try {
+      await copyTradingApi.toggleAddress(address, isEnabled);
+      loadAddresses();
+    } catch (error) {
+      console.error("Failed to toggle address:", error);
+      addToast({ title: "操作失败", color: "danger" });
+    }
+  };
+
+  // 批量操作
+  const handleBatchAction = async (action: "enable" | "disable" | "delete") => {
+    if (selectedAddresses.size === 0) return;
+    if (action === "delete" && !confirm(`确定要删除选中的 ${selectedAddresses.size} 个地址吗？`)) return;
+
+    try {
+      await copyTradingApi.batchAction(action, Array.from(selectedAddresses));
+      addToast({ title: "批量操作成功", color: "success" });
+      setSelectedAddresses(new Set());
+      loadAddresses();
+    } catch (error) {
+      console.error("Failed to batch action:", error);
+      addToast({ title: "批量操作失败", color: "danger" });
+    }
+  };
+
+  // 分组管理
+  const handleSaveGroup = async () => {
+    try {
+      await copyTradingApi.createGroup(groupFormData);
+      addToast({ title: "分组创建成功", color: "success" });
+      setIsGroupModalOpen(false);
+      setGroupFormData({ name: "", description: "", color: "#3B82F6" });
+      loadGroups();
+    } catch (error) {
+      console.error("Failed to create group:", error);
+      addToast({ title: "创建失败", color: "danger" });
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: number) => {
+    if (!confirm("确定要删除这个分组吗？分组下的地址将移至默认分组。")) return;
+    try {
+      await copyTradingApi.deleteGroup(groupId);
+      addToast({ title: "分组删除成功", color: "success" });
+      loadGroups();
+      if (selectedGroup === groupId) {
+        setSelectedGroup(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete group:", error);
+      addToast({ title: "删除失败", color: "danger" });
+    }
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedAddresses(new Set(addresses.map((a) => a.address)));
+    } else {
+      setSelectedAddresses(new Set());
+    }
+  };
+
+  const handleSelectOne = (address: string, checked: boolean) => {
+    const newSet = new Set(selectedAddresses);
+    if (checked) {
+      newSet.add(address);
+    } else {
+      newSet.delete(address);
+    }
+    setSelectedAddresses(newSet);
+  };
+
+  // 格式化地址
+  const formatAddress = (address: string) => {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  // 复制地址
+  const copyAddress = (address: string) => {
+    navigator.clipboard.writeText(address);
+    addToast({ title: "已复制地址", color: "success" });
+  };
+
+  // 表格列
+  const columns = [
+    { key: "select", label: "" },
+    { key: "status", label: "状态" },
+    { key: "address", label: "地址" },
+    { key: "name", label: "名称" },
+    { key: "group", label: "分组" },
+    { key: "rating", label: "评级" },
+    { key: "win_rate", label: "胜率" },
+    { key: "trader_pnl", label: "盈亏" },
+    { key: "copy_ratio", label: "跟单比例" },
+    { key: "updated_at", label: "更新时间" },
+    { key: "actions", label: "操作" },
+  ];
+
+  // 渲染单元格
+  const renderCell = useCallback(
+    (item: CopyTradingAddress, columnKey: string) => {
+      switch (columnKey) {
+        case "select":
+          return (
+            <Checkbox
+              isSelected={selectedAddresses.has(item.address)}
+              onValueChange={(checked) => handleSelectOne(item.address, checked)}
+            />
+          );
+        case "status":
+          return (
+            <Switch
+              size="sm"
+              isSelected={item.is_enabled}
+              onValueChange={(checked) => handleToggle(item.address, checked)}
+            />
+          );
+        case "address":
+          return (
+            <div className="flex items-center gap-2">
+              <Tooltip content={item.address}>
+                <span
+                  className="cursor-pointer hover:text-primary"
+                  onClick={() => navigate(`/traders/${item.address}`)}
+                >
+                  {formatAddress(item.address)}
+                </span>
+              </Tooltip>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                onPress={() => copyAddress(item.address)}
+              >
+                <Icon icon="lucide:copy" width={14} />
+              </Button>
+            </div>
+          );
+        case "name":
+          return item.name || "-";
+        case "group":
+          return item.group_name ? (
+            <Chip size="sm" style={{ backgroundColor: item.group_color || "#6B7280", color: "white" }}>
+              {item.group_name}
+            </Chip>
+          ) : (
+            "-"
+          );
+        case "rating":
+          return item.rating ? (
+            <Chip size="sm" color={ratingColors[item.rating] || "default"}>
+              {item.rating}
+            </Chip>
+          ) : (
+            "-"
+          );
+        case "win_rate":
+          return item.win_rate !== undefined ? `${(item.win_rate * 100).toFixed(1)}%` : "-";
+        case "trader_pnl":
+          return item.trader_pnl !== undefined ? (
+            <span className={item.trader_pnl >= 0 ? "text-success" : "text-danger"}>
+              ${item.trader_pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>
+          ) : (
+            "-"
+          );
+        case "copy_ratio":
+          return `${(item.copy_ratio * 100).toFixed(0)}%`;
+        case "updated_at":
+          return new Date(item.updated_at).toLocaleDateString();
+        case "actions":
+          return (
+            <div className="flex gap-1">
+              <Tooltip content="编辑">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="light"
+                  onPress={() => handleOpenAddModal(item)}
+                >
+                  <Icon icon="lucide:edit" width={16} />
+                </Button>
+              </Tooltip>
+              <Tooltip content="删除">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  onPress={() => handleDelete(item.address)}
+                >
+                  <Icon icon="lucide:trash-2" width={16} />
+                </Button>
+              </Tooltip>
+            </div>
+          );
+        default:
+          return null;
+      }
+    },
+    [selectedAddresses, navigate]
+  );
+
+  return (
+    <DefaultLayout>
+      <div className="flex flex-col gap-4">
+        {/* 标题和操作栏 */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">跟单管理</h1>
+          <div className="flex gap-2">
+            <Button
+              color="primary"
+              startContent={<Icon icon="lucide:plus" width={18} />}
+              onPress={() => handleOpenAddModal()}
+            >
+              添加地址
+            </Button>
+          </div>
+        </div>
+
+        {/* 筛选工具栏 */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <Input
+            className="w-64"
+            placeholder="搜索地址或名称..."
+            value={search}
+            onValueChange={setSearch}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            startContent={<Icon icon="lucide:search" width={18} />}
+          />
+          <Select
+            className="w-40"
+            label="状态"
+            size="sm"
+            selectedKeys={[statusFilter]}
+            onSelectionChange={(keys) => {
+              const value = Array.from(keys)[0] as string;
+              setStatusFilter(value);
+              setPage(1);
+            }}
+          >
+            <SelectItem key="all">全部</SelectItem>
+            <SelectItem key="enabled">已启用</SelectItem>
+            <SelectItem key="disabled">已禁用</SelectItem>
+          </Select>
+
+          {selectedAddresses.size > 0 && (
+            <Dropdown>
+              <DropdownTrigger>
+                <Button variant="flat">
+                  批量操作 ({selectedAddresses.size})
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu>
+                <DropdownItem key="enable" onPress={() => handleBatchAction("enable")}>
+                  批量启用
+                </DropdownItem>
+                <DropdownItem key="disable" onPress={() => handleBatchAction("disable")}>
+                  批量禁用
+                </DropdownItem>
+                <DropdownItem key="delete" className="text-danger" onPress={() => handleBatchAction("delete")}>
+                  批量删除
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
+          )}
+
+          <Button variant="flat" onPress={() => loadAddresses()}>
+            <Icon icon="lucide:refresh-cw" width={18} />
+          </Button>
+
+          <Button variant="flat" onPress={() => setIsGroupModalOpen(true)}>
+            <Icon icon="lucide:folder-plus" width={18} />
+            管理分组
+          </Button>
+        </div>
+
+        {/* 分组标签 */}
+        <div className="flex gap-2 flex-wrap">
+          <Chip
+            className="cursor-pointer"
+            variant={selectedGroup === null ? "solid" : "flat"}
+            onClose={undefined}
+            onClick={() => {
+              setSelectedGroup(null);
+              setPage(1);
+            }}
+          >
+            全部 ({groups.reduce((sum, g) => sum + (g.address_count || 0), 0)})
+          </Chip>
+          {groups.map((group) => (
+            <Chip
+              key={group.id}
+              className="cursor-pointer"
+              variant={selectedGroup === group.id ? "solid" : "flat"}
+              style={
+                selectedGroup === group.id
+                  ? { backgroundColor: group.color, color: "white" }
+                  : { borderColor: group.color }
+              }
+              onClick={() => {
+                setSelectedGroup(group.id);
+                setPage(1);
+              }}
+            >
+              {group.name} ({group.address_count || 0})
+            </Chip>
+          ))}
+        </div>
+
+        {/* 数据表格 */}
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Spinner size="lg" />
+          </div>
+        ) : (
+          <>
+            <Table aria-label="跟单地址列表">
+              <TableHeader columns={columns}>
+                {(column) => (
+                  <TableColumn key={column.key}>
+                    {column.key === "select" ? (
+                      <Checkbox
+                        isSelected={selectedAddresses.size === addresses.length && addresses.length > 0}
+                        isIndeterminate={selectedAddresses.size > 0 && selectedAddresses.size < addresses.length}
+                        onValueChange={handleSelectAll}
+                      />
+                    ) : (
+                      column.label
+                    )}
+                  </TableColumn>
+                )}
+              </TableHeader>
+              <TableBody items={addresses} emptyContent="暂无跟单地址">
+                {(item) => (
+                  <TableRow key={item.address}>
+                    {(columnKey) => <TableCell>{renderCell(item, columnKey as string)}</TableCell>}
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+
+            {/* 分页 */}
+            {pagination && pagination.total_pages > 1 && (
+              <div className="flex justify-center mt-4">
+                <Pagination
+                  total={pagination.total_pages}
+                  page={page}
+                  onChange={setPage}
+                  showControls
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 添加/编辑 Modal */}
+        <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} size="2xl">
+          <ModalContent>
+            <ModalHeader>{editingAddress ? "编辑跟单地址" : "添加跟单地址"}</ModalHeader>
+            <ModalBody>
+              <div className="grid grid-cols-2 gap-4">
+                {/* 基础信息 */}
+                <Input
+                  label="地址"
+                  placeholder="0x..."
+                  value={formData.address || ""}
+                  onValueChange={(v) => setFormData({ ...formData, address: v })}
+                  isDisabled={!!editingAddress}
+                  className="col-span-2"
+                />
+                <Input
+                  label="名称"
+                  placeholder="备注名称"
+                  value={formData.name || ""}
+                  onValueChange={(v) => setFormData({ ...formData, name: v })}
+                />
+                <Select
+                  label="分组"
+                  selectedKeys={formData.group_id ? [String(formData.group_id)] : []}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0];
+                    setFormData({ ...formData, group_id: value ? Number(value) : null });
+                  }}
+                >
+                  {groups.map((g) => (
+                    <SelectItem key={String(g.id)}>{g.name}</SelectItem>
+                  ))}
+                </Select>
+
+                {/* 跟单配置 */}
+                <Input
+                  type="number"
+                  label="跟单比例"
+                  placeholder="0.1"
+                  value={String(formData.copy_ratio || 0.1)}
+                  onValueChange={(v) => setFormData({ ...formData, copy_ratio: parseFloat(v) || 0.1 })}
+                  endContent="%"
+                  description="0.1 = 10%"
+                />
+                <Input
+                  type="number"
+                  label="最大仓位"
+                  placeholder="500"
+                  value={String(formData.max_position_size_usd || 500)}
+                  onValueChange={(v) => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 500 })}
+                  startContent="$"
+                />
+                <Input
+                  type="number"
+                  label="最小仓位"
+                  placeholder="20"
+                  value={String(formData.min_position_size_usd || 20)}
+                  onValueChange={(v) => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 20 })}
+                  startContent="$"
+                />
+                <Input
+                  type="number"
+                  label="最大杠杆"
+                  placeholder="10"
+                  value={String(formData.max_leverage || 10)}
+                  onValueChange={(v) => setFormData({ ...formData, max_leverage: parseInt(v) || 10 })}
+                  endContent="x"
+                />
+                <Input
+                  type="number"
+                  label="默认杠杆"
+                  placeholder="5"
+                  value={String(formData.default_leverage || 5)}
+                  onValueChange={(v) => setFormData({ ...formData, default_leverage: parseInt(v) || 5 })}
+                  endContent="x"
+                />
+                <Input
+                  type="number"
+                  label="最大持仓数"
+                  placeholder="10"
+                  value={String(formData.max_total_positions || 10)}
+                  onValueChange={(v) => setFormData({ ...formData, max_total_positions: parseInt(v) || 10 })}
+                />
+                <Input
+                  type="number"
+                  label="日交易上限"
+                  placeholder="50"
+                  value={String(formData.max_daily_trades || 50)}
+                  onValueChange={(v) => setFormData({ ...formData, max_daily_trades: parseInt(v) || 50 })}
+                />
+                <Input
+                  type="number"
+                  label="检查间隔"
+                  placeholder="10"
+                  value={String(formData.check_interval || 10)}
+                  onValueChange={(v) => setFormData({ ...formData, check_interval: parseFloat(v) || 10 })}
+                  endContent="秒"
+                />
+
+                {/* 开关选项 */}
+                <div className="col-span-2 flex gap-6">
+                  <Switch
+                    isSelected={formData.is_enabled}
+                    onValueChange={(v) => setFormData({ ...formData, is_enabled: v })}
+                  >
+                    启用跟单
+                  </Switch>
+                  <Switch
+                    isSelected={formData.copy_leverage}
+                    onValueChange={(v) => setFormData({ ...formData, copy_leverage: v })}
+                  >
+                    复制杠杆
+                  </Switch>
+                  <Switch
+                    isSelected={formData.dry_run}
+                    onValueChange={(v) => setFormData({ ...formData, dry_run: v })}
+                  >
+                    模拟模式
+                  </Switch>
+                </div>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setIsAddModalOpen(false)}>
+                取消
+              </Button>
+              <Button color="primary" onPress={handleSaveAddress}>
+                保存
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 分组管理 Modal */}
+        <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)}>
+          <ModalContent>
+            <ModalHeader>分组管理</ModalHeader>
+            <ModalBody>
+              {/* 现有分组列表 */}
+              <div className="space-y-2 mb-4">
+                {groups.map((group) => (
+                  <div key={group.id} className="flex items-center justify-between p-2 border rounded">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded"
+                        style={{ backgroundColor: group.color }}
+                      />
+                      <span>{group.name}</span>
+                      <span className="text-sm text-gray-500">({group.address_count || 0})</span>
+                    </div>
+                    {group.id !== 1 && (
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        color="danger"
+                        onPress={() => handleDeleteGroup(group.id)}
+                      >
+                        <Icon icon="lucide:trash-2" width={16} />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* 新建分组 */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-2">新建分组</h4>
+                <div className="space-y-2">
+                  <Input
+                    label="分组名称"
+                    placeholder="输入分组名称"
+                    value={groupFormData.name}
+                    onValueChange={(v) => setGroupFormData({ ...groupFormData, name: v })}
+                  />
+                  <Input
+                    label="描述"
+                    placeholder="可选的描述"
+                    value={groupFormData.description}
+                    onValueChange={(v) => setGroupFormData({ ...groupFormData, description: v })}
+                  />
+                  <Input
+                    type="color"
+                    label="颜色"
+                    value={groupFormData.color}
+                    onValueChange={(v) => setGroupFormData({ ...groupFormData, color: v })}
+                  />
+                </div>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setIsGroupModalOpen(false)}>
+                关闭
+              </Button>
+              <Button
+                color="primary"
+                onPress={handleSaveGroup}
+                isDisabled={!groupFormData.name}
+              >
+                创建分组
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      </div>
+    </DefaultLayout>
+  );
+}

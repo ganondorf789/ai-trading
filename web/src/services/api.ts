@@ -157,6 +157,55 @@ export interface ApiResponse<T> {
   stats?: FillsStats;
 }
 
+// 跟单分组
+export interface CopyTradingGroup {
+  id: number;
+  name: string;
+  description: string;
+  color: string;
+  sort_order: number;
+  address_count: number;
+  created_at: string;
+}
+
+// 跟单地址
+export interface CopyTradingAddress {
+  id: number;
+  address: string;
+  name: string;
+  group_id: number | null;
+  group_name?: string;
+  group_color?: string;
+  is_enabled: boolean;
+  // 跟单配置
+  copy_ratio: number;
+  max_position_size_usd: number;
+  min_position_size_usd: number;
+  copy_leverage: boolean;
+  max_leverage: number;
+  default_leverage: number;
+  max_total_positions: number;
+  max_daily_trades: number;
+  slippage: number;
+  symbols_whitelist: string[];
+  symbols_blacklist: string[];
+  check_interval: number;
+  dry_run: boolean;
+  // 时间戳
+  created_at: string;
+  updated_at: string;
+  // 关联的交易者指标
+  win_rate?: number;
+  trader_pnl?: number;
+  rating?: string;
+  overall_score?: number;
+  total_trades?: number;
+  profit_factor?: number;
+  max_drawdown?: number;
+  sharpe_ratio?: number;
+  analyzed_at?: string;
+}
+
 // API 方法
 export const traderApi = {
   // 获取交易者列表（支持分页、排序和高级筛选）
@@ -250,6 +299,69 @@ export const traderApi = {
       null,
       { params, timeout: 120000 }  // 2分钟超时
     ),
+};
+
+// 跟单地址管理 API
+export const copyTradingApi = {
+  // ==================== 分组管理 ====================
+
+  // 获取分组列表
+  getGroups: () =>
+    api.get<any, ApiResponse<CopyTradingGroup[]>>('/copy-trading/groups'),
+
+  // 创建分组
+  createGroup: (data: { name: string; description?: string; color?: string }) =>
+    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/groups', data),
+
+  // 更新分组
+  updateGroup: (groupId: number, data: Partial<CopyTradingGroup>) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/groups/${groupId}`, data),
+
+  // 删除分组
+  deleteGroup: (groupId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/groups/${groupId}`),
+
+  // ==================== 地址管理 ====================
+
+  // 获取跟单地址列表
+  getAddresses: (params?: {
+    page?: number;
+    limit?: number;
+    group_id?: number;
+    is_enabled?: boolean;
+    search?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }) =>
+    api.get<any, ApiResponse<CopyTradingAddress[]>>('/copy-trading/addresses', { params }),
+
+  // 获取单个跟单地址详情
+  getAddress: (address: string) =>
+    api.get<any, ApiResponse<CopyTradingAddress>>(`/copy-trading/addresses/${address}`),
+
+  // 添加跟单地址
+  createAddress: (data: Partial<CopyTradingAddress>) =>
+    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/addresses', data),
+
+  // 更新跟单地址
+  updateAddress: (address: string, data: Partial<CopyTradingAddress>) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}`, data),
+
+  // 删除跟单地址
+  deleteAddress: (address: string) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}`),
+
+  // 启用/禁用跟单地址
+  toggleAddress: (address: string, isEnabled: boolean) =>
+    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/toggle`, { is_enabled: isEnabled }),
+
+  // 批量操作
+  batchAction: (action: 'enable' | 'disable' | 'delete' | 'move_group', addresses: string[], groupId?: number) =>
+    api.post<any, ApiResponse<void> & { affected_count?: number; message?: string }>('/copy-trading/addresses/batch', {
+      action,
+      addresses,
+      group_id: groupId,
+    }),
 };
 
 export default api;

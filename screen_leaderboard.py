@@ -20,7 +20,7 @@ from screener.database import TraderDatabase
 
 
 def screen_leaderboard_traders(
-    limit: int = 5000,
+    limit: int = 3000,
     lookback_days: int = 30,
     max_fills: int = 0,
     resume_from: int = 0
