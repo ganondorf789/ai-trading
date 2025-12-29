@@ -364,6 +364,46 @@ export const copyTradingApi = {
     }),
 };
 
+// 跟单订单
+export interface CopyTradingOrder {
+  id: number;
+  target_address: string;
+  target_name?: string;
+  symbol: string;
+  side: string;
+  action: string;
+  size: number;
+  price: number | null;
+  leverage: number;
+  copy_ratio: number | null;
+  target_size: number | null;
+  target_entry_price: number | null;
+  status: string;
+  error_message: string | null;
+  pnl: number;
+  is_dry_run: boolean;
+  created_at: string;
+  executed_at: string | null;
+}
+
+export interface CopyOrderStats {
+  total_orders: number;
+  successful_orders: number;
+  failed_orders: number;
+  pending_orders: number;
+  total_pnl: number;
+  by_symbol: Array<{
+    symbol: string;
+    count: number;
+    pnl: number;
+  }>;
+  by_target: Array<{
+    target_address: string;
+    count: number;
+    pnl: number;
+  }>;
+}
+
 // Hyperliquid 币种信息
 export interface HyperliquidCoin {
   id: number;
@@ -388,6 +428,39 @@ export const hyperliquidApi = {
   // 同步币种（从 Hyperliquid API）
   syncCoins: () =>
     api.post<any, ApiResponse<HyperliquidCoin[]> & { message?: string }>('/hyperliquid/coins/sync'),
+};
+
+// 跟单订单 API
+export const copyTradingOrdersApi = {
+  // 获取订单列表
+  getOrders: (params?: {
+    page?: number;
+    limit?: number;
+    target_address?: string;
+    symbol?: string;
+    status?: string;
+    action?: string;
+    is_dry_run?: boolean;
+    days?: number;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }) =>
+    api.get<any, ApiResponse<CopyTradingOrder[]>>('/copy-trading/orders', { params }),
+
+  // 获取订单统计
+  getStats: (params?: {
+    target_address?: string;
+    days?: number;
+  }) =>
+    api.get<any, ApiResponse<CopyOrderStats>>('/copy-trading/orders/stats', { params }),
+
+  // 清理旧订单
+  cleanup: (days: number = 30) =>
+    api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>(
+      '/copy-trading/orders/cleanup',
+      null,
+      { params: { days } }
+    ),
 };
 
 export default api;

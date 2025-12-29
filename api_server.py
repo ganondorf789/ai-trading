@@ -1240,6 +1240,129 @@ def batch_update_copy_trading_addresses():
         }), 500
 
 
+# ==================== 跟单订单管理 API ====================
+
+@app.route('/api/copy-trading/orders', methods=['GET'])
+def get_copy_trading_orders():
+    """
+    获取跟单订单列表
+    Query Parameters:
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
+        - target_address: str, 筛选目标地址
+        - symbol: str, 筛选交易对
+        - status: str, 筛选状态 (pending/success/failed)
+        - action: str, 筛选操作类型 (open/close)
+        - is_dry_run: bool, 筛选模拟/实盘
+        - days: int, 最近N天，默认7
+        - sort_by: str, 排序字段，默认created_at
+        - sort_order: str, 排序方向，默认desc
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        target_address = request.args.get('target_address')
+        symbol = request.args.get('symbol')
+        status = request.args.get('status')
+        action = request.args.get('action')
+        is_dry_run = request.args.get('is_dry_run')
+        days = int(request.args.get('days', 7))
+        sort_by = request.args.get('sort_by', 'created_at')
+        sort_order = request.args.get('sort_order', 'desc')
+
+        # 处理 is_dry_run 参数
+        if is_dry_run is not None:
+            is_dry_run = is_dry_run.lower() == 'true'
+
+        offset = (page - 1) * limit
+        orders, total_count = db.get_copy_orders(
+            target_address=target_address,
+            symbol=symbol,
+            status=status,
+            action=action,
+            is_dry_run=is_dry_run,
+            days=days,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+
+        total_pages = (total_count + limit - 1) // limit
+
+        return jsonify({
+            'success': True,
+            'data': orders,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取跟单订单列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/orders/stats', methods=['GET'])
+def get_copy_trading_order_stats():
+    """
+    获取跟单订单统计
+    Query Parameters:
+        - target_address: str, 筛选目标地址
+        - days: int, 统计天数，默认7
+    """
+    try:
+        target_address = request.args.get('target_address')
+        days = int(request.args.get('days', 7))
+
+        stats = db.get_copy_order_stats(
+            target_address=target_address,
+            days=days
+        )
+
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+    except Exception as e:
+        logger.error(f"获取跟单订单统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/orders/cleanup', methods=['POST'])
+def cleanup_copy_trading_orders():
+    """
+    清理旧订单记录
+    Query Parameters:
+        - days: int, 保留最近N天的记录，默认30
+    """
+    try:
+        days = int(request.args.get('days', 30))
+        deleted_count = db.delete_old_copy_orders(days)
+
+        return jsonify({
+            'success': True,
+            'data': {'deleted_count': deleted_count},
+            'message': f'已清理 {deleted_count} 条旧订单记录'
+        })
+    except Exception as e:
+        logger.error(f"清理旧订单记录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     logger.info("启动 Trader Analytics API Server...")
     logger.info("API 文档:")
@@ -1253,6 +1376,8 @@ if __name__ == '__main__':
     logger.info("  GET  /api/coins - 获取币种列表")
     logger.info("  GET  /api/stats - 获取统计信息")
     logger.info("  GET  /api/sessions - 获取筛选会话")
+    logger.info("  GET  /api/copy-trading/orders - 获取跟单订单")
+    logger.info("  GET  /api/copy-trading/orders/stats - 订单统计")
     logger.info("  GET  /health - 健康检查")
 
     app.run(host='0.0.0.0', port=5000, debug=True)
