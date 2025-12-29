@@ -1812,10 +1812,14 @@ class TraderDatabase:
         symbol: str = None,
         status: str = None,
         action: str = None,
+        is_dry_run: bool = None,
+        days: int = None,
         start_date: str = None,
         end_date: str = None,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
     ) -> tuple[List[Dict], int]:
         """
         获取跟单订单列表
@@ -1825,10 +1829,14 @@ class TraderDatabase:
             symbol: 币种筛选
             status: 状态筛选
             action: 操作类型筛选
+            is_dry_run: 是否模拟模式筛选
+            days: 最近N天
             start_date: 开始日期
             end_date: 结束日期
             limit: 每页数量
             offset: 偏移量
+            sort_by: 排序字段
+            sort_order: 排序方向
 
         Returns:
             (订单列表, 总数量)
@@ -1855,6 +1863,14 @@ class TraderDatabase:
                 conditions.append("o.action = ?")
                 params.append(action)
 
+            if is_dry_run is not None:
+                conditions.append("o.is_dry_run = ?")
+                params.append(1 if is_dry_run else 0)
+
+            if days is not None and days > 0:
+                conditions.append("o.created_at >= datetime('now', ?)")
+                params.append(f"-{days} days")
+
             if start_date:
                 conditions.append("o.created_at >= ?")
                 params.append(start_date)
@@ -1864,6 +1880,12 @@ class TraderDatabase:
                 params.append(end_date)
 
             where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+            # 验证排序字段
+            valid_sort_fields = {'created_at', 'executed_at', 'symbol', 'side', 'action', 'size', 'price', 'pnl', 'status'}
+            if sort_by not in valid_sort_fields:
+                sort_by = 'created_at'
+            order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
 
             # 查询总数
             cursor.execute(f"""
@@ -1880,7 +1902,7 @@ class TraderDatabase:
                 FROM copy_trading_orders o
                 LEFT JOIN copy_trading_addresses cta ON o.target_address = cta.address
                 WHERE {where_clause}
-                ORDER BY o.created_at DESC
+                ORDER BY o.{sort_by} {order_direction}
                 LIMIT ? OFFSET ?
             """, params + [limit, offset])
 

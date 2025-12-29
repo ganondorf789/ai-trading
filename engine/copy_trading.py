@@ -817,7 +817,10 @@ class MultiTargetCopyTradingBot:
     def _get_target_positions(self, address: str) -> Dict[str, Dict]:
         """获取目标交易者的当前持仓"""
         try:
-            info = Info(self.client.api_url, skip_ws=True)
+            from hyperliquid.utils import constants
+            # 使用 client 的 api_url，如果 client 为 None 则使用主网 API
+            api_url = self.client.api_url if self.client else constants.MAINNET_API_URL
+            info = Info(api_url, skip_ws=True)
             state = info.user_state(address)
             positions = {}
 
@@ -847,6 +850,9 @@ class MultiTargetCopyTradingBot:
 
     def _get_my_positions(self) -> Dict[str, Position]:
         """获取自己的当前持仓"""
+        # 模拟模式下无需客户端
+        if self.client is None:
+            return {}
         positions = {}
         for pos in self.client.get_positions():
             positions[pos.symbol] = pos
@@ -867,15 +873,16 @@ class MultiTargetCopyTradingBot:
 
         size = copy_notional / current_price
 
-        # 获取精度
-        meta = self.client.get_meta()
-        for asset in meta.get('universe', []):
-            if asset['name'] == target_position['symbol']:
-                decimals = asset.get('szDecimals', 4)
-                size = round(size, decimals)
-                break
+        # 获取精度（模拟模式下使用默认精度）
+        decimals = 4
+        if self.client is not None:
+            meta = self.client.get_meta()
+            for asset in meta.get('universe', []):
+                if asset['name'] == target_position['symbol']:
+                    decimals = asset.get('szDecimals', 4)
+                    break
 
-        return size
+        return round(size, decimals)
 
     async def _open_position(
         self,
@@ -889,7 +896,11 @@ class MultiTargetCopyTradingBot:
         """开仓"""
         config = target_state.config
         side = 'long' if is_long else 'short'
-        price = self.client.get_mid_price(symbol)
+        # 模拟模式下使用目标持仓的入场价格
+        if self.client is not None:
+            price = self.client.get_mid_price(symbol)
+        else:
+            price = target_position.get('entry_price', 0) if target_position else 0
 
         # 创建订单记录
         order_data = {
@@ -967,7 +978,8 @@ class MultiTargetCopyTradingBot:
         pnl = my_pos.unrealized_pnl if my_pos else 0
         size = my_pos.size if my_pos else 0
         side = 'long' if my_pos and my_pos.side == PositionSide.LONG else 'short'
-        price = self.client.get_mid_price(symbol)
+        # 模拟模式下使用 0 作为价格
+        price = self.client.get_mid_price(symbol) if self.client is not None else 0
 
         # 创建订单记录
         order_data = {
@@ -1059,7 +1071,8 @@ class MultiTargetCopyTradingBot:
                 # 新仓位
                 logger.info(f"[{address[:8]}] 发现新仓位: {symbol} {target_pos['side']} {abs(target_pos['size'])}")
 
-                current_price = self.client.get_mid_price(symbol)
+                # 模拟模式下使用目标持仓的入场价格
+                current_price = self.client.get_mid_price(symbol) if self.client else target_pos.get('entry_price', 1)
                 copy_size = self._calculate_copy_size(config, target_pos, current_price)
                 leverage = target_pos['leverage'] if config.copy_leverage else config.default_leverage
                 leverage = min(leverage, config.max_leverage)
@@ -1083,7 +1096,8 @@ class MultiTargetCopyTradingBot:
                 await self._close_position(target_state, symbol)
                 await asyncio.sleep(0.5)
 
-                current_price = self.client.get_mid_price(symbol)
+                # 模拟模式下使用目标持仓的入场价格
+                current_price = self.client.get_mid_price(symbol) if self.client else target_pos.get('entry_price', 1)
                 copy_size = self._calculate_copy_size(config, target_pos, current_price)
                 leverage = target_pos['leverage'] if config.copy_leverage else config.default_leverage
                 leverage = min(leverage, config.max_leverage)

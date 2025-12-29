@@ -15,7 +15,9 @@
       "Bash(npx tsc:*)",
       "Bash(tree /F \"D:\\\\UGit\\\\ai-trading\\\\web\\\\src\")",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(timeout 15 python:*)",
+      "Bash(timeout 20 python:*)"
     ]
   }
 }
