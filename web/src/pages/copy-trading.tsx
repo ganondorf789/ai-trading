@@ -66,6 +66,8 @@ export default function CopyTradingPage() {
   // Modal 状态
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingAddress, setDeletingAddress] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState<CopyTradingAddress | null>(null);
 
   // 表单状态
@@ -216,34 +218,59 @@ export default function CopyTradingPage() {
     }
   };
 
-  // 处理删除
-  const handleDelete = async (address: string) => {
-    if (!confirm("确定要删除这个跟单地址吗？")) return;
+  // 打开删除确认弹窗
+  const handleOpenDeleteModal = (address: string) => {
+    setDeletingAddress(address);
+    setIsDeleteModalOpen(true);
+  };
+
+  // 确认删除
+  const handleConfirmDelete = async () => {
+    if (!deletingAddress) return;
     try {
-      await copyTradingApi.deleteAddress(address);
+      await copyTradingApi.deleteAddress(deletingAddress);
       addToast({ title: "删除成功", color: "success" });
+      setIsDeleteModalOpen(false);
+      setDeletingAddress(null);
       loadAddresses();
+      loadGroups(); // 更新分组计数
     } catch (error) {
       console.error("Failed to delete address:", error);
       addToast({ title: "删除失败", color: "danger" });
     }
   };
 
-  // 处理启用/禁用
+  // 处理启用/禁用（使用乐观更新避免无限循环）
   const handleToggle = async (address: string, isEnabled: boolean) => {
+    // 乐观更新本地状态
+    setAddresses((prev) =>
+      prev.map((a) => (a.address === address ? { ...a, is_enabled: isEnabled } : a))
+    );
+
     try {
       await copyTradingApi.toggleAddress(address, isEnabled);
-      loadAddresses();
     } catch (error) {
+      // 失败时回滚状态
+      setAddresses((prev) =>
+        prev.map((a) => (a.address === address ? { ...a, is_enabled: !isEnabled } : a))
+      );
       console.error("Failed to toggle address:", error);
       addToast({ title: "操作失败", color: "danger" });
     }
   };
 
+  // 批量删除确认状态
+  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
+
   // 批量操作
   const handleBatchAction = async (action: "enable" | "disable" | "delete") => {
     if (selectedAddresses.size === 0) return;
-    if (action === "delete" && !confirm(`确定要删除选中的 ${selectedAddresses.size} 个地址吗？`)) return;
+
+    // 批量删除使用 Modal 确认
+    if (action === "delete") {
+      setIsBatchDeleteModalOpen(true);
+      return;
+    }
 
     try {
       await copyTradingApi.batchAction(action, Array.from(selectedAddresses));
@@ -253,6 +280,21 @@ export default function CopyTradingPage() {
     } catch (error) {
       console.error("Failed to batch action:", error);
       addToast({ title: "批量操作失败", color: "danger" });
+    }
+  };
+
+  // 确认批量删除
+  const handleConfirmBatchDelete = async () => {
+    try {
+      await copyTradingApi.batchAction("delete", Array.from(selectedAddresses));
+      addToast({ title: "批量删除成功", color: "success" });
+      setSelectedAddresses(new Set());
+      setIsBatchDeleteModalOpen(false);
+      loadAddresses();
+      loadGroups(); // 更新分组计数
+    } catch (error) {
+      console.error("Failed to batch delete:", error);
+      addToast({ title: "批量删除失败", color: "danger" });
     }
   };
 
@@ -421,7 +463,7 @@ export default function CopyTradingPage() {
                   size="sm"
                   variant="light"
                   color="danger"
-                  onPress={() => handleDelete(item.address)}
+                  onPress={() => handleOpenDeleteModal(item.address)}
                 >
                   <Icon icon="lucide:trash-2" width={16} />
                 </Button>
@@ -464,8 +506,6 @@ export default function CopyTradingPage() {
           />
           <Select
             className="w-40"
-            label="状态"
-            size="sm"
             selectedKeys={[statusFilter]}
             onSelectionChange={(keys) => {
               const value = Array.from(keys)[0] as string;
@@ -788,6 +828,53 @@ export default function CopyTradingPage() {
                 isDisabled={!groupFormData.name}
               >
                 创建分组
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 删除确认 Modal */}
+        <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} size="sm">
+          <ModalContent>
+            <ModalHeader className="flex items-center gap-2">
+              <Icon icon="lucide:alert-triangle" className="text-danger" width={20} />
+              确认删除
+            </ModalHeader>
+            <ModalBody>
+              <p>确定要删除这个跟单地址吗？此操作无法撤销。</p>
+              {deletingAddress && (
+                <p className="text-sm text-default-500 font-mono mt-2">
+                  {deletingAddress.slice(0, 10)}...{deletingAddress.slice(-8)}
+                </p>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setIsDeleteModalOpen(false)}>
+                取消
+              </Button>
+              <Button color="danger" onPress={handleConfirmDelete}>
+                确认删除
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 批量删除确认 Modal */}
+        <Modal isOpen={isBatchDeleteModalOpen} onClose={() => setIsBatchDeleteModalOpen(false)} size="sm">
+          <ModalContent>
+            <ModalHeader className="flex items-center gap-2">
+              <Icon icon="lucide:alert-triangle" className="text-danger" width={20} />
+              确认批量删除
+            </ModalHeader>
+            <ModalBody>
+              <p>确定要删除选中的 <strong>{selectedAddresses.size}</strong> 个跟单地址吗？此操作无法撤销。</p>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setIsBatchDeleteModalOpen(false)}>
+                取消
+              </Button>
+              <Button color="danger" onPress={handleConfirmBatchDelete}>
+                确认删除
               </Button>
             </ModalFooter>
           </ModalContent>

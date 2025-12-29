@@ -134,15 +134,15 @@ export default function TradersPage() {
         rating: selectedRating || undefined,
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
-        // 高级筛选 - 区间查询
-        min_win_rate: filters.minWinRate,
-        max_win_rate: filters.maxWinRate,
+        // 高级筛选 - 区间查询（百分比字段需要除以100转换为小数）
+        min_win_rate: filters.minWinRate !== undefined ? filters.minWinRate / 100 : undefined,
+        max_win_rate: filters.maxWinRate !== undefined ? filters.maxWinRate / 100 : undefined,
         min_profit_factor: filters.minProfitFactor,
         max_profit_factor: filters.maxProfitFactor,
         min_pnl: filters.minPnl,
         max_pnl: filters.maxPnl,
-        min_drawdown: filters.minDrawdown,
-        max_drawdown: filters.maxDrawdown,
+        min_drawdown: filters.minDrawdown !== undefined ? filters.minDrawdown / 100 : undefined,
+        max_drawdown: filters.maxDrawdown !== undefined ? filters.maxDrawdown / 100 : undefined,
         min_sharpe: filters.minSharpe,
         max_sharpe: filters.maxSharpe,
         min_trades: filters.minTrades,
@@ -228,6 +228,21 @@ export default function TradersPage() {
     }
   };
 
+  // 从跟单列表移除
+  const handleRemoveFromCopyTrading = async (trader: Trader, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止行点击事件
+    try {
+      await copyTradingApi.deleteAddress(trader.address);
+      addToast({ title: '移除成功', description: '已从跟单列表移除', color: 'success' });
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        addToast({ title: '不存在', description: '该地址不在跟单列表中', color: 'warning' });
+      } else {
+        addToast({ title: '移除失败', description: error?.message || '操作失败', color: 'danger' });
+      }
+    }
+  };
+
   // 可见列
   const headerColumns = useMemo(() => {
     if (visibleColumns === 'all') return columns;
@@ -271,9 +286,15 @@ export default function TradersPage() {
         );
       case 'address':
         return (
-          <span className="font-mono text-sm">
+          <a
+            href={`/traders/${trader.address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-sm text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
             {trader.address.slice(0, 6)}...{trader.address.slice(-4)}
-          </span>
+          </a>
         );
       case 'overall_score':
         return <span className="font-bold">{formatNumber(trader.overall_score)}</span>;
@@ -332,17 +353,30 @@ export default function TradersPage() {
         return <span>{formatPercent(trader.long_short_ratio || 0)}</span>;
       case 'actions':
         return (
-          <Tooltip content="添加到跟单列表">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="light"
-              color="primary"
-              onPress={(e: any) => handleAddToCopyTrading(trader, e)}
-            >
-              <Icon icon="lucide:user-plus" width={16} />
-            </Button>
-          </Tooltip>
+          <div className="flex gap-1">
+            <Tooltip content="添加到跟单列表">
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                color="primary"
+                onPress={(e: any) => handleAddToCopyTrading(trader, e)}
+              >
+                <Icon icon="lucide:user-plus" width={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="从跟单列表移除">
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                color="danger"
+                onPress={(e: any) => handleRemoveFromCopyTrading(trader, e)}
+              >
+                <Icon icon="lucide:user-minus" width={16} />
+              </Button>
+            </Tooltip>
+          </div>
         );
       default:
         return null;
