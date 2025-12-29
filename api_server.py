@@ -727,6 +727,101 @@ def get_coins():
         }), 500
 
 
+@app.route('/api/hyperliquid/coins', methods=['GET'])
+def get_hyperliquid_coins():
+    """
+    获取 Hyperliquid 可交易币种列表（从数据库）
+    Query Parameters:
+        - active_only: bool, 是否只返回活跃币种，默认true
+    """
+    try:
+        active_only = request.args.get('active_only', 'true').lower() == 'true'
+        coins = db.get_hyperliquid_coins(active_only=active_only)
+
+        return jsonify({
+            'success': True,
+            'data': coins,
+            'count': len(coins)
+        })
+
+    except Exception as e:
+        logger.error(f"获取 Hyperliquid 币种列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/hyperliquid/coins/sync', methods=['POST'])
+def sync_hyperliquid_coins():
+    """
+    从 Hyperliquid API 同步币种列表到数据库
+    """
+    try:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+
+        logger.info("开始同步 Hyperliquid 币种列表...")
+
+        # 获取市场元数据
+        info = Info(constants.MAINNET_API_URL, skip_ws=True)
+        meta = info.meta()
+
+        if not meta or 'universe' not in meta:
+            return jsonify({
+                'success': False,
+                'error': '无法获取 Hyperliquid 市场数据'
+            }), 500
+
+        # 解析币种数据
+        coins = meta.get('universe', [])
+        logger.info(f"获取到 {len(coins)} 个币种")
+
+        # 保存到数据库
+        saved_count = db.save_hyperliquid_coins(coins)
+
+        logger.info(f"同步完成: 保存了 {saved_count} 个币种")
+
+        # 返回保存后的列表
+        coins_list = db.get_hyperliquid_coins(active_only=True)
+
+        return jsonify({
+            'success': True,
+            'data': coins_list,
+            'count': len(coins_list),
+            'message': f'成功同步 {saved_count} 个币种'
+        })
+
+    except Exception as e:
+        logger.error(f"同步 Hyperliquid 币种失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/hyperliquid/coins/names', methods=['GET'])
+def get_hyperliquid_coin_names():
+    """
+    获取 Hyperliquid 币种名称列表（仅名称，用于下拉选择）
+    """
+    try:
+        names = db.get_hyperliquid_coin_names()
+
+        return jsonify({
+            'success': True,
+            'data': names,
+            'count': len(names)
+        })
+
+    except Exception as e:
+        logger.error(f"获取 Hyperliquid 币种名称列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/sessions', methods=['GET'])
 def get_sessions():
     """

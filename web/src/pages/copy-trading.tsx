@@ -31,7 +31,7 @@ import {
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { copyTradingApi, CopyTradingAddress, CopyTradingGroup, PaginationInfo } from "@/services/api";
+import { copyTradingApi, hyperliquidApi, CopyTradingAddress, CopyTradingGroup, PaginationInfo } from "@/services/api";
 
 // 评级颜色映射
 const ratingColors: Record<string, "success" | "primary" | "secondary" | "warning" | "danger" | "default"> = {
@@ -98,6 +98,159 @@ export default function CopyTradingPage() {
     color: "#3B82F6",
   });
 
+  // 币种输入临时状态
+  const [whitelistInput, setWhitelistInput] = useState("");
+  const [blacklistInput, setBlacklistInput] = useState("");
+  const [whitelistHighlightIndex, setWhitelistHighlightIndex] = useState(-1);
+  const [blacklistHighlightIndex, setBlacklistHighlightIndex] = useState(-1);
+
+  // 可用币种列表
+  const [availableCoins, setAvailableCoins] = useState<string[]>([]);
+  const [coinsLoading, setCoinsLoading] = useState(false);
+
+  // 加载可用币种
+  const loadAvailableCoins = useCallback(async () => {
+    try {
+      const response = await hyperliquidApi.getCoinNames();
+      if (response.success && response.data) {
+        setAvailableCoins(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load coins:", error);
+    }
+  }, []);
+
+  // 同步币种
+  const handleSyncCoins = async () => {
+    setCoinsLoading(true);
+    try {
+      const response = await hyperliquidApi.syncCoins();
+      if (response.success) {
+        addToast({ title: response.message || "同步成功", color: "success" });
+        await loadAvailableCoins();
+      }
+    } catch (error) {
+      console.error("Failed to sync coins:", error);
+      addToast({ title: "同步失败", color: "danger" });
+    } finally {
+      setCoinsLoading(false);
+    }
+  };
+
+  // 添加币种到白名单
+  const handleAddWhitelist = (coin?: string) => {
+    const symbol = (coin || whitelistInput.trim()).toUpperCase();
+    if (symbol && !formData.symbols_whitelist?.includes(symbol)) {
+      setFormData({
+        ...formData,
+        symbols_whitelist: [...(formData.symbols_whitelist || []), symbol],
+      });
+      setWhitelistInput("");
+      setWhitelistHighlightIndex(-1);
+    }
+  };
+
+  // 处理白名单键盘事件
+  const handleWhitelistKeyDown = (e: React.KeyboardEvent) => {
+    if (!whitelistInput || filteredWhitelistCoins.length === 0) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleAddWhitelist();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setWhitelistHighlightIndex((prev) =>
+          prev < filteredWhitelistCoins.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setWhitelistHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (whitelistHighlightIndex >= 0 && whitelistHighlightIndex < filteredWhitelistCoins.length) {
+          handleAddWhitelist(filteredWhitelistCoins[whitelistHighlightIndex]);
+        } else {
+          handleAddWhitelist();
+        }
+        break;
+      case "Escape":
+        setWhitelistInput("");
+        setWhitelistHighlightIndex(-1);
+        break;
+    }
+  };
+
+  // 从白名单移除币种
+  const handleRemoveWhitelist = (symbol: string) => {
+    setFormData({
+      ...formData,
+      symbols_whitelist: formData.symbols_whitelist?.filter((s) => s !== symbol) || [],
+    });
+  };
+
+  // 添加币种到黑名单
+  const handleAddBlacklist = (coin?: string) => {
+    const symbol = (coin || blacklistInput.trim()).toUpperCase();
+    if (symbol && !formData.symbols_blacklist?.includes(symbol)) {
+      setFormData({
+        ...formData,
+        symbols_blacklist: [...(formData.symbols_blacklist || []), symbol],
+      });
+      setBlacklistInput("");
+      setBlacklistHighlightIndex(-1);
+    }
+  };
+
+  // 处理黑名单键盘事件
+  const handleBlacklistKeyDown = (e: React.KeyboardEvent) => {
+    if (!blacklistInput || filteredBlacklistCoins.length === 0) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleAddBlacklist();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setBlacklistHighlightIndex((prev) =>
+          prev < filteredBlacklistCoins.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setBlacklistHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (blacklistHighlightIndex >= 0 && blacklistHighlightIndex < filteredBlacklistCoins.length) {
+          handleAddBlacklist(filteredBlacklistCoins[blacklistHighlightIndex]);
+        } else {
+          handleAddBlacklist();
+        }
+        break;
+      case "Escape":
+        setBlacklistInput("");
+        setBlacklistHighlightIndex(-1);
+        break;
+    }
+  };
+
+  // 从黑名单移除币种
+  const handleRemoveBlacklist = (symbol: string) => {
+    setFormData({
+      ...formData,
+      symbols_blacklist: formData.symbols_blacklist?.filter((s) => s !== symbol) || [],
+    });
+  };
+
   // 加载数据
   const loadAddresses = useCallback(async () => {
     setLoading(true);
@@ -146,6 +299,29 @@ export default function CopyTradingPage() {
   useEffect(() => {
     loadGroups();
   }, [loadGroups]);
+
+  useEffect(() => {
+    loadAvailableCoins();
+  }, [loadAvailableCoins]);
+
+  // 过滤可用币种（用于下拉选择）
+  const filteredWhitelistCoins = useMemo(() => {
+    const input = whitelistInput.trim().toUpperCase();
+    const existing = formData.symbols_whitelist || [];
+    return availableCoins
+      .filter((coin) => !existing.includes(coin))
+      .filter((coin) => !input || coin.includes(input))
+      .slice(0, 10);
+  }, [availableCoins, whitelistInput, formData.symbols_whitelist]);
+
+  const filteredBlacklistCoins = useMemo(() => {
+    const input = blacklistInput.trim().toUpperCase();
+    const existing = formData.symbols_blacklist || [];
+    return availableCoins
+      .filter((coin) => !existing.includes(coin))
+      .filter((coin) => !input || coin.includes(input))
+      .slice(0, 10);
+  }, [availableCoins, blacklistInput, formData.symbols_blacklist]);
 
   // 处理搜索
   const handleSearch = useCallback(() => {
@@ -198,6 +374,11 @@ export default function CopyTradingPage() {
         dry_run: true,
       });
     }
+    // 重置临时输入状态
+    setWhitelistInput("");
+    setBlacklistInput("");
+    setWhitelistHighlightIndex(-1);
+    setBlacklistHighlightIndex(-1);
     setIsAddModalOpen(true);
   };
 
@@ -368,6 +549,7 @@ export default function CopyTradingPage() {
     { key: "win_rate", label: "胜率" },
     { key: "trader_pnl", label: "盈亏" },
     { key: "copy_ratio", label: "跟单比例" },
+    { key: "symbols", label: "币种限制" },
     { key: "updated_at", label: "更新时间" },
     { key: "actions", label: "操作" },
   ];
@@ -442,6 +624,45 @@ export default function CopyTradingPage() {
           );
         case "copy_ratio":
           return `${(item.copy_ratio * 100).toFixed(0)}%`;
+        case "symbols":
+          const whiteCount = item.symbols_whitelist?.length || 0;
+          const blackCount = item.symbols_blacklist?.length || 0;
+          if (whiteCount === 0 && blackCount === 0) {
+            return <span className="text-default-400">不限制</span>;
+          }
+          return (
+            <Tooltip
+              content={
+                <div className="text-xs space-y-1">
+                  {whiteCount > 0 && (
+                    <div>
+                      <span className="text-success">白名单: </span>
+                      {item.symbols_whitelist?.join(", ")}
+                    </div>
+                  )}
+                  {blackCount > 0 && (
+                    <div>
+                      <span className="text-danger">黑名单: </span>
+                      {item.symbols_blacklist?.join(", ")}
+                    </div>
+                  )}
+                </div>
+              }
+            >
+              <div className="flex gap-1">
+                {whiteCount > 0 && (
+                  <Chip size="sm" color="success" variant="flat">
+                    +{whiteCount}
+                  </Chip>
+                )}
+                {blackCount > 0 && (
+                  <Chip size="sm" color="danger" variant="flat">
+                    -{blackCount}
+                  </Chip>
+                )}
+              </div>
+            </Tooltip>
+          );
         case "updated_at":
           return new Date(item.updated_at).toLocaleDateString();
         case "actions":
@@ -629,10 +850,10 @@ export default function CopyTradingPage() {
         )}
 
         {/* 添加/编辑 Modal */}
-        <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} size="2xl">
+        <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} size="2xl" scrollBehavior="inside">
           <ModalContent>
             <ModalHeader>{editingAddress ? "编辑跟单地址" : "添加跟单地址"}</ModalHeader>
-            <ModalBody>
+            <ModalBody className="max-h-[70vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
                 {/* 基础信息 */}
                 <Input
@@ -727,6 +948,153 @@ export default function CopyTradingPage() {
                   endContent="秒"
                 />
 
+                {/* 币种限制 */}
+                <div className="col-span-2 border rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-default-700">币种限制</h4>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      isLoading={coinsLoading}
+                      onPress={handleSyncCoins}
+                      startContent={!coinsLoading && <Icon icon="lucide:refresh-cw" width={14} />}
+                    >
+                      {availableCoins.length > 0 ? `已加载 ${availableCoins.length} 币种` : "同步币种"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-default-500">
+                    白名单：只跟单这些币种（留空表示不限制）；黑名单：不跟单这些币种
+                  </p>
+
+                  {/* 白名单 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-success font-medium w-16">白名单</span>
+                      <div className="flex-1 relative">
+                        <Input
+                          size="sm"
+                          placeholder="输入搜索币种..."
+                          value={whitelistInput}
+                          onValueChange={(v) => {
+                            setWhitelistInput(v);
+                            setWhitelistHighlightIndex(-1);
+                          }}
+                          onKeyDown={handleWhitelistKeyDown}
+                        />
+                        {whitelistInput && filteredWhitelistCoins.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
+                            {filteredWhitelistCoins.map((coin, index) => (
+                              <div
+                                key={coin}
+                                className={`px-3 py-2 cursor-pointer text-sm ${
+                                  index === whitelistHighlightIndex
+                                    ? "bg-primary-100 text-primary"
+                                    : "hover:bg-default-100"
+                                }`}
+                                onClick={() => handleAddWhitelist(coin)}
+                                onMouseEnter={() => setWhitelistHighlightIndex(index)}
+                              >
+                                {coin}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        color="success"
+                        variant="flat"
+                        isIconOnly
+                        onPress={handleAddWhitelist}
+                        isDisabled={!whitelistInput.trim()}
+                      >
+                        <Icon icon="lucide:plus" width={16} />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1 min-h-[32px]">
+                      {formData.symbols_whitelist?.length === 0 ? (
+                        <span className="text-xs text-default-400">不限制（跟单所有币种）</span>
+                      ) : (
+                        formData.symbols_whitelist?.map((symbol) => (
+                          <Chip
+                            key={symbol}
+                            size="sm"
+                            color="success"
+                            variant="flat"
+                            onClose={() => handleRemoveWhitelist(symbol)}
+                          >
+                            {symbol}
+                          </Chip>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 黑名单 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-danger font-medium w-16">黑名单</span>
+                      <div className="flex-1 relative">
+                        <Input
+                          size="sm"
+                          placeholder="输入搜索币种..."
+                          value={blacklistInput}
+                          onValueChange={(v) => {
+                            setBlacklistInput(v);
+                            setBlacklistHighlightIndex(-1);
+                          }}
+                          onKeyDown={handleBlacklistKeyDown}
+                        />
+                        {blacklistInput && filteredBlacklistCoins.length > 0 && (
+                          <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
+                            {filteredBlacklistCoins.map((coin, index) => (
+                              <div
+                                key={coin}
+                                className={`px-3 py-2 cursor-pointer text-sm ${
+                                  index === blacklistHighlightIndex
+                                    ? "bg-primary-100 text-primary"
+                                    : "hover:bg-default-100"
+                                }`}
+                                onClick={() => handleAddBlacklist(coin)}
+                                onMouseEnter={() => setBlacklistHighlightIndex(index)}
+                              >
+                                {coin}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        color="danger"
+                        variant="flat"
+                        isIconOnly
+                        onPress={handleAddBlacklist}
+                        isDisabled={!blacklistInput.trim()}
+                      >
+                        <Icon icon="lucide:plus" width={16} />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1 min-h-[32px]">
+                      {formData.symbols_blacklist?.length === 0 ? (
+                        <span className="text-xs text-default-400">无黑名单</span>
+                      ) : (
+                        formData.symbols_blacklist?.map((symbol) => (
+                          <Chip
+                            key={symbol}
+                            size="sm"
+                            color="danger"
+                            variant="flat"
+                            onClose={() => handleRemoveBlacklist(symbol)}
+                          >
+                            {symbol}
+                          </Chip>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* 开关选项 */}
                 <div className="col-span-2 flex gap-6">
                   <Switch
@@ -762,10 +1130,10 @@ export default function CopyTradingPage() {
         </Modal>
 
         {/* 分组管理 Modal */}
-        <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)}>
+        <Modal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} scrollBehavior="inside">
           <ModalContent>
             <ModalHeader>分组管理</ModalHeader>
-            <ModalBody>
+            <ModalBody className="max-h-[70vh] overflow-y-auto">
               {/* 现有分组列表 */}
               <div className="space-y-2 mb-4">
                 {groups.map((group) => (

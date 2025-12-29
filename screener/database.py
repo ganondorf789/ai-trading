@@ -311,6 +311,19 @@ class TraderDatabase:
                 ON copy_trading_addresses(group_id)
             """)
 
+            # 创建 Hyperliquid 币种表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS hyperliquid_coins (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    sz_decimals INTEGER DEFAULT 0,
+                    max_leverage INTEGER DEFAULT 1,
+                    only_isolated BOOLEAN DEFAULT FALSE,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
     def _migrate_add_new_columns(self, cursor):
         """为现有表添加新列（数据库迁移）"""
         # 获取现有列
@@ -1521,3 +1534,91 @@ class TraderDatabase:
                 return 0
 
             return cursor.rowcount
+
+    # ==================== Hyperliquid 币种管理 ====================
+
+    def save_hyperliquid_coins(self, coins: List[Dict]) -> int:
+        """
+        保存 Hyperliquid 币种列表
+
+        Args:
+            coins: 币种数据列表 [{name, szDecimals, maxLeverage, onlyIsolated}]
+
+        Returns:
+            保存的记录数
+        """
+        if not coins:
+            return 0
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            saved_count = 0
+
+            for coin in coins:
+                try:
+                    cursor.execute("""
+                        INSERT INTO hyperliquid_coins (
+                            name, sz_decimals, max_leverage, only_isolated, is_active, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(name) DO UPDATE SET
+                            sz_decimals = excluded.sz_decimals,
+                            max_leverage = excluded.max_leverage,
+                            only_isolated = excluded.only_isolated,
+                            is_active = excluded.is_active,
+                            updated_at = excluded.updated_at
+                    """, (
+                        coin.get('name'),
+                        coin.get('szDecimals', 0),
+                        coin.get('maxLeverage', 1),
+                        coin.get('onlyIsolated', False),
+                        True,
+                        datetime.now().isoformat()
+                    ))
+                    saved_count += 1
+                except Exception as e:
+                    logger.debug(f"保存币种记录失败: {e}")
+
+            return saved_count
+
+    def get_hyperliquid_coins(self, active_only: bool = True) -> List[Dict]:
+        """
+        获取 Hyperliquid 币种列表
+
+        Args:
+            active_only: 是否只返回活跃币种
+
+        Returns:
+            币种列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            if active_only:
+                cursor.execute("""
+                    SELECT * FROM hyperliquid_coins
+                    WHERE is_active = 1
+                    ORDER BY name
+                """)
+            else:
+                cursor.execute("""
+                    SELECT * FROM hyperliquid_coins
+                    ORDER BY name
+                """)
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_hyperliquid_coin_names(self) -> List[str]:
+        """
+        获取 Hyperliquid 币种名称列表（仅活跃币种）
+
+        Returns:
+            币种名称列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT name FROM hyperliquid_coins
+                WHERE is_active = 1
+                ORDER BY name
+            """)
+            return [row['name'] for row in cursor.fetchall()]

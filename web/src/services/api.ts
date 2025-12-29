@@ -364,4 +364,30 @@ export const copyTradingApi = {
     }),
 };
 
+// Hyperliquid 币种信息
+export interface HyperliquidCoin {
+  id: number;
+  name: string;
+  sz_decimals: number;
+  max_leverage: number;
+  only_isolated: boolean;
+  is_active: boolean;
+  updated_at: string;
+}
+
+// Hyperliquid 币种 API
+export const hyperliquidApi = {
+  // 获取币种列表
+  getCoins: (activeOnly: boolean = true) =>
+    api.get<any, ApiResponse<HyperliquidCoin[]>>('/hyperliquid/coins', { params: { active_only: activeOnly } }),
+
+  // 获取币种名称列表
+  getCoinNames: () =>
+    api.get<any, ApiResponse<string[]>>('/hyperliquid/coins/names'),
+
+  // 同步币种（从 Hyperliquid API）
+  syncCoins: () =>
+    api.post<any, ApiResponse<HyperliquidCoin[]> & { message?: string }>('/hyperliquid/coins/sync'),
+};
+
 export default api;
