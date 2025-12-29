@@ -116,13 +116,6 @@ async def run():
     logger.info("=" * 60)
     logger.info("Hyperliquid 跟单机器人")
     logger.info("=" * 60)
-    logger.info("")
-    logger.info("使用说明:")
-    logger.info("  1. 启动 Web 服务: python api_server.py")
-    logger.info("  2. 访问跟单管理页面添加目标地址")
-    logger.info("  3. 配置跟单参数并启用")
-    logger.info("  4. 运行此脚本开始跟单")
-    logger.info("")
 
     # 初始化飞书通知器
     notifier = setup_feishu_notifier()

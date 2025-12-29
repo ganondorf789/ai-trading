@@ -56,6 +56,10 @@ export default function OrdersPage() {
   const [daysFilter, setDaysFilter] = useState<number>(7);
   const sortBy = "created_at";
   const sortOrder: "asc" | "desc" = "desc";
+  const rowsPerPage = 20;
+
+  // 页码跳转
+  const [jumpPage, setJumpPage] = useState("");
 
   // 加载订单列表
   const fetchOrders = useCallback(async () => {
@@ -184,6 +188,15 @@ export default function OrdersPage() {
     const prefix = pnl >= 0 ? "+" : "";
 
     return `${prefix}$${formatted}`;
+  };
+
+  // 页码跳转
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pagination && pageNum >= 1 && pageNum <= pagination.total_pages) {
+      setPage(pageNum);
+      setJumpPage("");
+    }
   };
 
   // 渲染统计卡片
@@ -354,16 +367,35 @@ export default function OrdersPage() {
           aria-label="Orders table"
           bottomContent={
             pagination && pagination.total_pages > 1 ? (
-              <div className="flex w-full justify-center">
-                <Pagination
-                  isCompact
-                  showControls
-                  showShadow
-                  color="primary"
-                  page={page}
-                  total={pagination.total_pages}
-                  onChange={setPage}
-                />
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
+                <span className="text-sm text-default-500">
+                  显示 {Math.min((page - 1) * rowsPerPage + 1, pagination.total_count)} - {Math.min(page * rowsPerPage, pagination.total_count)} 条，共 {pagination.total_count} 条记录
+                </span>
+                <div className="flex items-center gap-3">
+                  <Pagination
+                    isCompact
+                    showControls
+                    showShadow
+                    color="primary"
+                    page={page}
+                    total={pagination.total_pages}
+                    onChange={setPage}
+                  />
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-default-500">跳转</span>
+                    <Input
+                      type="number"
+                      size="sm"
+                      className="w-16"
+                      min={1}
+                      max={pagination.total_pages}
+                      value={jumpPage}
+                      onValueChange={setJumpPage}
+                      onKeyDown={(e) => e.key === "Enter" && handleJumpPage()}
+                    />
+                    <span className="text-sm text-default-500">页</span>
+                  </div>
+                </div>
               </div>
             ) : null
           }
