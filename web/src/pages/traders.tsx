@@ -19,9 +19,8 @@ import { Select, SelectItem } from '@heroui/select';
 import { Form } from '@heroui/form';
 import { SearchIcon } from '@heroui/shared-icons';
 import { Icon } from '@iconify/react';
-import { addToast, Tooltip } from '@heroui/react';
 import DefaultLayout from '@/layouts/default';
-import { traderApi, copyTradingApi, Trader } from '@/services/api';
+import { traderApi, Trader } from '@/services/api';
 
 // 表格列配置
 type ColumnKey =
@@ -30,7 +29,7 @@ type ColumnKey =
   | 'sortino_ratio' | 'current_equity' | 'active_days' | 'avg_leverage'
   | 'current_positions' | 'recent_7d_pnl' | 'recent_7d_win_rate'
   | 'max_consecutive_wins' | 'max_consecutive_losses' | 'unique_symbols'
-  | 'favorite_symbol' | 'long_short_ratio' | 'last_trade_time' | 'actions';
+  | 'favorite_symbol' | 'long_short_ratio' | 'last_trade_time';
 
 interface Column {
   uid: ColumnKey;
@@ -69,7 +68,6 @@ const columns: Column[] = [
   { uid: 'unique_symbols', name: '品种数', sortable: true, group: '特征' },
   { uid: 'favorite_symbol', name: '常用品种', sortable: false, group: '特征' },
   { uid: 'long_short_ratio', name: '多空比', sortable: true, group: '特征' },
-  { uid: 'actions', name: '操作', sortable: false, group: '操作' },
 ];
 
 const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
@@ -78,7 +76,7 @@ const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
   'sortino_ratio', 'current_equity', 'active_days', 'avg_leverage',
   'current_positions', 'recent_7d_pnl', 'recent_7d_win_rate',
   'max_consecutive_wins', 'max_consecutive_losses', 'unique_symbols',
-  'favorite_symbol', 'long_short_ratio', 'last_trade_time', 'actions'
+  'favorite_symbol', 'long_short_ratio', 'last_trade_time'
 ];
 
 // 高级筛选器配置
@@ -206,42 +204,6 @@ export default function TradersPage() {
     navigate(`/traders/${address}`);
   };
 
-  // 添加到跟单列表
-  const handleAddToCopyTrading = async (trader: Trader, e: React.MouseEvent) => {
-    e.stopPropagation(); // 阻止行点击事件
-    try {
-      await copyTradingApi.createAddress({
-        address: trader.address,
-        name: `${trader.rating}级-${trader.address.slice(0, 6)}`,
-        is_enabled: true,
-        copy_ratio: 0.1,
-        dry_run: true,
-      });
-      addToast({ title: '添加成功', description: '已添加到跟单列表', color: 'success' });
-    } catch (error: any) {
-      // 检查是否是地址已存在的错误
-      if (error?.response?.status === 400 || error?.message?.includes('UNIQUE')) {
-        addToast({ title: '已存在', description: '该地址已在跟单列表中', color: 'warning' });
-      } else {
-        addToast({ title: '添加失败', description: error?.message || '操作失败', color: 'danger' });
-      }
-    }
-  };
-
-  // 从跟单列表移除
-  const handleRemoveFromCopyTrading = async (trader: Trader, e: React.MouseEvent) => {
-    e.stopPropagation(); // 阻止行点击事件
-    try {
-      await copyTradingApi.deleteAddress(trader.address);
-      addToast({ title: '移除成功', description: '已从跟单列表移除', color: 'success' });
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        addToast({ title: '不存在', description: '该地址不在跟单列表中', color: 'warning' });
-      } else {
-        addToast({ title: '移除失败', description: error?.message || '操作失败', color: 'danger' });
-      }
-    }
-  };
 
   // 可见列
   const headerColumns = useMemo(() => {
@@ -351,33 +313,6 @@ export default function TradersPage() {
         return <span className="text-sm">{trader.favorite_symbol || '-'}</span>;
       case 'long_short_ratio':
         return <span>{formatPercent(trader.long_short_ratio || 0)}</span>;
-      case 'actions':
-        return (
-          <div className="flex gap-1">
-            <Tooltip content="添加到跟单列表">
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                color="primary"
-                onPress={(e: any) => handleAddToCopyTrading(trader, e)}
-              >
-                <Icon icon="lucide:user-plus" width={16} />
-              </Button>
-            </Tooltip>
-            <Tooltip content="从跟单列表移除">
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                color="danger"
-                onPress={(e: any) => handleRemoveFromCopyTrading(trader, e)}
-              >
-                <Icon icon="lucide:user-minus" width={16} />
-              </Button>
-            </Tooltip>
-          </div>
-        );
       default:
         return null;
     }

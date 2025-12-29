@@ -920,34 +920,6 @@ export default function TraderDetailPage() {
                 </div>
               </div>
 
-              <Divider className="my-3" />
-
-              {/* 评分详情 */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-2">评分详情</h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <div>
-                    <p className="text-xs text-gray-500">综合评分</p>
-                    <p className="text-lg font-bold">{formatNumber(trader.overall_score)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">盈利能力</p>
-                    <p className="text-lg font-bold">{formatNumber(trader.profitability_score || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">风险控制</p>
-                    <p className="text-lg font-bold">{formatNumber(trader.risk_score || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">一致性</p>
-                    <p className="text-lg font-bold">{formatNumber(trader.consistency_score || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">活跃度</p>
-                    <p className="text-lg font-bold">{formatNumber(trader.activity_score || 0)}</p>
-                  </div>
-                </div>
-              </div>
             </CardBody>
           </Card>
 
