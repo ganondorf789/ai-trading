@@ -143,7 +143,7 @@ class ScreenerConfig:
     
     # 数据获取配置
     max_fills_per_trader: int = 0  # 每个交易者最大获取成交数 (0=不限制)
-    lookback_days: int = 30  # 回溯天数
+    lookback_days: int = 0  # 回溯天数 (0=获取所有记录)
     
     # 筛选条件
     min_total_trades: int = 10  # 最小交易次数
@@ -676,9 +676,14 @@ class TraderScreener:
             # API 调用间延迟
             time.sleep(self.config.api_call_delay)
 
-            # 获取成交记录（使用上海时区）
-            start_time = pendulum.now(SHANGHAI_TZ).subtract(days=self.config.lookback_days)
-            fills = self._get_user_fills_by_time(address, start_time)
+            # 获取成交记录
+            if self.config.lookback_days == 0:
+                # lookback_days=0 表示获取所有成交记录
+                fills = self._get_user_fills(address)
+            else:
+                # 使用时间范围获取（使用上海时区）
+                start_time = pendulum.now(SHANGHAI_TZ).subtract(days=self.config.lookback_days)
+                fills = self._get_user_fills_by_time(address, start_time)
 
             if not fills:
                 logger.debug(f"交易者 {address[:10]}... 无成交记录")

@@ -21,7 +21,7 @@ from screener.database import TraderDatabase
 
 def screen_leaderboard_traders(
     limit: int = 3000,
-    lookback_days: int = 30,
+    lookback_days: int = 0,
     max_fills: int = 0,
     resume_from: int = 0
 ):
@@ -149,8 +149,8 @@ def main():
     parser.add_argument(
         "--days", "-d",
         type=int,
-        default=30,
-        help="分析回溯天数 (默认: 30)"
+        default=0,
+        help="分析回溯天数 (0=获取所有记录, 默认: 0)"
     )
     parser.add_argument(
         "--max-fills", "-m",
