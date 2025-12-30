@@ -130,6 +130,23 @@ export interface TraderHistory {
   equity: ChartDataPoint[];
 }
 
+export interface TraderAIAnalysis {
+  id: number;
+  address: string;
+  analyzed_at: string;
+  rating: string;
+  overall_score: number;
+  analysis_text: string;
+  summary: string;
+  strengths: string;
+  risks: string;
+  trading_style: string;
+  copy_trading_advice: string;
+  improvement_suggestions: string;
+  ai_provider: string;
+  updated_at: string;
+}
+
 export interface PaginationInfo {
   page: number;
   limit: number;
@@ -299,6 +316,18 @@ export const traderApi = {
       null,
       { params, timeout: 120000 }  // 2分钟超时
     ),
+
+  // AI分析交易者（可能需要较长时间）
+  aiAnalyzeTrader: (address: string, params?: { provider?: string }) =>
+    api.post<any, ApiResponse<TraderAIAnalysis> & { message?: string }>(
+      `/traders/${address}/ai-analysis`,
+      null,
+      { params, timeout: 60000 }  // 60秒超时
+    ),
+
+  // 获取AI分析结果
+  getTraderAIAnalysis: (address: string) =>
+    api.get<any, ApiResponse<TraderAIAnalysis>>(`/traders/${address}/ai-analysis`),
 };
 
 // 跟单地址管理 API

@@ -19,7 +19,9 @@
       "Bash(timeout 15 python:*)",
       "Bash(timeout 20 python:*)",
       "Bash(cd:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(chmod:*)",
+      "Bash(timeout 5 python:*)"
     ]
   }
 }

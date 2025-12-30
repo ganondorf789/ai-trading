@@ -10,6 +10,7 @@ import logging
 
 from screener.database import TraderDatabase
 from screener.trader_screener import TraderScreener, ScreenerConfig
+from services.ai_analysis import generate_trader_analysis
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -466,6 +467,76 @@ def refresh_trader_positions(address: str):
 
     except Exception as e:
         logger.error(f"刷新持仓数据失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/traders/<address>/ai-analysis', methods=['POST'])
+def ai_analyze_trader(address: str):
+    """
+    使用AI分析交易者表现并保存到数据库
+    Query Parameters:
+        - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)，可选
+    """
+    try:
+        provider = request.args.get('provider')
+
+        logger.info(f"开始AI分析交易者: {address}, 提供商: {provider or '默认'}")
+
+        # 获取交易者数据
+        trader = db.get_trader_by_address(address)
+
+        if not trader:
+            return jsonify({
+                'success': False,
+                'error': 'Trader not found'
+            }), 404
+
+        # 生成AI分析
+        analysis = generate_trader_analysis(trader, provider=provider)
+
+        # 保存AI分析结果到数据库
+        db.save_trader_ai_analysis(address, analysis)
+
+        logger.info(f"AI分析完成并已保存: {address}")
+
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'message': 'AI分析完成并已保存'
+        })
+
+    except Exception as e:
+        logger.error(f"AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/traders/<address>/ai-analysis', methods=['GET'])
+def get_trader_ai_analysis(address: str):
+    """
+    获取交易者的AI分析结果
+    """
+    try:
+        analysis = db.get_trader_ai_analysis(address)
+
+        if not analysis:
+            return jsonify({
+                'success': False,
+                'error': 'AI分析不存在，请先进行分析'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': analysis
+        })
+
+    except Exception as e:
+        logger.error(f"获取AI分析失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

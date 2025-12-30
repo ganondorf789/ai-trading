@@ -8,6 +8,7 @@ import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
 import { Chip } from '@heroui/chip';
+import ReactMarkdown from 'react-markdown';
 import {
   Dropdown,
   DropdownTrigger,
@@ -20,6 +21,7 @@ import {
   PopoverContent,
 } from '@heroui/popover';
 import { RadioGroup, Radio } from '@heroui/radio';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/modal';
 import {
   Table,
   TableHeader,
@@ -89,6 +91,9 @@ export default function TraderDetailPage() {
   const [fillsLoading, setFillsLoading] = useState(false);
   const [fillsStats, setFillsStats] = useState<FillsStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiAnalysisData, setAiAnalysisData] = useState<any>(null);
+  const [showAiAnalysis, setShowAiAnalysis] = useState(false);
 
   // 高级表格状态
   const [searchValue, setSearchValue] = useState('');
@@ -188,6 +193,54 @@ export default function TraderDetailPage() {
 
     loadData();
   }, [address]);
+
+  // 自动加载已有的AI分析
+  useEffect(() => {
+    if (!address) return;
+
+    const loadExistingAnalysis = async () => {
+      try {
+        const res = await traderApi.getTraderAIAnalysis(address);
+        if (res.success && res.data) {
+          setAiAnalysisData(res.data);
+        }
+      } catch (err: any) {
+        // 没有分析结果是正常的，不显示错误
+        console.log('No existing AI analysis found');
+      }
+    };
+
+    loadExistingAnalysis();
+  }, [address]);
+
+  // AI分析交易者（支持强制重新分析）
+  const handleAiAnalysis = async (forceReanalyze: boolean = false) => {
+    if (!address || aiAnalyzing) return;
+
+    // 如果已有分析且不是强制重新分析，直接显示
+    if (aiAnalysisData && !forceReanalyze) {
+      setShowAiAnalysis(true);
+      return;
+    }
+
+    try {
+      setAiAnalyzing(true);
+      const res = await traderApi.aiAnalyzeTrader(address);
+
+      if (res.success && res.data) {
+        setAiAnalysisData(res.data);
+        setShowAiAnalysis(true);
+      } else {
+        console.error('AI分析失败:', res.error);
+        alert('AI分析失败: ' + (res.error || '未知错误'));
+      }
+    } catch (err: any) {
+      console.error('AI analysis failed:', err);
+      alert('AI分析失败: ' + (err.message || '请求失败'));
+    } finally {
+      setAiAnalyzing(false);
+    }
+  };
 
   // 刷新交易者数据
   const handleRefresh = async () => {
@@ -723,6 +776,16 @@ export default function TraderDetailPage() {
                   <p className="text-sm text-gray-500 font-mono mt-1">{address}</p>
                 </div>
                 <div className="flex items-center gap-4">
+                  <Button
+                    size="sm"
+                    color="secondary"
+                    variant="flat"
+                    isLoading={aiAnalyzing}
+                    onPress={() => handleAiAnalysis(false)}
+                    startContent={!aiAnalyzing && <Icon icon={aiAnalysisData ? "solar:eye-linear" : "solar:magic-stick-2-linear"} width={16} />}
+                  >
+                    {aiAnalyzing ? 'AI分析中...' : aiAnalysisData ? '查看AI分析' : 'AI深度分析'}
+                  </Button>
                   <Button
                     size="sm"
                     color="primary"
@@ -1284,6 +1347,185 @@ export default function TraderDetailPage() {
               )}
             </CardBody>
           </Card>
+
+          {/* AI分析结果Modal */}
+          <Modal
+            isOpen={showAiAnalysis}
+            onClose={() => setShowAiAnalysis(false)}
+            size="5xl"
+            scrollBehavior="inside"
+          >
+            <ModalContent>
+              {(onClose) => (
+                <>
+                  <ModalHeader className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <Icon icon="solar:magic-stick-2-bold-duotone" width={24} className="text-purple-500" />
+                      <span>AI深度分析报告</span>
+                    </div>
+                    {aiAnalysisData && (
+                      <p className="text-sm font-normal text-gray-500">
+                        分析时间: {aiAnalysisData.analyzed_at
+                          ? new Date(aiAnalysisData.analyzed_at).toLocaleString('zh-CN', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })
+                          : '未知'}
+                        {aiAnalysisData.ai_provider && ` | 提供商: ${aiAnalysisData.ai_provider}`}
+                      </p>
+                    )}
+                  </ModalHeader>
+                  <ModalBody>
+                    {aiAnalysisData ? (
+                      <div className="space-y-6">
+                        {/* 综合评价 */}
+                        {aiAnalysisData.summary && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:star-bold-duotone" width={20} className="text-yellow-500" />
+                              综合评价
+                            </h3>
+                            <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.summary}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 优势分析 */}
+                        {aiAnalysisData.strengths && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:shield-check-bold-duotone" width={20} className="text-green-500" />
+                              优势分析
+                            </h3>
+                            <Card className="bg-green-50 dark:bg-green-900/20">
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.strengths}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 风险提示 */}
+                        {aiAnalysisData.risks && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:danger-triangle-bold-duotone" width={20} className="text-red-500" />
+                              风险提示
+                            </h3>
+                            <Card className="bg-red-50 dark:bg-red-900/20">
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.risks}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 交易风格 */}
+                        {aiAnalysisData.trading_style && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:graph-new-bold-duotone" width={20} className="text-blue-500" />
+                              交易风格
+                            </h3>
+                            <Card>
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.trading_style}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 跟单建议 */}
+                        {aiAnalysisData.copy_trading_advice && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:user-check-bold-duotone" width={20} className="text-indigo-500" />
+                              跟单建议
+                            </h3>
+                            <Card className="bg-indigo-50 dark:bg-indigo-900/20">
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.copy_trading_advice}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 改进建议 */}
+                        {aiAnalysisData.improvement_suggestions && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:lightbulb-bolt-bold-duotone" width={20} className="text-orange-500" />
+                              改进建议
+                            </h3>
+                            <Card className="bg-orange-50 dark:bg-orange-900/20">
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.improvement_suggestions}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+
+                        {/* 完整分析文本（支持Markdown） */}
+                        {aiAnalysisData.analysis_text && (
+                          <div>
+                            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                              <Icon icon="solar:document-text-bold-duotone" width={20} className="text-gray-500" />
+                              完整分析报告
+                            </h3>
+                            <Card>
+                              <CardBody>
+                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                  <ReactMarkdown>{aiAnalysisData.analysis_text}</ReactMarkdown>
+                                </div>
+                              </CardBody>
+                            </Card>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <Spinner size="lg" />
+                        <p className="mt-4 text-gray-500">加载中...</p>
+                      </div>
+                    )}
+                  </ModalBody>
+                  <ModalFooter>
+                    <Button
+                      color="secondary"
+                      variant="flat"
+                      isLoading={aiAnalyzing}
+                      onPress={() => handleAiAnalysis(true)}
+                      startContent={!aiAnalyzing && <Icon icon="solar:refresh-bold" width={16} />}
+                    >
+                      {aiAnalyzing ? '重新分析中...' : '重新分析'}
+                    </Button>
+                    <Button color="primary" variant="light" onPress={onClose}>
+                      关闭
+                    </Button>
+                  </ModalFooter>
+                </>
+              )}
+            </ModalContent>
+          </Modal>
         </div>
       </div>
   );

@@ -242,6 +242,30 @@ class TraderDatabase:
                 )
             """)
 
+            # 创建AI分析表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_ai_analysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    address TEXT NOT NULL UNIQUE,
+                    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                    -- 分析结果
+                    rating TEXT,
+                    overall_score REAL DEFAULT 0.0,
+                    analysis_text TEXT,
+                    summary TEXT,
+                    strengths TEXT,
+                    risks TEXT,
+                    trading_style TEXT,
+                    copy_trading_advice TEXT,
+                    improvement_suggestions TEXT,
+
+                    -- 元数据
+                    ai_provider TEXT DEFAULT 'default',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_positions_address
                 ON asset_positions(address)
@@ -2002,3 +2026,67 @@ class TraderDatabase:
                 WHERE created_at < datetime('now', ?)
             """, (f'-{days} days',))
             return cursor.rowcount
+
+    def save_trader_ai_analysis(self, address: str, analysis: Dict[str, Any]) -> None:
+        """
+        保存交易员AI分析结果
+
+        Args:
+            address: 交易员地址
+            analysis: AI分析结果字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO trader_ai_analysis (
+                    address,
+                    rating,
+                    overall_score,
+                    analysis_text,
+                    summary,
+                    strengths,
+                    risks,
+                    trading_style,
+                    copy_trading_advice,
+                    improvement_suggestions,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (
+                address,
+                analysis.get('rating'),
+                analysis.get('overall_score'),
+                analysis.get('analysis_text'),
+                analysis.get('summary'),
+                analysis.get('strengths'),
+                analysis.get('risks'),
+                analysis.get('trading_style'),
+                analysis.get('copy_trading_advice'),
+                analysis.get('improvement_suggestions')
+            ))
+
+            logger.info(f"保存AI分析结果: {address}")
+
+    def get_trader_ai_analysis(self, address: str) -> Optional[Dict[str, Any]]:
+        """
+        获取交易员AI分析结果
+
+        Args:
+            address: 交易员地址
+
+        Returns:
+            AI分析结果字典，如果不存在返回None
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT *
+                FROM trader_ai_analysis
+                WHERE address = ?
+            """, (address,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return dict(row)
