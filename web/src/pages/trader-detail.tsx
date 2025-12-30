@@ -16,12 +16,7 @@ import {
   DropdownMenu,
   DropdownItem,
 } from '@heroui/dropdown';
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from '@heroui/popover';
-import { RadioGroup, Radio } from '@heroui/radio';
+import { Select, SelectItem } from '@heroui/select';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/modal';
 import {
   Table,
@@ -50,7 +45,7 @@ import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
 
 // 表格列配置
-type ColumnKey = 'trade_time' | 'coin' | 'side' | 'px' | 'sz' | 'value' | 'closed_pnl' | 'roi' | 'fee';
+type ColumnKey = 'trade_time' | 'coin' | 'side' | 'trade_type' | 'px' | 'sz' | 'start_position' | 'value' | 'closed_pnl' | 'roi' | 'fee';
 
 interface Column {
   uid: ColumnKey;
@@ -62,15 +57,17 @@ const columns: Column[] = [
   { uid: 'trade_time', name: '时间', sortable: true },
   { uid: 'coin', name: '币种', sortable: true },
   { uid: 'side', name: '方向', sortable: true },
+  { uid: 'trade_type', name: '类型', sortable: true },
   { uid: 'px', name: '价格', sortable: true },
   { uid: 'sz', name: '数量', sortable: true },
+  { uid: 'start_position', name: '开始仓位', sortable: true },
   { uid: 'value', name: '价值', sortable: true },
   { uid: 'closed_pnl', name: '盈亏', sortable: true },
   { uid: 'roi', name: 'ROI', sortable: true },
   { uid: 'fee', name: '手续费', sortable: true },
 ];
 
-const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['trade_time', 'coin', 'side', 'px', 'sz', 'value', 'closed_pnl', 'roi', 'fee'];
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['trade_time', 'coin', 'side', 'trade_type', 'px', 'sz', 'start_position', 'value', 'closed_pnl', 'roi', 'fee'];
 
 export default function TraderDetailPage() {
   const { address } = useParams<{ address: string }>();
@@ -465,10 +462,56 @@ export default function TraderDetailPage() {
             {fill.side === 'B' ? 'BUY' : 'SELL'}
           </Chip>
         );
+      case 'trade_type':
+        // 根据 dir 和 start_position 判断交易类型
+        const dir = fill.dir || '';
+        const startPos = fill.start_position || 0;
+        let tradeType = '-';
+        let typeColor = 'default';
+
+        if (dir.includes('Open')) {
+          if (dir.includes('Long')) {
+            if (startPos === 0) {
+              tradeType = '开多';
+              typeColor = 'success';
+            } else {
+              tradeType = '加多';
+              typeColor = 'success';
+            }
+          } else if (dir.includes('Short')) {
+            if (startPos === 0) {
+              tradeType = '开空';
+              typeColor = 'danger';
+            } else {
+              tradeType = '加空';
+              typeColor = 'danger';
+            }
+          }
+        } else if (dir.includes('Close')) {
+          if (dir.includes('Long')) {
+            tradeType = '平多';
+            typeColor = 'warning';
+          } else if (dir.includes('Short')) {
+            tradeType = '平空';
+            typeColor = 'warning';
+          }
+        }
+
+        return (
+          <Chip
+            size="sm"
+            color={typeColor as 'default' | 'success' | 'danger' | 'warning'}
+            variant="flat"
+          >
+            {tradeType}
+          </Chip>
+        );
       case 'px':
         return <span>${formatNumber(fill.px, 4)}</span>;
       case 'sz':
         return <span>{formatNumber(fill.sz, 4)}</span>;
+      case 'start_position':
+        return <span>{fill.start_position !== undefined ? formatNumber(fill.start_position, 4) : '-'}</span>;
       case 'value':
         return <span>${formatNumber(fill.px * fill.sz, 2)}</span>;
       case 'closed_pnl':
@@ -567,47 +610,44 @@ export default function TraderDetailPage() {
                 onClear={() => setSearchValue('')}
               />
 
-              {/* Filter 弹窗 */}
-              <div>
-                <Popover placement="bottom">
-                  <PopoverTrigger>
-                    <Button
-                      className="bg-default-100 text-default-800"
-                      size="sm"
-                      startContent={
-                        <Icon className="text-default-400" icon="solar:tuning-2-linear" width={16} />
-                      }
-                    >
-                      筛选
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80">
-                    <div className="flex w-full flex-col gap-6 px-2 py-4">
-                      <RadioGroup
-                        label="币种"
-                        value={selectedCoin}
-                        onValueChange={setSelectedCoin}
-                      >
-                        {coins.map((coin) => (
-                          <Radio key={coin} value={coin}>
-                            {coin === 'all' ? '全部' : coin}
-                          </Radio>
-                        ))}
-                      </RadioGroup>
+              {/* 币种筛选 */}
+              <Select
+                className="w-40"
+                label="币种"
+                labelPlacement="outside-left"
+                size="sm"
+                selectedKeys={[selectedCoin]}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  setSelectedCoin(selected || 'all');
+                }}
+                popoverProps={{
+                  classNames: {
+                    content: "max-h-60 overflow-y-auto"
+                  }
+                }}
+              >
+                {coins.map((coin) => (
+                  <SelectItem key={coin}>{coin === 'all' ? '全部' : coin}</SelectItem>
+                ))}
+              </Select>
 
-                      <RadioGroup
-                        label="盈亏"
-                        value={pnlFilter}
-                        onValueChange={(value) => setPnlFilter(value as 'all' | 'profit' | 'loss')}
-                      >
-                        <Radio value="all">全部</Radio>
-                        <Radio value="profit">盈利</Radio>
-                        <Radio value="loss">亏损</Radio>
-                      </RadioGroup>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
+              {/* 盈亏筛选 */}
+              <Select
+                className="w-36"
+                label="盈亏"
+                labelPlacement="outside-left"
+                size="sm"
+                selectedKeys={[pnlFilter]}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  setPnlFilter((selected || 'all') as 'all' | 'profit' | 'loss');
+                }}
+              >
+                <SelectItem key="all">全部</SelectItem>
+                <SelectItem key="profit">盈利</SelectItem>
+                <SelectItem key="loss">亏损</SelectItem>
+              </Select>
 
               {/* Sort 下拉 */}
               <div>
@@ -677,14 +717,13 @@ export default function TraderDetailPage() {
               </div>
 
               {/* Date Range Picker */}
-              <div>
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <span className="text-sm">日期范围</span>
                 <DateRangePicker
-                  label="日期范围"
-                  className="max-w-xs"
+                  className="w-auto"
                   value={dateRange}
                   onChange={setDateRange}
                   visibleMonths={2}
-                  labelPlacement="outside-left"
                 />
               </div>
             </div>
@@ -978,9 +1017,9 @@ export default function TraderDetailPage() {
               <div className="mb-4">
                 <h3 className="text-sm font-semibold text-gray-400 mb-2">时间周期统计</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  {/* 日均统计 */}
+                  {/* 今日统计 */}
                   <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <h4 className="text-xs font-semibold text-gray-500 mb-3">日均</h4>
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">今日</h4>
                     <div className="space-y-2">
                       <div>
                         <p className="text-xs text-gray-500">PnL</p>
@@ -1001,9 +1040,9 @@ export default function TraderDetailPage() {
                     </div>
                   </div>
 
-                  {/* 周均统计 */}
+                  {/* 近7天统计 */}
                   <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <h4 className="text-xs font-semibold text-gray-500 mb-3">周均</h4>
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">近7天</h4>
                     <div className="space-y-2">
                       <div>
                         <p className="text-xs text-gray-500">PnL</p>
@@ -1024,9 +1063,9 @@ export default function TraderDetailPage() {
                     </div>
                   </div>
 
-                  {/* 月均统计 */}
+                  {/* 近30天统计 */}
                   <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                    <h4 className="text-xs font-semibold text-gray-500 mb-3">月均</h4>
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">近30天</h4>
                     <div className="space-y-2">
                       <div>
                         <p className="text-xs text-gray-500">PnL</p>

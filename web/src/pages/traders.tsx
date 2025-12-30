@@ -417,6 +417,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minWinRate?.toString() || ''}
@@ -426,6 +427,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxWinRate?.toString() || ''}
@@ -441,6 +443,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minProfitFactor?.toString() || ''}
@@ -449,6 +452,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxProfitFactor?.toString() || ''}
@@ -463,6 +467,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minPnl?.toString() || ''}
@@ -471,6 +476,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxPnl?.toString() || ''}
@@ -485,6 +491,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minDrawdown?.toString() || ''}
@@ -494,6 +501,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxDrawdown?.toString() || ''}
@@ -509,6 +517,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minSharpe?.toString() || ''}
@@ -517,6 +526,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxSharpe?.toString() || ''}
@@ -531,6 +541,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minSortino?.toString() || ''}
@@ -539,6 +550,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxSortino?.toString() || ''}
@@ -553,6 +565,7 @@ export default function TradersPage() {
               <div className="flex items-center gap-1">
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最小"
                   value={filters.minCalmar?.toString() || ''}
@@ -561,6 +574,7 @@ export default function TradersPage() {
                 <span className="text-default-400">-</span>
                 <Input
                   type="number"
+                  step="any"
                   size="sm"
                   placeholder="最大"
                   value={filters.maxCalmar?.toString() || ''}
