@@ -30,12 +30,22 @@ class HyperliquidSettings(BaseSettings):
 class BirdeyeSettings(BaseSettings):
     """Birdeye API 配置"""
     model_config = SettingsConfigDict(env_prefix='BIRDEYE_')
-    
+
     api_key: str = Field(default="", description="Birdeye API Key")
     api_url: str = Field(
         default="https://public-api.birdeye.so",
         description="Birdeye API URL"
     )
+
+
+class FeishuSettings(BaseSettings):
+    """飞书机器人配置"""
+    model_config = SettingsConfigDict(env_prefix='FEISHU_')
+
+    app_id: str = Field(default="", description="飞书应用 App ID")
+    app_secret: str = Field(default="", description="飞书应用 App Secret")
+    webhook_url: str = Field(default="", description="飞书自定义机器人 Webhook URL")
+    default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
 
 
 class TradingSettings(BaseSettings):
@@ -114,6 +124,7 @@ class Settings:
         # 初始化各配置模块
         self.hyperliquid = HyperliquidSettings()
         self.birdeye = BirdeyeSettings()
+        self.feishu = FeishuSettings()
         self.trading = TradingSettings()
         self.risk = RiskSettings()
         self.system = SystemSettings()
