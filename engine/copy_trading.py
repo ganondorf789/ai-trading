@@ -555,110 +555,93 @@ class CopyTradingBot:
             return []
 
 
-class CopyTradingBotWithWebSocket(CopyTradingBot):
+class TargetSubscriptionManager:
     """
-    使用 WebSocket 的跟单机器人
-    
-    通过 WebSocket 订阅目标交易者的实时交易，降低延迟
+    目标交易者 WebSocket 订阅管理器
+
+    管理多个目标的 WebSocket 订阅，实时接收成交通知
     """
-    
-    def __init__(
-        self,
-        client: HyperliquidClient,
-        config: Optional[CopyTradingConfig] = None
-    ):
-        super().__init__(client, config)
-        
-        # WebSocket Info 客户端
-        self.ws_info = None
-        self._pending_trades: List[Dict] = []
-    
-    def _on_target_trade(self, message: Dict[str, Any]):
-        """目标交易者成交回调"""
+
+    def __init__(self, api_url: str):
+        self.api_url = api_url
+        self.ws_info: Optional[Info] = None
+        self._subscribed_addresses: set = set()
+        self._pending_fills: Dict[str, List[Dict]] = {}  # {address: [fills]}
+        self._lock = asyncio.Lock()
+
+    def _ensure_ws(self):
+        """确保 WebSocket 连接"""
+        if self.ws_info is None:
+            self.ws_info = Info(self.api_url, skip_ws=False)
+
+    def subscribe(self, address: str):
+        """订阅目标交易者的成交"""
+        if address in self._subscribed_addresses:
+            return
+
+        self._ensure_ws()
+        self._pending_fills[address] = []
+
+        def on_fill(message: Dict[str, Any]):
+            self._handle_fill(address, message)
+
+        self.ws_info.subscribe(
+            {"type": "userFills", "user": address},
+            on_fill
+        )
+        self._subscribed_addresses.add(address)
+        logger.info(f"已订阅目标: {address[:10]}...")
+
+    def unsubscribe(self, address: str):
+        """取消订阅（注意：hyperliquid SDK 可能不支持取消订阅）"""
+        if address in self._subscribed_addresses:
+            self._subscribed_addresses.discard(address)
+            if address in self._pending_fills:
+                del self._pending_fills[address]
+            logger.info(f"已取消订阅: {address[:10]}...")
+
+    def _handle_fill(self, address: str, message: Dict[str, Any]):
+        """处理收到的成交通知"""
         data = message.get('data', {})
-        
+
         if isinstance(data, list):
             for fill in data:
-                self._pending_trades.append({
+                fill_info = {
                     'symbol': fill.get('coin', ''),
                     'side': 'buy' if fill.get('side') == 'B' else 'sell',
                     'size': float(fill.get('sz', 0)),
                     'price': float(fill.get('px', 0)),
-                    'time': fill.get('time', 0)
-                })
-                logger.info(f"检测到目标交易: {fill.get('coin')} {fill.get('side')}")
-    
-    async def _process_pending_trades(self):
-        """处理待执行的交易"""
-        while self._pending_trades:
-            trade = self._pending_trades.pop(0)
-            symbol = trade['symbol']
-            
-            if not self._should_copy_symbol(symbol):
-                continue
-            
-            # 获取目标当前持仓
-            target_positions = self._get_target_positions()
-            my_positions = self._get_my_positions()
-            
-            target_pos = target_positions.get(symbol)
-            my_pos = my_positions.get(symbol)
-            
-            if target_pos:
-                await self._adjust_position(symbol, target_pos, my_pos)
-            elif my_pos:
-                # 目标已无仓位，平仓
-                await self._close_position(symbol)
-            
-            self.state.total_copies_today += 1
-    
-    async def run(self):
-        """运行带 WebSocket 的跟单机器人"""
-        if not self.config.target_address:
-            raise ValueError("请配置目标交易者地址")
-        
-        self.state.is_running = True
-        
-        logger.info("=" * 50)
-        logger.info("WebSocket 跟单机器人启动")
-        logger.info(f"目标地址: {self.config.target_address}")
-        logger.info("=" * 50)
-        
-        # 初始化 WebSocket
-        self.ws_info = Info(self.client.api_url, skip_ws=False)
-        
-        # 订阅目标交易者的成交
-        self.ws_info.subscribe(
-            {"type": "userFills", "user": self.config.target_address},
-            self._on_target_trade
-        )
-        
-        logger.info(f"已订阅目标交易者: {self.config.target_address}")
-        
-        try:
-            # 先同步一次现有仓位
-            await self._sync_positions()
-            
-            while self.state.is_running:
-                # 处理 WebSocket 收到的交易
-                if self._pending_trades:
-                    await self._process_pending_trades()
-                
-                # 定期全量同步（防止遗漏）
-                await self._sync_positions()
-                self.state.last_check = datetime.now()
-                
-                await asyncio.sleep(self.config.check_interval)
-        
-        except asyncio.CancelledError:
-            logger.info("WebSocket 跟单机器人被取消")
-        except Exception as e:
-            logger.error(f"WebSocket 跟单机器人异常: {e}")
-            if self._on_error:
-                self._on_error(e)
-        finally:
-            self.state.is_running = False
-            logger.info("WebSocket 跟单机器人停止")
+                    'time': fill.get('time', 0),
+                    'oid': fill.get('oid', ''),
+                    'closed_pnl': float(fill.get('closedPnl', 0))
+                }
+
+                if address in self._pending_fills:
+                    self._pending_fills[address].append(fill_info)
+                    logger.info(
+                        f"[WS] [{address[:8]}] 成交: {fill_info['symbol']} "
+                        f"{fill_info['side']} {fill_info['size']} @ {fill_info['price']}"
+                    )
+
+    def get_pending_fills(self, address: str) -> List[Dict]:
+        """获取并清空待处理的成交"""
+        if address not in self._pending_fills:
+            return []
+        fills = self._pending_fills[address]
+        self._pending_fills[address] = []
+        return fills
+
+    def has_pending_fills(self, address: str) -> bool:
+        """检查是否有待处理的成交"""
+        return bool(self._pending_fills.get(address, []))
+
+    def get_all_pending_addresses(self) -> List[str]:
+        """获取所有有待处理成交的地址"""
+        return [addr for addr, fills in self._pending_fills.items() if fills]
+
+    @property
+    def subscribed_count(self) -> int:
+        return len(self._subscribed_addresses)
 
 
 @dataclass
@@ -1218,4 +1201,238 @@ class MultiTargetCopyTradingBot:
             'total_stats': total_stats,
             'last_config_reload': self.last_config_reload.isoformat() if self.last_config_reload else None
         }
+
+
+class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
+    """
+    基于 WebSocket 的多目标跟单机器人
+
+    通过 WebSocket 订阅目标交易者的实时成交，实现低延迟跟单
+    特点：
+    - 实时接收目标交易者的成交通知
+    - 自动管理多个目标的 WebSocket 订阅
+    - 配置热重载时自动更新订阅
+    - 定期全量同步作为兜底
+    """
+
+    def __init__(
+        self,
+        client: HyperliquidClient,
+        db_path: str = "data/traders.db",
+        global_dry_run: bool = True,
+        check_interval: float = 2.0,  # WebSocket 模式下可以更快检查
+        reload_interval: float = 60.0,
+        sync_interval: float = 30.0  # 全量同步间隔
+    ):
+        super().__init__(
+            client=client,
+            db_path=db_path,
+            global_dry_run=global_dry_run,
+            check_interval=check_interval,
+            reload_interval=reload_interval
+        )
+        self.sync_interval = sync_interval
+        self.last_full_sync: Optional[datetime] = None
+
+        # WebSocket 订阅管理器
+        from hyperliquid.utils import constants
+        api_url = client.api_url if client else constants.MAINNET_API_URL
+        self.subscription_manager = TargetSubscriptionManager(api_url)
+
+    def reload_configs(self):
+        """重新加载配置并更新订阅"""
+        old_addresses = set(self.targets.keys())
+
+        # 调用父类方法加载配置
+        super().reload_configs()
+
+        new_addresses = set(self.targets.keys())
+
+        # 订阅新增的目标
+        for address in new_addresses - old_addresses:
+            self.subscription_manager.subscribe(address)
+
+        # 取消已移除目标的订阅
+        for address in old_addresses - new_addresses:
+            self.subscription_manager.unsubscribe(address)
+
+        logger.info(f"WebSocket 订阅数: {self.subscription_manager.subscribed_count}")
+
+    async def _process_ws_fills(self, address: str, target_state: TargetTraderState):
+        """处理 WebSocket 收到的成交"""
+        fills = self.subscription_manager.get_pending_fills(address)
+        if not fills:
+            return
+
+        config = target_state.config
+
+        # 按 symbol 分组处理
+        symbols_with_fills = set(f['symbol'] for f in fills)
+
+        for symbol in symbols_with_fills:
+            if not self._should_copy_symbol(config, symbol):
+                continue
+
+            # 检查每日交易次数限制
+            if target_state.copies_today >= config.max_daily_trades:
+                logger.warning(f"[{address[:8]}] 达到每日最大交易次数限制")
+                continue
+
+            # 获取目标当前持仓状态
+            target_positions = self._get_target_positions(address)
+            target_pos = target_positions.get(symbol)
+
+            my_pos = self.my_positions.get(symbol)
+            prev_target = target_state.copied_positions.get(symbol)
+
+            if target_pos is None:
+                # 目标已平仓
+                if my_pos is not None:
+                    logger.info(f"[WS] [{address[:8]}] 目标已平仓: {symbol}")
+                    await self._close_position(target_state, symbol)
+                    target_state.copies_today += 1
+
+                if symbol in target_state.copied_positions:
+                    del target_state.copied_positions[symbol]
+            else:
+                # 目标有仓位
+                if target_pos['notional'] < config.min_position_size_usd:
+                    continue
+
+                is_new_position = prev_target is None
+                is_direction_change = prev_target and prev_target['side'] != target_pos['side']
+
+                if is_new_position or is_direction_change:
+                    if is_direction_change:
+                        logger.info(
+                            f"[WS] [{address[:8]}] 仓位方向变化: {symbol} "
+                            f"{prev_target['side']} -> {target_pos['side']}"
+                        )
+                        # 先平仓
+                        if my_pos is not None:
+                            await self._close_position(target_state, symbol)
+                            await asyncio.sleep(0.5)
+                            my_pos = None
+                    else:
+                        logger.info(
+                            f"[WS] [{address[:8]}] 新仓位: {symbol} "
+                            f"{target_pos['side']} {abs(target_pos['size'])}"
+                        )
+
+                    # 计算跟单参数
+                    current_price = (
+                        self.client.get_mid_price(symbol)
+                        if self.client else target_pos.get('entry_price', 1)
+                    )
+                    copy_size = self._calculate_copy_size(config, target_pos, current_price)
+                    leverage = (
+                        target_pos['leverage'] if config.copy_leverage
+                        else config.default_leverage
+                    )
+                    leverage = min(leverage, config.max_leverage)
+                    is_long = target_pos['side'] == 'long'
+
+                    # 开仓
+                    if my_pos is None:
+                        await self._open_position(
+                            target_state, symbol, is_long,
+                            copy_size, leverage, target_pos
+                        )
+                    elif (my_pos.side == PositionSide.LONG) != is_long:
+                        # 方向不同，先平后开
+                        await self._close_position(target_state, symbol)
+                        await asyncio.sleep(0.5)
+                        await self._open_position(
+                            target_state, symbol, is_long,
+                            copy_size, leverage, target_pos
+                        )
+
+                    target_state.copies_today += 1
+
+                # 更新已复制仓位记录
+                target_state.copied_positions[symbol] = target_pos
+
+            target_state.positions = target_positions
+
+        target_state.last_check = datetime.now()
+
+    async def _process_all_ws_fills(self):
+        """处理所有目标的 WebSocket 成交"""
+        # 先更新自己的持仓
+        self.my_positions = self._get_my_positions()
+
+        addresses_with_fills = self.subscription_manager.get_all_pending_addresses()
+
+        for address in addresses_with_fills:
+            if address in self.targets:
+                await self._process_ws_fills(address, self.targets[address])
+
+    async def run(self):
+        """运行 WebSocket 多目标跟单机器人"""
+        self.is_running = True
+
+        logger.info("=" * 60)
+        logger.info("WebSocket 多目标跟单机器人启动")
+        logger.info(f"全局模拟模式: {self.global_dry_run}")
+        logger.info(f"WebSocket 检查间隔: {self.check_interval}秒")
+        logger.info(f"全量同步间隔: {self.sync_interval}秒")
+        logger.info(f"配置重载间隔: {self.reload_interval}秒")
+        logger.info("=" * 60)
+
+        # 加载初始配置并订阅
+        self.reload_configs()
+
+        if not self.targets:
+            logger.warning("没有启用的跟单目标，请先在跟单管理中添加并启用地址")
+
+        try:
+            # 初始全量同步
+            if self.targets:
+                await self._sync_all_targets()
+            self.last_full_sync = datetime.now()
+
+            while self.is_running:
+                # 检查是否需要重载配置
+                if (self.last_config_reload is None or
+                    (datetime.now() - self.last_config_reload).seconds >= self.reload_interval):
+                    self.reload_configs()
+
+                # 处理 WebSocket 收到的成交（低延迟）
+                await self._process_all_ws_fills()
+
+                # 定期全量同步（兜底）
+                if self.targets and (
+                    self.last_full_sync is None or
+                    (datetime.now() - self.last_full_sync).seconds >= self.sync_interval
+                ):
+                    logger.debug("执行全量同步...")
+                    await self._sync_all_targets()
+                    self.last_full_sync = datetime.now()
+
+                await asyncio.sleep(self.check_interval)
+
+        except asyncio.CancelledError:
+            logger.info("WebSocket 多目标跟单机器人被取消")
+        except Exception as e:
+            logger.error(f"WebSocket 多目标跟单机器人异常: {e}")
+            import traceback
+            traceback.print_exc()
+            if self._on_error:
+                self._on_error(e)
+        finally:
+            self.is_running = False
+            logger.info("WebSocket 多目标跟单机器人停止")
+
+    def get_status(self) -> Dict[str, Any]:
+        """获取机器人状态"""
+        status = super().get_status()
+        status['websocket'] = {
+            'subscribed_count': self.subscription_manager.subscribed_count,
+            'last_full_sync': (
+                self.last_full_sync.isoformat()
+                if self.last_full_sync else None
+            ),
+            'sync_interval': self.sync_interval
+        }
+        return status
 
