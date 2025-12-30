@@ -596,25 +596,14 @@ export default function TraderDetailPage() {
         </div>
 
         {/* 筛选工具栏 */}
-        <div className="flex items-center gap-4 overflow-auto px-[6px] py-[4px]">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-4">
-              <Input
-                className="min-w-[200px]"
-                endContent={<SearchIcon className="text-default-400" width={16} />}
-                placeholder="搜索币种..."
-                size="sm"
-                value={searchValue}
-                onValueChange={onSearchChange}
-                isClearable
-                onClear={() => setSearchValue('')}
-              />
-
-              {/* 币种筛选 */}
+        <div className="flex items-center justify-between gap-4 px-[6px] py-[4px]">
+          {/* 左侧：筛选条件 */}
+          <div className="flex items-center gap-4 overflow-auto">
+            {/* 币种筛选 */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm whitespace-nowrap">币种</span>
               <Select
-                className="w-40"
-                label="币种"
-                labelPlacement="outside-left"
+                className="min-w-[160px]"
                 size="sm"
                 selectedKeys={[selectedCoin]}
                 onSelectionChange={(keys) => {
@@ -631,12 +620,13 @@ export default function TraderDetailPage() {
                   <SelectItem key={coin}>{coin === 'all' ? '全部' : coin}</SelectItem>
                 ))}
               </Select>
+            </div>
 
-              {/* 盈亏筛选 */}
+            {/* 盈亏筛选 */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm whitespace-nowrap">盈亏</span>
               <Select
-                className="w-36"
-                label="盈亏"
-                labelPlacement="outside-left"
+                className="min-w-[100px]"
                 size="sm"
                 selectedKeys={[pnlFilter]}
                 onSelectionChange={(keys) => {
@@ -648,89 +638,22 @@ export default function TraderDetailPage() {
                 <SelectItem key="profit">盈利</SelectItem>
                 <SelectItem key="loss">亏损</SelectItem>
               </Select>
+            </div>
 
-              {/* Sort 下拉 */}
-              <div>
-                <Dropdown>
-                  <DropdownTrigger>
-                    <Button
-                      className="bg-default-100 text-default-800"
-                      size="sm"
-                      startContent={
-                        <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
-                      }
-                    >
-                      排序
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    aria-label="Sort"
-                    items={columns.filter((c) => c.sortable)}
-                  >
-                    {(item) => (
-                      <DropdownItem
-                        key={item.uid}
-                        onPress={() => {
-                          setSortDescriptor({
-                            column: item.uid,
-                            direction:
-                              sortDescriptor.direction === 'ascending' ? 'descending' : 'ascending',
-                          });
-                        }}
-                      >
-                        {item.name}
-                      </DropdownItem>
-                    )}
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
-
-              {/* Columns 下拉 */}
-              <div>
-                <Dropdown closeOnSelect={false}>
-                  <DropdownTrigger>
-                    <Button
-                      className="bg-default-100 text-default-800"
-                      size="sm"
-                      startContent={
-                        <Icon
-                          className="text-default-400"
-                          icon="solar:sort-horizontal-linear"
-                          width={16}
-                        />
-                      }
-                    >
-                      列
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    disallowEmptySelection
-                    aria-label="Columns"
-                    items={columns}
-                    selectedKeys={visibleColumns}
-                    selectionMode="multiple"
-                    onSelectionChange={setVisibleColumns}
-                  >
-                    {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
-
-              {/* Date Range Picker */}
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-sm">日期范围</span>
-                <DateRangePicker
-                  className="w-auto"
-                  value={dateRange}
-                  onChange={setDateRange}
-                  visibleMonths={2}
-                />
-              </div>
+            {/* Date Range Picker */}
+            <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
+              <span className="text-sm">日期范围</span>
+              <DateRangePicker
+                className="w-auto"
+                value={dateRange}
+                onChange={setDateRange}
+                visibleMonths={2}
+              />
             </div>
 
             {activeFilters > 0 && (
               <Button
-                className="bg-default-100 text-default-800"
+                className="bg-default-100 text-default-800 shrink-0"
                 size="sm"
                 variant="flat"
                 onPress={handleReset}
@@ -741,6 +664,72 @@ export default function TraderDetailPage() {
                 重置
               </Button>
             )}
+          </div>
+
+          {/* 右侧：排序和列 */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Sort 下拉 */}
+            <Dropdown>
+              <DropdownTrigger>
+                <Button
+                  className="bg-default-100 text-default-800"
+                  size="sm"
+                  startContent={
+                    <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                  }
+                >
+                  排序
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu
+                aria-label="Sort"
+                items={columns.filter((c) => c.sortable)}
+              >
+                {(item) => (
+                  <DropdownItem
+                    key={item.uid}
+                    onPress={() => {
+                      setSortDescriptor({
+                        column: item.uid,
+                        direction:
+                          sortDescriptor.direction === 'ascending' ? 'descending' : 'ascending',
+                      });
+                    }}
+                  >
+                    {item.name}
+                  </DropdownItem>
+                )}
+              </DropdownMenu>
+            </Dropdown>
+
+            {/* Columns 下拉 */}
+            <Dropdown closeOnSelect={false}>
+              <DropdownTrigger>
+                <Button
+                  className="bg-default-100 text-default-800"
+                  size="sm"
+                  startContent={
+                    <Icon
+                      className="text-default-400"
+                      icon="solar:sort-horizontal-linear"
+                      width={16}
+                    />
+                  }
+                >
+                  列
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu
+                disallowEmptySelection
+                aria-label="Columns"
+                items={columns}
+                selectedKeys={visibleColumns}
+                selectionMode="multiple"
+                onSelectionChange={setVisibleColumns}
+              >
+                {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+              </DropdownMenu>
+            </Dropdown>
           </div>
         </div>
       </div>
