@@ -71,6 +71,17 @@ export interface Trader {
   recent_7d_pnl?: number;
   recent_7d_win_rate?: number;
   long_short_ratio?: number;
+  // 时间周期统计
+  calmar_ratio?: number;
+  daily_pnl?: number;
+  weekly_pnl?: number;
+  monthly_pnl?: number;
+  daily_roi?: number;
+  weekly_roi?: number;
+  monthly_roi?: number;
+  daily_volume?: number;
+  weekly_volume?: number;
+  monthly_volume?: number;
 }
 
 export interface TraderFill {

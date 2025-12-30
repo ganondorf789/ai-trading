@@ -8,6 +8,7 @@ import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
 import { Chip } from '@heroui/chip';
+import { DateRangePicker } from '@heroui/react';
 import ReactMarkdown from 'react-markdown';
 import {
   Dropdown,
@@ -33,6 +34,8 @@ import {
 import { SearchIcon } from '@heroui/shared-icons';
 import { Divider } from '@heroui/divider';
 import { Icon } from '@iconify/react';
+import { parseDate } from '@internationalized/date';
+import type { DateValue, RangeValue } from '@react-types/datepicker';
 import {
   LineChart,
   Line,
@@ -82,8 +85,7 @@ export default function TraderDetailPage() {
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
   const [allCoins, setAllCoins] = useState<string[]>([]); // 保存完整的币种列表
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
-  const [startDate, setStartDate] = useState<string>(''); // 开始日期 (YYYY-MM-DD)
-  const [endDate, setEndDate] = useState<string>(''); // 结束日期 (YYYY-MM-DD)
+  const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
   const [timeRange, setTimeRange] = useState<number>(30); // 默认30天
   const [chartLoading, setChartLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -338,6 +340,11 @@ export default function TraderDetailPage() {
     const loadFills = async () => {
       try {
         setFillsLoading(true);
+
+        // 将 DateRangePicker 的日期转换为 YYYY-MM-DD 字符串格式
+        const start_date = dateRange?.start ? `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}` : undefined;
+        const end_date = dateRange?.end ? `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}` : undefined;
+
         const fillsRes = await traderApi.getTraderFills(address, {
           page,
           limit: rowsPerPage,
@@ -346,8 +353,8 @@ export default function TraderDetailPage() {
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
           position_type: 'closed',
-          start_date: startDate || undefined,
-          end_date: endDate || undefined,
+          start_date,
+          end_date,
         });
 
         if (fillsRes.success && fillsRes.data) {
@@ -368,12 +375,12 @@ export default function TraderDetailPage() {
     };
 
     loadFills();
-  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading, startDate, endDate]);
+  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading, dateRange]);
 
   // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [selectedCoin, pnlFilter, sortDescriptor, startDate, endDate]);
+  }, [selectedCoin, pnlFilter, sortDescriptor, dateRange]);
 
 
   const formatNumber = (num: number, decimals = 2) => {
@@ -498,8 +505,7 @@ export default function TraderDetailPage() {
     setSelectedCoin('all');
     setPnlFilter('all');
     setSearchValue('');
-    setStartDate('');
-    setEndDate('');
+    setDateRange(null);
     setPage(1);
   }, []);
 
@@ -509,10 +515,9 @@ export default function TraderDetailPage() {
     if (selectedCoin !== 'all') count++;
     if (pnlFilter !== 'all') count++;
     if (searchValue) count++;
-    if (startDate) count++;
-    if (endDate) count++;
+    if (dateRange) count++;
     return count;
-  }, [selectedCoin, pnlFilter, searchValue, startDate, endDate]);
+  }, [selectedCoin, pnlFilter, searchValue, dateRange]);
 
   // 表格顶部内容
   const topContent = useMemo(() => {
@@ -602,28 +607,6 @@ export default function TraderDetailPage() {
                         <Radio value="profit">盈利</Radio>
                         <Radio value="loss">亏损</Radio>
                       </RadioGroup>
-
-                      <div className="flex flex-col gap-2">
-                        <label className="text-sm font-medium">日期范围</label>
-                        <Input
-                          type="date"
-                          label="开始日期"
-                          size="sm"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          isClearable
-                          onClear={() => setStartDate('')}
-                        />
-                        <Input
-                          type="date"
-                          label="结束日期"
-                          size="sm"
-                          value={endDate}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          isClearable
-                          onClear={() => setEndDate('')}
-                        />
-                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -694,6 +677,18 @@ export default function TraderDetailPage() {
                     {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
                   </DropdownMenu>
                 </Dropdown>
+              </div>
+
+              {/* Date Range Picker */}
+              <div>
+                <DateRangePicker
+                  label="日期范围"
+                  className="max-w-xs"
+                  value={dateRange}
+                  onChange={setDateRange}
+                  visibleMonths={2}
+                  labelPlacement="outside-left"
+                />
               </div>
             </div>
 
@@ -976,6 +971,106 @@ export default function TraderDetailPage() {
                   <div>
                     <p className="text-xs text-gray-500">常用品种</p>
                     <p className="text-lg font-bold">{trader.favorite_symbol || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <Divider className="my-3" />
+
+              {/* 时间周期统计 */}
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">时间周期统计</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  {/* 日均统计 */}
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">日均</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">PnL</p>
+                        <p className={`text-base font-bold ${(trader.daily_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          ${formatNumber(trader.daily_pnl || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">ROI</p>
+                        <p className={`text-base font-bold ${(trader.daily_roi || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatPercent(trader.daily_roi || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">交易量</p>
+                        <p className="text-base font-bold">${formatNumber(trader.daily_volume || 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 周均统计 */}
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">周均</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">PnL</p>
+                        <p className={`text-base font-bold ${(trader.weekly_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          ${formatNumber(trader.weekly_pnl || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">ROI</p>
+                        <p className={`text-base font-bold ${(trader.weekly_roi || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatPercent(trader.weekly_roi || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">交易量</p>
+                        <p className="text-base font-bold">${formatNumber(trader.weekly_volume || 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 月均统计 */}
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">月均</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">PnL</p>
+                        <p className={`text-base font-bold ${(trader.monthly_pnl || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          ${formatNumber(trader.monthly_pnl || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">ROI</p>
+                        <p className={`text-base font-bold ${(trader.monthly_roi || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatPercent(trader.monthly_roi || 0)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">交易量</p>
+                        <p className="text-base font-bold">${formatNumber(trader.monthly_volume || 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 总统计 */}
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <h4 className="text-xs font-semibold text-gray-500 mb-3">总计</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-gray-500">PnL</p>
+                        <p className={`text-base font-bold ${trader.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          ${formatNumber(trader.total_pnl)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">ROI</p>
+                        <p className={`text-base font-bold ${trader.roi >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {formatPercent(trader.roi)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">交易量</p>
+                        <p className="text-base font-bold">${formatNumber(trader.total_volume || 0)}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
