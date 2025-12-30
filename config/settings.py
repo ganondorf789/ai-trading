@@ -48,6 +48,54 @@ class FeishuSettings(BaseSettings):
     default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
 
 
+class AIModelSettings(BaseSettings):
+    """AI模型配置"""
+    model_config = SettingsConfigDict(env_prefix='AI_MODEL_')
+
+    # Provider selection
+    default_provider: str = Field(default="zhipu", description="默认AI提供商")
+
+    # 智谱AI (GLM)
+    zhipu_api_key: str = Field(default="", description="智谱AI API密钥")
+    zhipu_model: str = Field(default="glm-4", description="智谱AI模型名称")
+    zhipu_api_url: str = Field(
+        default="https://open.bigmodel.cn/api/paas/v4",
+        description="智谱AI API地址"
+    )
+
+    # 通义千问 (Qwen)
+    qwen_api_key: str = Field(default="", description="通义千问 API密钥")
+    qwen_model: str = Field(default="qwen-max", description="通义千问模型名称")
+    qwen_api_url: str = Field(
+        default="https://dashscope.aliyuncs.com/api/v1",
+        description="通义千问 API地址"
+    )
+
+    # Deepseek
+    deepseek_api_key: str = Field(default="", description="Deepseek API密钥")
+    deepseek_model: str = Field(default="deepseek-chat", description="Deepseek模型名称")
+    deepseek_api_url: str = Field(
+        default="https://api.deepseek.com/v1",
+        description="Deepseek API地址"
+    )
+
+    # OpenRouter
+    openrouter_api_key: str = Field(default="", description="OpenRouter API密钥")
+    openrouter_model: str = Field(
+        default="anthropic/claude-3.5-sonnet",
+        description="OpenRouter模型名称"
+    )
+    openrouter_api_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter API地址"
+    )
+
+    # Common settings
+    timeout: float = Field(default=60.0, description="API请求超时时间（秒）")
+    max_tokens: int = Field(default=4096, description="最大token数")
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="生成温度")
+
+
 class TradingSettings(BaseSettings):
     """交易配置"""
     model_config = SettingsConfigDict(env_prefix='')
@@ -125,6 +173,7 @@ class Settings:
         self.hyperliquid = HyperliquidSettings()
         self.birdeye = BirdeyeSettings()
         self.feishu = FeishuSettings()
+        self.ai_model = AIModelSettings()
         self.trading = TradingSettings()
         self.risk = RiskSettings()
         self.system = SystemSettings()
