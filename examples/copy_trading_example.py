@@ -111,9 +111,6 @@ async def run():
 
     setup_logging()
 
-    # 是否启用模拟模式（无需私钥）
-    DRY_RUN_MODE = True
-
     logger.info("=" * 60)
     logger.info("Hyperliquid WebSocket 跟单机器人")
     logger.info("=" * 60)
@@ -121,28 +118,23 @@ async def run():
     # 初始化飞书通知器
     notifier = setup_feishu_notifier()
 
-    # 初始化客户端（模拟模式下可以不需要私钥）
-    client = None
-    if not DRY_RUN_MODE:
-        # 实盘模式需要私钥
-        if not settings.hyperliquid.private_key:
-            logger.error("实盘模式需要配置 HYPERLIQUID_PRIVATE_KEY")
-            return
-        client = HyperliquidClient(
-            private_key=settings.hyperliquid.private_key,
-            testnet=settings.system.testnet_mode
-        )
-    else:
-        logger.info("[模拟模式] 无需配置私钥")
+    # 初始化客户端
+    if not settings.hyperliquid.private_key:
+        logger.error("需要配置 HYPERLIQUID_PRIVATE_KEY")
+        return
+
+    client = HyperliquidClient(
+        private_key=settings.hyperliquid.private_key,
+        testnet=settings.system.testnet_mode
+    )
 
     # 创建 WebSocket 多目标跟单机器人
     bot = MultiTargetCopyTradingBotWithWebSocket(
         client=client,
         db_path="data/traders.db",
-        global_dry_run=DRY_RUN_MODE,  # 全局模拟模式，设为 False 进行实盘
-        check_interval=2.0,  # WebSocket 检查间隔（秒）- 可以更快
+        check_interval=2.0,  # WebSocket 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
-        sync_interval=30.0  # 全量同步间隔（秒）- 作为兜底
+        sync_interval=30.0  # 全量同步间隔（秒）
     )
 
     # 设置回调

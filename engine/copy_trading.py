@@ -44,9 +44,6 @@ class CopyTradingConfig:
     max_total_positions: int = 10  # 最大持仓数
     max_daily_trades: int = 50  # 每日最大交易次数
     slippage: float = 0.01  # 滑点容忍度
-    
-    # 模式
-    dry_run: bool = True  # 模拟模式
 
 
 @dataclass
@@ -228,10 +225,6 @@ class CopyTradingBot:
             是否成功
         """
         try:
-            if self.config.dry_run:
-                logger.info(f"[模拟] 开仓: {symbol} {'多' if is_long else '空'} {size} x{leverage}")
-                return True
-            
             # 设置杠杆
             self.client.set_leverage(symbol, leverage)
             
@@ -278,10 +271,6 @@ class CopyTradingBot:
             是否成功
         """
         try:
-            if self.config.dry_run:
-                logger.info(f"[模拟] 平仓: {symbol}")
-                return True
-            
             # 获取当前仓位 PnL
             my_pos = self.state.my_positions.get(symbol)
             pnl = my_pos.unrealized_pnl if my_pos else 0
@@ -356,18 +345,12 @@ class CopyTradingBot:
                     # 加仓
                     add_size = round(copy_size - my_size, 6)
                     if add_size * current_price >= self.config.min_position_size_usd:
-                        if self.config.dry_run:
-                            logger.info(f"[模拟] 加仓: {symbol} +{add_size}")
-                            return True
                         result = self.client.market_order(symbol, target_is_long, add_size)
                         return result.get('status') == 'ok'
                 else:
                     # 减仓
                     reduce_size = round(my_size - copy_size, 6)
                     if reduce_size * current_price >= self.config.min_position_size_usd:
-                        if self.config.dry_run:
-                            logger.info(f"[模拟] 减仓: {symbol} -{reduce_size}")
-                            return True
                         result = self.client.market_order(symbol, not target_is_long, reduce_size)
                         return result.get('status') == 'ok'
             
@@ -459,7 +442,6 @@ class CopyTradingBot:
         logger.info(f"跟单比例: {self.config.copy_ratio * 100}%")
         logger.info(f"最大仓位: ${self.config.max_position_size_usd}")
         logger.info(f"检查间隔: {self.config.check_interval}秒")
-        logger.info(f"模拟模式: {self.config.dry_run}")
         logger.info("=" * 50)
         
         try:
@@ -494,7 +476,6 @@ class CopyTradingBot:
             "is_running": self.state.is_running,
             "target_address": self.config.target_address,
             "copy_ratio": self.config.copy_ratio,
-            "dry_run": self.config.dry_run,
             "last_check": self.state.last_check.isoformat() if self.state.last_check else None,
             
             "target_positions": [
@@ -669,7 +650,6 @@ class MultiTargetCopyTradingBot:
         self,
         client: HyperliquidClient,
         db_path: str = "data/traders.db",
-        global_dry_run: bool = True,
         check_interval: float = 10.0,
         reload_interval: float = 60.0
     ):
@@ -679,13 +659,11 @@ class MultiTargetCopyTradingBot:
         Args:
             client: Hyperliquid 客户端（需要已初始化钱包）
             db_path: 数据库路径
-            global_dry_run: 全局模拟模式（覆盖数据库配置）
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
         """
         self.client = client
         self.db_path = db_path
-        self.global_dry_run = global_dry_run
         self.check_interval = check_interval
         self.reload_interval = reload_interval
 
@@ -751,8 +729,7 @@ class MultiTargetCopyTradingBot:
             order_delay=0.5,
             max_total_positions=data.get('max_total_positions', 10),
             max_daily_trades=data.get('max_daily_trades', 50),
-            slippage=data.get('slippage', 0.01),
-            dry_run=self.global_dry_run or data.get('dry_run', True)
+            slippage=data.get('slippage', 0.01)
         )
 
     def reload_configs(self):
@@ -800,10 +777,7 @@ class MultiTargetCopyTradingBot:
     def _get_target_positions(self, address: str) -> Dict[str, Dict]:
         """获取目标交易者的当前持仓"""
         try:
-            from hyperliquid.utils import constants
-            # 使用 client 的 api_url，如果 client 为 None 则使用主网 API
-            api_url = self.client.api_url if self.client else constants.MAINNET_API_URL
-            info = Info(api_url, skip_ws=True)
+            info = Info(self.client.api_url, skip_ws=True)
             state = info.user_state(address)
             positions = {}
 
@@ -833,9 +807,6 @@ class MultiTargetCopyTradingBot:
 
     def _get_my_positions(self) -> Dict[str, Position]:
         """获取自己的当前持仓"""
-        # 模拟模式下无需客户端
-        if self.client is None:
-            return {}
         positions = {}
         for pos in self.client.get_positions():
             positions[pos.symbol] = pos
@@ -856,14 +827,13 @@ class MultiTargetCopyTradingBot:
 
         size = copy_notional / current_price
 
-        # 获取精度（模拟模式下使用默认精度）
+        # 获取精度
         decimals = 4
-        if self.client is not None:
-            meta = self.client.get_meta()
-            for asset in meta.get('universe', []):
-                if asset['name'] == target_position['symbol']:
-                    decimals = asset.get('szDecimals', 4)
-                    break
+        meta = self.client.get_meta()
+        for asset in meta.get('universe', []):
+            if asset['name'] == target_position['symbol']:
+                decimals = asset.get('szDecimals', 4)
+                break
 
         return round(size, decimals)
 
@@ -879,11 +849,7 @@ class MultiTargetCopyTradingBot:
         """开仓"""
         config = target_state.config
         side = 'long' if is_long else 'short'
-        # 模拟模式下使用目标持仓的入场价格
-        if self.client is not None:
-            price = self.client.get_mid_price(symbol)
-        else:
-            price = target_position.get('entry_price', 0) if target_position else 0
+        price = self.client.get_mid_price(symbol)
 
         # 创建订单记录
         order_data = {
@@ -898,21 +864,10 @@ class MultiTargetCopyTradingBot:
             'target_size': abs(target_position['size']) if target_position else None,
             'target_entry_price': target_position['entry_price'] if target_position else None,
             'status': 'pending',
-            'is_dry_run': config.dry_run,
             'created_at': datetime.now().isoformat()
         }
 
         try:
-            if config.dry_run:
-                logger.info(f"[模拟] [{target_state.address[:8]}] 开仓: {symbol} {side} {size} x{leverage}")
-                order_data['status'] = 'success'
-                order_data['executed_at'] = datetime.now().isoformat()
-                self._save_order(order_data)
-                target_state.successful_copies += 1
-                if self._on_copy:
-                    self._on_copy(target_state.address, symbol, side, size)
-                return True
-
             self.client.set_leverage(symbol, leverage)
             await asyncio.sleep(0.5)
 
@@ -961,8 +916,7 @@ class MultiTargetCopyTradingBot:
         pnl = my_pos.unrealized_pnl if my_pos else 0
         size = my_pos.size if my_pos else 0
         side = 'long' if my_pos and my_pos.side == PositionSide.LONG else 'short'
-        # 模拟模式下使用 0 作为价格
-        price = self.client.get_mid_price(symbol) if self.client is not None else 0
+        price = self.client.get_mid_price(symbol)
 
         # 创建订单记录
         order_data = {
@@ -976,21 +930,10 @@ class MultiTargetCopyTradingBot:
             'copy_ratio': config.copy_ratio,
             'pnl': pnl,
             'status': 'pending',
-            'is_dry_run': config.dry_run,
             'created_at': datetime.now().isoformat()
         }
 
         try:
-            if config.dry_run:
-                logger.info(f"[模拟] [{target_state.address[:8]}] 平仓: {symbol}")
-                order_data['status'] = 'success'
-                order_data['executed_at'] = datetime.now().isoformat()
-                self._save_order(order_data)
-                target_state.daily_pnl += pnl
-                if self._on_close:
-                    self._on_close(target_state.address, symbol, pnl)
-                return True
-
             result = self.client.close_position(symbol, slippage=config.slippage)
             success = result.get('status') == 'ok'
             order_data['executed_at'] = datetime.now().isoformat()
@@ -1054,8 +997,7 @@ class MultiTargetCopyTradingBot:
                 # 新仓位
                 logger.info(f"[{address[:8]}] 发现新仓位: {symbol} {target_pos['side']} {abs(target_pos['size'])}")
 
-                # 模拟模式下使用目标持仓的入场价格
-                current_price = self.client.get_mid_price(symbol) if self.client else target_pos.get('entry_price', 1)
+                current_price = self.client.get_mid_price(symbol)
                 copy_size = self._calculate_copy_size(config, target_pos, current_price)
                 leverage = target_pos['leverage'] if config.copy_leverage else config.default_leverage
                 leverage = min(leverage, config.max_leverage)
@@ -1079,8 +1021,7 @@ class MultiTargetCopyTradingBot:
                 await self._close_position(target_state, symbol)
                 await asyncio.sleep(0.5)
 
-                # 模拟模式下使用目标持仓的入场价格
-                current_price = self.client.get_mid_price(symbol) if self.client else target_pos.get('entry_price', 1)
+                current_price = self.client.get_mid_price(symbol)
                 copy_size = self._calculate_copy_size(config, target_pos, current_price)
                 leverage = target_pos['leverage'] if config.copy_leverage else config.default_leverage
                 leverage = min(leverage, config.max_leverage)
@@ -1117,7 +1058,6 @@ class MultiTargetCopyTradingBot:
 
         logger.info("=" * 60)
         logger.info("多目标跟单机器人启动")
-        logger.info(f"全局模拟模式: {self.global_dry_run}")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
         logger.info("=" * 60)
@@ -1170,7 +1110,6 @@ class MultiTargetCopyTradingBot:
                 'address': address,
                 'name': state.config.target_address[:10] + '...',
                 'copy_ratio': state.config.copy_ratio,
-                'dry_run': state.config.dry_run,
                 'last_check': state.last_check.isoformat() if state.last_check else None,
                 'positions': list(state.positions.keys()),
                 'copies_today': state.copies_today,
@@ -1186,7 +1125,6 @@ class MultiTargetCopyTradingBot:
 
         return {
             'is_running': self.is_running,
-            'global_dry_run': self.global_dry_run,
             'target_count': len(self.targets),
             'targets': targets_status,
             'my_positions': [
@@ -1219,7 +1157,6 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
         self,
         client: HyperliquidClient,
         db_path: str = "data/traders.db",
-        global_dry_run: bool = True,
         check_interval: float = 2.0,  # WebSocket 模式下可以更快检查
         reload_interval: float = 60.0,
         sync_interval: float = 30.0  # 全量同步间隔
@@ -1227,7 +1164,6 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
         super().__init__(
             client=client,
             db_path=db_path,
-            global_dry_run=global_dry_run,
             check_interval=check_interval,
             reload_interval=reload_interval
         )
@@ -1320,10 +1256,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
                         )
 
                     # 计算跟单参数
-                    current_price = (
-                        self.client.get_mid_price(symbol)
-                        if self.client else target_pos.get('entry_price', 1)
-                    )
+                    current_price = self.client.get_mid_price(symbol)
                     copy_size = self._calculate_copy_size(config, target_pos, current_price)
                     leverage = (
                         target_pos['leverage'] if config.copy_leverage
@@ -1373,7 +1306,6 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
 
         logger.info("=" * 60)
         logger.info("WebSocket 多目标跟单机器人启动")
-        logger.info(f"全局模拟模式: {self.global_dry_run}")
         logger.info(f"WebSocket 检查间隔: {self.check_interval}秒")
         logger.info(f"全量同步间隔: {self.sync_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
