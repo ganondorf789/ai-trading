@@ -2,9 +2,7 @@
 from .backtest import BacktestEngine, BacktestConfig, BacktestResult
 from .live import LiveEngine, LiveEngineConfig, LiveEngineState, LiveEngineWithWebSocket
 from .copy_trading import (
-    CopyTradingBot,
     CopyTradingConfig,
-    CopyTradingState,
     MultiTargetCopyTradingBot,
     MultiTargetCopyTradingBotWithWebSocket,
     TargetSubscriptionManager
@@ -13,7 +11,7 @@ from .copy_trading import (
 __all__ = [
     'BacktestEngine', 'BacktestConfig', 'BacktestResult',
     'LiveEngine', 'LiveEngineConfig', 'LiveEngineState', 'LiveEngineWithWebSocket',
-    'CopyTradingBot', 'CopyTradingConfig', 'CopyTradingState',
+    'CopyTradingConfig',
     'MultiTargetCopyTradingBot', 'MultiTargetCopyTradingBotWithWebSocket',
     'TargetSubscriptionManager'
 ]

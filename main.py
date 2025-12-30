@@ -300,106 +300,6 @@ def show_account(args):
         print("\n无挂单")
 
 
-async def run_copy_trading(args):
-    """运行跟单交易"""
-    from config import settings
-    from clients import HyperliquidClient
-    from engine.copy_trading import CopyTradingBot, CopyTradingConfig
-    
-    logger.info("=" * 50)
-    logger.info("启动跟单机器人")
-    logger.info("=" * 50)
-    
-    if not args.target:
-        logger.error("请使用 --target 指定目标交易者地址")
-        return
-    
-    # 验证配置
-    if not settings.hyperliquid.private_key and not args.dry_run:
-        logger.error("未配置私钥，请设置 HYPERLIQUID_PRIVATE_KEY 环境变量")
-        logger.info("可以添加 --dry-run 参数进行模拟运行")
-        return
-    
-    # 创建客户端
-    client = HyperliquidClient(
-        private_key=settings.hyperliquid.private_key if not args.dry_run else None,
-        testnet=settings.system.testnet_mode
-    )
-    
-    # 解析白名单和黑名单
-    whitelist = args.whitelist.split(",") if args.whitelist else []
-    blacklist = args.blacklist.split(",") if args.blacklist else []
-    
-    # 创建跟单配置
-    config = CopyTradingConfig(
-        target_address=args.target,
-        copy_ratio=args.ratio,
-        max_position_size_usd=args.max_position,
-        min_position_size_usd=args.min_position,
-        symbols_whitelist=whitelist,
-        symbols_blacklist=blacklist,
-        copy_leverage=args.copy_leverage,
-        max_leverage=args.max_leverage,
-        default_leverage=args.leverage,
-        check_interval=args.interval,
-        max_total_positions=args.max_positions,
-        max_daily_trades=args.max_trades,
-        slippage=args.slippage,
-        dry_run=args.dry_run,
-    )
-    
-    # 创建跟单机器人
-    bot = CopyTradingBot(client, config)
-    
-    # 设置回调
-    def on_copy(symbol, side, size):
-        logger.success(f"✅ 复制成功: {symbol} {side.upper()} {size}")
-    
-    def on_close(symbol, pnl):
-        emoji = "🟢" if pnl >= 0 else "🔴"
-        logger.info(f"{emoji} 平仓: {symbol} PnL: ${pnl:.2f}")
-    
-    def on_error(error):
-        logger.error(f"❌ 错误: {error}")
-    
-    bot.set_on_copy(on_copy)
-    bot.set_on_close(on_close)
-    bot.set_on_error(on_error)
-    
-    # 先显示目标交易者信息
-    print("\n📊 目标交易者当前持仓:")
-    target_positions = bot._get_target_positions()
-    
-    if target_positions:
-        for symbol, pos in target_positions.items():
-            emoji = "🟢" if pos['side'] == 'long' else "🔴"
-            print(
-                f"  {emoji} {symbol}: {pos['side'].upper()} "
-                f"{abs(pos['size'])} @ {pos['entry_price']:.2f} "
-                f"(x{pos['leverage']}) PnL: ${pos['unrealized_pnl']:.2f}"
-            )
-    else:
-        print("  无持仓")
-    
-    print("\n🚀 开始跟单...")
-    print("按 Ctrl+C 停止\n")
-    
-    # 运行
-    try:
-        await bot.run()
-    except KeyboardInterrupt:
-        logger.info("收到停止信号")
-        bot.stop()
-    
-    # 显示统计
-    status = bot.get_status()
-    print("\n📊 运行统计:")
-    print(f"  总复制次数: {status['stats']['total_copies_today']}")
-    print(f"  成功: {status['stats']['successful_copies']}")
-    print(f"  失败: {status['stats']['failed_copies']}")
-    print(f"  当日PnL: ${status['stats']['daily_pnl']:.2f}")
-
-
 def main():
     """主函数"""
     setup_environment()
@@ -445,41 +345,7 @@ def main():
     
     # 账户命令
     account_parser = subparsers.add_parser("account", help="显示账户信息")
-    
-    # 跟单命令
-    copy_parser = subparsers.add_parser("copy", help="运行跟单交易")
-    copy_parser.add_argument("--target", "-t", required=True,
-                             help="目标交易者钱包地址")
-    copy_parser.add_argument("--ratio", "-r", type=float, default=0.1,
-                             help="跟单比例 (0.1 = 10%%)")
-    copy_parser.add_argument("--max-position", type=float, default=500.0,
-                             help="单仓位最大价值(USD)")
-    copy_parser.add_argument("--min-position", type=float, default=20.0,
-                             help="忽略小于此价值的仓位(USD)")
-    copy_parser.add_argument("--whitelist", type=str, default="",
-                             help="只跟单这些币种(逗号分隔，如 BTC,ETH)")
-    copy_parser.add_argument("--blacklist", type=str, default="",
-                             help="不跟单这些币种(逗号分隔)")
-    copy_parser.add_argument("--copy-leverage", action="store_true", default=True,
-                             help="复制目标杠杆")
-    copy_parser.add_argument("--no-copy-leverage", dest="copy_leverage", 
-                             action="store_false",
-                             help="不复制目标杠杆")
-    copy_parser.add_argument("--max-leverage", type=int, default=10,
-                             help="最大杠杆限制")
-    copy_parser.add_argument("--leverage", "-l", type=int, default=5,
-                             help="默认杠杆")
-    copy_parser.add_argument("--interval", type=float, default=10.0,
-                             help="检查间隔(秒)")
-    copy_parser.add_argument("--max-positions", type=int, default=10,
-                             help="最大持仓数")
-    copy_parser.add_argument("--max-trades", type=int, default=50,
-                             help="每日最大交易次数")
-    copy_parser.add_argument("--slippage", type=float, default=0.01,
-                             help="滑点容忍度")
-    copy_parser.add_argument("--dry-run", action="store_true",
-                             help="模拟运行(不实际下单)")
-    
+
     args = parser.parse_args()
     
     if args.command == "backtest":
@@ -490,8 +356,6 @@ def main():
         run_monitor(args)
     elif args.command == "account":
         show_account(args)
-    elif args.command == "copy":
-        asyncio.run(run_copy_trading(args))
     else:
         parser.print_help()
 
