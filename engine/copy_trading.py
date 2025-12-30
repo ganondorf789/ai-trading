@@ -146,6 +146,7 @@ class TargetTraderState:
     successful_copies: int = 0
     failed_copies: int = 0
     daily_pnl: float = 0.0
+    initialized: bool = False  # 是否已完成初始化（记录现有持仓）
 
 
 class MultiTargetCopyTradingBot:
@@ -401,7 +402,7 @@ class MultiTargetCopyTradingBot:
                 target_state.failed_copies += 1
 
             self._save_order(order_data)
-            return success
+            return success 
 
         except Exception as e:
             logger.error(f"[{target_state.address[:8]}] 开仓异常: {e}")
@@ -410,6 +411,114 @@ class MultiTargetCopyTradingBot:
             order_data['executed_at'] = datetime.now().isoformat()
             self._save_order(order_data)
             target_state.failed_copies += 1
+            if self._on_error:
+                self._on_error(e)
+            return False
+
+    async def _adjust_position(
+        self,
+        target_state: TargetTraderState,
+        symbol: str,
+        prev_size: float,
+        new_size: float,
+        target_position: Dict
+    ) -> bool:
+        """调整仓位（加仓或减仓）"""
+        config = target_state.config
+        my_pos = self.my_positions.get(symbol)
+
+        if my_pos is None:
+            logger.warning(f"[{target_state.address[:8]}] 无法调整仓位: {symbol} (本地无持仓)")
+            return False
+
+        # 计算目标的仓位变化比例
+        prev_abs_size = abs(prev_size)
+        new_abs_size = abs(new_size)
+        change_ratio = (new_abs_size - prev_abs_size) / prev_abs_size if prev_abs_size > 0 else 0
+
+        # 判断是加仓还是减仓
+        is_increase = new_abs_size > prev_abs_size
+        action_type = "加仓" if is_increase else "减仓"
+
+        # 计算我们需要调整的数量
+        my_current_size = abs(my_pos.size)
+        my_target_size = my_current_size * (1 + change_ratio)
+        adjustment_size = abs(my_target_size - my_current_size)
+
+        # 获取精度
+        decimals = 4
+        meta = self.client.get_meta()
+        for asset in meta.get('universe', []):
+            if asset['name'] == symbol:
+                decimals = asset.get('szDecimals', 4)
+                break
+        adjustment_size = round(adjustment_size, decimals)
+
+        if adjustment_size == 0:
+            logger.debug(f"[{target_state.address[:8]}] {symbol} 调整数量太小，跳过")
+            return True
+
+        price = self.client.get_mid_price(symbol)
+        is_long = my_pos.side == PositionSide.LONG
+
+        # 创建订单记录
+        order_data = {
+            'target_address': target_state.address,
+            'symbol': symbol,
+            'side': 'long' if is_long else 'short',
+            'action': 'increase' if is_increase else 'reduce',
+            'size': adjustment_size,
+            'price': price,
+            'leverage': my_pos.leverage,
+            'copy_ratio': config.copy_ratio,
+            'target_size': new_abs_size,
+            'target_prev_size': prev_abs_size,
+            'change_ratio': change_ratio,
+            'status': 'pending',
+            'created_at': datetime.now().isoformat()
+        }
+
+        try:
+            logger.info(
+                f"[{target_state.address[:8]}] {action_type}: {symbol} "
+                f"目标 {prev_abs_size:.4f} → {new_abs_size:.4f} ({change_ratio:+.1%}), "
+                f"我们 {my_current_size:.4f} → {my_target_size:.4f} (调整 {adjustment_size:.4f})"
+            )
+
+            if is_increase:
+                # 加仓：与当前方向相同的市价单
+                result = self.client.market_order(
+                    symbol, is_long, adjustment_size,
+                    slippage=config.slippage
+                )
+            else:
+                # 减仓：反向的市价单（部分平仓）
+                result = self.client.market_order(
+                    symbol, not is_long, adjustment_size,
+                    reduce_only=True,
+                    slippage=config.slippage
+                )
+
+            success = result.get('status') == 'ok'
+            order_data['executed_at'] = datetime.now().isoformat()
+
+            if success:
+                logger.info(f"[{target_state.address[:8]}] {action_type}成功: {symbol} {adjustment_size}")
+                order_data['status'] = 'success'
+            else:
+                logger.error(f"[{target_state.address[:8]}] {action_type}失败: {result}")
+                order_data['status'] = 'failed'
+                order_data['error_message'] = str(result)
+
+            self._save_order(order_data)
+            return success
+
+        except Exception as e:
+            logger.error(f"[{target_state.address[:8]}] {action_type}异常: {e}")
+            order_data['status'] = 'failed'
+            order_data['error_message'] = str(e)
+            order_data['executed_at'] = datetime.now().isoformat()
+            self._save_order(order_data)
             if self._on_error:
                 self._on_error(e)
             return False
@@ -491,6 +600,19 @@ class MultiTargetCopyTradingBot:
         target_positions = self._get_target_positions(address)
         target_state.positions = target_positions
 
+        # 首次初始化：只记录现有持仓，不跟单
+        if not target_state.initialized:
+            for symbol, target_pos in target_positions.items():
+                if self._should_copy_symbol(config, symbol):
+                    target_state.copied_positions[symbol] = target_pos
+                    logger.info(
+                        f"[{address[:8]}] 初始化记录现有持仓: {symbol} "
+                        f"{target_pos['side']} {abs(target_pos['size'])} (不跟单)"
+                    )
+            target_state.initialized = True
+            target_state.last_check = datetime.now()
+            return
+
         # 处理新开仓/调整仓位
         for symbol, target_pos in target_positions.items():
             if not self._should_copy_symbol(config, symbol):
@@ -503,7 +625,7 @@ class MultiTargetCopyTradingBot:
             prev_target = target_state.copied_positions.get(symbol)
 
             if prev_target is None:
-                # 新仓位
+                # 新仓位（初始化后新开的）
                 logger.info(f"[{address[:8]}] 发现新仓位: {symbol} {target_pos['side']} {abs(target_pos['size'])}")
 
                 current_price = self.client.get_mid_price(symbol)
@@ -537,6 +659,19 @@ class MultiTargetCopyTradingBot:
 
                 await self._open_position(target_state, symbol, target_pos['side'] == 'long', copy_size, leverage, target_pos)
                 target_state.copies_today += 1
+
+            elif abs(prev_target['size']) != abs(target_pos['size']):
+                # 仓位大小变化（加仓或减仓）
+                size_change_pct = (abs(target_pos['size']) - abs(prev_target['size'])) / abs(prev_target['size']) * 100
+
+                # 只有当变化超过 1% 时才调整（避免微小波动）
+                if abs(size_change_pct) >= 1.0:
+                    await self._adjust_position(
+                        target_state, symbol,
+                        prev_target['size'], target_pos['size'],
+                        target_pos
+                    )
+                    target_state.copies_today += 1
 
             target_state.copied_positions[symbol] = target_pos
 
@@ -705,6 +840,10 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
 
     async def _process_ws_fills(self, address: str, target_state: TargetTraderState):
         """处理 WebSocket 收到的成交"""
+        # 如果尚未初始化，不处理 WebSocket 成交
+        if not target_state.initialized:
+            return
+
         fills = self.subscription_manager.get_pending_fills(address)
         if not fills:
             return
@@ -790,6 +929,27 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
                         )
 
                     target_state.copies_today += 1
+
+                elif prev_target and abs(prev_target['size']) != abs(target_pos['size']):
+                    # 仓位大小变化（加仓或减仓）
+                    size_change_pct = (
+                        (abs(target_pos['size']) - abs(prev_target['size'])) /
+                        abs(prev_target['size']) * 100
+                    )
+
+                    # 只有当变化超过 1% 时才调整（避免微小波动）
+                    if abs(size_change_pct) >= 1.0:
+                        logger.info(
+                            f"[WS] [{address[:8]}] 仓位大小变化: {symbol} "
+                            f"{abs(prev_target['size']):.4f} -> {abs(target_pos['size']):.4f} "
+                            f"({size_change_pct:+.1f}%)"
+                        )
+                        await self._adjust_position(
+                            target_state, symbol,
+                            prev_target['size'], target_pos['size'],
+                            target_pos
+                        )
+                        target_state.copies_today += 1
 
                 # 更新已复制仓位记录
                 target_state.copied_positions[symbol] = target_pos
