@@ -20,7 +20,6 @@ import {
   ModalBody,
   ModalFooter,
   Switch,
-  Checkbox,
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
@@ -60,8 +59,8 @@ export default function CopyTradingPage() {
   const [sortBy, setSortBy] = useState("updated_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  // 选择状态
-  const [selectedAddresses, setSelectedAddresses] = useState<Set<string>>(new Set());
+  // 选择状态 - HeroUI Selection 可以是 "all" 或 Set<Key>
+  const [selectedKeys, setSelectedKeys] = useState<"all" | Set<string>>(new Set());
 
   // Modal 状态
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -446,9 +445,21 @@ export default function CopyTradingPage() {
   // 批量删除确认状态
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
 
+  // 获取选中的地址列表
+  const getSelectedAddressList = (): string[] => {
+    if (selectedKeys === "all") {
+      return addresses.map((a) => a.address);
+    }
+    return Array.from(selectedKeys);
+  };
+
+  // 获取选中数量
+  const selectedCount = selectedKeys === "all" ? addresses.length : selectedKeys.size;
+
   // 批量操作
   const handleBatchAction = async (action: "enable" | "disable" | "delete") => {
-    if (selectedAddresses.size === 0) return;
+    const addressList = getSelectedAddressList();
+    if (addressList.length === 0) return;
 
     // 批量删除使用 Modal 确认
     if (action === "delete") {
@@ -457,9 +468,9 @@ export default function CopyTradingPage() {
     }
 
     try {
-      await copyTradingApi.batchAction(action, Array.from(selectedAddresses));
+      await copyTradingApi.batchAction(action, addressList);
       addToast({ title: "批量操作成功", color: "success" });
-      setSelectedAddresses(new Set());
+      setSelectedKeys(new Set());
       loadAddresses();
     } catch (error) {
       console.error("Failed to batch action:", error);
@@ -470,9 +481,10 @@ export default function CopyTradingPage() {
   // 确认批量删除
   const handleConfirmBatchDelete = async () => {
     try {
-      await copyTradingApi.batchAction("delete", Array.from(selectedAddresses));
+      const addressList = getSelectedAddressList();
+      await copyTradingApi.batchAction("delete", addressList);
       addToast({ title: "批量删除成功", color: "success" });
-      setSelectedAddresses(new Set());
+      setSelectedKeys(new Set());
       setIsBatchDeleteModalOpen(false);
       loadAddresses();
       loadGroups(); // 更新分组计数
@@ -511,24 +523,6 @@ export default function CopyTradingPage() {
     }
   };
 
-  // 全选/取消全选
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedAddresses(new Set(addresses.map((a) => a.address)));
-    } else {
-      setSelectedAddresses(new Set());
-    }
-  };
-
-  const handleSelectOne = (address: string, checked: boolean) => {
-    const newSet = new Set(selectedAddresses);
-    if (checked) {
-      newSet.add(address);
-    } else {
-      newSet.delete(address);
-    }
-    setSelectedAddresses(newSet);
-  };
 
   // 页码跳转
   const handleJumpPage = () => {
@@ -552,7 +546,6 @@ export default function CopyTradingPage() {
 
   // 表格列
   const columns = [
-    { key: "select", label: "" },
     { key: "status", label: "状态" },
     { key: "address", label: "地址" },
     { key: "name", label: "名称" },
@@ -570,13 +563,6 @@ export default function CopyTradingPage() {
   const renderCell = useCallback(
     (item: CopyTradingAddress, columnKey: string) => {
       switch (columnKey) {
-        case "select":
-          return (
-            <Checkbox
-              isSelected={selectedAddresses.has(item.address)}
-              onValueChange={(checked) => handleSelectOne(item.address, checked)}
-            />
-          );
         case "status":
           return (
             <Switch
@@ -707,7 +693,7 @@ export default function CopyTradingPage() {
           return null;
       }
     },
-    [selectedAddresses, navigate]
+    [navigate]
   );
 
   return (
@@ -751,21 +737,34 @@ export default function CopyTradingPage() {
             <SelectItem key="disabled">已禁用</SelectItem>
           </Select>
 
-          {selectedAddresses.size > 0 && (
+          {selectedCount > 0 && (
             <Dropdown>
               <DropdownTrigger>
-                <Button variant="flat">
-                  批量操作 ({selectedAddresses.size})
+                <Button variant="flat" color="primary">
+                  批量操作 ({selectedKeys === "all" ? "全部" : selectedCount})
                 </Button>
               </DropdownTrigger>
               <DropdownMenu>
-                <DropdownItem key="enable" onPress={() => handleBatchAction("enable")}>
+                <DropdownItem
+                  key="enable"
+                  startContent={<Icon icon="lucide:toggle-right" width={16} className="text-success" />}
+                  onPress={() => handleBatchAction("enable")}
+                >
                   批量启用
                 </DropdownItem>
-                <DropdownItem key="disable" onPress={() => handleBatchAction("disable")}>
+                <DropdownItem
+                  key="disable"
+                  startContent={<Icon icon="lucide:toggle-left" width={16} className="text-warning" />}
+                  onPress={() => handleBatchAction("disable")}
+                >
                   批量禁用
                 </DropdownItem>
-                <DropdownItem key="delete" className="text-danger" onPress={() => handleBatchAction("delete")}>
+                <DropdownItem
+                  key="delete"
+                  className="text-danger"
+                  startContent={<Icon icon="lucide:trash-2" width={16} />}
+                  onPress={() => handleBatchAction("delete")}
+                >
                   批量删除
                 </DropdownItem>
               </DropdownMenu>
@@ -822,20 +821,16 @@ export default function CopyTradingPage() {
           </div>
         ) : (
           <>
-            <Table aria-label="跟单地址列表">
+            <Table
+              aria-label="跟单地址列表"
+              color="primary"
+              selectionMode="multiple"
+              selectedKeys={selectedKeys}
+              onSelectionChange={(keys) => setSelectedKeys(keys as "all" | Set<string>)}
+            >
               <TableHeader columns={columns}>
                 {(column) => (
-                  <TableColumn key={column.key}>
-                    {column.key === "select" ? (
-                      <Checkbox
-                        isSelected={selectedAddresses.size === addresses.length && addresses.length > 0}
-                        isIndeterminate={selectedAddresses.size > 0 && selectedAddresses.size < addresses.length}
-                        onValueChange={handleSelectAll}
-                      />
-                    ) : (
-                      column.label
-                    )}
-                  </TableColumn>
+                  <TableColumn key={column.key}>{column.label}</TableColumn>
                 )}
               </TableHeader>
               <TableBody items={addresses} emptyContent="暂无跟单地址">
@@ -1039,7 +1034,7 @@ export default function CopyTradingPage() {
                         color="success"
                         variant="flat"
                         isIconOnly
-                        onPress={handleAddWhitelist}
+                        onPress={() => handleAddWhitelist()}
                         isDisabled={!whitelistInput.trim()}
                       >
                         <Icon icon="lucide:plus" width={16} />
@@ -1103,7 +1098,7 @@ export default function CopyTradingPage() {
                         color="danger"
                         variant="flat"
                         isIconOnly
-                        onPress={handleAddBlacklist}
+                        onPress={() => handleAddBlacklist()}
                         isDisabled={!blacklistInput.trim()}
                       >
                         <Icon icon="lucide:plus" width={16} />
@@ -1269,7 +1264,7 @@ export default function CopyTradingPage() {
               确认批量删除
             </ModalHeader>
             <ModalBody>
-              <p>确定要删除选中的 <strong>{selectedAddresses.size}</strong> 个跟单地址吗？此操作无法撤销。</p>
+              <p>确定要删除选中的 <strong>{selectedCount}</strong> 个跟单地址吗？此操作无法撤销。</p>
             </ModalBody>
             <ModalFooter>
               <Button variant="flat" onPress={() => setIsBatchDeleteModalOpen(false)}>
