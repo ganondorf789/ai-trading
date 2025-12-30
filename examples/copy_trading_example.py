@@ -8,7 +8,7 @@
 import asyncio
 import os
 import sys
-from datetime import datetime
+import pendulum
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,7 +33,7 @@ def setup_logging():
         level="INFO"
     )
     logger.add(
-        f"logs/copy_trading_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        f"logs/copy_trading_{pendulum.now().format('YYYYMMDD_HHmmss')}.log",
         rotation="1 day",
         level="DEBUG"
     )

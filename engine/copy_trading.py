@@ -3,10 +3,11 @@
 监控目标交易者的持仓变化并复制交易
 """
 import asyncio
-from datetime import datetime
+import threading
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass, field
 from loguru import logger
+import pendulum
 
 from hyperliquid.info import Info
 
@@ -17,29 +18,30 @@ from clients.hyperliquid_client import HyperliquidClient
 
 
 @dataclass
-class CopyTradingConfig:
+class CopyTradingConfig: 
     """跟单配置"""
     # 目标交易者地址
     target_address: str = ""
-    
+
     # 跟单设置
     copy_ratio: float = 1.0  # 跟单比例 (0.5 = 跟单50%仓位)
     max_position_size_usd: float = 1000.0  # 单个仓位最大价值
     min_position_size_usd: float = 10.0  # 最小仓位价值（过滤小仓位）
-    
+
     # 白名单/黑名单
     symbols_whitelist: List[str] = field(default_factory=list)  # 只跟单这些币
     symbols_blacklist: List[str] = field(default_factory=list)  # 不跟单这些币
-    
+
     # 杠杆设置
     copy_leverage: bool = True  # 是否复制杠杆
     max_leverage: int = 10  # 最大杠杆限制
     default_leverage: int = 5  # 默认杠杆
-    
+
     # 延迟设置
     check_interval: float = 5.0  # 检查间隔（秒）
     order_delay: float = 0.5  # 下单延迟（秒）
-    
+    init_observation_period: float = 30.0  # 初始化后观察期（秒），期间不跟单新仓位
+
     # 风控
     max_total_positions: int = 10  # 最大持仓数
     max_daily_trades: int = 50  # 每日最大交易次数
@@ -57,7 +59,7 @@ class TargetSubscriptionManager:
         self.ws_info: Optional[Info] = None
         self._subscribed_addresses: set = set()
         self._pending_fills: Dict[str, List[Dict]] = {}  # {address: [fills]}
-        self._lock = asyncio.Lock()
+        self._lock = threading.Lock()  # 使用线程锁保护 WebSocket 回调访问
 
     def _ensure_ws(self):
         """确保 WebSocket 连接"""
@@ -70,7 +72,8 @@ class TargetSubscriptionManager:
             return
 
         self._ensure_ws()
-        self._pending_fills[address] = []
+        with self._lock:
+            self._pending_fills[address] = []
 
         def on_fill(message: Dict[str, Any]):
             self._handle_fill(address, message)
@@ -86,8 +89,9 @@ class TargetSubscriptionManager:
         """取消订阅（注意：hyperliquid SDK 可能不支持取消订阅）"""
         if address in self._subscribed_addresses:
             self._subscribed_addresses.discard(address)
-            if address in self._pending_fills:
-                del self._pending_fills[address]
+            with self._lock:
+                if address in self._pending_fills:
+                    del self._pending_fills[address]
             logger.info(f"已取消订阅: {address[:10]}...")
 
     def _handle_fill(self, address: str, message: Dict[str, Any]):
@@ -106,28 +110,32 @@ class TargetSubscriptionManager:
                     'closed_pnl': float(fill.get('closedPnl', 0))
                 }
 
-                if address in self._pending_fills:
-                    self._pending_fills[address].append(fill_info)
-                    logger.info(
-                        f"[WS] [{address[:8]}] 成交: {fill_info['symbol']} "
-                        f"{fill_info['side']} {fill_info['size']} @ {fill_info['price']}"
-                    )
+                with self._lock:
+                    if address in self._pending_fills:
+                        self._pending_fills[address].append(fill_info)
+                        logger.info(
+                            f"[WS] [{address[:8]}] 成交: {fill_info['symbol']} "
+                            f"{fill_info['side']} {fill_info['size']} @ {fill_info['price']}"
+                        )
 
     def get_pending_fills(self, address: str) -> List[Dict]:
         """获取并清空待处理的成交"""
-        if address not in self._pending_fills:
-            return []
-        fills = self._pending_fills[address]
-        self._pending_fills[address] = []
-        return fills
+        with self._lock:
+            if address not in self._pending_fills:
+                return []
+            fills = self._pending_fills[address]
+            self._pending_fills[address] = []
+            return fills
 
     def has_pending_fills(self, address: str) -> bool:
         """检查是否有待处理的成交"""
-        return bool(self._pending_fills.get(address, []))
+        with self._lock:
+            return bool(self._pending_fills.get(address, []))
 
     def get_all_pending_addresses(self) -> List[str]:
         """获取所有有待处理成交的地址"""
-        return [addr for addr, fills in self._pending_fills.items() if fills]
+        with self._lock:
+            return [addr for addr, fills in self._pending_fills.items() if fills]
 
     @property
     def subscribed_count(self) -> int:
@@ -141,12 +149,13 @@ class TargetTraderState:
     config: CopyTradingConfig
     positions: Dict[str, Dict] = field(default_factory=dict)
     copied_positions: Dict[str, Dict] = field(default_factory=dict)
-    last_check: Optional[datetime] = None
+    last_check: Optional[pendulum.DateTime] = None
     copies_today: int = 0
     successful_copies: int = 0
     failed_copies: int = 0
     daily_pnl: float = 0.0
     initialized: bool = False  # 是否已完成初始化（记录现有持仓）
+    init_timestamp: Optional[pendulum.DateTime] = None  # 初始化时间戳
 
 
 class MultiTargetCopyTradingBot:
@@ -185,7 +194,7 @@ class MultiTargetCopyTradingBot:
 
         # 运行状态
         self.is_running = False
-        self.last_config_reload: Optional[datetime] = None
+        self.last_config_reload: Optional[pendulum.DateTime] = None
 
         # 回调
         self._on_copy: Optional[Callable[[str, str, str, float], None]] = None
@@ -273,7 +282,7 @@ class MultiTargetCopyTradingBot:
             del self.targets[address]
             logger.info(f"移除跟单目标: {address[:10]}...")
 
-        self.last_config_reload = datetime.now()
+        self.last_config_reload = pendulum.now()
         logger.info(f"配置加载完成: 共 {len(self.targets)} 个跟单目标")
 
     def _should_copy_symbol(self, config: CopyTradingConfig, symbol: str) -> bool:
@@ -374,7 +383,7 @@ class MultiTargetCopyTradingBot:
             'target_size': abs(target_position['size']) if target_position else None,
             'target_entry_price': target_position['entry_price'] if target_position else None,
             'status': 'pending',
-            'created_at': datetime.now().isoformat()
+            'created_at': pendulum.now().isoformat()
         }
 
         try:
@@ -387,7 +396,7 @@ class MultiTargetCopyTradingBot:
             )
 
             success = result.get('status') == 'ok'
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
 
             if success:
                 logger.info(f"[{target_state.address[:8]}] 开仓成功: {symbol} {side} {size}")
@@ -408,7 +417,7 @@ class MultiTargetCopyTradingBot:
             logger.error(f"[{target_state.address[:8]}] 开仓异常: {e}")
             order_data['status'] = 'failed'
             order_data['error_message'] = str(e)
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
             self._save_order(order_data)
             target_state.failed_copies += 1
             if self._on_error:
@@ -431,18 +440,16 @@ class MultiTargetCopyTradingBot:
             logger.warning(f"[{target_state.address[:8]}] 无法调整仓位: {symbol} (本地无持仓)")
             return False
 
-        # 计算目标的仓位变化比例
+        # 判断是加仓还是减仓
         prev_abs_size = abs(prev_size)
         new_abs_size = abs(new_size)
-        change_ratio = (new_abs_size - prev_abs_size) / prev_abs_size if prev_abs_size > 0 else 0
-
-        # 判断是加仓还是减仓
         is_increase = new_abs_size > prev_abs_size
         action_type = "加仓" if is_increase else "减仓"
 
-        # 计算我们需要调整的数量
+        # 使用精确计算：根据目标的新仓位和 copy_ratio 重新计算我们的目标仓位
+        current_price = self.client.get_mid_price(symbol)
+        my_target_size = self._calculate_copy_size(config, target_position, current_price)
         my_current_size = abs(my_pos.size)
-        my_target_size = my_current_size * (1 + change_ratio)
         adjustment_size = abs(my_target_size - my_current_size)
 
         # 获取精度
@@ -458,7 +465,6 @@ class MultiTargetCopyTradingBot:
             logger.debug(f"[{target_state.address[:8]}] {symbol} 调整数量太小，跳过")
             return True
 
-        price = self.client.get_mid_price(symbol)
         is_long = my_pos.side == PositionSide.LONG
 
         # 创建订单记录
@@ -468,20 +474,22 @@ class MultiTargetCopyTradingBot:
             'side': 'long' if is_long else 'short',
             'action': 'increase' if is_increase else 'reduce',
             'size': adjustment_size,
-            'price': price,
+            'price': current_price,
             'leverage': my_pos.leverage,
             'copy_ratio': config.copy_ratio,
             'target_size': new_abs_size,
             'target_prev_size': prev_abs_size,
-            'change_ratio': change_ratio,
+            'my_target_size': my_target_size,
+            'my_current_size': my_current_size,
             'status': 'pending',
-            'created_at': datetime.now().isoformat()
+            'created_at': pendulum.now().isoformat()
         }
 
         try:
+            change_pct = ((new_abs_size - prev_abs_size) / prev_abs_size * 100) if prev_abs_size > 0 else 0
             logger.info(
                 f"[{target_state.address[:8]}] {action_type}: {symbol} "
-                f"目标 {prev_abs_size:.4f} → {new_abs_size:.4f} ({change_ratio:+.1%}), "
+                f"目标 {prev_abs_size:.4f} → {new_abs_size:.4f} ({change_pct:+.1f}%), "
                 f"我们 {my_current_size:.4f} → {my_target_size:.4f} (调整 {adjustment_size:.4f})"
             )
 
@@ -500,7 +508,7 @@ class MultiTargetCopyTradingBot:
                 )
 
             success = result.get('status') == 'ok'
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
 
             if success:
                 logger.info(f"[{target_state.address[:8]}] {action_type}成功: {symbol} {adjustment_size}")
@@ -517,7 +525,7 @@ class MultiTargetCopyTradingBot:
             logger.error(f"[{target_state.address[:8]}] {action_type}异常: {e}")
             order_data['status'] = 'failed'
             order_data['error_message'] = str(e)
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
             self._save_order(order_data)
             if self._on_error:
                 self._on_error(e)
@@ -548,13 +556,13 @@ class MultiTargetCopyTradingBot:
             'copy_ratio': config.copy_ratio,
             'pnl': pnl,
             'status': 'pending',
-            'created_at': datetime.now().isoformat()
+            'created_at': pendulum.now().isoformat()
         }
 
         try:
             result = self.client.close_position(symbol, slippage=config.slippage)
             success = result.get('status') == 'ok'
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
 
             if success:
                 logger.info(f"[{target_state.address[:8]}] 平仓成功: {symbol}, PnL: {pnl:.2f}")
@@ -574,7 +582,7 @@ class MultiTargetCopyTradingBot:
             logger.error(f"[{target_state.address[:8]}] 平仓异常: {e}")
             order_data['status'] = 'failed'
             order_data['error_message'] = str(e)
-            order_data['executed_at'] = datetime.now().isoformat()
+            order_data['executed_at'] = pendulum.now().isoformat()
             self._save_order(order_data)
             if self._on_error:
                 self._on_error(e)
@@ -602,6 +610,7 @@ class MultiTargetCopyTradingBot:
 
         # 首次初始化：只记录现有持仓，不跟单
         if not target_state.initialized:
+            target_state.init_timestamp = pendulum.now()
             for symbol, target_pos in target_positions.items():
                 if self._should_copy_symbol(config, symbol):
                     target_state.copied_positions[symbol] = target_pos
@@ -610,7 +619,11 @@ class MultiTargetCopyTradingBot:
                         f"{target_pos['side']} {abs(target_pos['size'])} (不跟单)"
                     )
             target_state.initialized = True
-            target_state.last_check = datetime.now()
+            target_state.last_check = pendulum.now()
+            logger.info(
+                f"[{address[:8]}] 初始化完成，已记录 {len(target_state.copied_positions)} 个现有持仓，"
+                f"后续将只跟单新开仓位"
+            )
             return
 
         # 处理新开仓/调整仓位
@@ -627,6 +640,18 @@ class MultiTargetCopyTradingBot:
             if prev_target is None:
                 # 新仓位（初始化后新开的）
                 logger.info(f"[{address[:8]}] 发现新仓位: {symbol} {target_pos['side']} {abs(target_pos['size'])}")
+
+                # 检查是否在观察期内
+                if target_state.init_timestamp:
+                    time_since_init = (pendulum.now() - target_state.init_timestamp).total_seconds()
+                    if time_since_init < config.init_observation_period:
+                        logger.warning(
+                            f"[{address[:8]}] 初始化后观察期内（{time_since_init:.1f}s/{config.init_observation_period:.0f}s），"
+                            f"跳过新仓位 {symbol}，避免误跟单初始化前的仓位"
+                        )
+                        # 记录这个仓位，下次如果还在就不会再提示
+                        target_state.copied_positions[symbol] = target_pos
+                        continue
 
                 current_price = self.client.get_mid_price(symbol)
                 copy_size = self._calculate_copy_size(config, target_pos, current_price)
@@ -685,7 +710,7 @@ class MultiTargetCopyTradingBot:
 
                 del target_state.copied_positions[symbol]
 
-        target_state.last_check = datetime.now()
+        target_state.last_check = pendulum.now()
 
     async def _sync_all_targets(self):
         """同步所有目标"""
@@ -694,7 +719,15 @@ class MultiTargetCopyTradingBot:
 
         # 并发同步所有目标
         tasks = [self._sync_target(state) for state in self.targets.values()]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 检查并记录异常
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                target_address = list(self.targets.keys())[i]
+                logger.error(f"同步目标 {target_address[:10]}... 失败: {result}")
+                if self._on_error:
+                    self._on_error(result)
 
     async def run(self):
         """运行多目标跟单机器人"""
@@ -716,7 +749,7 @@ class MultiTargetCopyTradingBot:
             while self.is_running:
                 # 检查是否需要重载配置
                 if (self.last_config_reload is None or
-                    (datetime.now() - self.last_config_reload).seconds >= self.reload_interval):
+                    (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
                     self.reload_configs()
 
                 if self.targets:
@@ -812,7 +845,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
             reload_interval=reload_interval
         )
         self.sync_interval = sync_interval
-        self.last_full_sync: Optional[datetime] = None
+        self.last_full_sync: Optional[pendulum.DateTime] = None
 
         # WebSocket 订阅管理器
         from hyperliquid.utils import constants
@@ -887,6 +920,18 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
                 is_direction_change = prev_target and prev_target['side'] != target_pos['side']
 
                 if is_new_position or is_direction_change:
+                    # 如果是新仓位（不是方向变化），检查观察期
+                    if is_new_position and target_state.init_timestamp:
+                        time_since_init = (pendulum.now() - target_state.init_timestamp).total_seconds()
+                        if time_since_init < config.init_observation_period:
+                            logger.warning(
+                                f"[WS] [{address[:8]}] 初始化后观察期内（{time_since_init:.1f}s/{config.init_observation_period:.0f}s），"
+                                f"跳过新仓位 {symbol}，避免误跟单初始化前的仓位"
+                            )
+                            # 记录这个仓位，下次如果还在就不会再提示
+                            target_state.copied_positions[symbol] = target_pos
+                            continue
+
                     if is_direction_change:
                         logger.info(
                             f"[WS] [{address[:8]}] 仓位方向变化: {symbol} "
@@ -956,7 +1001,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
 
             target_state.positions = target_positions
 
-        target_state.last_check = datetime.now()
+        target_state.last_check = pendulum.now()
 
     async def _process_all_ws_fills(self):
         """处理所有目标的 WebSocket 成交"""
@@ -990,12 +1035,12 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
             # 初始全量同步
             if self.targets:
                 await self._sync_all_targets()
-            self.last_full_sync = datetime.now()
+            self.last_full_sync = pendulum.now()
 
             while self.is_running:
                 # 检查是否需要重载配置
                 if (self.last_config_reload is None or
-                    (datetime.now() - self.last_config_reload).seconds >= self.reload_interval):
+                    (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
                     self.reload_configs()
 
                 # 处理 WebSocket 收到的成交（低延迟）
@@ -1004,11 +1049,11 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
                 # 定期全量同步（兜底）
                 if self.targets and (
                     self.last_full_sync is None or
-                    (datetime.now() - self.last_full_sync).seconds >= self.sync_interval
+                    (pendulum.now() - self.last_full_sync).total_seconds() >= self.sync_interval
                 ):
                     logger.debug("执行全量同步...")
                     await self._sync_all_targets()
-                    self.last_full_sync = datetime.now()
+                    self.last_full_sync = pendulum.now()
 
                 await asyncio.sleep(self.check_interval)
 
