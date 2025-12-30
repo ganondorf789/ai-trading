@@ -82,6 +82,8 @@ export default function TraderDetailPage() {
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
   const [allCoins, setAllCoins] = useState<string[]>([]); // 保存完整的币种列表
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [startDate, setStartDate] = useState<string>(''); // 开始日期 (YYYY-MM-DD)
+  const [endDate, setEndDate] = useState<string>(''); // 结束日期 (YYYY-MM-DD)
   const [timeRange, setTimeRange] = useState<number>(30); // 默认30天
   const [chartLoading, setChartLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -344,6 +346,8 @@ export default function TraderDetailPage() {
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
           position_type: 'closed',
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
         });
 
         if (fillsRes.success && fillsRes.data) {
@@ -364,12 +368,12 @@ export default function TraderDetailPage() {
     };
 
     loadFills();
-  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading]);
+  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading, startDate, endDate]);
 
   // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [selectedCoin, pnlFilter, sortDescriptor]);
+  }, [selectedCoin, pnlFilter, sortDescriptor, startDate, endDate]);
 
 
   const formatNumber = (num: number, decimals = 2) => {
@@ -494,6 +498,8 @@ export default function TraderDetailPage() {
     setSelectedCoin('all');
     setPnlFilter('all');
     setSearchValue('');
+    setStartDate('');
+    setEndDate('');
     setPage(1);
   }, []);
 
@@ -503,8 +509,10 @@ export default function TraderDetailPage() {
     if (selectedCoin !== 'all') count++;
     if (pnlFilter !== 'all') count++;
     if (searchValue) count++;
+    if (startDate) count++;
+    if (endDate) count++;
     return count;
-  }, [selectedCoin, pnlFilter, searchValue]);
+  }, [selectedCoin, pnlFilter, searchValue, startDate, endDate]);
 
   // 表格顶部内容
   const topContent = useMemo(() => {
@@ -594,6 +602,28 @@ export default function TraderDetailPage() {
                         <Radio value="profit">盈利</Radio>
                         <Radio value="loss">亏损</Radio>
                       </RadioGroup>
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium">日期范围</label>
+                        <Input
+                          type="date"
+                          label="开始日期"
+                          size="sm"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          isClearable
+                          onClear={() => setStartDate('')}
+                        />
+                        <Input
+                          type="date"
+                          label="结束日期"
+                          size="sm"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          isClearable
+                          onClear={() => setEndDate('')}
+                        />
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>

@@ -688,7 +688,9 @@ class TraderDatabase:
         coin: str = None,
         sort_by: str = 'time',
         sort_order: str = 'desc',
-        position_type: str = 'all'
+        position_type: str = 'all',
+        start_date: str = None,
+        end_date: str = None
     ) -> List[Dict]:
         """
         获取交易者的交易记录
@@ -703,6 +705,8 @@ class TraderDatabase:
                 - all: 所有记录
                 - open: 当前持仓 (closed_pnl = 0)
                 - closed: 已平仓 (closed_pnl != 0)
+            start_date: 开始日期 (YYYY-MM-DD)
+            end_date: 结束日期 (YYYY-MM-DD)
 
         Returns:
             交易记录列表
@@ -739,6 +743,21 @@ class TraderDatabase:
                 conditions.append("closed_pnl = 0")
             elif position_type == 'closed':
                 conditions.append("closed_pnl != 0")
+
+            # 日期范围筛选（将 YYYY-MM-DD 转换为时间戳毫秒）
+            if start_date:
+                # 将开始日期转换为当天 00:00:00 的时间戳（毫秒）
+                start_dt = pendulum.parse(start_date, tz=SHANGHAI_TZ).start_of('day')
+                start_timestamp_ms = int(start_dt.timestamp() * 1000)
+                conditions.append("time >= ?")
+                params.append(start_timestamp_ms)
+
+            if end_date:
+                # 将结束日期转换为当天 23:59:59.999 的时间戳（毫秒）
+                end_dt = pendulum.parse(end_date, tz=SHANGHAI_TZ).end_of('day')
+                end_timestamp_ms = int(end_dt.timestamp() * 1000)
+                conditions.append("time <= ?")
+                params.append(end_timestamp_ms)
 
             where_clause = " AND ".join(conditions)
             params.append(limit)

@@ -65,6 +65,10 @@ def get_traders():
         max_drawdown = request.args.get('max_drawdown', type=float)
         min_sharpe = request.args.get('min_sharpe', type=float)
         max_sharpe = request.args.get('max_sharpe', type=float)
+        min_sortino = request.args.get('min_sortino', type=float)
+        max_sortino = request.args.get('max_sortino', type=float)
+        min_calmar = request.args.get('min_calmar', type=float)
+        max_calmar = request.args.get('max_calmar', type=float)
         min_trades = request.args.get('min_trades', type=int)
         max_trades = request.args.get('max_trades', type=int)
         min_active_days = request.args.get('min_active_days', type=int)
@@ -96,6 +100,16 @@ def get_traders():
             all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) >= min_sharpe]
         if max_sharpe is not None:
             all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) <= max_sharpe]
+        # Sortino区间
+        if min_sortino is not None:
+            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) >= min_sortino]
+        if max_sortino is not None:
+            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) <= max_sortino]
+        # Calmar区间
+        if min_calmar is not None:
+            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) >= min_calmar]
+        if max_calmar is not None:
+            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) <= max_calmar]
         # 交易数区间
         if min_trades is not None:
             all_traders = [t for t in all_traders if t.get('total_trades', 0) >= min_trades]
@@ -125,7 +139,7 @@ def get_traders():
         valid_sort_fields = {
             'overall_score', 'rating', 'total_trades', 'win_rate',
             'total_pnl', 'roi', 'profit_factor', 'max_drawdown',
-            'sharpe_ratio', 'sortino_ratio', 'current_equity', 'active_days',
+            'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'current_equity', 'active_days',
             'last_trade_time', 'avg_leverage', 'current_positions',
             'recent_7d_pnl', 'recent_7d_win_rate', 'unique_symbols',
             'max_consecutive_wins', 'max_consecutive_losses', 'long_short_ratio'
@@ -175,6 +189,7 @@ def get_traders():
                 'max_drawdown': trader.get('max_drawdown', 0),
                 'sharpe_ratio': trader.get('sharpe_ratio', 0),
                 'sortino_ratio': trader.get('sortino_ratio', 0),
+                'calmar_ratio': trader.get('calmar_ratio', 0),
                 # 评分
                 'overall_score': trader.get('overall_score', 0),
                 'rating': trader.get('rating', 'F'),
@@ -334,6 +349,8 @@ def get_trader_fills(address: str):
         - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
         - sort_order: str, 排序方向 (asc/desc)
         - position_type: str, 持仓类型 (all/open/closed)
+        - start_date: str, 开始日期 (YYYY-MM-DD)
+        - end_date: str, 结束日期 (YYYY-MM-DD)
     """
     try:
         page = int(request.args.get('page', 1))
@@ -343,6 +360,8 @@ def get_trader_fills(address: str):
         sort_by = request.args.get('sort_by', 'trade_time')
         sort_order = request.args.get('sort_order', 'desc')
         position_type = request.args.get('position_type', 'all')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
 
         # 获取所有符合条件的交易记录（用于计算总数）
         all_fills = db.get_trader_fills(
@@ -351,7 +370,9 @@ def get_trader_fills(address: str):
             coin=coin,
             sort_by=sort_by,
             sort_order=sort_order,
-            position_type=position_type
+            position_type=position_type,
+            start_date=start_date,
+            end_date=end_date
         )
 
         # 应用盈亏筛选

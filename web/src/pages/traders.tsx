@@ -26,7 +26,7 @@ import { traderApi, Trader } from '@/services/api';
 type ColumnKey =
   | 'rating' | 'address' | 'overall_score' | 'total_trades' | 'win_rate'
   | 'total_pnl' | 'roi' | 'profit_factor' | 'max_drawdown' | 'sharpe_ratio'
-  | 'sortino_ratio' | 'current_equity' | 'active_days' | 'avg_leverage'
+  | 'sortino_ratio' | 'calmar_ratio' | 'current_equity' | 'active_days' | 'avg_leverage'
   | 'current_positions' | 'recent_7d_pnl' | 'recent_7d_win_rate'
   | 'max_consecutive_wins' | 'max_consecutive_losses' | 'unique_symbols'
   | 'favorite_symbol' | 'long_short_ratio' | 'last_trade_time';
@@ -53,6 +53,7 @@ const columns: Column[] = [
   { uid: 'max_drawdown', name: '回撤', sortable: true, group: '风险' },
   { uid: 'sharpe_ratio', name: 'Sharpe', sortable: true, group: '风险' },
   { uid: 'sortino_ratio', name: 'Sortino', sortable: true, group: '风险' },
+  { uid: 'calmar_ratio', name: 'Calmar', sortable: true, group: '风险' },
   // 活跃度
   { uid: 'active_days', name: '活跃天', sortable: true, group: '活跃' },
   { uid: 'current_equity', name: '权益', sortable: true, group: '活跃' },
@@ -73,7 +74,7 @@ const columns: Column[] = [
 const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
   'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
   'total_pnl', 'roi', 'profit_factor', 'max_drawdown', 'sharpe_ratio',
-  'sortino_ratio', 'current_equity', 'active_days', 'avg_leverage',
+  'sortino_ratio', 'calmar_ratio', 'current_equity', 'active_days', 'avg_leverage',
   'current_positions', 'recent_7d_pnl', 'recent_7d_win_rate',
   'max_consecutive_wins', 'max_consecutive_losses', 'unique_symbols',
   'favorite_symbol', 'long_short_ratio', 'last_trade_time'
@@ -91,6 +92,10 @@ interface FilterConfig {
   maxDrawdown?: number;
   minSharpe?: number;
   maxSharpe?: number;
+  minSortino?: number;
+  maxSortino?: number;
+  minCalmar?: number;
+  maxCalmar?: number;
   minTrades?: number;
   maxTrades?: number;
   minActiveDays?: number;
@@ -143,6 +148,10 @@ export default function TradersPage() {
         max_drawdown: filters.maxDrawdown !== undefined ? filters.maxDrawdown / 100 : undefined,
         min_sharpe: filters.minSharpe,
         max_sharpe: filters.maxSharpe,
+        min_sortino: filters.minSortino,
+        max_sortino: filters.maxSortino,
+        min_calmar: filters.minCalmar,
+        max_calmar: filters.maxCalmar,
         min_trades: filters.minTrades,
         max_trades: filters.maxTrades,
         min_active_days: filters.minActiveDays,
@@ -284,6 +293,8 @@ export default function TradersPage() {
         return <span>{formatNumber(trader.sharpe_ratio)}</span>;
       case 'sortino_ratio':
         return <span>{formatNumber(trader.sortino_ratio || 0)}</span>;
+      case 'calmar_ratio':
+        return <span>{formatNumber(trader.calmar_ratio || 0)}</span>;
       case 'current_equity':
         return <span>${formatNumber(trader.current_equity, 0)}</span>;
       case 'active_days':
@@ -510,6 +521,50 @@ export default function TradersPage() {
                   placeholder="最大"
                   value={filters.maxSharpe?.toString() || ''}
                   onValueChange={(v) => setFilters({ ...filters, maxSharpe: v ? parseFloat(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* Sortino区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">Sortino</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minSortino?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minSortino: v ? parseFloat(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxSortino?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxSortino: v ? parseFloat(v) : undefined })}
+                />
+              </div>
+            </div>
+
+            {/* Calmar区间 */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-default-600">Calmar</span>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最小"
+                  value={filters.minCalmar?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, minCalmar: v ? parseFloat(v) : undefined })}
+                />
+                <span className="text-default-400">-</span>
+                <Input
+                  type="number"
+                  size="sm"
+                  placeholder="最大"
+                  value={filters.maxCalmar?.toString() || ''}
+                  onValueChange={(v) => setFilters({ ...filters, maxCalmar: v ? parseFloat(v) : undefined })}
                 />
               </div>
             </div>
