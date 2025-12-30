@@ -348,7 +348,6 @@ def get_trader_fills(address: str):
         - pnl_filter: str, 盈亏筛选 (all/profit/loss)
         - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
         - sort_order: str, 排序方向 (asc/desc)
-        - position_type: str, 持仓类型 (all/open/closed)
         - start_date: str, 开始日期 (YYYY-MM-DD)
         - end_date: str, 结束日期 (YYYY-MM-DD)
     """
@@ -359,7 +358,6 @@ def get_trader_fills(address: str):
         pnl_filter = request.args.get('pnl_filter', 'all')
         sort_by = request.args.get('sort_by', 'trade_time')
         sort_order = request.args.get('sort_order', 'desc')
-        position_type = request.args.get('position_type', 'all')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
@@ -370,7 +368,6 @@ def get_trader_fills(address: str):
             coin=coin,
             sort_by=sort_by,
             sort_order=sort_order,
-            position_type=position_type,
             start_date=start_date,
             end_date=end_date
         )

@@ -688,7 +688,6 @@ class TraderDatabase:
         coin: str = None,
         sort_by: str = 'time',
         sort_order: str = 'desc',
-        position_type: str = 'all',
         start_date: str = None,
         end_date: str = None
     ) -> List[Dict]:
@@ -701,10 +700,6 @@ class TraderDatabase:
             coin: 筛选特定币种
             sort_by: 排序字段 (time, coin, side, px, sz, closed_pnl, fee)
             sort_order: 排序方向 (asc, desc)
-            position_type: 持仓类型 (all/open/closed)
-                - all: 所有记录
-                - open: 当前持仓 (closed_pnl = 0)
-                - closed: 已平仓 (closed_pnl != 0)
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
 
@@ -737,12 +732,6 @@ class TraderDatabase:
             if coin:
                 conditions.append("coin = ?")
                 params.append(coin)
-
-            # 根据 position_type 筛选
-            if position_type == 'open':
-                conditions.append("closed_pnl = 0")
-            elif position_type == 'closed':
-                conditions.append("closed_pnl != 0")
 
             # 日期范围筛选（将 YYYY-MM-DD 转换为时间戳毫秒）
             if start_date:

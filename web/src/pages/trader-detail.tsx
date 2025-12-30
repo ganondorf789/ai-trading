@@ -148,7 +148,6 @@ export default function TraderDetailPage() {
             limit: rowsPerPage,
             coin: selectedCoin !== 'all' ? selectedCoin : undefined,
             pnl_filter: pnlFilter,
-            position_type: 'closed',
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
           // 获取当前持仓（来自 assetPositions）
@@ -269,7 +268,6 @@ export default function TraderDetailPage() {
             limit: rowsPerPage,
             coin: selectedCoin !== 'all' ? selectedCoin : undefined,
             pnl_filter: pnlFilter,
-            position_type: 'closed',
           }),
           traderApi.getTraderHistory(address, { days: timeRange }),
           traderApi.getTraderPositions(address),
@@ -352,7 +350,6 @@ export default function TraderDetailPage() {
           pnl_filter: pnlFilter,
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
-          position_type: 'closed',
           start_date,
           end_date,
         });
