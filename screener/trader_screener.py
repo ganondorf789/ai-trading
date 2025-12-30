@@ -14,9 +14,13 @@ import requests
 from loguru import logger
 import pandas as pd
 import numpy as np
+import pendulum
 
 from hyperliquid.info import Info
 from hyperliquid.utils import constants
+
+# 上海时区
+SHANGHAI_TZ = "Asia/Shanghai"
 
 
 class QualityRating(Enum):
@@ -55,6 +59,7 @@ class TraderMetrics:
     max_drawdown: float = 0.0  # 最大回撤
     sharpe_ratio: float = 0.0  # 夏普比率
     sortino_ratio: float = 0.0  # 索提诺比率
+    calmar_ratio: float = 0.0  # 卡玛比率
     
     # 交易特征
     avg_holding_time_hours: float = 0.0  # 平均持仓时间
@@ -95,6 +100,17 @@ class TraderMetrics:
     recent_7d_win_rate: float = 0.0  # 最近7天胜率
     long_short_ratio: float = 0.0  # 多空比例（多单占比）
 
+    # 时间段统计
+    daily_pnl: float = 0.0  # 日均PnL
+    weekly_pnl: float = 0.0  # 周均PnL
+    monthly_pnl: float = 0.0  # 月均PnL
+    daily_roi: float = 0.0  # 日均ROI
+    weekly_roi: float = 0.0  # 周均ROI
+    monthly_roi: float = 0.0  # 月均ROI
+    daily_volume: float = 0.0  # 日均交易量
+    weekly_volume: float = 0.0  # 周均交易量
+    monthly_volume: float = 0.0  # 月均交易量
+
     # 原始交易记录（可选，用于保存到数据库）
     fills: List[Dict] = field(default_factory=list)
 
@@ -106,9 +122,9 @@ class TraderMetrics:
         result = asdict(self)
         result['rating'] = self.rating.value
         if self.last_trade_time:
-            result['last_trade_time'] = self.last_trade_time.isoformat()
+            result['last_trade_time'] = self.last_trade_time.to_iso8601_string()
         if self.first_trade_time:
-            result['first_trade_time'] = self.first_trade_time.isoformat()
+            result['first_trade_time'] = self.first_trade_time.to_iso8601_string()
         # 默认不包含 fills（数据量可能很大）
         if not include_fills:
             result.pop('fills', None)
@@ -234,7 +250,7 @@ class TraderScreener:
         """按时间范围获取用户成交记录"""
         try:
             start_ms = int(start_time.timestamp() * 1000)
-            end_ms = int((end_time or datetime.now()).timestamp() * 1000)
+            end_ms = int((end_time or pendulum.now(SHANGHAI_TZ)).timestamp() * 1000)
 
             fills = self._api_call_with_retry(
                 self.info.user_fills_by_time, address, start_ms, end_ms
@@ -274,20 +290,27 @@ class TraderScreener:
         # 按时间排序
         fills_sorted = sorted(fills, key=lambda x: x.get('time', 0))
         
-        # 时间范围
+        # 时间范围（使用上海时区）
         if fills_sorted:
-            metrics.first_trade_time = datetime.fromtimestamp(
-                fills_sorted[0].get('time', 0) / 1000
+            metrics.first_trade_time = pendulum.from_timestamp(
+                fills_sorted[0].get('time', 0) / 1000,
+                tz=SHANGHAI_TZ
             )
-            metrics.last_trade_time = datetime.fromtimestamp(
-                fills_sorted[-1].get('time', 0) / 1000
+            metrics.last_trade_time = pendulum.from_timestamp(
+                fills_sorted[-1].get('time', 0) / 1000,
+                tz=SHANGHAI_TZ
             )
         
         # 盈亏计算
         total_profit = 0.0
         total_loss = 0.0
         pnl_list = []
-        daily_pnl: Dict[str, float] = {}
+        daily_pnl_dict: Dict[str, float] = {}
+        weekly_pnl_dict: Dict[str, float] = {}
+        monthly_pnl_dict: Dict[str, float] = {}
+        daily_volume_dict: Dict[str, float] = {}
+        weekly_volume_dict: Dict[str, float] = {}
+        monthly_volume_dict: Dict[str, float] = {}
 
         # 新增统计变量
         total_price = 0.0
@@ -297,7 +320,7 @@ class TraderScreener:
         short_count = 0
         win_amounts = []
         loss_amounts = []
-        recent_7d_start = datetime.now() - timedelta(days=7)
+        recent_7d_start = pendulum.now(SHANGHAI_TZ).subtract(days=7)
         recent_7d_pnl = 0.0
         recent_7d_wins = 0
         recent_7d_trades = 0
@@ -336,10 +359,19 @@ class TraderScreener:
                 total_loss += abs(pnl)
                 loss_amounts.append(abs(pnl))
 
-            # 按天统计
-            trade_time = datetime.fromtimestamp(fill.get('time', 0) / 1000)
-            day_key = trade_time.strftime('%Y-%m-%d')
-            daily_pnl[day_key] = daily_pnl.get(day_key, 0) + pnl
+            # 按天/周/月统计（使用上海时区）
+            trade_time = pendulum.from_timestamp(fill.get('time', 0) / 1000, tz=SHANGHAI_TZ)
+            day_key = trade_time.format('YYYY-MM-DD')
+            week_key = trade_time.format('YYYY-[W]WW')  # ISO周格式
+            month_key = trade_time.format('YYYY-MM')
+
+            daily_pnl_dict[day_key] = daily_pnl_dict.get(day_key, 0) + pnl
+            weekly_pnl_dict[week_key] = weekly_pnl_dict.get(week_key, 0) + pnl
+            monthly_pnl_dict[month_key] = monthly_pnl_dict.get(month_key, 0) + pnl
+
+            daily_volume_dict[day_key] = daily_volume_dict.get(day_key, 0) + volume
+            weekly_volume_dict[week_key] = weekly_volume_dict.get(week_key, 0) + volume
+            monthly_volume_dict[month_key] = monthly_volume_dict.get(month_key, 0) + volume
 
             # 新增：最近7天统计
             if trade_time >= recent_7d_start:
@@ -349,7 +381,18 @@ class TraderScreener:
                     recent_7d_wins += 1
         
         # 活跃天数
-        metrics.active_days = len(daily_pnl)
+        metrics.active_days = len(daily_pnl_dict)
+
+        # 计算日/周/月均值
+        if len(daily_pnl_dict) > 0:
+            metrics.daily_pnl = sum(daily_pnl_dict.values()) / len(daily_pnl_dict)
+            metrics.daily_volume = sum(daily_volume_dict.values()) / len(daily_volume_dict)
+        if len(weekly_pnl_dict) > 0:
+            metrics.weekly_pnl = sum(weekly_pnl_dict.values()) / len(weekly_pnl_dict)
+            metrics.weekly_volume = sum(weekly_volume_dict.values()) / len(weekly_volume_dict)
+        if len(monthly_pnl_dict) > 0:
+            metrics.monthly_pnl = sum(monthly_pnl_dict.values()) / len(monthly_pnl_dict)
+            metrics.monthly_volume = sum(monthly_volume_dict.values()) / len(monthly_volume_dict)
 
         # 新增指标计算
         if metrics.total_trades > 0:
@@ -437,7 +480,14 @@ class TraderScreener:
             negative_returns = pnl_array[pnl_array < 0]
             if len(negative_returns) > 0 and np.std(negative_returns) > 0:
                 metrics.sortino_ratio = np.mean(pnl_array) / np.std(negative_returns) * np.sqrt(252)
-        
+
+            # Calmar Ratio（年化收益率 / 最大回撤）
+            if metrics.max_drawdown > 0 and metrics.first_trade_time and metrics.last_trade_time:
+                days_active = (metrics.last_trade_time - metrics.first_trade_time).days + 1
+                if days_active > 0:
+                    annualized_return = (metrics.total_pnl / days_active) * 365
+                    metrics.calmar_ratio = annualized_return / (metrics.max_drawdown * 100)  # 转换为百分比
+
         # 从用户状态获取当前信息
         if user_state:
             margin = user_state.get('marginSummary', {})
@@ -459,10 +509,13 @@ class TraderScreener:
                 if leverage:
                     metrics.avg_leverage = max(metrics.avg_leverage, int(leverage))
             
-            # ROI 计算
+            # ROI 计算（总ROI和日/周/月ROI）
             if metrics.current_equity > 0:
                 metrics.roi = metrics.total_pnl / metrics.current_equity
-        
+                metrics.daily_roi = metrics.daily_pnl / metrics.current_equity if metrics.daily_pnl else 0
+                metrics.weekly_roi = metrics.weekly_pnl / metrics.current_equity if metrics.weekly_pnl else 0
+                metrics.monthly_roi = metrics.monthly_pnl / metrics.current_equity if metrics.monthly_pnl else 0
+
         return metrics
     
     def _calculate_scores(self, metrics: TraderMetrics) -> TraderMetrics:
@@ -532,7 +585,7 @@ class TraderScreener:
         
         # 最近交易时间
         if metrics.last_trade_time:
-            days_since_last = (datetime.now() - metrics.last_trade_time).days
+            days_since_last = (pendulum.now(SHANGHAI_TZ) - metrics.last_trade_time).days
             if days_since_last <= 1:
                 activity_score += 30
             elif days_since_last <= 7:
@@ -623,8 +676,8 @@ class TraderScreener:
             # API 调用间延迟
             time.sleep(self.config.api_call_delay)
 
-            # 获取成交记录
-            start_time = datetime.now() - timedelta(days=self.config.lookback_days)
+            # 获取成交记录（使用上海时区）
+            start_time = pendulum.now(SHANGHAI_TZ).subtract(days=self.config.lookback_days)
             fills = self._get_user_fills_by_time(address, start_time)
 
             if not fills:
@@ -798,9 +851,9 @@ class TraderScreener:
             filepath: 输出文件路径
         """
         filepath = filepath or self.config.output_file
-        
+
         output = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
             "config": {
                 "lookback_days": self.config.lookback_days,
                 "min_total_trades": self.config.min_total_trades,
@@ -831,7 +884,7 @@ class TraderScreener:
         print("\n" + "=" * 120)
         print("Hyperliquid 优质交易者筛选结果")
         print("=" * 120)
-        print(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"分析时间 (上海时区): {pendulum.now(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm:ss')}")
         print(f"筛选条件: 胜率≥{self.config.min_win_rate:.0%}, "
               f"盈亏比≥{self.config.min_profit_factor:.1f}, "
               f"交易次数≥{self.config.min_total_trades}")
@@ -866,7 +919,7 @@ class TraderScreener:
             print("\n详细指标:")
             print("-" * 120)
             for i, t in enumerate(traders, 1):
-                last_trade = t.last_trade_time.strftime('%m-%d %H:%M') if t.last_trade_time else "N/A"
+                last_trade = t.last_trade_time.format('MM-DD HH:mm') if t.last_trade_time else "N/A"
                 print(f"\n[{i}] {t.address}")
                 print(f"    基础: 胜率={t.win_rate:.1%}, 盈亏比={t.profit_factor:.2f}, "
                       f"总PnL=${t.total_pnl:,.2f}, 交易数={t.total_trades}")
@@ -885,7 +938,7 @@ class TraderScreener:
         print(f"\n建议跟单的交易者地址 (评级 A 及以上):")
         for trader in traders:
             if trader.rating in [QualityRating.S_TIER, QualityRating.A_TIER]:
-                last_trade = trader.last_trade_time.strftime('%m-%d') if trader.last_trade_time else "N/A"
+                last_trade = trader.last_trade_time.format('MM-DD') if trader.last_trade_time else "N/A"
                 print(f"  [{trader.rating.value}] {trader.address} "
                       f"(胜率:{trader.win_rate:.0%}, PnL:${trader.total_pnl:,.0f}, 最后:{last_trade})")
 

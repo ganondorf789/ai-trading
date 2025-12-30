@@ -7,10 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
+import pendulum
 
 from loguru import logger
 
-from .trader_screener import TraderMetrics, QualityRating
+from .trader_screener import TraderMetrics, QualityRating, SHANGHAI_TZ
 
 
 class TraderDatabase:
@@ -77,6 +78,7 @@ class TraderDatabase:
                     max_drawdown REAL DEFAULT 0.0,
                     sharpe_ratio REAL DEFAULT 0.0,
                     sortino_ratio REAL DEFAULT 0.0,
+                    calmar_ratio REAL DEFAULT 0.0,
 
                     -- 交易特征
                     avg_holding_time_hours REAL DEFAULT 0.0,
@@ -115,7 +117,18 @@ class TraderDatabase:
                     favorite_symbol TEXT DEFAULT '',
                     recent_7d_pnl REAL DEFAULT 0.0,
                     recent_7d_win_rate REAL DEFAULT 0.0,
-                    long_short_ratio REAL DEFAULT 0.0
+                    long_short_ratio REAL DEFAULT 0.0,
+
+                    -- 时间段统计
+                    daily_pnl REAL DEFAULT 0.0,
+                    weekly_pnl REAL DEFAULT 0.0,
+                    monthly_pnl REAL DEFAULT 0.0,
+                    daily_roi REAL DEFAULT 0.0,
+                    weekly_roi REAL DEFAULT 0.0,
+                    monthly_roi REAL DEFAULT 0.0,
+                    daily_volume REAL DEFAULT 0.0,
+                    weekly_volume REAL DEFAULT 0.0,
+                    monthly_volume REAL DEFAULT 0.0
                 )
             """)
 
@@ -409,6 +422,16 @@ class TraderDatabase:
             ("recent_7d_pnl", "REAL DEFAULT 0.0"),
             ("recent_7d_win_rate", "REAL DEFAULT 0.0"),
             ("long_short_ratio", "REAL DEFAULT 0.0"),
+            ("calmar_ratio", "REAL DEFAULT 0.0"),
+            ("daily_pnl", "REAL DEFAULT 0.0"),
+            ("weekly_pnl", "REAL DEFAULT 0.0"),
+            ("monthly_pnl", "REAL DEFAULT 0.0"),
+            ("daily_roi", "REAL DEFAULT 0.0"),
+            ("weekly_roi", "REAL DEFAULT 0.0"),
+            ("monthly_roi", "REAL DEFAULT 0.0"),
+            ("daily_volume", "REAL DEFAULT 0.0"),
+            ("weekly_volume", "REAL DEFAULT 0.0"),
+            ("monthly_volume", "REAL DEFAULT 0.0"),
         ]
 
         # 添加缺失的列
@@ -441,7 +464,7 @@ class TraderDatabase:
                     total_trades, winning_trades, losing_trades,
                     total_pnl, realized_pnl, unrealized_pnl, total_volume,
                     roi, avg_profit_per_trade,
-                    win_rate, profit_factor, max_drawdown, sharpe_ratio, sortino_ratio,
+                    win_rate, profit_factor, max_drawdown, sharpe_ratio, sortino_ratio, calmar_ratio,
                     avg_holding_time_hours, trade_frequency_per_day, avg_leverage,
                     active_days, last_trade_time, first_trade_time,
                     current_positions, current_equity,
@@ -451,8 +474,11 @@ class TraderDatabase:
                     max_consecutive_wins, max_consecutive_losses,
                     avg_win_amount, avg_loss_amount,
                     unique_symbols, favorite_symbol,
-                    recent_7d_pnl, recent_7d_win_rate, long_short_ratio
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    recent_7d_pnl, recent_7d_win_rate, long_short_ratio,
+                    daily_pnl, weekly_pnl, monthly_pnl,
+                    daily_roi, weekly_roi, monthly_roi,
+                    daily_volume, weekly_volume, monthly_volume
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(address) DO UPDATE SET
                     analyzed_at = excluded.analyzed_at,
                     total_trades = excluded.total_trades,
@@ -469,6 +495,7 @@ class TraderDatabase:
                     max_drawdown = excluded.max_drawdown,
                     sharpe_ratio = excluded.sharpe_ratio,
                     sortino_ratio = excluded.sortino_ratio,
+                    calmar_ratio = excluded.calmar_ratio,
                     avg_holding_time_hours = excluded.avg_holding_time_hours,
                     trade_frequency_per_day = excluded.trade_frequency_per_day,
                     avg_leverage = excluded.avg_leverage,
@@ -495,10 +522,19 @@ class TraderDatabase:
                     favorite_symbol = excluded.favorite_symbol,
                     recent_7d_pnl = excluded.recent_7d_pnl,
                     recent_7d_win_rate = excluded.recent_7d_win_rate,
-                    long_short_ratio = excluded.long_short_ratio
+                    long_short_ratio = excluded.long_short_ratio,
+                    daily_pnl = excluded.daily_pnl,
+                    weekly_pnl = excluded.weekly_pnl,
+                    monthly_pnl = excluded.monthly_pnl,
+                    daily_roi = excluded.daily_roi,
+                    weekly_roi = excluded.weekly_roi,
+                    monthly_roi = excluded.monthly_roi,
+                    daily_volume = excluded.daily_volume,
+                    weekly_volume = excluded.weekly_volume,
+                    monthly_volume = excluded.monthly_volume
             """, (
                 metrics.address,
-                datetime.now().isoformat(),
+                pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
                 metrics.total_trades,
                 metrics.winning_trades,
                 metrics.losing_trades,
@@ -513,6 +549,7 @@ class TraderDatabase:
                 metrics.max_drawdown,
                 metrics.sharpe_ratio,
                 metrics.sortino_ratio,
+                metrics.calmar_ratio,
                 metrics.avg_holding_time_hours,
                 metrics.trade_frequency_per_day,
                 metrics.avg_leverage,
@@ -539,7 +576,16 @@ class TraderDatabase:
                 metrics.favorite_symbol,
                 metrics.recent_7d_pnl,
                 metrics.recent_7d_win_rate,
-                metrics.long_short_ratio
+                metrics.long_short_ratio,
+                metrics.daily_pnl,
+                metrics.weekly_pnl,
+                metrics.monthly_pnl,
+                metrics.daily_roi,
+                metrics.weekly_roi,
+                metrics.monthly_roi,
+                metrics.daily_volume,
+                metrics.weekly_volume,
+                metrics.monthly_volume
             ))
 
             return cursor.lastrowid
@@ -582,7 +628,7 @@ class TraderDatabase:
             for fill in fills:
                 try:
                     time_ms = fill.get('time', 0)
-                    trade_time = datetime.fromtimestamp(time_ms / 1000).isoformat() if time_ms else None
+                    trade_time = pendulum.from_timestamp(time_ms / 1000, tz=SHANGHAI_TZ).to_iso8601_string() if time_ms else None
 
                     cursor.execute("""
                         INSERT INTO trader_fills (
@@ -1169,7 +1215,7 @@ class TraderDatabase:
                         int(pos.get('maxLeverage', 1)),
                         leverage.get('type'),
                         int(leverage.get('value', 1)),
-                        datetime.now().isoformat()
+                        pendulum.now(SHANGHAI_TZ).to_iso8601_string()
                     ))
                     saved_count += 1
                 except Exception as e:
@@ -1504,7 +1550,7 @@ class TraderDatabase:
                 blacklist,
                 data.get('check_interval', 10.0),
                 data.get('dry_run', True),
-                datetime.now().isoformat()
+                pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
             return cursor.lastrowid
@@ -1544,7 +1590,7 @@ class TraderDatabase:
                 UPDATE copy_trading_addresses
                 SET is_enabled = ?, updated_at = ?
                 WHERE address = ?
-            """, (is_enabled, datetime.now().isoformat(), address))
+            """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
             return cursor.rowcount > 0
 
     def batch_update_copy_trading_addresses(
@@ -1576,13 +1622,13 @@ class TraderDatabase:
                     UPDATE copy_trading_addresses
                     SET is_enabled = 1, updated_at = ?
                     WHERE address IN ({placeholders})
-                """, [datetime.now().isoformat()] + addresses)
+                """, [pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
             elif action == 'disable':
                 cursor.execute(f"""
                     UPDATE copy_trading_addresses
                     SET is_enabled = 0, updated_at = ?
                     WHERE address IN ({placeholders})
-                """, [datetime.now().isoformat()] + addresses)
+                """, [pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
             elif action == 'delete':
                 cursor.execute(f"""
                     DELETE FROM copy_trading_addresses
@@ -1593,7 +1639,7 @@ class TraderDatabase:
                     UPDATE copy_trading_addresses
                     SET group_id = ?, updated_at = ?
                     WHERE address IN ({placeholders})
-                """, [group_id, datetime.now().isoformat()] + addresses)
+                """, [group_id, pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
             else:
                 return 0
 
@@ -1636,7 +1682,7 @@ class TraderDatabase:
                         coin.get('maxLeverage', 1),
                         coin.get('onlyIsolated', False),
                         True,
-                        datetime.now().isoformat()
+                        pendulum.now(SHANGHAI_TZ).to_iso8601_string()
                     ))
                     saved_count += 1
                 except Exception as e:
@@ -1791,7 +1837,7 @@ class TraderDatabase:
                 order.get('error_message'),
                 order.get('pnl', 0),
                 order.get('is_dry_run', True),
-                order.get('created_at', datetime.now().isoformat()),
+                order.get('created_at', pendulum.now(SHANGHAI_TZ).to_iso8601_string()),
                 order.get('executed_at')
             ))
             return cursor.lastrowid
