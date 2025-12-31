@@ -141,6 +141,31 @@ class TargetSubscriptionManager:
     def subscribed_count(self) -> int:
         return len(self._subscribed_addresses)
 
+    def close(self):
+        """关闭 WebSocket 连接"""
+        if self.ws_info is not None:
+            try:
+                # 清理订阅
+                self._subscribed_addresses.clear()
+                with self._lock:
+                    self._pending_fills.clear()
+                # 关闭 WebSocket
+                if hasattr(self.ws_info, 'ws') and self.ws_info.ws is not None:
+                    try:
+                        self.ws_info.ws.close()
+                    except Exception:
+                        pass
+                # 尝试关闭 WebSocket 管理器
+                if hasattr(self.ws_info, 'ws_manager') and self.ws_info.ws_manager is not None:
+                    try:
+                        self.ws_info.ws_manager.close()
+                    except Exception:
+                        pass
+                self.ws_info = None
+                logger.info("WebSocket 连接已关闭")
+            except Exception as e:
+                logger.warning(f"关闭 WebSocket 时出错: {e}")
+
 
 @dataclass
 class TargetTraderState:
@@ -1068,6 +1093,13 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
         finally:
             self.is_running = False
             logger.info("WebSocket 多目标跟单机器人停止")
+
+    def stop(self):
+        """停止机器人并关闭 WebSocket 连接"""
+        super().stop()
+        # 关闭 WebSocket 连接
+        if hasattr(self, 'subscription_manager'):
+            self.subscription_manager.close()
 
     def get_status(self) -> Dict[str, Any]:
         """获取机器人状态"""

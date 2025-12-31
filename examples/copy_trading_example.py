@@ -148,42 +148,46 @@ async def run():
     try:
         await bot.run()
     except KeyboardInterrupt:
-        logger.info("\n收到停止信号")
+        pass
+    finally:
+        logger.info("\n正在停止...")
         bot.stop()
 
-    # 显示统计
-    status = bot.get_status()
-    logger.info("\n运行统计:")
-    logger.info(f"  跟单目标数: {status['target_count']}")
-    logger.info(f"  WebSocket 订阅数: {status.get('websocket', {}).get('subscribed_count', 0)}")
-    logger.info(f"  总复制次数: {status['total_stats']['total_copies_today']}")
-    logger.info(f"  成功: {status['total_stats']['successful_copies']}")
-    logger.info(f"  失败: {status['total_stats']['failed_copies']}")
-    logger.info(f"  总PnL: ${status['total_stats']['daily_pnl']:.2f}")
+        # 显示统计
+        status = bot.get_status()
+        logger.info("\n运行统计:")
+        logger.info(f"  跟单目标数: {status['target_count']}")
+        logger.info(f"  WebSocket 订阅数: {status.get('websocket', {}).get('subscribed_count', 0)}")
+        logger.info(f"  总复制次数: {status['total_stats']['total_copies_today']}")
+        logger.info(f"  成功: {status['total_stats']['successful_copies']}")
+        logger.info(f"  失败: {status['total_stats']['failed_copies']}")
+        logger.info(f"  总PnL: ${status['total_stats']['daily_pnl']:.2f}")
 
-    # 发送状态摘要到飞书
-    if notifier:
-        try:
-            notifier.notify_status(
-                target_count=status['target_count'],
-                total_copies=status['total_stats']['total_copies_today'],
-                successful=status['total_stats']['successful_copies'],
-                failed=status['total_stats']['failed_copies'],
-                daily_pnl=status['total_stats']['daily_pnl']
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
-    if status['targets']:
-        logger.info("\n各目标统计:")
-        for target in status['targets']:
-            logger.info(
-                f"  {target['address'][:10]}... | "
-                f"复制: {target['copies_today']} | "
-                f"成功: {target['successful']} | "
-                f"PnL: ${target['daily_pnl']:.2f}"
-            )
+        if status['targets']:
+            logger.info("\n各目标统计:")
+            for target in status['targets']:
+                logger.info(
+                    f"  {target['address'][:10]}... | "
+                    f"复制: {target['copies_today']} | "
+                    f"成功: {target['successful']} | "
+                    f"PnL: ${target['daily_pnl']:.2f}"
+                )
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    import signal
+    import sys
+
+    # Windows 上需要特殊处理
+    if sys.platform == "win32":
+        # 设置事件循环策略
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.info("程序已退出")
+    finally:
+        # 强制退出，避免后台线程阻塞
+        import os
+        os._exit(0)
