@@ -40,7 +40,7 @@ class CopyTradingConfig:
     # 延迟设置
     check_interval: float = 5.0  # 检查间隔（秒）
     order_delay: float = 0.5  # 下单延迟（秒）
-    init_observation_period: float = 30.0  # 初始化后观察期（秒），期间不跟单新仓位
+    init_observation_period: float = 10.0  # 初始化后观察期（秒），期间不跟单新仓位
 
     # 风控
     max_total_positions: int = 10  # 最大持仓数
@@ -528,7 +528,6 @@ class MultiTargetCopyTradingBot:
                 # 减仓：反向的市价单（部分平仓）
                 result = self.client.market_order(
                     symbol, not is_long, adjustment_size,
-                    reduce_only=True,
                     slippage=config.slippage
                 )
 
