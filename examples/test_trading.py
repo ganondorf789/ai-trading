@@ -41,6 +41,7 @@ def run_test():
     # 初始化客户端
     client = HyperliquidClient(
         private_key=settings.hyperliquid.private_key,
+        wallet_address=settings.hyperliquid.wallet_address,
         testnet=settings.system.testnet_mode
     )
 
@@ -49,7 +50,7 @@ def run_test():
 
     # 测试参数
     symbol = "AAVE"
-    wait_seconds = 30  # 等待 30 秒后平仓
+    wait_seconds = 5  # 等待 30 秒后平仓
 
     try:
         # 1. 获取当前价格
@@ -69,11 +70,25 @@ def run_test():
         # 3. 查看当前持仓
         logger.info("\n[3] 查看当前持仓...")
         positions = client.get_positions()
+        logger.info(f"总共 {len(positions)} 个持仓")
+
+        aave_position = None
         for pos in positions:
+            logger.info(f"  {pos.symbol}: {pos.size} @ ${pos.entry_price:.2f} | "
+                       f"{pos.side.value} | {pos.leverage}x | PnL: ${pos.unrealized_pnl:.2f}")
             if pos.symbol == symbol:
-                logger.info(f"  {pos.symbol}: {pos.size} @ ${pos.entry_price:.2f}")
-                logger.info(f"  方向: {pos.side.value}, 杠杆: {pos.leverage}x")
-                logger.info(f"  未实现盈亏: ${pos.unrealized_pnl:.2f}")
+                aave_position = pos
+
+        if not aave_position:
+            logger.warning(f"未找到 {symbol} 持仓")
+        else:
+            logger.info(f"\n{symbol} 持仓详情:")
+            logger.info(f"  方向: {aave_position.side.value}")
+            logger.info(f"  数量: {aave_position.size}")
+            logger.info(f"  开仓价: ${aave_position.entry_price:.2f}")
+            logger.info(f"  当前价: ${aave_position.current_price:.2f}")
+            logger.info(f"  杠杆: {aave_position.leverage}x")
+            logger.info(f"  未实现盈亏: ${aave_position.unrealized_pnl:.2f}")
 
         # 4. 等待 30 秒
         logger.info(f"\n[4] 等待 {wait_seconds} 秒后平仓...")

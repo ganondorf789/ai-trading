@@ -33,36 +33,38 @@ class HyperliquidClient:
     def __init__(
         self,
         private_key: Optional[str] = None,
+        wallet_address: Optional[str] = None,
         api_url: str = constants.MAINNET_API_URL,
         testnet: bool = False
     ):
         """
         初始化 Hyperliquid 客户端
-        
+
         Args:
             private_key: 以太坊钱包私钥（交易需要）
+            wallet_address: 钱包地址（用于查询，可选）
             api_url: API URL
             testnet: 是否使用测试网
         """
         self.testnet = testnet
         self.api_url = constants.TESTNET_API_URL if testnet else api_url
-        
+
         # 初始化 Info 客户端（只读）
         self.info = Info(self.api_url, skip_ws=True)
         self.info_ws = None  # WebSocket 订阅用
-        
+
         # 初始化 Exchange 客户端（交易用）
         self.exchange: Optional[Exchange] = None
         self.wallet: Optional[eth_account.Account] = None
-        self.wallet_address: Optional[str] = None
-        
+        self.wallet_address: Optional[str] = wallet_address
+
         if private_key:
             self._init_trading(private_key)
-        
+
         # 缓存
         self._meta_cache: Optional[Dict] = None
         self._asset_map: Dict[str, int] = {}
-        
+
         # 回调函数
         self._callbacks: Dict[str, List[Callable]] = {}
     
@@ -70,7 +72,9 @@ class HyperliquidClient:
         """初始化交易功能"""
         try:
             self.wallet = eth_account.Account.from_key(private_key)
-            self.wallet_address = self.wallet.address
+            # 如果没有预先配置钱包地址，则从私钥派生
+            if not self.wallet_address:
+                self.wallet_address = self.wallet.address
             self.exchange = Exchange(self.wallet, self.api_url)
             logger.info(f"交易功能已初始化，钱包地址: {self.wallet_address}")
         except Exception as e:

@@ -150,6 +150,7 @@ async def run_live(args):
     # 创建客户端
     client = HyperliquidClient(
         private_key=settings.hyperliquid.private_key if not args.dry_run else None,
+        wallet_address=settings.hyperliquid.wallet_address,
         testnet=settings.system.testnet_mode
     )
 
@@ -269,6 +270,7 @@ def show_account(args):
     
     client = HyperliquidClient(
         private_key=settings.hyperliquid.private_key,
+        wallet_address=settings.hyperliquid.wallet_address,
         testnet=settings.system.testnet_mode
     )
     
