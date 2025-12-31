@@ -125,6 +125,7 @@ async def run():
 
     client = HyperliquidClient(
         private_key=settings.hyperliquid.private_key,
+        wallet_address=settings.hyperliquid.wallet_address,
         testnet=settings.system.testnet_mode
     )
 
@@ -134,7 +135,6 @@ async def run():
         db_path="data/traders.db",
         check_interval=2.0,  # WebSocket 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
-        sync_interval=30.0  # 全量同步间隔（秒）
     )
 
     # 设置回调
