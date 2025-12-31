@@ -241,6 +241,87 @@ def get_traders():
         }), 500
 
 
+@app.route('/api/traders', methods=['POST'])
+def add_trader():
+    """
+    新增交易者（分析并保存到数据库）
+    Body:
+        - address: str, 交易者地址
+        - lookback_days: int, 分析回溯天数，默认0（全部）
+        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """
+    try:
+        data = request.get_json()
+        if not data or not data.get('address'):
+            return jsonify({
+                'success': False,
+                'error': '地址不能为空'
+            }), 400
+
+        address = data['address'].strip()
+        lookback_days = int(data.get('lookback_days', 0))
+        max_fills = int(data.get('max_fills', 0))
+
+        # 验证地址格式
+        if not address.startswith('0x') or len(address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        # 检查是否已存在
+        existing = db.get_trader_by_address(address)
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': '该交易者已存在，请使用刷新功能更新数据'
+            }), 409
+
+        logger.info(f"开始分析新交易者: {address}")
+
+        # 初始化筛选器
+        config = ScreenerConfig(
+            lookback_days=lookback_days,
+            max_fills_per_trader=max_fills,
+            api_call_delay=0.5,
+            max_retries=3,
+        )
+        screener = TraderScreener(config)
+
+        # 分析交易者
+        metrics = screener.analyze_trader(address)
+
+        if not metrics or metrics.total_trades == 0:
+            return jsonify({
+                'success': False,
+                'error': '无法获取交易者数据或该交易者无交易记录'
+            }), 404
+
+        # 保存到数据库
+        _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
+
+        # 保存持仓数据
+        positions_saved = db.save_positions(address, metrics.asset_positions)
+
+        logger.info(f"新交易者添加成功: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}")
+
+        # 返回新增的数据
+        trader = db.get_trader_by_address(address)
+
+        return jsonify({
+            'success': True,
+            'data': trader,
+            'message': f'添加成功，保存了 {fills_saved} 条交易记录，{positions_saved} 个持仓'
+        })
+
+    except Exception as e:
+        logger.error(f"添加交易者失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/traders/<address>', methods=['GET'])
 def get_trader_detail(address: str):
     """

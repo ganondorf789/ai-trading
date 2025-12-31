@@ -236,6 +236,16 @@ export interface CopyTradingAddress {
 
 // API 方法
 export const traderApi = {
+  // 新增交易者
+  addTrader: (data: {
+    address: string;
+    lookback_days?: number;
+    max_fills?: number;
+  }) =>
+    api.post<any, ApiResponse<Trader> & { message?: string }>('/traders', data, {
+      timeout: 120000, // 分析可能需要较长时间
+    }),
+
   // 获取交易者列表（支持分页、排序和高级筛选）
   getTraders: (params?: {
     page?: number;

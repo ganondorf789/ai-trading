@@ -11,6 +11,7 @@ import {
 } from '@heroui/table';
 import { Spinner } from '@heroui/spinner';
 import { Card, CardHeader, CardBody } from '@heroui/card';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from '@heroui/modal';
 import { Input } from '@heroui/input';
 import { Button } from '@heroui/button';
 import { Pagination } from '@heroui/pagination';
@@ -114,6 +115,12 @@ export default function TradersPage() {
   const rowsPerPage = 20;
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+
+  // 新增 Modal 状态
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [newAddress, setNewAddress] = useState('');
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // 筛选状态
   const [filters, setFilters] = useState<FilterConfig>({});
@@ -234,6 +241,39 @@ export default function TradersPage() {
     setSortDescriptor({ column: 'overall_score', direction: 'descending' });
     setPage(1);
   }, []);
+
+  // 新增交易者
+  const handleAddTrader = useCallback(async () => {
+    if (!newAddress.trim()) {
+      setAddError('请输入地址');
+      return;
+    }
+
+    // 验证地址格式
+    const address = newAddress.trim();
+    if (!address.startsWith('0x') || address.length !== 42) {
+      setAddError('无效的以太坊地址格式');
+      return;
+    }
+
+    try {
+      setAddLoading(true);
+      setAddError(null);
+
+      const response = await traderApi.addTrader({ address });
+      if (response.success) {
+        onClose();
+        setNewAddress('');
+        loadTraders(); // 刷新列表
+      } else {
+        setAddError(response.error || '添加失败');
+      }
+    } catch (err: any) {
+      setAddError(err.message || '添加失败');
+    } finally {
+      setAddLoading(false);
+    }
+  }, [newAddress, onClose, loadTraders]);
 
   // 格式化日期
   const formatDate = (dateStr: string | null | undefined) => {
@@ -643,7 +683,7 @@ export default function TradersPage() {
             </div>
           </div>
 
-          {/* 第三行：搜索和重置按钮 */}
+          {/* 第三行：搜索、重置、新增按钮 */}
           <div className="flex gap-2">
             <Button
               color="primary"
@@ -661,11 +701,19 @@ export default function TradersPage() {
             >
               重置
             </Button>
+            <Button
+              color="success"
+              size="sm"
+              startContent={<Icon icon="solar:add-circle-linear" width={16} />}
+              onPress={onOpen}
+            >
+              新增
+            </Button>
           </div>
         </Form>
       </div>
     );
-  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, filters, onSearchChange, handleReset, loadTraders]);
+  }, [searchAddress, selectedRating, sortDescriptor, visibleColumns, filters, onSearchChange, handleReset, loadTraders, onOpen]);
 
   // 页码跳转
   const [jumpPage, setJumpPage] = useState('');
@@ -770,6 +818,39 @@ export default function TradersPage() {
           </Card>
         </div>
       </section>
+
+      {/* 新增交易者 Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} placement="center">
+        <ModalContent>
+          <ModalHeader>新增交易者</ModalHeader>
+          <ModalBody>
+            <Input
+              label="交易者地址"
+              placeholder="0x..."
+              value={newAddress}
+              onValueChange={(v) => {
+                setNewAddress(v);
+                setAddError(null);
+              }}
+              isInvalid={!!addError}
+              errorMessage={addError}
+              description="输入 Hyperliquid 交易者的以太坊地址"
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onClose}>
+              取消
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleAddTrader}
+              isLoading={addLoading}
+            >
+              确认添加
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </DefaultLayout>
   );
 }
