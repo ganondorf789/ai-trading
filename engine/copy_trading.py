@@ -852,7 +852,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
     - 实时接收目标交易者的成交通知
     - 自动管理多个目标的 WebSocket 订阅
     - 配置热重载时自动更新订阅
-    - 定期全量同步作为兜底
+    - 每次循环全量同步确保状态一致
     """
 
     def __init__(
@@ -860,8 +860,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
         client: HyperliquidClient,
         db_path: str = "data/traders.db",
         check_interval: float = 2.0,  # WebSocket 模式下可以更快检查
-        reload_interval: float = 60.0,
-        sync_interval: float = 30.0  # 全量同步间隔
+        reload_interval: float = 60.0
     ):
         super().__init__(
             client=client,
@@ -869,8 +868,6 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
             check_interval=check_interval,
             reload_interval=reload_interval
         )
-        self.sync_interval = sync_interval
-        self.last_full_sync: Optional[pendulum.DateTime] = None
 
         # WebSocket 订阅管理器
         from hyperliquid.utils import constants
@@ -1045,8 +1042,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
 
         logger.info("=" * 60)
         logger.info("WebSocket 多目标跟单机器人启动")
-        logger.info(f"WebSocket 检查间隔: {self.check_interval}秒")
-        logger.info(f"全量同步间隔: {self.sync_interval}秒")
+        logger.info(f"检查/同步间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
         logger.info("=" * 60)
 
@@ -1057,11 +1053,6 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
             logger.warning("没有启用的跟单目标，请先在跟单管理中添加并启用地址")
 
         try:
-            # 初始全量同步
-            if self.targets:
-                await self._sync_all_targets()
-            self.last_full_sync = pendulum.now()
-
             while self.is_running:
                 # 检查是否需要重载配置
                 if (self.last_config_reload is None or
@@ -1071,14 +1062,9 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
                 # 处理 WebSocket 收到的成交（低延迟）
                 await self._process_all_ws_fills()
 
-                # 定期全量同步（兜底）
-                if self.targets and (
-                    self.last_full_sync is None or
-                    (pendulum.now() - self.last_full_sync).total_seconds() >= self.sync_interval
-                ):
-                    logger.debug("执行全量同步...")
+                # 全量同步
+                if self.targets:
                     await self._sync_all_targets()
-                    self.last_full_sync = pendulum.now()
 
                 await asyncio.sleep(self.check_interval)
 
@@ -1105,12 +1091,7 @@ class MultiTargetCopyTradingBotWithWebSocket(MultiTargetCopyTradingBot):
         """获取机器人状态"""
         status = super().get_status()
         status['websocket'] = {
-            'subscribed_count': self.subscription_manager.subscribed_count,
-            'last_full_sync': (
-                self.last_full_sync.isoformat()
-                if self.last_full_sync else None
-            ),
-            'sync_interval': self.sync_interval
+            'subscribed_count': self.subscription_manager.subscribed_count
         }
         return status
 
