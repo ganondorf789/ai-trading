@@ -12,21 +12,21 @@ import pendulum
 from loguru import logger
 
 from .trader_screener import TraderMetrics, QualityRating, SHANGHAI_TZ
-from config.settings import settings
 
 
 class TraderDatabase:
     """交易者数据库管理器"""
+
+    DEFAULT_DB_PATH = "data/traders.db"
 
     def __init__(self, db_path: str = None):
         """
         初始化数据库
 
         Args:
-            db_path: 数据库文件路径（可选，默认使用配置中的路径）
+            db_path: 数据库文件路径
         """
-        # 优先使用传入的路径，否则使用配置系统中的路径（自动转换为绝对路径）
-        self.db_path = db_path or settings.database_path
+        self.db_path = db_path or self.DEFAULT_DB_PATH
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
         logger.info(f"数据库初始化完成: {self.db_path}")

@@ -3,13 +3,9 @@
 使用 pydantic-settings 管理环境变量和配置
 """
 import os
-from pathlib import Path
 from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# 项目根目录（配置文件所在目录的父目录）
-PROJECT_ROOT = Path(__file__).parent.parent
 
 
 class HyperliquidSettings(BaseSettings):
@@ -151,21 +147,20 @@ class RiskSettings(BaseSettings):
 class SystemSettings(BaseSettings):
     """系统配置"""
     model_config = SettingsConfigDict(env_prefix='')
-
+    
     log_level: str = Field(default="INFO", description="日志级别")
     testnet_mode: bool = Field(default=False, description="测试网模式")
     data_dir: str = Field(default="./data", description="数据存储目录")
     log_dir: str = Field(default="./logs", description="日志目录")
-    database_path: str = Field(default="./data/traders.db", description="交易者数据库路径")
 
 
 class Settings:
     """统一配置管理"""
-
+    
     def __init__(self, env_file: str = ".env"):
         """
         初始化配置
-
+        
         Args:
             env_file: 环境变量文件路径
         """
@@ -173,7 +168,7 @@ class Settings:
         if os.path.exists(env_file):
             from dotenv import load_dotenv
             load_dotenv(env_file)
-
+        
         # 初始化各配置模块
         self.hyperliquid = HyperliquidSettings()
         self.birdeye = BirdeyeSettings()
@@ -182,21 +177,13 @@ class Settings:
         self.trading = TradingSettings()
         self.risk = RiskSettings()
         self.system = SystemSettings()
-
+    
     @property
     def hyperliquid_api_url(self) -> str:
         """获取 Hyperliquid API URL（根据是否测试网）"""
         if self.system.testnet_mode:
             return self.hyperliquid.testnet_api_url
         return self.hyperliquid.api_url
-
-    @property
-    def database_path(self) -> str:
-        """获取数据库绝对路径"""
-        db_path = Path(self.system.database_path)
-        if db_path.is_absolute():
-            return str(db_path)
-        return str(PROJECT_ROOT / db_path)
     
     def validate(self) -> bool:
         """验证配置是否有效"""
