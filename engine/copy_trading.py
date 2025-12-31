@@ -224,6 +224,7 @@ class MultiTargetCopyTradingBot:
         # 回调
         self._on_copy: Optional[Callable[[str, str, str, float], None]] = None
         self._on_close: Optional[Callable[[str, str, float], None]] = None
+        self._on_adjust: Optional[Callable[[str, str, str, float, bool], None]] = None  # (target_address, symbol, side, size, is_increase)
         self._on_error: Optional[Callable[[Exception], None]] = None
 
         # 延迟加载数据库（避免循环导入）
@@ -244,6 +245,10 @@ class MultiTargetCopyTradingBot:
     def set_on_close(self, callback: Callable[[str, str, float], None]):
         """设置平仓回调 (target_address, symbol, pnl)"""
         self._on_close = callback
+
+    def set_on_adjust(self, callback: Callable[[str, str, str, float, bool], None]):
+        """设置调整仓位回调 (target_address, symbol, side, size, is_increase)"""
+        self._on_adjust = callback
 
     def set_on_error(self, callback: Callable[[Exception], None]):
         """设置错误回调"""
@@ -537,6 +542,10 @@ class MultiTargetCopyTradingBot:
             if success:
                 logger.info(f"[{target_state.address[:8]}] {action_type}成功: {symbol} {adjustment_size}")
                 order_data['status'] = 'success'
+                # 调用调整仓位回调
+                if self._on_adjust:
+                    side = 'long' if is_long else 'short'
+                    self._on_adjust(target_state.address, symbol, side, adjustment_size, is_increase)
             else:
                 logger.error(f"[{target_state.address[:8]}] {action_type}失败: {result}")
                 order_data['status'] = 'failed'

@@ -365,6 +365,58 @@ class CopyTradingNotifier:
 
             return self.feishu.send(msg)
 
+    def notify_copy_adjust(
+        self,
+        target_address: str,
+        symbol: str,
+        side: str,
+        size: float,
+        is_increase: bool,
+        price: float = None
+    ) -> bool:
+        """
+        通知调整仓位（加仓/减仓）
+
+        Args:
+            target_address: 目标交易者地址
+            symbol: 交易对
+            side: 方向 (long/short)
+            size: 调整数量
+            is_increase: 是否加仓
+            price: 价格
+        """
+        action = "加仓" if is_increase else "减仓"
+        action_emoji = "📈" if is_increase else "📉"
+        side_emoji = "🟢" if side.lower() == "long" else "🔴"
+        side_cn = "做多" if side.lower() == "long" else "做空"
+
+        if self.feishu.webhook_url:
+            content = f"""**目标**: `{target_address[:10]}...`
+**交易对**: {symbol}
+**操作**: {action_emoji} {action}
+**方向**: {side_emoji} {side_cn}
+**数量**: {size}"""
+
+            if price:
+                content += f"\n**价格**: ${price:,.2f}"
+
+            return self.feishu.send_card(
+                title=f"{action} - {symbol}",
+                content=content,
+                color="blue"
+            )
+        else:
+            msg = f"{action_emoji} {action}\n"
+            msg += f"目标: {target_address[:10]}...\n"
+            msg += f"交易对: {symbol}\n"
+            msg += f"方向: {side_cn}\n"
+            msg += f"数量: {size}"
+
+            if price:
+                msg += f"\n价格: ${price:,.2f}"
+
+            return self.feishu.send(msg)
+
     def notify_error(self, error: str, context: str = None) -> bool:
         """
         通知错误

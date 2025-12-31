@@ -105,6 +105,25 @@ def on_error_callback(error: Exception):
             logger.warning(f"飞书通知失败: {e}")
 
 
+def on_adjust_callback(target: str, symbol: str, side: str, size: float, is_increase: bool):
+    """调整仓位回调（加仓/减仓）"""
+    action = "加仓" if is_increase else "减仓"
+    logger.info(f"[{target[:8]}] {action}: {symbol} {side.upper()} {size}")
+
+    # 发送飞书通知
+    if notifier:
+        try:
+            notifier.notify_copy_adjust(
+                target_address=target,
+                symbol=symbol,
+                side=side,
+                size=size,
+                is_increase=is_increase
+            )
+        except Exception as e:
+            logger.warning(f"飞书通知失败: {e}")
+
+
 async def run():
     """运行多目标跟单机器人"""
     global notifier
@@ -140,6 +159,7 @@ async def run():
     # 设置回调
     bot.set_on_copy(on_copy_callback)
     bot.set_on_close(on_close_callback)
+    bot.set_on_adjust(on_adjust_callback)
     bot.set_on_error(on_error_callback)
 
     logger.info("启动跟单机器人...")
