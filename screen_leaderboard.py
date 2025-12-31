@@ -34,33 +34,33 @@ def screen_leaderboard_traders(
         max_fills: 每个交易者最大获取的交易记录数 (0=不限制)
         resume_from: 从第N个地址开始（用于断点续传）
     """
-    print("=" * 70)
-    print("Hyperliquid 排行榜交易者批量分析")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info("Hyperliquid 排行榜交易者批量分析")
+    logger.info("=" * 70)
 
     # 1. 获取排行榜数据（按 month PnL 排序）
-    print(f"\n[1/3] 正在获取排行榜前 {limit} 名交易者...")
+    logger.info(f"\n[1/3] 正在获取排行榜前 {limit} 名交易者...")
     leaderboard_rows = fetch_leaderboard(save_to_file=False, sort_by_pnl=True)
 
     if not leaderboard_rows:
-        print("获取排行榜数据失败")
+        logger.error("获取排行榜数据失败")
         return
 
     # 提取地址（取前 limit 个）
     addresses = [row["ethAddress"] for row in leaderboard_rows[:limit]]
-    print(f"获取到 {len(addresses)} 个交易者地址")
+    logger.info(f"获取到 {len(addresses)} 个交易者地址")
 
     # 处理断点续传
     if resume_from > 0:
         addresses = addresses[resume_from:]
-        print(f"从第 {resume_from + 1} 个地址开始，剩余 {len(addresses)} 个")
+        logger.info(f"从第 {resume_from + 1} 个地址开始，剩余 {len(addresses)} 个")
 
     if not addresses:
-        print("没有需要分析的地址")
+        logger.warning("没有需要分析的地址")
         return
 
     # 2. 初始化筛选器和数据库
-    print(f"\n[2/3] 初始化分析器...")
+    logger.info(f"\n[2/3] 初始化分析器...")
     config = ScreenerConfig(
         lookback_days=lookback_days,
         max_fills_per_trader=max_fills,
@@ -71,8 +71,8 @@ def screen_leaderboard_traders(
     db = TraderDatabase()
 
     # 3. 逐个分析并保存
-    print(f"\n[3/3] 开始分析交易者...")
-    print("-" * 70)
+    logger.info(f"\n[3/3] 开始分析交易者...")
+    logger.info("-" * 70)
 
     saved_count = 0
     fills_count = 0
@@ -92,7 +92,7 @@ def screen_leaderboard_traders(
                 saved_count += 1
                 fills_count += fills_saved
 
-                print(
+                logger.info(
                     f"[{current_index}/{resume_from + total if resume_from else total}] "
                     f"✓ {address[:10]}... "
                     f"评分: {metrics.overall_score:.1f} "
@@ -103,37 +103,37 @@ def screen_leaderboard_traders(
                 )
             else:
                 failed_count += 1
-                print(
+                logger.warning(
                     f"[{current_index}/{resume_from + total if resume_from else total}] "
                     f"✗ {address[:10]}... 无交易数据"
                 )
 
         except KeyboardInterrupt:
-            print(f"\n\n用户中断，已保存 {saved_count} 个交易者")
-            print(f"断点续传命令: python screen_leaderboard.py --resume {current_index}")
+            logger.warning(f"\n\n用户中断，已保存 {saved_count} 个交易者")
+            logger.warning(f"断点续传命令: python screen_leaderboard.py --resume {current_index}")
             return
         except Exception as e:
             failed_count += 1
-            print(
+            logger.error(
                 f"[{current_index}/{resume_from + total if resume_from else total}] "
                 f"✗ {address[:10]}... 错误: {str(e)[:50]}"
             )
 
     # 打印统计
-    print("\n" + "=" * 70)
-    print("分析完成!")
-    print("=" * 70)
-    print(f"  成功保存: {saved_count} 个交易者")
-    print(f"  交易记录: {fills_count} 条")
-    print(f"  失败/跳过: {failed_count} 个")
-    print(f"  数据库: {db.db_path}")
+    logger.info("\n" + "=" * 70)
+    logger.info("分析完成!")
+    logger.info("=" * 70)
+    logger.info(f"  成功保存: {saved_count} 个交易者")
+    logger.info(f"  交易记录: {fills_count} 条")
+    logger.info(f"  失败/跳过: {failed_count} 个")
+    logger.info(f"  数据库: {db.db_path}")
 
     # 显示评级分布
     stats = db.get_statistics()
     if stats.get('rating_distribution'):
-        print(f"\n评级分布:")
+        logger.info(f"\n评级分布:")
         for rating, count in sorted(stats['rating_distribution'].items()):
-            print(f"  {rating}: {count} 个")
+            logger.info(f"  {rating}: {count} 个")
 
 
 def main():

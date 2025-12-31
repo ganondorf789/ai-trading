@@ -886,24 +886,24 @@ class TraderScreener:
             traders: 交易者列表
             detailed: 是否显示详细信息
         """
-        print("\n" + "=" * 120)
-        print("Hyperliquid 优质交易者筛选结果")
-        print("=" * 120)
-        print(f"分析时间 (上海时区): {pendulum.now(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm:ss')}")
-        print(f"筛选条件: 胜率≥{self.config.min_win_rate:.0%}, "
+        logger.info("\n" + "=" * 120)
+        logger.info("Hyperliquid 优质交易者筛选结果")
+        logger.info("=" * 120)
+        logger.info(f"分析时间 (上海时区): {pendulum.now(SHANGHAI_TZ).format('YYYY-MM-DD HH:mm:ss')}")
+        logger.info(f"筛选条件: 胜率≥{self.config.min_win_rate:.0%}, "
               f"盈亏比≥{self.config.min_profit_factor:.1f}, "
               f"交易次数≥{self.config.min_total_trades}")
-        print("-" * 120)
+        logger.info("-" * 120)
 
         if not traders:
-            print("未找到符合条件的交易者")
+            logger.warning("未找到符合条件的交易者")
             return
 
         # 主要指标表格
-        print(f"{'#':<3} {'等级':<3} {'地址':<14} {'评分':<6} {'胜率':<7} "
+        logger.info(f"{'#':<3} {'等级':<3} {'地址':<14} {'评分':<6} {'胜率':<7} "
               f"{'盈亏比':<7} {'总PnL':<11} {'交易数':<6} {'回撤':<6} "
               f"{'Sharpe':<7} {'活跃天':<6} {'杠杆':<5} {'持仓':<4}")
-        print("-" * 120)
+        logger.info("-" * 120)
 
         for i, t in enumerate(traders, 1):
             addr_short = f"{t.address[:6]}...{t.address[-4:]}"
@@ -911,43 +911,43 @@ class TraderScreener:
             pf_str = f"{t.profit_factor:.2f}" if t.profit_factor != float('inf') else "∞"
             sharpe_str = f"{t.sharpe_ratio:.2f}" if t.sharpe_ratio else "N/A"
 
-            print(f"{i:<3} {t.rating.value:<3} {addr_short:<14} "
+            logger.info(f"{i:<3} {t.rating.value:<3} {addr_short:<14} "
                   f"{t.overall_score:>5.1f} {t.win_rate:>6.1%} "
                   f"{pf_str:>6} {pnl_str:>10} {t.total_trades:>5} "
                   f"{t.max_drawdown:>5.1%} {sharpe_str:>6} "
                   f"{t.active_days:>5} {t.avg_leverage:>4.0f}x {t.current_positions:>3}")
 
-        print("=" * 120)
+        logger.info("=" * 120)
 
         # 详细信息（可选）
         if detailed:
-            print("\n详细指标:")
-            print("-" * 120)
+            logger.info("\n详细指标:")
+            logger.info("-" * 120)
             for i, t in enumerate(traders, 1):
                 last_trade = t.last_trade_time.format('MM-DD HH:mm') if t.last_trade_time else "N/A"
-                print(f"\n[{i}] {t.address}")
-                print(f"    基础: 胜率={t.win_rate:.1%}, 盈亏比={t.profit_factor:.2f}, "
+                logger.info(f"\n[{i}] {t.address}")
+                logger.info(f"    基础: 胜率={t.win_rate:.1%}, 盈亏比={t.profit_factor:.2f}, "
                       f"总PnL=${t.total_pnl:,.2f}, 交易数={t.total_trades}")
-                print(f"    风险: Sharpe={t.sharpe_ratio:.2f}, Sortino={t.sortino_ratio:.2f}, "
+                logger.info(f"    风险: Sharpe={t.sharpe_ratio:.2f}, Sortino={t.sortino_ratio:.2f}, "
                       f"回撤={t.max_drawdown:.1%}, 最大单亏=${t.max_single_loss:,.2f}")
-                print(f"    活跃: 活跃天={t.active_days}, 最后交易={last_trade}, "
+                logger.info(f"    活跃: 活跃天={t.active_days}, 最后交易={last_trade}, "
                       f"杠杆={t.avg_leverage:.0f}x, 持仓数={t.current_positions}")
-                print(f"    交易: 平均价格=${t.avg_trade_price:,.2f}, 平均规模=${t.avg_trade_size:,.2f}, "
+                logger.info(f"    交易: 平均价格=${t.avg_trade_price:,.2f}, 平均规模=${t.avg_trade_size:,.2f}, "
                       f"连赢={t.max_consecutive_wins}, 连亏={t.max_consecutive_losses}")
-                print(f"    偏好: 品种数={t.unique_symbols}, 最爱={t.favorite_symbol or 'N/A'}, "
+                logger.info(f"    偏好: 品种数={t.unique_symbols}, 最爱={t.favorite_symbol or 'N/A'}, "
                       f"多空比={t.long_short_ratio:.1%}")
-                print(f"    近7天: PnL=${t.recent_7d_pnl:,.2f}, 胜率={t.recent_7d_win_rate:.1%}")
-                print(f"    平均盈利=${t.avg_win_amount:,.2f}, 平均亏损=${t.avg_loss_amount:,.2f}")
+                logger.info(f"    近7天: PnL=${t.recent_7d_pnl:,.2f}, 胜率={t.recent_7d_win_rate:.1%}")
+                logger.info(f"    平均盈利=${t.avg_win_amount:,.2f}, 平均亏损=${t.avg_loss_amount:,.2f}")
 
         # 推荐列表
-        print(f"\n建议跟单的交易者地址 (评级 A 及以上):")
+        logger.info(f"\n建议跟单的交易者地址 (评级 A 及以上):")
         for trader in traders:
             if trader.rating in [QualityRating.S_TIER, QualityRating.A_TIER]:
                 last_trade = trader.last_trade_time.format('MM-DD') if trader.last_trade_time else "N/A"
-                print(f"  [{trader.rating.value}] {trader.address} "
+                logger.info(f"  [{trader.rating.value}] {trader.address} "
                       f"(胜率:{trader.win_rate:.0%}, PnL:${trader.total_pnl:,.0f}, 最后:{last_trade})")
 
-        print()
+        logger.info("")
     
     def get_sample_addresses(self) -> List[str]:
         """

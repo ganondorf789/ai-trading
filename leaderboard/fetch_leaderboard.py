@@ -6,6 +6,7 @@ import requests
 import json
 import os
 from typing import List, Dict, Any, Optional
+from loguru import logger
 
 # 获取当前脚本所在目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +27,7 @@ def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> Li
         data = response.json()
 
         leaderboard_rows = data.get("leaderboardRows", [])
-        print(f"获取到 {len(leaderboard_rows)} 个交易者")
+        logger.info(f"获取到 {len(leaderboard_rows)} 个交易者")
 
         # 按 month pnl 从大到小排序
         if sort_by_pnl:
@@ -35,26 +36,26 @@ def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> Li
                 month_data = performances.get("month", {})
                 row["_pnl"] = float(month_data.get("pnl", 0))
             leaderboard_rows.sort(key=lambda x: x.get("_pnl", 0), reverse=True)
-            print("已按 month PnL 从大到小排序")
+            logger.info("已按 month PnL 从大到小排序")
 
         if save_to_file:
             # 保存完整数据到 leaderboard 目录
             full_path = os.path.join(SCRIPT_DIR, "leaderboard_full.json")
             with open(full_path, "w", encoding="utf-8") as f:
                 json.dump(leaderboard_rows, f, indent=2, ensure_ascii=False)
-            print(f"完整数据已保存到 {full_path}")
+            logger.info(f"完整数据已保存到 {full_path}")
 
             # 只保存地址到 leaderboard 目录
             addresses = [row["ethAddress"] for row in leaderboard_rows]
             addr_path = os.path.join(SCRIPT_DIR, "leaderboard_addresses.txt")
             with open(addr_path, "w") as f:
                 f.write("\n".join(addresses))
-            print(f"地址已保存到 {addr_path}")
+            logger.info(f"地址已保存到 {addr_path}")
 
         return leaderboard_rows
 
     except requests.RequestException as e:
-        print(f"请求失败: {e}")
+        logger.error(f"请求失败: {e}")
         return []
 
 
@@ -104,9 +105,9 @@ def get_top_traders(
 
 def print_trader_summary(traders: List[Dict[str, Any]], window: str = "allTime"):
     """打印交易者摘要"""
-    print(f"\n{'='*80}")
-    print(f"{'排名':<6}{'地址':<44}{'账户价值':>15}{'PnL':>15}{'ROI':>10}")
-    print(f"{'='*80}")
+    logger.info(f"\n{'='*80}")
+    logger.info(f"{'排名':<6}{'地址':<44}{'账户价值':>15}{'PnL':>15}{'ROI':>10}")
+    logger.info(f"{'='*80}")
 
     for i, trader in enumerate(traders, 1):
         addr = trader["ethAddress"]
@@ -120,7 +121,7 @@ def print_trader_summary(traders: List[Dict[str, Any]], window: str = "allTime")
         pnl = trader.get("pnl", 0)
         roi = trader.get("roi", 0)
 
-        print(f"{i:<6}{addr:<44}${account_value:>14,.0f}${pnl:>14,.0f}{roi:>9.2%}")
+        logger.info(f"{i:<6}{addr:<44}${account_value:>14,.0f}${pnl:>14,.0f}{roi:>9.2%}")
 
 
 if __name__ == "__main__":
@@ -146,7 +147,7 @@ if __name__ == "__main__":
         # 只输出地址
         rows = fetch_leaderboard(save_to_file=False)
         for row in rows:
-            print(row["ethAddress"])
+            logger.info(row["ethAddress"])
     else:
         # 显示排行榜
         traders = get_top_traders(
@@ -157,6 +158,6 @@ if __name__ == "__main__":
         )
         print_trader_summary(traders, args.window)
 
-        print(f"\n共 {len(traders)} 个交易者")
-        print("\n提示: 使用 --save 保存完整数据到文件")
-        print("      使用 --addresses-only 只输出地址列表")
+        logger.info(f"\n共 {len(traders)} 个交易者")
+        logger.info("\n提示: 使用 --save 保存完整数据到文件")
+        logger.info("      使用 --addresses-only 只输出地址列表")
