@@ -101,6 +101,7 @@ export interface TraderFill {
   fee: number;
   oid?: number;
   tid?: number;
+  trade_type?: string;  // 交易类型：open_long, add_long, close_long, open_short, add_short, close_short
 }
 
 export interface FillsSummary {
@@ -276,9 +277,12 @@ export const traderApi = {
     limit?: number;
     coin?: string;
     pnl_filter?: 'all' | 'profit' | 'loss';
+    trade_type?: string;
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
     position_type?: 'all' | 'open' | 'closed';
+    start_date?: string;
+    end_date?: string;
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 

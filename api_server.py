@@ -427,6 +427,7 @@ def get_trader_fills(address: str):
         - limit: int, 每页数量，默认20
         - coin: str, 筛选特定币种
         - pnl_filter: str, 盈亏筛选 (all/profit/loss)
+        - trade_type: str, 交易类型筛选 (all/open_long/add_long/close_long/open_short/add_short/close_short)
         - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
         - sort_order: str, 排序方向 (asc/desc)
         - start_date: str, 开始日期 (YYYY-MM-DD)
@@ -437,27 +438,24 @@ def get_trader_fills(address: str):
         limit = int(request.args.get('limit', 20))
         coin = request.args.get('coin')
         pnl_filter = request.args.get('pnl_filter', 'all')
+        trade_type = request.args.get('trade_type', 'all')
         sort_by = request.args.get('sort_by', 'trade_time')
         sort_order = request.args.get('sort_order', 'desc')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
-        # 获取所有符合条件的交易记录（用于计算总数）
+        # 获取所有符合条件的交易记录（筛选在数据库层完成）
         all_fills = db.get_trader_fills(
             address,
             limit=100000,
             coin=coin,
+            trade_type=trade_type if trade_type != 'all' else None,
+            pnl_filter=pnl_filter if pnl_filter != 'all' else None,
             sort_by=sort_by,
             sort_order=sort_order,
             start_date=start_date,
             end_date=end_date
         )
-
-        # 应用盈亏筛选
-        if pnl_filter == 'profit':
-            all_fills = [f for f in all_fills if f.get('closed_pnl', 0) > 0]
-        elif pnl_filter == 'loss':
-            all_fills = [f for f in all_fills if f.get('closed_pnl', 0) < 0]
 
         total_count = len(all_fills)
         total_pages = (total_count + limit - 1) // limit  # 向上取整

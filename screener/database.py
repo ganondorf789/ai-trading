@@ -207,6 +207,7 @@ class TraderDatabase:
                     fee REAL DEFAULT 0.0,
                     oid INTEGER,
                     tid INTEGER,
+                    trade_type TEXT,  -- 交易类型: open_long/add_long/close_long/open_short/add_short/close_short
 
                     -- 唯一约束：同一地址同一时间同一交易
                     UNIQUE(address, time, oid)
@@ -229,6 +230,13 @@ class TraderDatabase:
                 CREATE INDEX IF NOT EXISTS idx_fills_coin
                 ON trader_fills(coin)
             """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fills_trade_type
+                ON trader_fills(trade_type)
+            """)
+
+            # 为 trader_fills 表添加 trade_type 列（如果不存在）
+            self._migrate_fills_add_trade_type(cursor)
 
             # 创建持仓表（存储 assetPositions）
             cursor.execute("""
@@ -445,6 +453,50 @@ class TraderDatabase:
                 except Exception as e:
                     logger.debug(f"添加列 {col_name} 失败（可能已存在）: {e}")
 
+    def _migrate_fills_add_trade_type(self, cursor):
+        """为 trader_fills 表添加 trade_type 列（数据库迁移）"""
+        cursor.execute("PRAGMA table_info(trader_fills)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        if "trade_type" not in existing_columns:
+            try:
+                cursor.execute(
+                    "ALTER TABLE trader_fills ADD COLUMN trade_type TEXT"
+                )
+                logger.debug("已为 trader_fills 添加 trade_type 列")
+            except Exception as e:
+                logger.debug(f"添加 trade_type 列失败（可能已存在）: {e}")
+
+    @staticmethod
+    def calculate_trade_type(dir_val: str, start_position: float) -> str:
+        """
+        根据 dir 和 start_position 计算交易类型
+
+        Args:
+            dir_val: 方向字符串，如 'Open Long', 'Close Short' 等
+            start_position: 开始仓位
+
+        Returns:
+            交易类型: open_long/add_long/close_long/open_short/add_short/close_short
+        """
+        if not dir_val:
+            return None
+
+        start_pos = start_position or 0
+
+        if 'Open' in dir_val:
+            if 'Long' in dir_val:
+                return 'open_long' if start_pos == 0 else 'add_long'
+            elif 'Short' in dir_val:
+                return 'open_short' if start_pos == 0 else 'add_short'
+        elif 'Close' in dir_val:
+            if 'Long' in dir_val:
+                return 'close_long'
+            elif 'Short' in dir_val:
+                return 'close_short'
+
+        return None
+
     def save_trader(self, metrics: TraderMetrics) -> int:
         """
         保存或更新交易者指标（使用 address 作为唯一键）
@@ -630,15 +682,21 @@ class TraderDatabase:
                     time_ms = fill.get('time', 0)
                     trade_time = pendulum.from_timestamp(time_ms / 1000, tz=SHANGHAI_TZ).to_iso8601_string() if time_ms else None
 
+                    # 计算交易类型
+                    dir_val = fill.get('dir', '')
+                    start_pos = float(fill.get('startPosition', 0)) if fill.get('startPosition') else 0
+                    trade_type = self.calculate_trade_type(dir_val, start_pos)
+
                     cursor.execute("""
                         INSERT INTO trader_fills (
                             address, coin, side, px, sz, time, trade_time,
-                            closed_pnl, hash, start_position, dir, crossed, fee, oid, tid
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(address, time, oid) DO UPDATE SET
                             closed_pnl = excluded.closed_pnl,
                             px = excluded.px,
-                            sz = excluded.sz
+                            sz = excluded.sz,
+                            trade_type = excluded.trade_type
                     """, (
                         address,
                         fill.get('coin'),
@@ -649,12 +707,13 @@ class TraderDatabase:
                         trade_time,
                         float(fill.get('closedPnl', 0)),
                         fill.get('hash'),
-                        float(fill.get('startPosition', 0)) if fill.get('startPosition') else None,
-                        fill.get('dir'),
+                        start_pos if start_pos else None,
+                        dir_val,
                         fill.get('crossed'),
                         float(fill.get('fee', 0)),
                         fill.get('oid'),
-                        fill.get('tid')
+                        fill.get('tid'),
+                        trade_type
                     ))
                     saved_count += 1
                 except Exception as e:
@@ -686,6 +745,8 @@ class TraderDatabase:
         address: str,
         limit: int = 100,
         coin: str = None,
+        trade_type: str = None,
+        pnl_filter: str = None,
         sort_by: str = 'time',
         sort_order: str = 'desc',
         start_date: str = None,
@@ -698,6 +759,8 @@ class TraderDatabase:
             address: 交易者地址
             limit: 返回数量
             coin: 筛选特定币种
+            trade_type: 交易类型筛选 (open_long/add_long/close_long/open_short/add_short/close_short)
+            pnl_filter: 盈亏筛选 (profit/loss)
             sort_by: 排序字段 (time, coin, side, px, sz, closed_pnl, fee)
             sort_order: 排序方向 (asc, desc)
             start_date: 开始日期 (YYYY-MM-DD)
@@ -732,6 +795,19 @@ class TraderDatabase:
             if coin:
                 conditions.append("coin = ?")
                 params.append(coin)
+
+            # 交易类型筛选
+            if trade_type:
+                valid_trade_types = {'open_long', 'add_long', 'close_long', 'open_short', 'add_short', 'close_short'}
+                if trade_type in valid_trade_types:
+                    conditions.append("trade_type = ?")
+                    params.append(trade_type)
+
+            # 盈亏筛选
+            if pnl_filter == 'profit':
+                conditions.append("closed_pnl > 0")
+            elif pnl_filter == 'loss':
+                conditions.append("closed_pnl < 0")
 
             # 日期范围筛选（将 YYYY-MM-DD 转换为时间戳毫秒）
             if start_date:

@@ -82,6 +82,7 @@ export default function TraderDetailPage() {
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
   const [allCoins, setAllCoins] = useState<string[]>([]); // 保存完整的币种列表
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [tradeTypeFilter, setTradeTypeFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
   const [timeRange, setTimeRange] = useState<number>(30); // 默认30天
   const [chartLoading, setChartLoading] = useState(false);
@@ -345,6 +346,7 @@ export default function TraderDetailPage() {
           limit: rowsPerPage,
           coin: selectedCoin !== 'all' ? selectedCoin : undefined,
           pnl_filter: pnlFilter,
+          trade_type: tradeTypeFilter !== 'all' ? tradeTypeFilter : undefined,
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
           start_date,
@@ -369,12 +371,12 @@ export default function TraderDetailPage() {
     };
 
     loadFills();
-  }, [address, page, selectedCoin, pnlFilter, sortDescriptor, loading, dateRange]);
+  }, [address, page, selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, loading, dateRange]);
 
   // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [selectedCoin, pnlFilter, sortDescriptor, dateRange]);
+  }, [selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, dateRange]);
 
 
   const formatNumber = (num: number, decimals = 2) => {
@@ -463,47 +465,24 @@ export default function TraderDetailPage() {
           </Chip>
         );
       case 'trade_type':
-        // 根据 dir 和 start_position 判断交易类型
-        const dir = fill.dir || '';
-        const startPos = fill.start_position || 0;
-        let tradeType = '-';
-        let typeColor = 'default';
-
-        if (dir.includes('Open')) {
-          if (dir.includes('Long')) {
-            if (startPos === 0) {
-              tradeType = '开多';
-              typeColor = 'success';
-            } else {
-              tradeType = '加多';
-              typeColor = 'success';
-            }
-          } else if (dir.includes('Short')) {
-            if (startPos === 0) {
-              tradeType = '开空';
-              typeColor = 'danger';
-            } else {
-              tradeType = '加空';
-              typeColor = 'danger';
-            }
-          }
-        } else if (dir.includes('Close')) {
-          if (dir.includes('Long')) {
-            tradeType = '平多';
-            typeColor = 'warning';
-          } else if (dir.includes('Short')) {
-            tradeType = '平空';
-            typeColor = 'warning';
-          }
-        }
+        // 使用数据库中的 trade_type 字段
+        const tradeTypeMap: Record<string, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
+          'open_long': { label: '开多', color: 'success' },
+          'add_long': { label: '加多', color: 'success' },
+          'close_long': { label: '平多', color: 'warning' },
+          'open_short': { label: '开空', color: 'danger' },
+          'add_short': { label: '加空', color: 'danger' },
+          'close_short': { label: '平空', color: 'warning' },
+        };
+        const typeInfo = fill.trade_type ? tradeTypeMap[fill.trade_type] : null;
 
         return (
           <Chip
             size="sm"
-            color={typeColor as 'default' | 'success' | 'danger' | 'warning'}
+            color={typeInfo?.color || 'default'}
             variant="flat"
           >
-            {tradeType}
+            {typeInfo?.label || '-'}
           </Chip>
         );
       case 'px':
@@ -544,6 +523,7 @@ export default function TraderDetailPage() {
   const handleReset = useCallback(() => {
     setSelectedCoin('all');
     setPnlFilter('all');
+    setTradeTypeFilter('all');
     setSearchValue('');
     setDateRange(null);
     setPage(1);
@@ -554,10 +534,11 @@ export default function TraderDetailPage() {
     let count = 0;
     if (selectedCoin !== 'all') count++;
     if (pnlFilter !== 'all') count++;
+    if (tradeTypeFilter !== 'all') count++;
     if (searchValue) count++;
     if (dateRange) count++;
     return count;
-  }, [selectedCoin, pnlFilter, searchValue, dateRange]);
+  }, [selectedCoin, pnlFilter, tradeTypeFilter, searchValue, dateRange]);
 
   // 表格顶部内容
   const topContent = useMemo(() => {
@@ -637,6 +618,28 @@ export default function TraderDetailPage() {
                 <SelectItem key="all">全部</SelectItem>
                 <SelectItem key="profit">盈利</SelectItem>
                 <SelectItem key="loss">亏损</SelectItem>
+              </Select>
+            </div>
+
+            {/* 类型筛选 */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm whitespace-nowrap">类型</span>
+              <Select
+                className="min-w-[100px]"
+                size="sm"
+                selectedKeys={[tradeTypeFilter]}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  setTradeTypeFilter(selected || 'all');
+                }}
+              >
+                <SelectItem key="all">全部</SelectItem>
+                <SelectItem key="open_long">开多</SelectItem>
+                <SelectItem key="add_long">加多</SelectItem>
+                <SelectItem key="close_long">平多</SelectItem>
+                <SelectItem key="open_short">开空</SelectItem>
+                <SelectItem key="add_short">加空</SelectItem>
+                <SelectItem key="close_short">平空</SelectItem>
               </Select>
             </div>
 

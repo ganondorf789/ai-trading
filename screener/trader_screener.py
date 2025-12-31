@@ -23,6 +23,36 @@ from hyperliquid.utils import constants
 SHANGHAI_TZ = "Asia/Shanghai"
 
 
+def calculate_trade_type(dir_val: str, start_position: float) -> str:
+    """
+    根据 dir 和 start_position 计算交易类型
+
+    Args:
+        dir_val: 方向字符串，如 'Open Long', 'Close Short' 等
+        start_position: 开始仓位
+
+    Returns:
+        交易类型: open_long/add_long/close_long/open_short/add_short/close_short
+    """
+    if not dir_val:
+        return None
+
+    start_pos = start_position or 0
+
+    if 'Open' in dir_val:
+        if 'Long' in dir_val:
+            return 'open_long' if start_pos == 0 else 'add_long'
+        elif 'Short' in dir_val:
+            return 'open_short' if start_pos == 0 else 'add_short'
+    elif 'Close' in dir_val:
+        if 'Long' in dir_val:
+            return 'close_long'
+        elif 'Short' in dir_val:
+            return 'close_short'
+
+    return None
+
+
 class QualityRating(Enum):
     """交易者质量评级"""
     S_TIER = "S"  # 顶级交易者
@@ -330,6 +360,11 @@ class TraderScreener:
             price = float(fill.get('px', 0))
             size = float(fill.get('sz', 0))
             volume = price * size
+
+            # 计算并添加交易类型
+            dir_val = fill.get('dir', '')
+            start_pos = float(fill.get('startPosition', 0)) if fill.get('startPosition') else 0
+            fill['trade_type'] = calculate_trade_type(dir_val, start_pos)
 
             metrics.total_volume += volume
             metrics.realized_pnl += pnl
