@@ -5,7 +5,14 @@ Hyperliquid 排行榜交易者批量分析
 import sys
 import argparse
 import io
+import gc
 from pathlib import Path
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 # 设置 stdout 为 UTF-8 编码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -17,6 +24,17 @@ from loguru import logger
 from leaderboard.fetch_leaderboard import fetch_leaderboard
 from screener.trader_screener import TraderScreener, ScreenerConfig
 from screener.database import TraderDatabase
+
+
+def get_memory_usage():
+    """获取当前进程内存使用（MB）"""
+    if not PSUTIL_AVAILABLE:
+        return 0.0
+    try:
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
+    except Exception:
+        return 0.0
 
 
 def screen_leaderboard_traders(
@@ -73,6 +91,8 @@ def screen_leaderboard_traders(
     # 3. 逐个分析并保存
     logger.info(f"\n[3/3] 开始分析交易者...")
     logger.info("-" * 70)
+    if PSUTIL_AVAILABLE:
+        logger.info(f"初始内存使用: {get_memory_usage():.1f} MB")
 
     saved_count = 0
     fills_count = 0
@@ -83,12 +103,15 @@ def screen_leaderboard_traders(
         current_index = resume_from + i + 1 if resume_from > 0 else i + 1
 
         try:
-            # 分析单个交易者
-            metrics = screener.analyze_trader(address)
+            # 分析单个交易者（暂时保存 fills 用于数据库存储）
+            metrics = screener.analyze_trader(address, store_fills=True)
 
             if metrics and metrics.total_trades > 0:
+                # 提取 fills 用于保存到数据库
+                fills = metrics.fills
+
                 # 保存到数据库（包括交易记录）
-                _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
+                _, fills_saved = db.save_trader_with_fills(metrics, fills)
                 saved_count += 1
                 fills_count += fills_saved
 
@@ -101,12 +124,27 @@ def screen_leaderboard_traders(
                     f"胜率: {metrics.win_rate:.1%} "
                     f"PnL: ${metrics.total_pnl:,.0f}"
                 )
+
+                # 立即清空 fills 并删除对象以释放内存
+                metrics.fills = []
+                metrics.asset_positions = []
+                del fills
+                del metrics
             else:
                 failed_count += 1
                 logger.warning(
                     f"[{current_index}/{resume_from + total if resume_from else total}] "
                     f"✗ {address[:10]}... 无交易数据"
                 )
+
+            # 定期清理内存（每10个交易者）
+            if i % 10 == 0:
+                # 清空 screener 的缓存
+                screener._analyzed_traders.clear()
+                # 强制垃圾回收
+                gc.collect()
+                if PSUTIL_AVAILABLE:
+                    logger.debug(f"内存清理 [{current_index}]: {get_memory_usage():.1f} MB")
 
         except KeyboardInterrupt:
             logger.warning(f"\n\n用户中断，已保存 {saved_count} 个交易者")
@@ -119,6 +157,10 @@ def screen_leaderboard_traders(
                 f"✗ {address[:10]}... 错误: {str(e)[:50]}"
             )
 
+    # 最终内存清理
+    screener._analyzed_traders.clear()
+    gc.collect()
+
     # 打印统计
     logger.info("\n" + "=" * 70)
     logger.info("分析完成!")
@@ -127,6 +169,8 @@ def screen_leaderboard_traders(
     logger.info(f"  交易记录: {fills_count} 条")
     logger.info(f"  失败/跳过: {failed_count} 个")
     logger.info(f"  数据库: {db.db_path}")
+    if PSUTIL_AVAILABLE:
+        logger.info(f"  最终内存使用: {get_memory_usage():.1f} MB")
 
     # 显示评级分布
     stats = db.get_statistics()
