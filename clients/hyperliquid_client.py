@@ -593,7 +593,7 @@ class HyperliquidClient:
     
     def close_position(self, symbol: str, slippage: float = 0.01) -> Optional[Dict[str, Any]]:
         """
-        平仓
+        平仓（直接使用 market_order 实现）
 
         Args:
             symbol: 交易对符号
@@ -603,12 +603,32 @@ class HyperliquidClient:
             平仓结果，如果没有持仓则返回 None
         """
         self._ensure_exchange()
-        result = self.exchange.market_close(symbol, slippage=slippage)
-        if result is None:
-            logger.warning(f"平仓 {symbol}: 无返回结果（可能没有持仓）")
-        else:
-            logger.info(f"平仓: {symbol}, 结果: {result}")
-        return result
+
+        # 获取当前持仓
+        positions = self.get_positions()
+        position = next((p for p in positions if p.symbol == symbol), None)
+
+        if position is None:
+            logger.warning(f"平仓 {symbol}: 未找到持仓")
+            return None
+
+        logger.info(f"平仓 {symbol}: {position.side.value} {position.size}")
+
+        # 平多仓需要卖出，平空仓需要买入
+        is_buy = position.side == PositionSide.SHORT
+
+        try:
+            result = self.market_order(
+                symbol=symbol,
+                is_buy=is_buy,
+                size=position.size,
+                slippage=slippage
+            )
+            logger.info(f"平仓成功: {symbol}, 结果: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"平仓失败 {symbol}: {e}")
+            return None
     
     def close_all_positions(self) -> List[Dict[str, Any]]:
         """
