@@ -587,20 +587,23 @@ class HyperliquidClient:
         
         return results
     
-    def close_position(self, symbol: str, slippage: float = 0.01) -> Dict[str, Any]:
+    def close_position(self, symbol: str, slippage: float = 0.01) -> Optional[Dict[str, Any]]:
         """
         平仓
-        
+
         Args:
             symbol: 交易对符号
             slippage: 滑点容忍度
-        
+
         Returns:
-            平仓结果
+            平仓结果，如果没有持仓则返回 None
         """
         self._ensure_exchange()
         result = self.exchange.market_close(symbol, slippage=slippage)
-        logger.info(f"平仓: {symbol}, 结果: {result}")
+        if result is None:
+            logger.warning(f"平仓 {symbol}: 无返回结果（可能没有持仓）")
+        else:
+            logger.info(f"平仓: {symbol}, 结果: {result}")
         return result
     
     def close_all_positions(self) -> List[Dict[str, Any]]:

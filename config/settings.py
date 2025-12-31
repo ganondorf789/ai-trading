@@ -149,7 +149,7 @@ class SystemSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='')
     
     log_level: str = Field(default="INFO", description="日志级别")
-    testnet_mode: bool = Field(default=True, description="测试网模式")
+    testnet_mode: bool = Field(default=False, description="测试网模式")
     data_dir: str = Field(default="./data", description="数据存储目录")
     log_dir: str = Field(default="./logs", description="日志目录")
 
