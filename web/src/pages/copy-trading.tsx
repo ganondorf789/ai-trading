@@ -916,11 +916,11 @@ export default function CopyTradingPage() {
                 <Input
                   type="number"
                   label="跟单比例"
-                  placeholder="0.1"
-                  value={String(formData.copy_ratio || 0.1)}
-                  onValueChange={(v) => setFormData({ ...formData, copy_ratio: parseFloat(v) || 0.1 })}
+                  placeholder="10"
+                  value={String(((formData.copy_ratio || 0.1) * 100).toFixed(0))}
+                  onValueChange={(v) => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
                   endContent="%"
-                  description="0.1 = 10%"
+                  description="输入 10 表示跟单 10%"
                 />
                 <Input
                   type="number"
