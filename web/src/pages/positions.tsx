@@ -218,13 +218,6 @@ export default function PositionsPage() {
     });
   };
 
-  // 获取唯一目标列表
-  const uniqueTargets = Array.from(
-    new Map(
-      positions.map((p) => [p.target_address, { address: p.target_address, name: p.target_name }])
-    ).values()
-  );
-
   // 渲染统计卡片
   const renderStatsCards = () => {
     if (statsLoading) {
@@ -310,7 +303,7 @@ export default function PositionsPage() {
         {renderStatsCards()}
 
         {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-4">
+        <div className="flex flex-wrap items-center gap-4 mb-4">
           <Input
             className="w-64"
             placeholder="Search symbol or address..."
@@ -318,38 +311,46 @@ export default function PositionsPage() {
             value={search}
             onValueChange={setSearch}
           />
-          <Select
-            className="w-40"
-            label="Side"
-            selectedKeys={[sideFilter]}
-            size="sm"
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
-              setSideFilter(value);
-            }}
-          >
-            <SelectItem key="all">All</SelectItem>
-            <SelectItem key="long">Long</SelectItem>
-            <SelectItem key="short">Short</SelectItem>
-          </Select>
-          {stats && stats.by_target && stats.by_target.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-default-500 whitespace-nowrap">Side:</span>
             <Select
-              className="w-48"
-              label="Target"
-              selectedKeys={[targetFilter]}
+              className="w-28"
+              aria-label="Side"
+              selectedKeys={[sideFilter]}
               size="sm"
               onSelectionChange={(keys) => {
                 const value = Array.from(keys)[0] as string;
-                setTargetFilter(value);
+                setSideFilter(value);
               }}
             >
-              <SelectItem key="all">All Targets</SelectItem>
-              {stats.by_target.map((t) => (
-                <SelectItem key={t.target_address}>
-                  {t.target_name || formatAddress(t.target_address)} ({t.position_count})
-                </SelectItem>
-              ))}
+              <SelectItem key="all">All</SelectItem>
+              <SelectItem key="long">Long</SelectItem>
+              <SelectItem key="short">Short</SelectItem>
             </Select>
+          </div>
+          {stats && stats.by_target && stats.by_target.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-default-500 whitespace-nowrap">Target:</span>
+              <Select
+                className="w-40"
+                aria-label="Target"
+                selectedKeys={[targetFilter]}
+                size="sm"
+                items={[
+                  { key: "all", label: "All Targets" },
+                  ...stats.by_target.map((t) => ({
+                    key: t.target_address,
+                    label: `${t.target_name || formatAddress(t.target_address)} (${t.position_count})`,
+                  })),
+                ]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  setTargetFilter(value);
+                }}
+              >
+                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+              </Select>
+            </div>
           )}
         </div>
 
