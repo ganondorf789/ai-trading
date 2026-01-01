@@ -577,4 +577,92 @@ export const copyPositionStatesApi = {
     api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/copy-trading/positions/clear-all'),
 };
 
+// ==================== 分组对比分析 ====================
+
+// 分组对比会话
+export interface GroupComparisonSession {
+  id: number;
+  created_at: string;
+  rating: string;
+  total_traders: number;
+  group_size: number;
+  top_per_group: number;
+  num_groups: number;
+  min_sharpe: number | null;
+  min_sortino: number | null;
+  max_drawdown: number | null;
+  min_win_rate: number | null;
+  max_win_rate: number | null;
+  finalists_count: number;
+  final_ranking: string | null;
+  ai_provider: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  // 详情中包含
+  groups?: GroupComparisonGroup[];
+  traders?: GroupComparisonTrader[];
+  finalists?: GroupComparisonTrader[];
+}
+
+// 分组对比分组
+export interface GroupComparisonGroup {
+  id: number;
+  session_id: number;
+  group_num: number;
+  total_in_group: number;
+  analysis: string;
+  traders?: GroupComparisonTrader[];
+}
+
+// 分组对比交易员
+export interface GroupComparisonTrader {
+  id: number;
+  session_id: number;
+  group_id: number | null;
+  address: string;
+  overall_score: number;
+  win_rate: number;
+  total_pnl: number;
+  recent_7d_pnl: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  sortino_ratio: number;
+  profit_factor: number;
+  is_finalist: boolean;
+  final_rank: number | null;
+  elimination_reason: string | null;
+  // 关联的交易员详情
+  trader_info?: Trader;
+}
+
+// 分组对比统计
+export interface GroupComparisonStats {
+  total_sessions: number;
+  by_status: Record<string, number>;
+  recent_sessions: number;
+  avg_finalists: number;
+}
+
+// 分组对比 API
+export const groupComparisonApi = {
+  // 获取会话列表
+  getSessions: (params?: { limit?: number; status?: string }) =>
+    api.get<any, ApiResponse<GroupComparisonSession[]>>('/group-comparison/sessions', { params }),
+
+  // 获取会话详情
+  getSession: (sessionId: number) =>
+    api.get<any, ApiResponse<GroupComparisonSession>>(`/group-comparison/sessions/${sessionId}`),
+
+  // 获取会话晋级者
+  getFinalists: (sessionId: number) =>
+    api.get<any, ApiResponse<GroupComparisonTrader[]>>(`/group-comparison/sessions/${sessionId}/finalists`),
+
+  // 获取会话分组信息
+  getGroups: (sessionId: number) =>
+    api.get<any, ApiResponse<GroupComparisonGroup[]>>(`/group-comparison/sessions/${sessionId}/groups`),
+
+  // 获取统计信息
+  getStats: () =>
+    api.get<any, ApiResponse<GroupComparisonStats>>('/group-comparison/stats'),
+};
+
 export default api;

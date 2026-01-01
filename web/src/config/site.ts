@@ -13,6 +13,10 @@ export const siteConfig = {
       href: "/traders",
     },
     {
+      label: "分组对比",
+      href: "/group-comparison",
+    },
+    {
       label: "Copy Trading",
       href: "/copy-trading",
     },

@@ -10,6 +10,7 @@ import TraderDetailPage from "@/pages/trader-detail";
 import CopyTradingPage from "@/pages/copy-trading";
 import OrdersPage from "@/pages/orders";
 import PositionsPage from "@/pages/positions";
+import GroupComparisonPage from "@/pages/group-comparison";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
       <Route element={<CopyTradingPage />} path="/copy-trading" />
       <Route element={<OrdersPage />} path="/orders" />
       <Route element={<PositionsPage />} path="/positions" />
+      <Route element={<GroupComparisonPage />} path="/group-comparison" />
     </Routes>
   );
 }
