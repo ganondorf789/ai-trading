@@ -413,6 +413,29 @@ class TraderDatabase:
                 ON copy_trading_orders(status)
             """)
 
+            # 创建跟单仓位状态表（用于重启后恢复状态）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS copy_position_states (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_address TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    size REAL NOT NULL,
+                    side TEXT NOT NULL,
+                    entry_price REAL,
+                    leverage INTEGER DEFAULT 1,
+                    notional REAL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：每个目标每个币种只保留一条
+                    UNIQUE(target_address, symbol)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_states_target
+                ON copy_position_states(target_address)
+            """)
+
     def _migrate_add_new_columns(self, cursor):
         """为现有表添加新列（数据库迁移）"""
         # 获取现有列
@@ -2245,3 +2268,115 @@ class TraderDatabase:
                 return None
 
             return dict(row)
+
+    # ==================== 跟单仓位状态持久化 ====================
+
+    def save_copied_positions(self, target_address: str, positions: Dict[str, Dict]) -> int:
+        """
+        保存目标交易者的已跟单仓位状态（用于重启后恢复）
+
+        Args:
+            target_address: 目标地址
+            positions: 已跟单仓位 {symbol: position_data}
+
+        Returns:
+            保存的记录数
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 先删除该目标的旧状态
+            cursor.execute(
+                "DELETE FROM copy_position_states WHERE target_address = ?",
+                (target_address,)
+            )
+
+            saved_count = 0
+            for symbol, pos in positions.items():
+                try:
+                    cursor.execute("""
+                        INSERT INTO copy_position_states (
+                            target_address, symbol, size, side, entry_price,
+                            leverage, notional, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        target_address,
+                        symbol,
+                        pos.get('size', 0),
+                        pos.get('side', ''),
+                        pos.get('entry_price', 0),
+                        pos.get('leverage', 1),
+                        pos.get('notional', 0),
+                        pendulum.now(SHANGHAI_TZ).to_iso8601_string()
+                    ))
+                    saved_count += 1
+                except Exception as e:
+                    logger.debug(f"保存跟单状态失败: {e}")
+
+            return saved_count
+
+    def get_copied_positions(self, target_address: str) -> Dict[str, Dict]:
+        """
+        获取目标交易者的已跟单仓位状态（用于重启后恢复）
+
+        Args:
+            target_address: 目标地址
+
+        Returns:
+            已跟单仓位 {symbol: position_data}
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM copy_position_states
+                WHERE target_address = ?
+            """, (target_address,))
+
+            positions = {}
+            for row in cursor.fetchall():
+                positions[row['symbol']] = {
+                    'symbol': row['symbol'],
+                    'size': row['size'],
+                    'side': row['side'],
+                    'entry_price': row['entry_price'],
+                    'leverage': row['leverage'],
+                    'notional': row['notional']
+                }
+            return positions
+
+    def delete_copied_position(self, target_address: str, symbol: str) -> bool:
+        """
+        删除单个已跟单仓位状态
+
+        Args:
+            target_address: 目标地址
+            symbol: 币种
+
+        Returns:
+            是否删除成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM copy_position_states
+                WHERE target_address = ? AND symbol = ?
+            """, (target_address, symbol))
+            return cursor.rowcount > 0
+
+    def clear_copied_positions(self, target_address: str) -> int:
+        """
+        清空目标交易者的所有已跟单仓位状态
+
+        Args:
+            target_address: 目标地址
+
+        Returns:
+            删除的记录数
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM copy_position_states WHERE target_address = ?",
+                (target_address,)
+            )
+            return cursor.rowcount

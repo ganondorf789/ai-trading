@@ -524,6 +524,16 @@ class MultiTargetCopyTradingBot:
         config = target_state.config
         address = target_state.address
         
+        # 尝试从数据库恢复已跟单仓位状态（重启后恢复）
+        saved_positions = self.db.get_copied_positions(address)
+        if saved_positions:
+            logger.info(f"[{address[:8]}] 从数据库恢复 {len(saved_positions)} 个已跟单仓位状态")
+            target_state.copied_positions = saved_positions
+            target_state.initialized = True
+            target_state.init_timestamp = pendulum.now()
+            target_state.last_check = pendulum.now()
+            return  # 恢复成功，跳过初始化流程
+        
         target_state.init_timestamp = pendulum.now()
         
         if config.sync_position:
@@ -687,6 +697,17 @@ class MultiTargetCopyTradingBot:
                     target_state.copies_today += 1
 
                 del target_state.copied_positions[symbol]
+                # 同时删除数据库中的状态
+                try:
+                    self.db.delete_copied_position(address, symbol)
+                except Exception as e:
+                    logger.warning(f"[{address[:8]}] 删除仓位状态失败: {e}")
+
+        # 持久化 copied_positions 到数据库（用于重启后恢复）
+        try:
+            self.db.save_copied_positions(address, target_state.copied_positions)
+        except Exception as e:
+            logger.warning(f"[{address[:8]}] 保存跟单状态失败: {e}")
 
         target_state.last_check = pendulum.now()
 

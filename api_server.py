@@ -1531,6 +1531,213 @@ def cleanup_copy_trading_orders():
         }), 500
 
 
+# ==================== 跟单仓位状态管理 API ====================
+
+@app.route('/api/copy-trading/positions', methods=['GET'])
+def get_copy_position_states():
+    """
+    获取所有跟单仓位状态（用于重启后恢复的持久化状态）
+    Query Parameters:
+        - target_address: str, 筛选目标地址
+    """
+    try:
+        target_address = request.args.get('target_address')
+
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            if target_address:
+                cursor.execute("""
+                    SELECT cps.*, cta.name as target_name
+                    FROM copy_position_states cps
+                    LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
+                    WHERE cps.target_address = ?
+                    ORDER BY cps.updated_at DESC
+                """, (target_address,))
+            else:
+                cursor.execute("""
+                    SELECT cps.*, cta.name as target_name
+                    FROM copy_position_states cps
+                    LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
+                    ORDER BY cps.updated_at DESC
+                """)
+
+            positions = [dict(row) for row in cursor.fetchall()]
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'count': len(positions)
+        })
+    except Exception as e:
+        logger.error(f"获取跟单仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/positions/stats', methods=['GET'])
+def get_copy_position_stats():
+    """
+    获取跟单仓位统计
+    """
+    try:
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 总仓位数
+            cursor.execute("SELECT COUNT(*) FROM copy_position_states")
+            total_positions = cursor.fetchone()[0]
+
+            # 按目标地址分组统计
+            cursor.execute("""
+                SELECT
+                    cps.target_address,
+                    cta.name as target_name,
+                    COUNT(*) as position_count,
+                    SUM(cps.notional) as total_notional
+                FROM copy_position_states cps
+                LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
+                GROUP BY cps.target_address
+                ORDER BY position_count DESC
+            """)
+            by_target = [dict(row) for row in cursor.fetchall()]
+
+            # 按币种统计
+            cursor.execute("""
+                SELECT
+                    symbol,
+                    side,
+                    COUNT(*) as count,
+                    SUM(ABS(size)) as total_size,
+                    SUM(notional) as total_notional
+                FROM copy_position_states
+                GROUP BY symbol, side
+                ORDER BY total_notional DESC
+            """)
+            by_symbol = [dict(row) for row in cursor.fetchall()]
+
+            # 多空统计
+            cursor.execute("""
+                SELECT
+                    side,
+                    COUNT(*) as count,
+                    SUM(notional) as total_notional
+                FROM copy_position_states
+                GROUP BY side
+            """)
+            by_side = {row['side']: {'count': row['count'], 'notional': row['total_notional']} for row in cursor.fetchall()}
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'total_positions': total_positions,
+                'by_target': by_target,
+                'by_symbol': by_symbol,
+                'by_side': by_side
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取跟单仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/positions/<target_address>', methods=['GET'])
+def get_target_position_states(target_address: str):
+    """
+    获取特定目标的仓位状态
+    """
+    try:
+        positions = db.get_copied_positions(target_address)
+
+        return jsonify({
+            'success': True,
+            'data': list(positions.values()),
+            'count': len(positions)
+        })
+    except Exception as e:
+        logger.error(f"获取目标仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/positions/<target_address>/<symbol>', methods=['DELETE'])
+def delete_position_state(target_address: str, symbol: str):
+    """
+    删除单个仓位状态
+    """
+    try:
+        success = db.delete_copied_position(target_address, symbol)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': f'已删除 {target_address[:10]}... 的 {symbol} 仓位状态'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '仓位状态不存在'
+            }), 404
+    except Exception as e:
+        logger.error(f"删除仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/positions/<target_address>', methods=['DELETE'])
+def clear_target_position_states(target_address: str):
+    """
+    清空目标的所有仓位状态
+    """
+    try:
+        deleted_count = db.clear_copied_positions(target_address)
+
+        return jsonify({
+            'success': True,
+            'data': {'deleted_count': deleted_count},
+            'message': f'已清空 {target_address[:10]}... 的 {deleted_count} 个仓位状态'
+        })
+    except Exception as e:
+        logger.error(f"清空仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/copy-trading/positions/clear-all', methods=['POST'])
+def clear_all_position_states():
+    """
+    清空所有仓位状态（谨慎使用）
+    """
+    try:
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM copy_position_states")
+            deleted_count = cursor.rowcount
+
+        return jsonify({
+            'success': True,
+            'data': {'deleted_count': deleted_count},
+            'message': f'已清空所有 {deleted_count} 个仓位状态'
+        })
+    except Exception as e:
+        logger.error(f"清空所有仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     logger.info("启动 Trader Analytics API Server...")
     logger.info("API 文档:")

@@ -518,4 +518,63 @@ export const copyTradingOrdersApi = {
     ),
 };
 
+// 跟单仓位状态
+export interface CopyPositionState {
+  id: number;
+  target_address: string;
+  target_name?: string;
+  symbol: string;
+  size: number;
+  side: string;
+  entry_price: number;
+  leverage: number;
+  notional: number;
+  updated_at: string;
+}
+
+export interface CopyPositionStats {
+  total_positions: number;
+  by_target: Array<{
+    target_address: string;
+    target_name: string | null;
+    position_count: number;
+    total_notional: number;
+  }>;
+  by_symbol: Array<{
+    symbol: string;
+    side: string;
+    count: number;
+    total_size: number;
+    total_notional: number;
+  }>;
+  by_side: Record<string, { count: number; notional: number }>;
+}
+
+// 跟单仓位状态 API
+export const copyPositionStatesApi = {
+  // 获取所有仓位状态
+  getPositions: (params?: { target_address?: string }) =>
+    api.get<any, ApiResponse<CopyPositionState[]>>('/copy-trading/positions', { params }),
+
+  // 获取统计信息
+  getStats: () =>
+    api.get<any, ApiResponse<CopyPositionStats>>('/copy-trading/positions/stats'),
+
+  // 获取特定目标的仓位
+  getTargetPositions: (targetAddress: string) =>
+    api.get<any, ApiResponse<CopyPositionState[]>>(`/copy-trading/positions/${targetAddress}`),
+
+  // 删除单个仓位状态
+  deletePosition: (targetAddress: string, symbol: string) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/positions/${targetAddress}/${symbol}`),
+
+  // 清空目标所有仓位状态
+  clearTargetPositions: (targetAddress: string) =>
+    api.delete<any, ApiResponse<{ deleted_count: number }> & { message?: string }>(`/copy-trading/positions/${targetAddress}`),
+
+  // 清空所有仓位状态
+  clearAll: () =>
+    api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/copy-trading/positions/clear-all'),
+};
+
 export default api;
