@@ -26,6 +26,7 @@ class CopyTradingConfig:
     copy_ratio: float = 1.0  # 跟单比例 (0.5 = 跟单50%仓位)
     max_position_size_usd: float = 1000.0  # 单个仓位最大价值
     min_position_size_usd: float = 10.0  # 最小仓位价值（过滤小仓位）
+    sync_position: bool = True  # 是否同步现有仓位
 
     # 白名单/黑名单
     symbols_whitelist: List[str] = field(default_factory=list)  # 只跟单这些币
@@ -148,6 +149,7 @@ class MultiTargetCopyTradingBot:
             copy_ratio=data.get('copy_ratio', 0.1),
             max_position_size_usd=data.get('max_position_size_usd', 100.0),
             min_position_size_usd=data.get('min_position_size_usd', 20.0),
+            sync_position=data.get('sync_position', True),
             symbols_whitelist=data.get('symbols_whitelist', []),
             symbols_blacklist=data.get('symbols_blacklist', []),
             copy_leverage=data.get('copy_leverage', True),
@@ -507,6 +509,83 @@ class MultiTargetCopyTradingBot:
         except Exception as e:
             logger.error(f"保存订单记录失败: {e}")
 
+    async def _initialize_target(
+        self,
+        target_state: TargetTraderState,
+        target_positions: Dict[str, Dict]
+    ):
+        """
+        初始化目标交易者状态
+        
+        Args:
+            target_state: 目标交易者状态
+            target_positions: 目标交易者的当前持仓
+        """
+        config = target_state.config
+        address = target_state.address
+        
+        target_state.init_timestamp = pendulum.now()
+        
+        if config.sync_position:
+            # 同步现有仓位
+            logger.info(f"[{address[:8]}] 开始同步现有仓位...")
+            for symbol, target_pos in target_positions.items():
+                if not self._should_copy_symbol(config, symbol):
+                    continue
+                if target_pos['notional'] < config.min_position_size_usd:
+                    continue
+                
+                my_pos = self.my_positions.get(symbol)
+                current_price = self.client.get_mid_price(symbol)
+                copy_size = self._calculate_copy_size(config, target_pos, current_price)
+                leverage = target_pos['leverage'] if config.copy_leverage else config.default_leverage
+                leverage = min(leverage, config.max_leverage)
+                is_long = target_pos['side'] == 'long'
+                
+                if my_pos is None:
+                    # 没有持仓，开仓同步
+                    logger.info(
+                        f"[{address[:8]}] 同步仓位: {symbol} "
+                        f"{target_pos['side']} {abs(target_pos['size'])} -> 开仓 {copy_size}"
+                    )
+                    await self._open_position(target_state, symbol, is_long, copy_size, leverage, target_pos)
+                    target_state.copies_today += 1
+                elif (my_pos.side == PositionSide.LONG) != is_long:
+                    # 方向不同，跳过同步（只记录）
+                    logger.warning(
+                        f"[{address[:8]}] 跳过同步（方向不同）: {symbol} "
+                        f"我方 {my_pos.side.value} vs 目标 {target_pos['side']}"
+                    )
+                else:
+                    # 方向相同，记录已有仓位
+                    logger.info(
+                        f"[{address[:8]}] 记录已有仓位: {symbol} "
+                        f"{target_pos['side']} {abs(target_pos['size'])}"
+                    )
+                
+                target_state.copied_positions[symbol] = target_pos
+                await asyncio.sleep(config.order_delay)
+            
+            logger.info(
+                f"[{address[:8]}] 初始化完成（同步模式），已同步 {len(target_state.copied_positions)} 个仓位"
+            )
+        else:
+            # 不同步，只记录现有持仓
+            for symbol, target_pos in target_positions.items():
+                if self._should_copy_symbol(config, symbol):
+                    target_state.copied_positions[symbol] = target_pos
+                    logger.info(
+                        f"[{address[:8]}] 初始化记录现有持仓: {symbol} "
+                        f"{target_pos['side']} {abs(target_pos['size'])} (不跟单)"
+                    )
+            logger.info(
+                f"[{address[:8]}] 初始化完成（不同步），已记录 {len(target_state.copied_positions)} 个现有持仓，"
+                f"后续将只跟单新开仓位"
+            )
+        
+        target_state.initialized = True
+        target_state.last_check = pendulum.now()
+
     async def _sync_target(self, target_state: TargetTraderState):
         """同步单个目标的持仓"""
         config = target_state.config
@@ -520,22 +599,9 @@ class MultiTargetCopyTradingBot:
         target_positions = self._get_target_positions(address)
         target_state.positions = target_positions
 
-        # 首次初始化：只记录现有持仓，不跟单
+        # 首次初始化
         if not target_state.initialized:
-            target_state.init_timestamp = pendulum.now()
-            for symbol, target_pos in target_positions.items():
-                if self._should_copy_symbol(config, symbol):
-                    target_state.copied_positions[symbol] = target_pos
-                    logger.info(
-                        f"[{address[:8]}] 初始化记录现有持仓: {symbol} "
-                        f"{target_pos['side']} {abs(target_pos['size'])} (不跟单)"
-                    )
-            target_state.initialized = True
-            target_state.last_check = pendulum.now()
-            logger.info(
-                f"[{address[:8]}] 初始化完成，已记录 {len(target_state.copied_positions)} 个现有持仓，"
-                f"后续将只跟单新开仓位"
-            )
+            await self._initialize_target(target_state, target_positions)
             return
 
         # 处理新开仓/调整仓位
