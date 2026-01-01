@@ -1,7 +1,7 @@
 """
-跟单机器人 (WebSocket 版本)
+跟单机器人
 
-通过 WebSocket 订阅目标交易者的实时成交，实现低延迟跟单
+通过轮询目标交易者的持仓变化进行跟单
 从数据库加载跟单配置，支持同时跟单多个交易者
 使用前请先在 Web 跟单管理页面添加并启用跟单地址
 """
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
-from engine.copy_trading import MultiTargetCopyTradingBotWithWebSocket
+from engine.copy_trading import MultiTargetCopyTradingBot
 from config.settings import settings
 
 
@@ -131,7 +131,7 @@ async def run():
     setup_logging()
 
     logger.info("=" * 60)
-    logger.info("Hyperliquid WebSocket 跟单机器人")
+    logger.info("Hyperliquid 跟单机器人")
     logger.info("=" * 60)
 
     # 初始化飞书通知器
@@ -148,11 +148,11 @@ async def run():
         testnet=settings.system.testnet_mode
     )
 
-    # 创建 WebSocket 多目标跟单机器人
-    bot = MultiTargetCopyTradingBotWithWebSocket(
+    # 创建多目标跟单机器人
+    bot = MultiTargetCopyTradingBot(
         client=client,
         db_path="data/traders.db",
-        check_interval=2.0,  # WebSocket 检查间隔（秒）
+        check_interval=10.0,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
     )
 
@@ -177,7 +177,6 @@ async def run():
         status = bot.get_status()
         logger.info("\n运行统计:")
         logger.info(f"  跟单目标数: {status['target_count']}")
-        logger.info(f"  WebSocket 订阅数: {status.get('websocket', {}).get('subscribed_count', 0)}")
         logger.info(f"  总复制次数: {status['total_stats']['total_copies_today']}")
         logger.info(f"  成功: {status['total_stats']['successful_copies']}")
         logger.info(f"  失败: {status['total_stats']['failed_copies']}")
