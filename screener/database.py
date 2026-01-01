@@ -333,6 +333,7 @@ class TraderDatabase:
                     symbols_blacklist TEXT DEFAULT '[]',
                     check_interval REAL DEFAULT 10.0,
                     dry_run BOOLEAN DEFAULT TRUE,
+                    sync_position BOOLEAN DEFAULT TRUE,
 
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -355,6 +356,9 @@ class TraderDatabase:
                 CREATE INDEX IF NOT EXISTS idx_copy_group
                 ON copy_trading_addresses(group_id)
             """)
+
+            # 迁移：为 copy_trading_addresses 添加新列
+            self._migrate_copy_trading_addresses(cursor)
 
             # 创建 Hyperliquid 币种表
             cursor.execute("""
@@ -466,6 +470,25 @@ class TraderDatabase:
                 logger.debug("已为 trader_fills 添加 trade_type 列")
             except Exception as e:
                 logger.debug(f"添加 trade_type 列失败（可能已存在）: {e}")
+
+    def _migrate_copy_trading_addresses(self, cursor):
+        """为 copy_trading_addresses 表添加新列（数据库迁移）"""
+        cursor.execute("PRAGMA table_info(copy_trading_addresses)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        new_columns = [
+            ("sync_position", "BOOLEAN DEFAULT TRUE"),
+        ]
+
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(
+                        f"ALTER TABLE copy_trading_addresses ADD COLUMN {col_name} {col_type}"
+                    )
+                    logger.debug(f"已为 copy_trading_addresses 添加 {col_name} 列")
+                except Exception as e:
+                    logger.debug(f"添加 {col_name} 列失败（可能已存在）: {e}")
 
     @staticmethod
     def calculate_trade_type(dir_val: str, start_position: float) -> str:
@@ -1596,8 +1619,8 @@ class TraderDatabase:
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
-                    check_interval, dry_run, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    check_interval, dry_run, sync_position, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(address) DO UPDATE SET
                     name = excluded.name,
                     group_id = excluded.group_id,
@@ -1615,6 +1638,7 @@ class TraderDatabase:
                     symbols_blacklist = excluded.symbols_blacklist,
                     check_interval = excluded.check_interval,
                     dry_run = excluded.dry_run,
+                    sync_position = excluded.sync_position,
                     updated_at = excluded.updated_at
             """, (
                 data.get('address'),
@@ -1634,6 +1658,7 @@ class TraderDatabase:
                 blacklist,
                 data.get('check_interval', 10.0),
                 data.get('dry_run', True),
+                data.get('sync_position', True),
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 

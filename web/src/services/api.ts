@@ -220,6 +220,7 @@ export interface CopyTradingAddress {
   symbols_blacklist: string[];
   check_interval: number;
   dry_run: boolean;
+  sync_position: boolean;
   // 时间戳
   created_at: string;
   updated_at: string;

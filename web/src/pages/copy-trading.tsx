@@ -88,6 +88,7 @@ export default function CopyTradingPage() {
     symbols_blacklist: [],
     check_interval: 10,
     dry_run: true,
+    sync_position: true,
   });
 
   // 分组表单
@@ -353,6 +354,7 @@ export default function CopyTradingPage() {
         symbols_blacklist: address.symbols_blacklist || [],
         check_interval: address.check_interval,
         dry_run: address.dry_run,
+        sync_position: address.sync_position ?? true,
       });
     } else {
       setEditingAddress(null);
@@ -374,6 +376,7 @@ export default function CopyTradingPage() {
         symbols_blacklist: [],
         check_interval: 10,
         dry_run: true,
+        sync_position: true,
       });
     }
     // 重置临时输入状态
@@ -1125,7 +1128,7 @@ export default function CopyTradingPage() {
                 </div>
 
                 {/* 开关选项 */}
-                <div className="col-span-2 flex gap-6">
+                <div className="col-span-2 flex flex-wrap gap-6">
                   <Switch
                     isSelected={formData.is_enabled}
                     onValueChange={(v) => setFormData({ ...formData, is_enabled: v })}
@@ -1138,6 +1141,16 @@ export default function CopyTradingPage() {
                   >
                     复制杠杆
                   </Switch>
+                  <Tooltip content="启用后将同步目标交易者的现有仓位">
+                    <div>
+                      <Switch
+                        isSelected={formData.sync_position}
+                        onValueChange={(v) => setFormData({ ...formData, sync_position: v })}
+                      >
+                        同步仓位
+                      </Switch>
+                    </div>
+                  </Tooltip>
                   <Switch
                     isSelected={formData.dry_run}
                     onValueChange={(v) => setFormData({ ...formData, dry_run: v })}
