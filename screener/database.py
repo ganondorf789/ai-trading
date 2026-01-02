@@ -45,6 +45,14 @@ class TraderDatabase:
         finally:
             conn.close()
 
+    def _migrate_add_column_if_not_exists(self, cursor, table: str, column: str, column_def: str):
+        """安全地添加列（如果不存在）"""
+        cursor.execute(f"PRAGMA table_info({table})")
+        columns = [row[1] for row in cursor.fetchall()]
+        if column not in columns:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
+            logger.info(f"数据库迁移: 添加列 {table}.{column}")
+
     def _init_database(self):
         """初始化数据库表结构"""
         with self._get_connection() as conn:
@@ -373,6 +381,11 @@ class TraderDatabase:
                 CREATE INDEX IF NOT EXISTS idx_positions_address
                 ON asset_positions(address)
             """)
+
+            # 数据库迁移：为已存在的表添加缺失的列
+            self._migrate_add_column_if_not_exists(
+                cursor, 'group_comparison_sessions', 'final_size', 'INTEGER DEFAULT 6'
+            )
 
             # 创建跟单分组表
             cursor.execute("""
