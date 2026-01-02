@@ -201,13 +201,13 @@ class TraderPreFilter:
         filtered_out: Dict[str, List[Dict]]
     ):
         """打印筛选摘要"""
-        print(f"\n📊 预筛选结果:")
-        print("-" * 60)
-        print(f"  总交易员数: {total}")
-        print(f"  通过筛选: {passed} ✅")
-        print(f"  被筛除: {total - passed} ❌")
-        print("-" * 60)
-        print(f"  筛除原因统计:")
+        logger.info(f"预筛选结果:")
+        logger.info("-" * 60)
+        logger.info(f"  总交易员数: {total}")
+        logger.info(f"  通过筛选: {passed}")
+        logger.info(f"  被筛除: {total - passed}")
+        logger.info("-" * 60)
+        logger.info(f"  筛除原因统计:")
 
         reason_names = {
             'low_pnl': f'总盈亏 < ${self.config["min_pnl"]:,.0f}',
@@ -223,9 +223,9 @@ class TraderPreFilter:
 
         for reason, traders in filtered_out.items():
             if traders:
-                print(f"    - {reason_names[reason]}: {len(traders)} 人")
+                logger.info(f"    - {reason_names[reason]}: {len(traders)} 人")
 
-        print("-" * 60)
+        logger.info("-" * 60)
 
 
 class TopTradersAnalyzer:
@@ -345,8 +345,8 @@ class TopTradersAnalyzer:
 
             # 逐个分析模式：分析前确认
             if one_by_one and analyzed > 0:
-                print(f"\n{'='*60}")
-                print(f"已完成 {analyzed} 个分析，还剩 {total - i + 1} 个待分析")
+                logger.info("=" * 60)
+                logger.info(f"已完成 {analyzed} 个分析，还剩 {total - i + 1} 个待分析")
                 try:
                     user_input = input("继续分析下一个? (y/n/q): ").strip().lower()
                     if user_input in ('n', 'q', 'quit', 'exit'):
@@ -378,35 +378,37 @@ class TopTradersAnalyzer:
 
     def _print_analysis_summary(self, trader: Dict, analysis: Dict):
         """打印单个分析结果摘要"""
-        print("\n" + "-" * 60)
-        print(f"📊 交易员: {trader.get('address')[:10]}...{trader.get('address')[-6:]}")
-        print(f"   评分: {trader.get('overall_score', 0):.1f} | "
+        logger.info("-" * 60)
+        logger.info(f"交易员: {trader.get('address')[:10]}...{trader.get('address')[-6:]}")
+        logger.info(f"   评分: {trader.get('overall_score', 0):.1f} | "
               f"胜率: {trader.get('win_rate', 0)*100:.1f}% | "
               f"PnL: ${trader.get('total_pnl', 0):,.0f}")
-        print("-" * 60)
+        logger.info("-" * 60)
 
         if analysis.get('summary'):
-            print(f"📝 综合评价:\n   {analysis['summary'][:200]}...")
+            logger.info(f"综合评价: {analysis['summary'][:200]}...")
 
         if analysis.get('copy_trading_advice'):
-            print(f"\n💡 跟单建议:\n   {analysis['copy_trading_advice'][:200]}...")
+            logger.info(f"跟单建议: {analysis['copy_trading_advice'][:200]}...")
 
-        print("-" * 60)
+        logger.info("-" * 60)
 
     def compare_in_groups(
         self,
         traders: List[Dict],
         group_size: int = 6,
         top_per_group: int = 2,
+        final_size: int = 6,
         delay: float = 1.0
     ) -> tuple[List[Dict], Dict[str, Any]]:
         """
-        分组对比：将交易员分组比较，每组选出前N名进入决赛
+        分组对比：将交易员分组比较，多轮淘汰直到人数足够少
 
         Args:
             traders: 交易员列表
             group_size: 每组人数
             top_per_group: 每组晋级人数
+            final_size: 决赛最大人数，超过则继续淘汰
             delay: 请求间隔
 
         Returns:
@@ -414,71 +416,84 @@ class TopTradersAnalyzer:
         """
         import math
 
-        total = len(traders)
+        all_rounds = []
+        current_traders = traders
+        round_num = 0
 
-        if total <= group_size:
-            # 人数少，直接进入决赛
-            logger.info(f"交易员数量 ({total}) <= 分组大小 ({group_size})，直接进入决赛")
-            return traders, {'groups': [], 'direct_final': True}
+        while len(current_traders) > final_size:
+            round_num += 1
+            total = len(current_traders)
 
-        # 分组
-        num_groups = math.ceil(total / group_size)
-        groups = []
-        for i in range(num_groups):
-            start = i * group_size
-            end = min(start + group_size, total)
-            groups.append(traders[start:end])
+            # 分组
+            num_groups = math.ceil(total / group_size)
+            groups = []
+            for i in range(num_groups):
+                start = i * group_size
+                end = min(start + group_size, total)
+                groups.append(current_traders[start:end])
 
-        logger.info(f"🏆 分组对比: {total} 人分为 {num_groups} 组，每组选 {top_per_group} 人晋级")
+            logger.info("=" * 60)
+            logger.info(f"第 {round_num} 轮淘汰: {total} 人分为 {num_groups} 组，每组选 {top_per_group} 人晋级")
+            logger.info("=" * 60)
 
-        finalists = []
-        group_reports = []
+            round_finalists = []
+            group_reports = []
 
-        for i, group in enumerate(groups, 1):
-            print(f"\n{'='*60}")
-            print(f"🔍 第 {i}/{num_groups} 组对比 ({len(group)} 人)")
-            print("-" * 60)
+            for i, group in enumerate(groups, 1):
+                logger.info(f"第 {i}/{num_groups} 组对比 ({len(group)} 人)")
+                logger.info("-" * 40)
 
-            # 显示本组交易员
-            for j, t in enumerate(group, 1):
-                addr = f"{t['address'][:6]}...{t['address'][-4:]}"
-                print(f"  {j}. {addr} | 评分: {t.get('overall_score', 0):.1f} | "
-                      f"PnL: ${t.get('total_pnl', 0):,.0f}")
+                # 显示本组交易员
+                for j, t in enumerate(group, 1):
+                    addr = f"{t['address'][:6]}...{t['address'][-4:]}"
+                    logger.info(f"  {j}. {addr} | 评分: {t.get('overall_score', 0):.1f} | "
+                          f"PnL: ${t.get('total_pnl', 0):,.0f}")
 
-            # AI 对比本组
-            logger.info(f"AI 分析第 {i} 组...")
-            group_result = self._compare_group(group, i, num_groups, top_per_group)
+                # AI 对比本组
+                logger.info(f"AI 分析中...")
+                group_result = self._compare_group(group, i, num_groups, top_per_group)
 
-            if group_result:
-                # 添加晋级者
-                winners = group_result.get('winners', [])
-                finalists.extend(winners)
+                if group_result:
+                    winners = group_result.get('winners', [])
+                    round_finalists.extend(winners)
 
-                group_reports.append({
-                    'group_num': i,
-                    'total_in_group': len(group),
-                    'winners': [w.get('address') for w in winners],
-                    'analysis': group_result.get('analysis', '')
-                })
+                    group_reports.append({
+                        'group_num': i,
+                        'total_in_group': len(group),
+                        'winners': [w.get('address') for w in winners],
+                        'analysis': group_result.get('analysis', '')
+                    })
 
-                # 打印本组结果
-                print(f"\n✅ 第 {i} 组晋级者:")
-                for w in winners:
-                    addr = f"{w['address'][:6]}...{w['address'][-4:]}"
-                    print(f"   🏅 {addr} | 评分: {w.get('overall_score', 0):.1f}")
+                    logger.info(f"晋级者: {len(winners)} 人")
+                    for w in winners:
+                        addr = f"{w['address'][:6]}...{w['address'][-4:]}"
+                        logger.info(f"   {addr}")
 
-            # 请求间隔
-            if i < num_groups:
-                time.sleep(delay)
+                # 请求间隔
+                if i < num_groups:
+                    time.sleep(delay)
 
-        logger.info(f"🎯 分组对比完成，共 {len(finalists)} 人进入决赛")
+            all_rounds.append({
+                'round': round_num,
+                'input_count': total,
+                'output_count': len(round_finalists),
+                'groups': group_reports
+            })
 
-        return finalists, {
-            'total_traders': total,
-            'num_groups': num_groups,
-            'group_size': group_size,
-            'top_per_group': top_per_group,
-            'groups': group_reports
+            logger.info(f"第 {round_num} 轮完成: {total} -> {len(round_finalists)} 人")
+            current_traders = round_finalists
+
+            if not current_traders:
+                logger.warning("没有晋级者，淘汰结束")
+                break
+
+        logger.info(f"淘汰赛完成，共 {round_num} 轮，最终 {len(current_traders)} 人进入决赛")
+
+        return current_traders, {
+            'total_rounds': round_num,
+            'initial_count': len(traders),
+            'final_count': len(current_traders),
+            'rounds': all_rounds
         }
 
     def _compare_group(
@@ -775,36 +790,36 @@ class TopTradersAnalyzer:
         Args:
             report: 报告数据
         """
-        print("\n" + "=" * 100)
-        print("🏆 S 级顶尖交易员综合分析报告")
-        print("=" * 100)
-        print(f"📅 生成时间: {report.get('generated_at', 'N/A')}")
-        print(f"🤖 AI 提供商: {report.get('ai_provider', 'N/A')}")
-        print(f"👥 分析交易员数量: {report.get('total_traders_analyzed', 0)}")
-        print("-" * 100)
+        logger.info("=" * 80)
+        logger.info("S 级顶尖交易员综合分析报告")
+        logger.info("=" * 80)
+        logger.info(f"生成时间: {report.get('generated_at', 'N/A')}")
+        logger.info(f"AI 提供商: {report.get('ai_provider', 'N/A')}")
+        logger.info(f"分析交易员数量: {report.get('total_traders_analyzed', 0)}")
+        logger.info("-" * 80)
 
         # 打印交易员列表
-        print("\n📊 交易员评分排名:")
-        print("-" * 100)
-        print(f"{'排名':<4} {'地址':<18} {'评分':<8} {'胜率':<8} {'盈亏比':<8} {'总PnL':<14} {'回撤':<8} {'Sharpe':<8}")
-        print("-" * 100)
+        logger.info("交易员评分排名:")
+        logger.info("-" * 80)
+        logger.info(f"{'排名':<4} {'地址':<18} {'评分':<8} {'胜率':<8} {'盈亏比':<8} {'总PnL':<14} {'回撤':<8} {'Sharpe':<8}")
+        logger.info("-" * 80)
 
         for t in report.get('traders', []):
             addr = f"{t['address'][:6]}...{t['address'][-4:]}"
             pnl_str = f"${t['total_pnl']:,.0f}"
-            print(f"{t['rank']:<4} {addr:<18} {t['overall_score']:>6.1f} "
+            logger.info(f"{t['rank']:<4} {addr:<18} {t['overall_score']:>6.1f} "
                   f"{t['win_rate']*100:>6.1f}% {t['profit_factor']:>7.2f} "
                   f"{pnl_str:>13} {t['max_drawdown']*100:>6.1f}% {t['sharpe_ratio']:>7.2f}")
 
-        print("-" * 100)
+        logger.info("-" * 80)
 
         # 打印 AI 综合分析
         if report.get('comparison_analysis'):
-            print("\n🤖 AI 综合分析:")
-            print("-" * 100)
-            print(report['comparison_analysis'])
+            logger.info("AI 综合分析:")
+            logger.info("-" * 80)
+            logger.info(report['comparison_analysis'])
 
-        print("\n" + "=" * 100)
+        logger.info("=" * 80)
 
 
 def main():
@@ -919,6 +934,12 @@ def main():
         help='每组晋级人数 (默认: 2)'
     )
     group_compare.add_argument(
+        '--final-size',
+        type=int,
+        default=6,
+        help='决赛最大人数，超过则继续淘汰 (默认: 6)'
+    )
+    group_compare.add_argument(
         '--skip-group-compare',
         action='store_true',
         help='跳过分组对比，直接进行决赛（适用于人数较少时）'
@@ -951,50 +972,44 @@ def main():
     args = parser.parse_args()
 
     # 配置日志
-    if args.verbose:
-        logger.remove()
-        logger.add(
-            lambda msg: print(msg, end=''),
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <7}</level> | {message}",
-            level="DEBUG"
-        )
-    else:
-        logger.remove()
-        logger.add(
-            lambda msg: print(msg, end=''),
-            format="<green>{time:HH:mm:ss}</green> | <level>{level: <7}</level> | {message}",
-            level="INFO"
-        )
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        format="<green>{time:HH:mm:ss}</green> | <level>{level: <7}</level> | {message}",
+        level="DEBUG" if args.verbose else "INFO",
+        colorize=True
+    )
 
-    print("\n" + "=" * 80)
-    print("🚀 S 级顶尖交易员 AI 分析工具")
-    print("=" * 80)
-    print(f"📋 基本配置:")
-    print(f"   - 筛选评级: {args.rating}")
-    print(f"   - 分析数量: {args.top or '全部'}")
-    print(f"   - AI 提供商: {args.provider or '自动选择'}")
-    print(f"   - 输出文件: {args.output}")
+    logger.info("=" * 60)
+    logger.info("S 级顶尖交易员 AI 分析工具")
+    logger.info("=" * 60)
+    logger.info(f"基本配置:")
+    logger.info(f"  - 筛选评级: {args.rating}")
+    logger.info(f"  - 分析数量: {args.top or '全部'}")
+    logger.info(f"  - AI 提供商: {args.provider or '自动选择'}")
+    logger.info(f"  - 输出文件: {args.output}")
 
-    print(f"\n📋 分组对比配置:")
-    print(f"   - 每组人数: {args.group_size}")
-    print(f"   - 每组晋级: {args.top_per_group}")
-    print(f"   - 跳过分组: {'是' if args.skip_group_compare else '否'}")
-    print(f"   - 跳过决赛: {'是' if args.skip_final else '否'}")
+    logger.info(f"分组对比配置:")
+    logger.info(f"  - 每组人数: {args.group_size}")
+    logger.info(f"  - 每组晋级: {args.top_per_group}")
+    logger.info(f"  - 决赛人数: {args.final_size}")
+    logger.info(f"  - 跳过分组: {'是' if args.skip_group_compare else '否'}")
+    logger.info(f"  - 跳过决赛: {'是' if args.skip_final else '否'}")
 
     if not args.no_filter:
-        print(f"\n📋 预筛选条件（专业级标准）:")
-        print(f"   - 最小总盈亏: ${args.min_pnl:,.0f}")
-        print(f"   - 最小近7天盈亏: ${args.min_7d_pnl:,.0f}")
-        print(f"   - 最大回撤: {args.max_drawdown*100:.0f}%")
-        print(f"   - 最小Sharpe比率: {args.min_sharpe:.1f}")
-        print(f"   - 最小Sortino比率: {args.min_sortino:.1f}")
-        print(f"   - 最小盈亏比: {args.min_profit_factor:.1f}")
-        print(f"   - 胜率范围: {args.min_win_rate*100:.0f}% - {args.max_win_rate*100:.0f}%")
-        print(f"   - 最近活跃天数: {args.active_days} 天")
+        logger.info(f"预筛选条件（专业级标准）:")
+        logger.info(f"  - 最小总盈亏: ${args.min_pnl:,.0f}")
+        logger.info(f"  - 最小近7天盈亏: ${args.min_7d_pnl:,.0f}")
+        logger.info(f"  - 最大回撤: {args.max_drawdown*100:.0f}%")
+        logger.info(f"  - 最小Sharpe比率: {args.min_sharpe:.1f}")
+        logger.info(f"  - 最小Sortino比率: {args.min_sortino:.1f}")
+        logger.info(f"  - 最小盈亏比: {args.min_profit_factor:.1f}")
+        logger.info(f"  - 胜率范围: {args.min_win_rate*100:.0f}% - {args.max_win_rate*100:.0f}%")
+        logger.info(f"  - 最近活跃天数: {args.active_days} 天")
     else:
-        print(f"\n📋 预筛选: 已禁用")
+        logger.info(f"预筛选: 已禁用")
 
-    print("-" * 80)
+    logger.info("-" * 60)
 
     try:
         # 初始化数据库
@@ -1014,10 +1029,10 @@ def main():
             logger.warning(f"未找到 {args.rating} 级交易员")
             return
 
-        print(f"\n📊 找到 {len(traders)} 个 {args.rating} 级交易员:")
-        print("-" * 120)
-        print(f"  {'#':>2}  {'地址':<14} {'评分':>5} {'胜率':>6} {'PnL':>12} {'7D PnL':>10} {'DD':>6} {'Sharpe':>7} {'Sortino':>7}")
-        print("-" * 120)
+        logger.info(f"找到 {len(traders)} 个 {args.rating} 级交易员:")
+        logger.info("-" * 100)
+        logger.info(f"  {'#':>2}  {'地址':<14} {'评分':>5} {'胜率':>6} {'PnL':>12} {'7D PnL':>10} {'DD':>6} {'Sharpe':>7} {'Sortino':>7}")
+        logger.info("-" * 100)
         for i, t in enumerate(traders, 1):
             addr = f"{t['address'][:6]}...{t['address'][-4:]}"
             pnl = f"${t.get('total_pnl', 0):,.0f}"
@@ -1025,10 +1040,10 @@ def main():
             drawdown = f"{t.get('max_drawdown', 0)*100:.1f}%"
             sharpe = f"{t.get('sharpe_ratio', 0):.2f}"
             sortino = f"{t.get('sortino_ratio', 0):.2f}"
-            print(f"  {i:>2}. {addr} {t.get('overall_score', 0):>5.1f} "
+            logger.info(f"  {i:>2}. {addr} {t.get('overall_score', 0):>5.1f} "
                   f"{t.get('win_rate', 0)*100:>5.1f}% {pnl:>12} "
                   f"{pnl_7d:>10} {drawdown:>6} {sharpe:>7} {sortino:>7}")
-        print("-" * 120)
+        logger.info("-" * 100)
 
         # 预筛选
         if not args.no_filter:
@@ -1055,36 +1070,45 @@ def main():
 
             if not traders:
                 logger.warning("所有交易员都被预筛选条件筛除")
-                print("\n💡 建议: 可以尝试放宽筛选条件，例如:")
-                print("   --min-pnl 5000 --max-drawdown 0.4 --min-sharpe 0.3")
+                logger.info("建议: 可以尝试放宽筛选条件，例如:")
+                logger.info("   --min-pnl 5000 --max-drawdown 0.4 --min-sharpe 0.3")
                 return
 
         # 限制分析数量
         if args.top and args.top > 0 and len(traders) > args.top:
             traders = traders[:args.top]
-            print(f"\n📌 限制分析数量为前 {args.top} 名")
+            logger.info(f"限制分析数量为前 {args.top} 名")
 
         # 打印最终待分析列表
-        print(f"\n✅ 最终待分析交易员: {len(traders)} 个")
-        print("-" * 80)
+        logger.info(f"最终待分析交易员: {len(traders)} 个")
+        logger.info("-" * 60)
         for i, t in enumerate(traders, 1):
             addr = f"{t['address'][:6]}...{t['address'][-4:]}"
             pnl = f"${t.get('total_pnl', 0):,.0f}"
-            print(f"  {i}. {addr} | 评分: {t.get('overall_score', 0):.1f} | PnL: {pnl}")
-        print("-" * 80)
+            logger.info(f"  {i}. {addr} | 评分: {t.get('overall_score', 0):.1f} | PnL: {pnl}")
+        logger.info("-" * 60)
 
         # Dry run 模式
         if args.dry_run:
-            print("\n⚠️  Dry-run 模式，不执行实际分析")
-            print(f"\n💡 预估分组情况:")
+            logger.warning("Dry-run 模式，不执行实际分析")
+            logger.info(f"预估淘汰赛情况:")
             import math
-            num_groups = math.ceil(len(traders) / args.group_size)
-            finalists = min(len(traders), num_groups * args.top_per_group)
-            print(f"   - 总人数: {len(traders)}")
-            print(f"   - 分组数: {num_groups}")
-            print(f"   - 每组晋级: {args.top_per_group}")
-            print(f"   - 预计决赛人数: {finalists}")
-            print(f"   - 预计 AI 调用次数: {num_groups + 1}")
+
+            current = len(traders)
+            round_num = 0
+            total_ai_calls = 0
+
+            while current > args.final_size:
+                round_num += 1
+                num_groups = math.ceil(current / args.group_size)
+                next_round = num_groups * args.top_per_group
+                total_ai_calls += num_groups
+                logger.info(f"   第 {round_num} 轮: {current} 人 -> {num_groups} 组 -> {next_round} 人晋级")
+                current = next_round
+
+            total_ai_calls += 1  # 决赛
+            logger.info(f"   决赛: {current} 人")
+            logger.info(f"   预计 AI 调用次数: {total_ai_calls} (淘汰赛 {total_ai_calls - 1} + 决赛 1)")
             return
 
         # ========== 分组对比流程 ==========
@@ -1092,14 +1116,15 @@ def main():
         finalists = traders
 
         # Step 1: 分组对比（如果人数较多）
-        if not args.skip_group_compare and len(traders) > args.group_size:
-            print(f"\n🏆 开始分组对比...")
-            print(f"   每组 {args.group_size} 人，每组选 {args.top_per_group} 人晋级")
+        if not args.skip_group_compare and len(traders) > args.final_size:
+            logger.info(f"开始分组淘汰赛...")
+            logger.info(f"   每组 {args.group_size} 人，每组选 {args.top_per_group} 人，决赛最多 {args.final_size} 人")
 
             finalists, group_report = analyzer.compare_in_groups(
                 traders,
                 group_size=args.group_size,
                 top_per_group=args.top_per_group,
+                final_size=args.final_size,
                 delay=args.delay
             )
 
@@ -1107,23 +1132,22 @@ def main():
                 logger.warning("分组对比后没有晋级者")
                 return
 
-            print(f"\n🎯 分组对比完成!")
-            print(f"   晋级决赛: {len(finalists)} 人")
-            print("-" * 60)
+            logger.info(f"淘汰赛完成! 晋级决赛: {len(finalists)} 人")
+            logger.info("-" * 60)
             for i, f in enumerate(finalists, 1):
                 addr = f"{f['address'][:6]}...{f['address'][-4:]}"
-                print(f"   {i}. {addr} | 评分: {f.get('overall_score', 0):.1f} | "
+                logger.info(f"   {i}. {addr} | 评分: {f.get('overall_score', 0):.1f} | "
                       f"PnL: ${f.get('total_pnl', 0):,.0f}")
-            print("-" * 60)
+            logger.info("-" * 60)
         else:
             if args.skip_group_compare:
-                print("\n⏩ 跳过分组对比，直接进入决赛...")
+                logger.info("跳过分组对比，直接进入决赛...")
             else:
-                print(f"\n📌 人数 ({len(traders)}) <= 分组大小 ({args.group_size})，直接进入决赛...")
+                logger.info(f"人数 ({len(traders)}) <= 决赛人数 ({args.final_size})，直接进入决赛...")
 
         # Step 2: 决赛（综合排名）
         if args.skip_final:
-            print("\n✅ 分组对比完成，跳过决赛!")
+            logger.info("分组对比完成，跳过决赛!")
             # 保存分组对比结果
             if group_report:
                 report = {
@@ -1140,11 +1164,11 @@ def main():
                     ]
                 }
                 analyzer.save_report(report, args.output)
-                print(f"📄 分组对比结果已保存至: {args.output}")
+                logger.info(f"分组对比结果已保存至: {args.output}")
             return
 
-        print(f"\n🏁 开始决赛（综合排名）...")
-        print(f"   参与决赛: {len(finalists)} 人")
+        logger.info(f"开始决赛（综合排名）...")
+        logger.info(f"   参与决赛: {len(finalists)} 人")
 
         # 为决赛选手添加空的 ai_analysis（因为使用分组对比，不需要单独分析）
         finalists_with_analysis = [
@@ -1169,11 +1193,11 @@ def main():
         # 打印报告
         analyzer.print_report(report)
 
-        print("\n✅ 分析完成!")
-        print(f"📄 完整报告已保存至: {args.output}")
+        logger.info("分析完成!")
+        logger.info(f"完整报告已保存至: {args.output}")
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  用户中断")
+        logger.warning("用户中断")
     except Exception as e:
         logger.exception(f"发生错误: {e}")
         raise
