@@ -59,6 +59,10 @@ from screener.database import TraderDatabase
 from services.ai_analysis import TraderAIAnalyzer, generate_trader_analysis
 from clients import get_ai_client
 
+# Hyperliquid API for refreshing positions
+from hyperliquid.info import Info
+from hyperliquid.utils import constants
+
 # 上海时区
 SHANGHAI_TZ = "Asia/Shanghai"
 
@@ -256,6 +260,105 @@ class TopTradersAnalyzer:
         except Exception as e:
             logger.error(f"AI 客户端初始化失败: {e}")
             raise
+
+        # 初始化 Hyperliquid Info 客户端（用于刷新持仓）
+        self.hl_info = Info(constants.MAINNET_API_URL, skip_ws=True)
+
+    def refresh_trader_positions(self, address: str) -> List[Dict]:
+        """
+        刷新单个交易员的持仓数据
+
+        Args:
+            address: 交易员地址
+
+        Returns:
+            持仓列表
+        """
+        try:
+            user_state = self.hl_info.user_state(address)
+            asset_positions = user_state.get('assetPositions', [])
+
+            # 保存到数据库
+            if asset_positions:
+                self.db.save_positions(address, asset_positions)
+
+            return asset_positions
+        except Exception as e:
+            logger.warning(f"刷新持仓失败 {address[:10]}...: {e}")
+            return []
+
+    def refresh_all_positions(
+        self,
+        traders: List[Dict],
+        delay: float = 0.2
+    ) -> Dict[str, List[Dict]]:
+        """
+        批量刷新所有交易员的持仓
+
+        Args:
+            traders: 交易员列表
+            delay: 请求间隔（秒）
+
+        Returns:
+            {address: positions} 映射
+        """
+        logger.info(f"开始刷新 {len(traders)} 个交易员的持仓...")
+        positions_map = {}
+
+        for i, trader in enumerate(traders, 1):
+            address = trader.get('address')
+            positions = self.refresh_trader_positions(address)
+            positions_map[address] = positions
+
+            if self.verbose:
+                pos_count = len(positions)
+                logger.debug(f"[{i}/{len(traders)}] {address[:10]}... 持仓: {pos_count} 个")
+
+            if i < len(traders):
+                time.sleep(delay)
+
+        total_with_positions = sum(1 for p in positions_map.values() if p)
+        logger.info(f"持仓刷新完成: {total_with_positions}/{len(traders)} 个交易员有持仓")
+
+        return positions_map
+
+    def get_trader_coin_stats(self, address: str, top_n: int = 5) -> List[Dict]:
+        """
+        获取交易员的币种统计（Top N）
+
+        Args:
+            address: 交易员地址
+            top_n: 返回前 N 个币种
+
+        Returns:
+            币种统计列表
+        """
+        try:
+            summary = self.db.get_fills_summary(address, exclude_user_perps=True)
+            by_coin = summary.get('by_coin', [])
+
+            # 按盈亏绝对值排序，取 Top N
+            sorted_coins = sorted(by_coin, key=lambda x: abs(x.get('total_pnl', 0)), reverse=True)
+            return sorted_coins[:top_n]
+        except Exception as e:
+            logger.warning(f"获取币种统计失败 {address[:10]}...: {e}")
+            return []
+
+    def get_trader_positions(self, address: str) -> List[Dict]:
+        """
+        获取交易员的当前持仓
+
+        Args:
+            address: 交易员地址
+
+        Returns:
+            持仓列表
+        """
+        try:
+            return self.db.get_positions(address)
+        except Exception as e:
+            logger.warning(f"获取持仓失败 {address[:10]}...: {e}")
+            return []
 
     def get_traders_by_rating(
         self,
@@ -554,12 +657,50 @@ class TopTradersAnalyzer:
         total_groups: int,
         top_n: int
     ) -> str:
-        """构建分组对比提示词"""
+        """构建分组对比提示词（包含币种统计和当前持仓）"""
         traders_info = []
 
         for i, t in enumerate(group, 1):
+            address = t.get('address')
+
+            # 获取币种统计（Top 3）
+            coin_stats = self.get_trader_coin_stats(address, top_n=3)
+            coin_stats_str = ""
+            if coin_stats:
+                coins_lines = []
+                for cs in coin_stats:
+                    pnl = cs.get('total_pnl', 0)
+                    sign = "+" if pnl >= 0 else ""
+                    coins_lines.append(f"  · {cs.get('coin')}: {cs.get('count')}笔, {sign}${pnl:,.0f}")
+                coin_stats_str = "\n".join(coins_lines)
+
+            # 获取当前持仓
+            positions = self.get_trader_positions(address)
+            positions_str = ""
+            if positions:
+                pos_lines = []
+                total_value = 0
+                total_upnl = 0
+                for pos in positions[:5]:  # 最多显示5个持仓
+                    coin = pos.get('coin', '')
+                    szi = pos.get('szi', 0)
+                    direction = "多" if szi > 0 else "空"
+                    value = abs(pos.get('position_value', 0))
+                    upnl = pos.get('unrealized_pnl', 0)
+                    roe = pos.get('return_on_equity', 0) * 100
+                    leverage = pos.get('leverage_value', 1)
+                    sign = "+" if upnl >= 0 else ""
+                    pos_lines.append(f"  · {coin} {direction} ${value:,.0f} ({leverage}x, {sign}{roe:.1f}% ROE)")
+                    total_value += value
+                    total_upnl += upnl
+                if len(positions) > 5:
+                    pos_lines.append(f"  · ... 还有 {len(positions) - 5} 个持仓")
+                upnl_sign = "+" if total_upnl >= 0 else ""
+                pos_lines.append(f"  总敞口: ${total_value:,.0f}, 未实现盈亏: {upnl_sign}${total_upnl:,.0f}")
+                positions_str = "\n".join(pos_lines)
+
             info = f"""
-【交易员 {i}】{t.get('address')}
+【交易员 {i}】{address}
 - 综合评分: {t.get('overall_score', 0):.1f}/100
 - 胜率: {t.get('win_rate', 0) * 100:.1f}%
 - 盈亏比: {t.get('profit_factor', 0):.2f}
@@ -570,6 +711,16 @@ class TopTradersAnalyzer:
 - Sortino: {t.get('sortino_ratio', 0):.2f}
 - 活跃天数: {t.get('active_days', 0)}
 """
+            # 添加币种统计
+            if coin_stats_str:
+                info += f"- 主要交易币种:\n{coin_stats_str}\n"
+
+            # 添加当前持仓
+            if positions_str:
+                info += f"- 当前持仓:\n{positions_str}\n"
+            else:
+                info += "- 当前持仓: 无\n"
+
             traders_info.append(info)
 
         prompt = f"""
@@ -584,6 +735,8 @@ class TopTradersAnalyzer:
 2. 盈利稳定性（盈亏比、胜率在合理范围）
 3. 风险控制（最大回撤）
 4. 近期表现（近7天盈亏）
+5. 当前持仓风险（杠杆水平、未实现盈亏）
+6. 交易专注度（主要币种表现）
 
 请输出：
 ## 晋级名单
@@ -632,7 +785,7 @@ class TopTradersAnalyzer:
 
     def generate_comparison_prompt(self, traders_with_analysis: List[Dict]) -> str:
         """
-        生成综合比较提示词
+        生成综合比较提示词（包含币种统计和当前持仓）
 
         Args:
             traders_with_analysis: 带分析结果的交易员列表
@@ -643,21 +796,72 @@ class TopTradersAnalyzer:
         traders_summary = []
 
         for i, t in enumerate(traders_with_analysis, 1):
+            address = t.get('address')
             analysis = t.get('ai_analysis', {})
+
+            # 获取币种统计（Top 5）
+            coin_stats = self.get_trader_coin_stats(address, top_n=5)
+            coin_stats_str = ""
+            if coin_stats:
+                coins_lines = []
+                for cs in coin_stats:
+                    pnl = cs.get('total_pnl', 0)
+                    sign = "+" if pnl >= 0 else ""
+                    coins_lines.append(f"    · {cs.get('coin')}: {cs.get('count')}笔, {sign}${pnl:,.0f}")
+                coin_stats_str = "\n".join(coins_lines)
+
+            # 获取当前持仓
+            positions = self.get_trader_positions(address)
+            positions_str = ""
+            if positions:
+                pos_lines = []
+                total_value = 0
+                total_upnl = 0
+                for pos in positions[:5]:  # 最多显示5个持仓
+                    coin = pos.get('coin', '')
+                    szi = pos.get('szi', 0)
+                    direction = "多" if szi > 0 else "空"
+                    value = abs(pos.get('position_value', 0))
+                    upnl = pos.get('unrealized_pnl', 0)
+                    roe = pos.get('return_on_equity', 0) * 100
+                    leverage = pos.get('leverage_value', 1)
+                    sign = "+" if upnl >= 0 else ""
+                    pos_lines.append(f"    · {coin} {direction} ${value:,.0f} ({leverage}x, {sign}{roe:.1f}% ROE)")
+                    total_value += value
+                    total_upnl += upnl
+                if len(positions) > 5:
+                    pos_lines.append(f"    · ... 还有 {len(positions) - 5} 个持仓")
+                upnl_sign = "+" if total_upnl >= 0 else ""
+                pos_lines.append(f"    总敞口: ${total_value:,.0f}, 未实现盈亏: {upnl_sign}${total_upnl:,.0f}")
+                positions_str = "\n".join(pos_lines)
+
             summary = f"""
 【交易员 {i}】
-- 地址: {t.get('address')[:10]}...{t.get('address')[-6:]}
+- 地址: {address[:10]}...{address[-6:]}
 - 综合评分: {t.get('overall_score', 0):.1f}/100
 - 胜率: {t.get('win_rate', 0) * 100:.1f}%
 - 盈亏比: {t.get('profit_factor', 0):.2f}
 - 总盈亏: ${t.get('total_pnl', 0):,.2f}
 - 最大回撤: {t.get('max_drawdown', 0) * 100:.1f}%
 - Sharpe比率: {t.get('sharpe_ratio', 0):.2f}
+- Sortino比率: {t.get('sortino_ratio', 0):.2f}
 - 活跃天数: {t.get('active_days', 0)}
-- 常用品种: {t.get('favorite_symbol', '-')}
 - 近7天盈亏: ${t.get('recent_7d_pnl', 0):,.2f}
-- AI评价摘要: {analysis.get('summary', '无')[:200]}
 """
+            # 添加币种统计
+            if coin_stats_str:
+                summary += f"- 主要交易币种（按盈亏排序）:\n{coin_stats_str}\n"
+
+            # 添加当前持仓
+            if positions_str:
+                summary += f"- 当前持仓:\n{positions_str}\n"
+            else:
+                summary += "- 当前持仓: 无\n"
+
+            # 添加 AI 评价摘要
+            if analysis.get('summary'):
+                summary += f"- AI评价摘要: {analysis.get('summary', '')[:200]}\n"
+
             traders_summary.append(summary)
 
         prompt = f"""
@@ -671,10 +875,12 @@ class TopTradersAnalyzer:
 
 根据以下维度综合评估后，给出最终推荐排名（从最优到次优）：
 1. 盈利能力（总盈亏、ROI）
-2. 风险控制（最大回撤、Sharpe比率）
+2. 风险控制（最大回撤、Sharpe/Sortino比率）
 3. 稳定性（胜率、盈亏比、连续表现）
 4. 活跃度（近期表现、交易频率）
 5. 跟单适合度（交易风格、杠杆使用）
+6. 当前持仓风险（持仓敞口、未实现盈亏、杠杆水平）
+7. 交易专注度（主要币种及其盈利情况）
 
 列出排名及简要理由。
 
@@ -706,6 +912,7 @@ class TopTradersAnalyzer:
 2. 排名要有明确依据
 3. 推荐要考虑不同投资者需求
 4. 风险提示要明确具体
+5. 结合当前持仓情况评估实时风险
 """
         return prompt
 
@@ -1200,6 +1407,10 @@ def main():
             logger.info(f"   决赛: {current} 人")
             logger.info(f"   预计 AI 调用次数: {total_ai_calls} (淘汰赛 {total_ai_calls - 1} + 决赛 1)")
             return
+
+        # ========== 刷新持仓数据 ==========
+        logger.info("刷新所有交易员的持仓数据...")
+        analyzer.refresh_all_positions(traders, delay=0.2)
 
         # ========== 分组对比流程 ==========
         group_report = {}
