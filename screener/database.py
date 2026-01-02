@@ -298,7 +298,9 @@ class TraderDatabase:
                     total_traders INTEGER DEFAULT 0,
                     group_size INTEGER DEFAULT 6,
                     top_per_group INTEGER DEFAULT 2,
+                    final_size INTEGER DEFAULT 6,
                     num_groups INTEGER DEFAULT 0,
+                    total_rounds INTEGER DEFAULT 0,
 
                     -- 预筛选条件
                     min_sharpe REAL,
@@ -320,6 +322,7 @@ class TraderDatabase:
                 CREATE TABLE IF NOT EXISTS group_comparison_groups (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id INTEGER NOT NULL,
+                    round_num INTEGER DEFAULT 1,
                     group_num INTEGER NOT NULL,
                     total_in_group INTEGER DEFAULT 0,
                     analysis TEXT,  -- AI 分析结果
@@ -349,6 +352,7 @@ class TraderDatabase:
                     -- 分组对比结果
                     is_finalist BOOLEAN DEFAULT FALSE,
                     final_rank INTEGER,  -- 最终排名
+                    eliminated_round INTEGER,  -- 在第几轮被淘汰（NULL表示未被淘汰）
                     elimination_reason TEXT,  -- 淘汰原因
 
                     FOREIGN KEY (session_id) REFERENCES group_comparison_sessions(id),
@@ -2478,16 +2482,19 @@ class TraderDatabase:
 
             cursor.execute("""
                 INSERT INTO group_comparison_sessions (
-                    rating, total_traders, group_size, top_per_group, num_groups,
+                    rating, total_traders, group_size, top_per_group, final_size,
+                    num_groups, total_rounds,
                     min_sharpe, min_sortino, max_drawdown, min_win_rate, max_win_rate,
                     finalists_count, final_ranking, ai_provider, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data.get('rating', 'S'),
                 data.get('total_traders', 0),
                 data.get('group_size', 6),
                 data.get('top_per_group', 2),
+                data.get('final_size', 6),
                 data.get('num_groups', 0),
+                data.get('total_rounds', 0),
                 data.get('min_sharpe'),
                 data.get('min_sortino'),
                 data.get('max_drawdown'),
@@ -2507,6 +2514,7 @@ class TraderDatabase:
     def save_group_comparison_group(
         self,
         session_id: int,
+        round_num: int,
         group_num: int,
         total_in_group: int,
         analysis: str
@@ -2516,6 +2524,7 @@ class TraderDatabase:
 
         Args:
             session_id: 会话ID
+            round_num: 轮次
             group_num: 组号
             total_in_group: 组内人数
             analysis: AI分析结果
@@ -2528,9 +2537,9 @@ class TraderDatabase:
 
             cursor.execute("""
                 INSERT INTO group_comparison_groups (
-                    session_id, group_num, total_in_group, analysis
-                ) VALUES (?, ?, ?, ?)
-            """, (session_id, group_num, total_in_group, analysis))
+                    session_id, round_num, group_num, total_in_group, analysis
+                ) VALUES (?, ?, ?, ?, ?)
+            """, (session_id, round_num, group_num, total_in_group, analysis))
 
             return cursor.lastrowid
 
@@ -2539,7 +2548,8 @@ class TraderDatabase:
         session_id: int,
         traders: List[Dict],
         group_id: int = None,
-        is_finalist: bool = False
+        is_finalist: bool = False,
+        eliminated_round: int = None
     ) -> int:
         """
         保存分组对比交易员
@@ -2549,6 +2559,7 @@ class TraderDatabase:
             traders: 交易员列表
             group_id: 分组ID
             is_finalist: 是否晋级
+            eliminated_round: 被淘汰的轮次
 
         Returns:
             保存的记录数
@@ -2563,8 +2574,8 @@ class TraderDatabase:
                         session_id, group_id, address,
                         overall_score, win_rate, total_pnl, recent_7d_pnl,
                         max_drawdown, sharpe_ratio, sortino_ratio, profit_factor,
-                        is_finalist, final_rank, elimination_reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        is_finalist, final_rank, eliminated_round, elimination_reason
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     session_id,
                     group_id,
@@ -2579,6 +2590,7 @@ class TraderDatabase:
                     t.get('profit_factor', 0),
                     is_finalist,
                     t.get('final_rank'),
+                    eliminated_round,
                     t.get('elimination_reason')
                 ))
                 count += 1

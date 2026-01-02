@@ -587,7 +587,9 @@ export interface GroupComparisonSession {
   total_traders: number;
   group_size: number;
   top_per_group: number;
+  final_size: number;
   num_groups: number;
+  total_rounds: number;
   min_sharpe: number | null;
   min_sortino: number | null;
   max_drawdown: number | null;
@@ -607,6 +609,7 @@ export interface GroupComparisonSession {
 export interface GroupComparisonGroup {
   id: number;
   session_id: number;
+  round_num: number;
   group_num: number;
   total_in_group: number;
   analysis: string;
@@ -629,6 +632,7 @@ export interface GroupComparisonTrader {
   profit_factor: number;
   is_finalist: boolean;
   final_rank: number | null;
+  eliminated_round: number | null;
   elimination_reason: string | null;
   // 关联的交易员详情
   trader_info?: Trader;

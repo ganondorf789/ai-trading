@@ -460,6 +460,7 @@ class TopTradersAnalyzer:
                     group_reports.append({
                         'group_num': i,
                         'total_in_group': len(group),
+                        'all_traders': [t.get('address') for t in group],
                         'winners': [w.get('address') for w in winners],
                         'analysis': group_result.get('analysis', '')
                     })
@@ -782,6 +783,95 @@ class TopTradersAnalyzer:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
         logger.info(f"报告已保存至: {filepath}")
+
+    def save_to_database(
+        self,
+        all_traders: List[Dict],
+        finalists: List[Dict],
+        group_report: Dict,
+        final_ranking: str = None,
+        config: Dict = None
+    ) -> int:
+        """
+        保存分组对比结果到数据库
+
+        Args:
+            all_traders: 所有参与的交易员
+            finalists: 最终晋级者
+            group_report: 分组对比报告
+            final_ranking: 最终排名分析
+            config: 配置参数
+
+        Returns:
+            会话ID
+        """
+        config = config or {}
+
+        # 保存会话
+        session_data = {
+            'rating': config.get('rating', 'S'),
+            'total_traders': len(all_traders),
+            'group_size': config.get('group_size', 6),
+            'top_per_group': config.get('top_per_group', 2),
+            'final_size': config.get('final_size', 6),
+            'num_groups': sum(len(r.get('groups', [])) for r in group_report.get('rounds', [])),
+            'total_rounds': group_report.get('total_rounds', 0),
+            'min_sharpe': config.get('min_sharpe'),
+            'min_sortino': config.get('min_sortino'),
+            'max_drawdown': config.get('max_drawdown'),
+            'min_win_rate': config.get('min_win_rate'),
+            'max_win_rate': config.get('max_win_rate'),
+            'finalists_count': len(finalists),
+            'final_ranking': final_ranking,
+            'ai_provider': self.ai_provider or 'default',
+            'status': 'completed'
+        }
+        session_id = self.db.save_group_comparison_session(session_data)
+
+        # 记录所有交易员的地址到淘汰轮次映射
+        trader_elimination = {}  # address -> eliminated_round
+        finalist_addresses = {f['address'] for f in finalists}
+
+        # 遍历每轮，记录被淘汰的交易员
+        for round_info in group_report.get('rounds', []):
+            round_num = round_info.get('round', 1)
+
+            for group_info in round_info.get('groups', []):
+                # 保存分组
+                group_id = self.db.save_group_comparison_group(
+                    session_id=session_id,
+                    round_num=round_num,
+                    group_num=group_info.get('group_num', 0),
+                    total_in_group=group_info.get('total_in_group', 0),
+                    analysis=group_info.get('analysis', '')
+                )
+
+                # 获取本组晋级者地址
+                winner_addresses = set(group_info.get('winners', []))
+
+                # 找出本组所有交易员（需要从原始数据中查找）
+                # 被淘汰者 = 本组所有人 - 晋级者
+                # 这里我们标记未晋级者的淘汰轮次
+                for addr in group_info.get('all_traders', []):
+                    if addr not in winner_addresses and addr not in trader_elimination:
+                        trader_elimination[addr] = round_num
+
+        # 保存所有交易员
+        for t in all_traders:
+            addr = t.get('address')
+            is_finalist = addr in finalist_addresses
+            eliminated_round = None if is_finalist else trader_elimination.get(addr)
+
+            self.db.save_group_comparison_traders(
+                session_id=session_id,
+                traders=[t],
+                group_id=None,  # 可以后续关联
+                is_finalist=is_finalist,
+                eliminated_round=eliminated_round
+            )
+
+        logger.info(f"已保存到数据库: session_id={session_id}, 交易员={len(all_traders)}, 晋级者={len(finalists)}")
+        return session_id
 
     def print_report(self, report: Dict):
         """
@@ -1164,7 +1254,28 @@ def main():
                     ]
                 }
                 analyzer.save_report(report, args.output)
+
+                # 保存到数据库
+                config = {
+                    'rating': args.rating,
+                    'group_size': args.group_size,
+                    'top_per_group': args.top_per_group,
+                    'final_size': args.final_size,
+                    'min_sharpe': args.min_sharpe,
+                    'min_sortino': args.min_sortino,
+                    'max_drawdown': args.max_drawdown,
+                    'min_win_rate': args.min_win_rate,
+                    'max_win_rate': args.max_win_rate,
+                }
+                session_id = analyzer.save_to_database(
+                    all_traders=traders,
+                    finalists=finalists,
+                    group_report=group_report,
+                    final_ranking=None,
+                    config=config
+                )
                 logger.info(f"分组对比结果已保存至: {args.output}")
+                logger.info(f"数据库会话ID: {session_id}")
             return
 
         logger.info(f"开始决赛（综合排名）...")
@@ -1187,14 +1298,35 @@ def main():
         if group_report:
             report['group_compare'] = group_report
 
-        # 保存报告
+        # 保存报告到文件
         analyzer.save_report(report, args.output)
+
+        # 保存到数据库
+        config = {
+            'rating': args.rating,
+            'group_size': args.group_size,
+            'top_per_group': args.top_per_group,
+            'final_size': args.final_size,
+            'min_sharpe': args.min_sharpe,
+            'min_sortino': args.min_sortino,
+            'max_drawdown': args.max_drawdown,
+            'min_win_rate': args.min_win_rate,
+            'max_win_rate': args.max_win_rate,
+        }
+        session_id = analyzer.save_to_database(
+            all_traders=traders,
+            finalists=finalists,
+            group_report=group_report,
+            final_ranking=report.get('comparison_analysis'),
+            config=config
+        )
 
         # 打印报告
         analyzer.print_report(report)
 
         logger.info("分析完成!")
         logger.info(f"完整报告已保存至: {args.output}")
+        logger.info(f"数据库会话ID: {session_id}")
 
     except KeyboardInterrupt:
         logger.warning("用户中断")

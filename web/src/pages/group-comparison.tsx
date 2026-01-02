@@ -4,7 +4,6 @@ import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { Chip } from '@heroui/chip';
-import { Divider } from '@heroui/divider';
 import { Accordion, AccordionItem } from '@heroui/accordion';
 import { Icon } from '@iconify/react';
 import DefaultLayout from '@/layouts/default';
@@ -67,11 +66,13 @@ const TraderCard = ({
   trader,
   rank,
   isFinalist,
+  showEliminatedRound,
   onClick,
 }: {
   trader: any;
   rank?: number;
   isFinalist?: boolean;
+  showEliminatedRound?: boolean;
   onClick?: () => void;
 }) => {
   const address = trader.address || '';
@@ -81,7 +82,9 @@ const TraderCard = ({
     <Card
       isPressable={!!onClick}
       onPress={onClick}
-      className={`bg-content2/50 ${isFinalist ? 'border-2 border-success/50' : ''}`}
+      className={`bg-content2/50 ${isFinalist ? 'border-2 border-success/50' : ''} ${
+        trader.eliminated_round ? 'opacity-75' : ''
+      }`}
     >
       <CardBody className="p-3">
         <div className="flex items-center justify-between mb-2">
@@ -96,9 +99,16 @@ const TraderCard = ({
             )}
             <span className="font-mono text-sm">{shortAddr}</span>
           </div>
-          <Chip size="sm" variant="flat" color="primary">
-            {formatNumber(trader.overall_score, 1)}分
-          </Chip>
+          <div className="flex items-center gap-1">
+            {showEliminatedRound && trader.eliminated_round && (
+              <Chip size="sm" variant="flat" color="danger">
+                第{trader.eliminated_round}轮淘汰
+              </Chip>
+            )}
+            <Chip size="sm" variant="flat" color="primary">
+              {formatNumber(trader.overall_score, 1)}分
+            </Chip>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -278,10 +288,15 @@ export default function GroupComparisonPage() {
                       <div className="text-xs text-default-500">
                         {formatTime(session.created_at)}
                       </div>
-                      <div className="flex gap-2 mt-2 text-xs">
+                      <div className="flex flex-wrap gap-2 mt-2 text-xs">
                         <Chip size="sm" variant="flat">
                           {session.total_traders} 人
                         </Chip>
+                        {session.total_rounds > 1 && (
+                          <Chip size="sm" variant="flat" color="secondary">
+                            {session.total_rounds} 轮
+                          </Chip>
+                        )}
                         <Chip size="sm" variant="flat" color="success">
                           晋级 {session.finalists_count}
                         </Chip>
@@ -312,7 +327,7 @@ export default function GroupComparisonPage() {
                     </div>
                   </CardHeader>
                   <CardBody>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       <div className="text-center p-3 bg-content2/50 rounded-lg">
                         <div className="text-2xl font-bold text-primary">
                           {selectedSession.total_traders}
@@ -320,10 +335,16 @@ export default function GroupComparisonPage() {
                         <div className="text-xs text-default-500">参与交易员</div>
                       </div>
                       <div className="text-center p-3 bg-content2/50 rounded-lg">
+                        <div className="text-2xl font-bold text-secondary">
+                          {selectedSession.total_rounds || 1}
+                        </div>
+                        <div className="text-xs text-default-500">淘汰轮次</div>
+                      </div>
+                      <div className="text-center p-3 bg-content2/50 rounded-lg">
                         <div className="text-2xl font-bold text-warning">
                           {selectedSession.num_groups}
                         </div>
-                        <div className="text-xs text-default-500">分组数</div>
+                        <div className="text-xs text-default-500">总分组数</div>
                       </div>
                       <div className="text-center p-3 bg-content2/50 rounded-lg">
                         <div className="text-2xl font-bold text-success">
@@ -400,65 +421,151 @@ export default function GroupComparisonPage() {
                   </Card>
                 )}
 
-                {/* 分组详情 */}
+                {/* 分组详情 - 按轮次组织 */}
                 {selectedSession.groups && selectedSession.groups.length > 0 && (
                   <Card>
                     <CardHeader>
                       <h3 className="font-semibold flex items-center gap-2">
                         <Icon icon="solar:users-group-rounded-bold" className="text-primary" />
-                        分组对比详情
+                        淘汰赛详情
                       </h3>
                     </CardHeader>
                     <CardBody>
-                      <Accordion variant="splitted">
-                        {selectedSession.groups.map((group) => {
-                          const groupTraders = selectedSession.traders?.filter(
-                            (t) => t.group_id === group.id
-                          ) || [];
+                      {/* 按轮次分组 */}
+                      {(() => {
+                        // 获取所有轮次
+                        const rounds = [...new Set(selectedSession.groups?.map(g => g.round_num || 1))].sort((a, b) => a - b);
 
-                          return (
-                            <AccordionItem
-                              key={group.id}
-                              aria-label={`第 ${group.group_num} 组`}
-                              title={
-                                <div className="flex items-center gap-2">
-                                  <span>第 {group.group_num} 组</span>
-                                  <Chip size="sm" variant="flat">
-                                    {group.total_in_group} 人
-                                  </Chip>
-                                </div>
-                              }
-                            >
-                              <div className="space-y-4">
-                                {/* 组内交易员 */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  {groupTraders.map((trader) => (
-                                    <TraderCard
-                                      key={trader.address}
-                                      trader={trader}
-                                      isFinalist={trader.is_finalist}
-                                      onClick={() => handleTraderClick(trader.address)}
-                                    />
-                                  ))}
-                                </div>
+                        return (
+                          <div className="space-y-6">
+                            {rounds.map((roundNum) => {
+                              const roundGroups = selectedSession.groups?.filter(g => (g.round_num || 1) === roundNum) || [];
+                              // 计算本轮晋级和淘汰人数
+                              const roundTraders = selectedSession.traders?.filter(t =>
+                                roundGroups.some(g => g.id === t.group_id) ||
+                                (t.eliminated_round === roundNum)
+                              ) || [];
+                              const promotedCount = roundTraders.filter(t => !t.eliminated_round || t.eliminated_round > roundNum).length;
+                              const eliminatedCount = roundTraders.filter(t => t.eliminated_round === roundNum).length;
 
-                                {/* AI 分析 */}
-                                {group.analysis && (
-                                  <div className="mt-4 p-4 bg-content2/50 rounded-lg">
-                                    <div className="text-xs text-default-500 mb-2 flex items-center gap-1">
-                                      <Icon icon="solar:magic-stick-3-bold" />
-                                      AI 分析
+                              return (
+                                <div key={roundNum} className="border border-divider rounded-lg overflow-hidden">
+                                  {/* 轮次标题 */}
+                                  <div className="bg-content2 px-4 py-3 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                                        <span className="text-primary font-bold">{roundNum}</span>
+                                      </div>
+                                      <div>
+                                        <h4 className="font-semibold">第 {roundNum} 轮淘汰</h4>
+                                        <div className="text-xs text-default-500">
+                                          {roundGroups.length} 个分组
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="text-sm whitespace-pre-wrap">
-                                      {group.analysis}
+                                    <div className="flex gap-2">
+                                      <Chip size="sm" variant="flat" color="success">
+                                        <Icon icon="solar:arrow-up-bold" className="mr-1" />
+                                        晋级 {promotedCount}
+                                      </Chip>
+                                      <Chip size="sm" variant="flat" color="danger">
+                                        <Icon icon="solar:close-circle-bold" className="mr-1" />
+                                        淘汰 {eliminatedCount}
+                                      </Chip>
                                     </div>
                                   </div>
-                                )}
-                              </div>
-                            </AccordionItem>
-                          );
-                        })}
-                      </Accordion>
+
+                                  {/* 本轮分组 */}
+                                  <div className="p-4">
+                                    <Accordion variant="splitted">
+                                      {roundGroups.map((group) => {
+                                        const groupTraders = selectedSession.traders?.filter(
+                                          (t) => t.group_id === group.id
+                                        ) || [];
+                                        const promoted = groupTraders.filter(t => !t.eliminated_round || t.eliminated_round > roundNum);
+                                        const eliminated = groupTraders.filter(t => t.eliminated_round === roundNum);
+
+                                        return (
+                                          <AccordionItem
+                                            key={group.id}
+                                            aria-label={`第 ${group.group_num} 组`}
+                                            title={
+                                              <div className="flex items-center gap-2">
+                                                <span>第 {group.group_num} 组</span>
+                                                <Chip size="sm" variant="flat">
+                                                  {group.total_in_group} 人
+                                                </Chip>
+                                                <Chip size="sm" variant="flat" color="success">
+                                                  晋级 {promoted.length}
+                                                </Chip>
+                                              </div>
+                                            }
+                                          >
+                                            <div className="space-y-4">
+                                              {/* 晋级者 */}
+                                              {promoted.length > 0 && (
+                                                <div>
+                                                  <div className="text-xs text-success mb-2 flex items-center gap-1">
+                                                    <Icon icon="solar:medal-ribbon-bold" />
+                                                    晋级者
+                                                  </div>
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {promoted.map((trader) => (
+                                                      <TraderCard
+                                                        key={trader.address}
+                                                        trader={trader}
+                                                        isFinalist={trader.is_finalist}
+                                                        onClick={() => handleTraderClick(trader.address)}
+                                                      />
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* 被淘汰者 */}
+                                              {eliminated.length > 0 && (
+                                                <div>
+                                                  <div className="text-xs text-danger mb-2 flex items-center gap-1">
+                                                    <Icon icon="solar:close-circle-bold" />
+                                                    被淘汰
+                                                  </div>
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {eliminated.map((trader) => (
+                                                      <TraderCard
+                                                        key={trader.address}
+                                                        trader={trader}
+                                                        showEliminatedRound
+                                                        onClick={() => handleTraderClick(trader.address)}
+                                                      />
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* AI 分析 */}
+                                              {group.analysis && (
+                                                <div className="mt-4 p-4 bg-content2/50 rounded-lg">
+                                                  <div className="text-xs text-default-500 mb-2 flex items-center gap-1">
+                                                    <Icon icon="solar:magic-stick-3-bold" />
+                                                    AI 分析
+                                                  </div>
+                                                  <div className="text-sm whitespace-pre-wrap">
+                                                    {group.analysis}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </AccordionItem>
+                                        );
+                                      })}
+                                    </Accordion>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </CardBody>
                   </Card>
                 )}
