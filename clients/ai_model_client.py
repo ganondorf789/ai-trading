@@ -37,7 +37,6 @@ class BaseAIModelClient(ABC):
         api_url: str,
         model: str,
         timeout: float = 60.0,
-        max_tokens: int = 4096,
         temperature: float = 0.7
     ):
         """
@@ -48,14 +47,12 @@ class BaseAIModelClient(ABC):
             api_url: API地址
             model: 模型名称
             timeout: 请求超时时间（秒）
-            max_tokens: 最大token数
             temperature: 生成温度 (0.0-2.0)
         """
         self.api_key = api_key
         self.api_url = api_url
         self.model = model
         self.timeout = timeout
-        self.max_tokens = max_tokens
         self.temperature = temperature
 
     @abstractmethod
@@ -116,7 +113,6 @@ class ZhipuAIClient(BaseAIModelClient):
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature),
                 timeout=kwargs.get("timeout", self.timeout)
             )
@@ -158,7 +154,6 @@ class QwenClient(BaseAIModelClient):
                 model=self.model,
                 messages=messages,
                 result_format='message',
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature),
                 timeout=kwargs.get("timeout", self.timeout)
             )
@@ -208,7 +203,6 @@ class DeepseekClient(BaseAIModelClient):
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature)
             )
 
@@ -256,7 +250,6 @@ class OpenRouterClient(BaseAIModelClient):
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.max_tokens),
                 temperature=kwargs.get("temperature", self.temperature)
             )
 
@@ -294,7 +287,7 @@ class AIModelFactory:
             api_key: API密钥
             api_url: API地址
             model: 模型名称
-            **kwargs: 额外参数（timeout, max_tokens, temperature等）
+            **kwargs: 额外参数（timeout, temperature等）
 
         Returns:
             AI客户端实例
@@ -378,7 +371,6 @@ class AIModelFactory:
         return cls.create(
             provider=provider,
             timeout=settings.timeout,
-            max_tokens=settings.max_tokens,
             temperature=settings.temperature,
             **config
         )

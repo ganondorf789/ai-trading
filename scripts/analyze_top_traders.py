@@ -553,7 +553,6 @@ class TopTradersAnalyzer:
                           f"PnL: ${t.get('total_pnl', 0):,.0f}")
 
                 # AI 对比本组
-                logger.info(f"AI 分析中...")
                 group_result = self._compare_group(group, i, num_groups, top_per_group)
 
                 if group_result:
@@ -605,7 +604,9 @@ class TopTradersAnalyzer:
         group: List[Dict],
         group_num: int,
         total_groups: int,
-        top_n: int
+        top_n: int,
+        max_retries: int = 3,
+        timeout: float = 60.0
     ) -> Optional[Dict]:
         """
         对比单个分组，选出前 N 名
@@ -615,6 +616,8 @@ class TopTradersAnalyzer:
             group_num: 当前组号
             total_groups: 总组数
             top_n: 选出前 N 名
+            max_retries: 超时时最大重试次数
+            timeout: 请求超时时间（秒）
 
         Returns:
             {winners: [...], analysis: "..."}
@@ -625,30 +628,46 @@ class TopTradersAnalyzer:
         # 构建分组对比提示词
         prompt = self._build_group_comparison_prompt(group, group_num, total_groups, top_n)
 
-        try:
-            # AI 对比
-            result = self.ai_client.generate(
-                prompt,
-                temperature=0.7,
-                max_tokens=1500
-            )
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"AI 对比中... (尝试 {attempt}/{max_retries}, 超时 {timeout}s)")
+                # AI 对比
+                result = self.ai_client.generate(
+                    prompt,
+                    temperature=0.7,
+                )
 
-            # 解析结果，选出前 N 名
-            winners = self._parse_group_winners(group, result, top_n)
+                # 解析结果，选出前 N 名
+                winners = self._parse_group_winners(group, result, top_n)
 
-            return {
-                'winners': winners,
-                'analysis': result
-            }
+                return {
+                    'winners': winners,
+                    'analysis': result
+                }
 
-        except Exception as e:
-            logger.error(f"分组对比失败: {e}")
-            # 失败时按评分排序选取
-            sorted_group = sorted(group, key=lambda x: x.get('overall_score', 0), reverse=True)
-            return {
-                'winners': sorted_group[:top_n],
-                'analysis': f'AI分析失败，按评分排序: {e}'
-            }
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                # 检查是否是超时错误
+                if 'timeout' in error_str or 'timed out' in error_str:
+                    logger.warning(f"分组对比超时 (尝试 {attempt}/{max_retries}): {e}")
+                    if attempt < max_retries:
+                        logger.info(f"等待 5 秒后重试...")
+                        time.sleep(5)
+                        continue
+                else:
+                    # 非超时错误，直接跳出
+                    logger.error(f"分组对比失败: {e}")
+                    break
+
+        # 所有重试都失败，按评分排序选取
+        logger.error(f"分组对比最终失败: {last_error}")
+        sorted_group = sorted(group, key=lambda x: x.get('overall_score', 0), reverse=True)
+        return {
+            'winners': sorted_group[:top_n],
+            'analysis': f'AI分析失败，按评分排序: {last_error}'
+        }
 
     def _build_group_comparison_prompt(
         self,
@@ -918,13 +937,17 @@ class TopTradersAnalyzer:
 
     def generate_final_ranking(
         self,
-        traders_with_analysis: List[Dict]
+        traders_with_analysis: List[Dict],
+        max_retries: int = 3,
+        timeout: float = 60.0
     ) -> Dict[str, Any]:
         """
         生成最终综合排名报告
 
         Args:
             traders_with_analysis: 带分析结果的交易员列表
+            max_retries: 超时时最大重试次数
+            timeout: 请求超时时间（秒）
 
         Returns:
             综合排名报告
@@ -937,43 +960,59 @@ class TopTradersAnalyzer:
         # 构建比较提示词
         prompt = self.generate_comparison_prompt(traders_with_analysis)
 
-        try:
-            # 调用 AI 生成综合排名
-            comparison_result = self.ai_client.generate(
-                prompt,
-                temperature=0.7,
-                max_tokens=3000
-            )
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"AI 综合排名中... (尝试 {attempt}/{max_retries}, 超时 {timeout}s)")
+                # 调用 AI 生成综合排名
+                comparison_result = self.ai_client.generate(
+                    prompt,
+                    temperature=0.7,
+                )
 
-            # 构建报告
-            report = {
-                'generated_at': pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
-                'ai_provider': self.ai_provider or 'default',
-                'total_traders_analyzed': len(traders_with_analysis),
-                'comparison_analysis': comparison_result,
-                'traders': [
-                    {
-                        'rank': i + 1,
-                        'address': t.get('address'),
-                        'overall_score': t.get('overall_score', 0),
-                        'win_rate': t.get('win_rate', 0),
-                        'profit_factor': t.get('profit_factor', 0),
-                        'total_pnl': t.get('total_pnl', 0),
-                        'max_drawdown': t.get('max_drawdown', 0),
-                        'sharpe_ratio': t.get('sharpe_ratio', 0),
-                        'recent_7d_pnl': t.get('recent_7d_pnl', 0),
-                        'ai_summary': t.get('ai_analysis', {}).get('summary', '')
-                    }
-                    for i, t in enumerate(traders_with_analysis)
-                ]
-            }
+                # 构建报告
+                report = {
+                    'generated_at': pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
+                    'ai_provider': self.ai_provider or 'default',
+                    'total_traders_analyzed': len(traders_with_analysis),
+                    'comparison_analysis': comparison_result,
+                    'traders': [
+                        {
+                            'rank': i + 1,
+                            'address': t.get('address'),
+                            'overall_score': t.get('overall_score', 0),
+                            'win_rate': t.get('win_rate', 0),
+                            'profit_factor': t.get('profit_factor', 0),
+                            'total_pnl': t.get('total_pnl', 0),
+                            'max_drawdown': t.get('max_drawdown', 0),
+                            'sharpe_ratio': t.get('sharpe_ratio', 0),
+                            'recent_7d_pnl': t.get('recent_7d_pnl', 0),
+                            'ai_summary': t.get('ai_analysis', {}).get('summary', '')
+                        }
+                        for i, t in enumerate(traders_with_analysis)
+                    ]
+                }
 
-            logger.info("综合排名报告生成完成")
-            return report
+                logger.info("综合排名报告生成完成")
+                return report
 
-        except Exception as e:
-            logger.error(f"生成综合排名失败: {e}")
-            return {'error': str(e)}
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                # 检查是否是超时错误
+                if 'timeout' in error_str or 'timed out' in error_str:
+                    logger.warning(f"综合排名超时 (尝试 {attempt}/{max_retries}): {e}")
+                    if attempt < max_retries:
+                        logger.info(f"等待 5 秒后重试...")
+                        time.sleep(5)
+                        continue
+                else:
+                    # 非超时错误，直接跳出
+                    logger.error(f"生成综合排名失败: {e}")
+                    break
+
+        logger.error(f"生成综合排名最终失败: {last_error}")
+        return {'error': str(last_error)}
 
     def save_report(self, report: Dict, filepath: str):
         """
