@@ -38,7 +38,6 @@ AI 分析顶级交易员脚本
     --no-filter               禁用所有预筛选条件
     
     其他选项：
-    --refresh                 强制重新分析（忽略已有分析）
     --dry-run                 仅显示要分析的交易员，不实际分析
     --verbose                 显示详细输出
 """
@@ -284,78 +283,20 @@ class TopTradersAnalyzer:
         logger.info(f"获取到 {len(traders)} 个 {rating} 级交易员")
         return traders
 
-    def check_analysis_freshness(
-        self,
-        address: str,
-        max_age_days: int = 7
-    ) -> tuple[bool, Optional[Dict], Optional[int]]:
-        """
-        检查交易员的 AI 分析是否在有效期内
-
-        Args:
-            address: 交易员地址
-            max_age_days: 分析有效期（天）
-
-        Returns:
-            (需要重新分析, 已有分析结果, 距离上次分析的天数)
-        """
-        existing = self.db.get_trader_ai_analysis(address)
-
-        if not existing:
-            return True, None, None
-
-        analyzed_at = existing.get('analyzed_at') or existing.get('updated_at')
-        if not analyzed_at:
-            return True, existing, None
-
-        try:
-            if isinstance(analyzed_at, str):
-                last_analyzed = pendulum.parse(analyzed_at)
-            else:
-                last_analyzed = analyzed_at
-
-            days_since = (pendulum.now(SHANGHAI_TZ) - last_analyzed).days
-
-            if days_since < max_age_days:
-                return False, existing, days_since
-            else:
-                return True, existing, days_since
-
-        except Exception:
-            return True, existing, None
-
     def analyze_single_trader(
         self,
-        trader: Dict,
-        force_refresh: bool = False,
-        max_age_days: int = 7
+        trader: Dict
     ) -> Optional[Dict]:
         """
         分析单个交易员
 
         Args:
             trader: 交易员数据
-            force_refresh: 是否强制重新分析
-            max_age_days: 分析有效期（天），在此期间内不重复分析
 
         Returns:
             分析结果
         """
         address = trader.get('address')
-
-        # 检查是否在有效期内
-        if not force_refresh:
-            needs_analysis, existing, days_since = self.check_analysis_freshness(
-                address, max_age_days
-            )
-
-            if not needs_analysis:
-                if self.verbose:
-                    logger.info(f"跳过 {address[:10]}... (已有分析，{days_since} 天前)")
-                return existing
-
-            if existing and days_since is not None:
-                logger.info(f"重新分析 {address[:10]}... (上次分析 {days_since} 天前，超过 {max_age_days} 天)")
 
         try:
             logger.info(f"AI 分析交易员: {address[:10]}...")
@@ -381,9 +322,7 @@ class TopTradersAnalyzer:
     def analyze_all_traders(
         self,
         traders: List[Dict],
-        force_refresh: bool = False,
         delay: float = 1.0,
-        max_age_days: int = 7,
         one_by_one: bool = False
     ) -> List[Dict]:
         """
@@ -391,9 +330,7 @@ class TopTradersAnalyzer:
 
         Args:
             traders: 交易员列表
-            force_refresh: 是否强制重新分析
             delay: 请求间隔（秒）
-            max_age_days: 分析有效期（天）
             one_by_one: 逐个分析模式（分析完一个后询问是否继续）
 
         Returns:
@@ -401,24 +338,10 @@ class TopTradersAnalyzer:
         """
         results = []
         total = len(traders)
-        skipped = 0
         analyzed = 0
 
         for i, trader in enumerate(traders, 1):
             address = trader.get('address')
-
-            # 先检查是否需要分析
-            if not force_refresh:
-                needs_analysis, existing, days_since = self.check_analysis_freshness(
-                    address, max_age_days
-                )
-
-                if not needs_analysis:
-                    logger.info(f"[{i}/{total}] 跳过 {address[:10]}... ({days_since} 天前已分析)")
-                    combined = {**trader, 'ai_analysis': existing}
-                    results.append(combined)
-                    skipped += 1
-                    continue
 
             # 逐个分析模式：分析前确认
             if one_by_one and analyzed > 0:
@@ -435,7 +358,7 @@ class TopTradersAnalyzer:
 
             logger.info(f"[{i}/{total}] 分析: {address[:10]}...")
 
-            analysis = self.analyze_single_trader(trader, force_refresh, max_age_days)
+            analysis = self.analyze_single_trader(trader)
             if analysis:
                 # 合并交易员数据和分析结果
                 combined = {**trader, 'ai_analysis': analysis}
@@ -450,7 +373,7 @@ class TopTradersAnalyzer:
             if i < total and not one_by_one:
                 time.sleep(delay)
 
-        logger.info(f"分析完成: 新分析 {analyzed} 个，跳过 {skipped} 个（有效期内），共 {len(results)} 个结果")
+        logger.info(f"分析完成: 共分析 {analyzed} 个，共 {len(results)} 个结果")
         return results
 
     def _print_analysis_summary(self, trader: Dict, analysis: Dict):
