@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Spinner } from '@heroui/spinner';
@@ -549,8 +550,8 @@ export default function GroupComparisonPage() {
                                                     <Icon icon="solar:magic-stick-3-bold" />
                                                     AI 分析
                                                   </div>
-                                                  <div className="text-sm whitespace-pre-wrap">
-                                                    {group.analysis}
+                                                  <div className="text-sm prose prose-sm dark:prose-invert max-w-none whitespace-pre-line leading-loose">
+                                                    <ReactMarkdown>{group.analysis}</ReactMarkdown>
                                                   </div>
                                                 </div>
                                               )}
@@ -580,12 +581,12 @@ export default function GroupComparisonPage() {
                       </h3>
                     </CardHeader>
                     <CardBody>
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <div className="whitespace-pre-wrap text-sm">
+                      <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-line leading-loose">
+                        <ReactMarkdown>
                           {typeof selectedSession.final_ranking === 'string'
                             ? selectedSession.final_ranking
                             : JSON.stringify(selectedSession.final_ranking, null, 2)}
-                        </div>
+                        </ReactMarkdown>
                       </div>
                     </CardBody>
                   </Card>

@@ -17,7 +17,7 @@ dist
 dist-ssr
 coverage
 *.local
-/data/traders.db
+/data/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

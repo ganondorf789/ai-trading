@@ -22,7 +22,8 @@
       "Bash(pip install:*)",
       "Bash(chmod:*)",
       "Bash(timeout 5 python:*)",
-      "Bash(timeout 30 python:*)"
+      "Bash(timeout 30 python:*)",
+      "Bash(cat:*)"
     ]
   }
 }
