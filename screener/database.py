@@ -383,9 +383,49 @@ class TraderDatabase:
             """)
 
             # 数据库迁移：为已存在的表添加缺失的列
-            self._migrate_add_column_if_not_exists(
-                cursor, 'group_comparison_sessions', 'final_size', 'INTEGER DEFAULT 6'
-            )
+            migrations = [
+                # group_comparison_sessions 表
+                ('group_comparison_sessions', 'rating', 'TEXT DEFAULT "S"'),
+                ('group_comparison_sessions', 'total_traders', 'INTEGER DEFAULT 0'),
+                ('group_comparison_sessions', 'group_size', 'INTEGER DEFAULT 6'),
+                ('group_comparison_sessions', 'top_per_group', 'INTEGER DEFAULT 2'),
+                ('group_comparison_sessions', 'final_size', 'INTEGER DEFAULT 6'),
+                ('group_comparison_sessions', 'num_groups', 'INTEGER DEFAULT 0'),
+                ('group_comparison_sessions', 'total_rounds', 'INTEGER DEFAULT 0'),
+                ('group_comparison_sessions', 'min_sharpe', 'REAL'),
+                ('group_comparison_sessions', 'min_sortino', 'REAL'),
+                ('group_comparison_sessions', 'max_drawdown', 'REAL'),
+                ('group_comparison_sessions', 'min_win_rate', 'REAL'),
+                ('group_comparison_sessions', 'max_win_rate', 'REAL'),
+                ('group_comparison_sessions', 'finalists_count', 'INTEGER DEFAULT 0'),
+                ('group_comparison_sessions', 'final_ranking', 'TEXT'),
+                ('group_comparison_sessions', 'ai_provider', 'TEXT DEFAULT "default"'),
+                ('group_comparison_sessions', 'status', 'TEXT DEFAULT "pending"'),
+                # group_comparison_traders 表
+                ('group_comparison_traders', 'session_id', 'INTEGER'),
+                ('group_comparison_traders', 'group_id', 'INTEGER'),
+                ('group_comparison_traders', 'address', 'TEXT'),
+                ('group_comparison_traders', 'overall_score', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'win_rate', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'total_pnl', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'recent_7d_pnl', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'max_drawdown', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'sharpe_ratio', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'sortino_ratio', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'profit_factor', 'REAL DEFAULT 0.0'),
+                ('group_comparison_traders', 'is_finalist', 'BOOLEAN DEFAULT FALSE'),
+                ('group_comparison_traders', 'final_rank', 'INTEGER'),
+                ('group_comparison_traders', 'eliminated_round', 'INTEGER'),
+                ('group_comparison_traders', 'elimination_reason', 'TEXT'),
+                # group_comparison_groups 表
+                ('group_comparison_groups', 'session_id', 'INTEGER'),
+                ('group_comparison_groups', 'round_num', 'INTEGER DEFAULT 1'),
+                ('group_comparison_groups', 'group_num', 'INTEGER'),
+                ('group_comparison_groups', 'total_in_group', 'INTEGER DEFAULT 0'),
+                ('group_comparison_groups', 'analysis', 'TEXT'),
+            ]
+            for table, column, column_def in migrations:
+                self._migrate_add_column_if_not_exists(cursor, table, column, column_def)
 
             # 创建跟单分组表
             cursor.execute("""
