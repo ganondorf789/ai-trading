@@ -42,6 +42,22 @@ const ratingColors: Record<string, "success" | "primary" | "secondary" | "warnin
   F: "default",
 };
 
+// 预设分组颜色
+const presetColors = [
+  "#3B82F6", // 蓝色
+  "#10B981", // 绿色
+  "#F59E0B", // 橙色
+  "#EF4444", // 红色
+  "#8B5CF6", // 紫色
+  "#EC4899", // 粉色
+  "#06B6D4", // 青色
+  "#84CC16", // 黄绿
+  "#F97316", // 橘色
+  "#6366F1", // 靛蓝
+  "#14B8A6", // 蓝绿
+  "#A855F7", // 紫罗兰
+];
+
 export default function CopyTradingPage() {
   const navigate = useNavigate();
 
@@ -97,6 +113,7 @@ export default function CopyTradingPage() {
     description: "",
     color: "#3B82F6",
   });
+  const [editingGroup, setEditingGroup] = useState<CopyTradingGroup | null>(null);
 
   // 页码跳转
   const [jumpPage, setJumpPage] = useState("");
@@ -519,15 +536,38 @@ export default function CopyTradingPage() {
   // 分组管理
   const handleSaveGroup = async () => {
     try {
-      await copyTradingApi.createGroup(groupFormData);
-      addToast({ title: "分组创建成功", color: "success" });
-      setIsGroupModalOpen(false);
+      if (editingGroup) {
+        // 更新分组
+        await copyTradingApi.updateGroup(editingGroup.id, groupFormData);
+        addToast({ title: "分组更新成功", color: "success" });
+      } else {
+        // 创建分组
+        await copyTradingApi.createGroup(groupFormData);
+        addToast({ title: "分组创建成功", color: "success" });
+      }
+      setEditingGroup(null);
       setGroupFormData({ name: "", description: "", color: "#3B82F6" });
       loadGroups();
     } catch (error) {
-      console.error("Failed to create group:", error);
-      addToast({ title: "创建失败", color: "danger" });
+      console.error("Failed to save group:", error);
+      addToast({ title: editingGroup ? "更新失败" : "创建失败", color: "danger" });
     }
+  };
+
+  // 编辑分组
+  const handleEditGroup = (group: CopyTradingGroup) => {
+    setEditingGroup(group);
+    setGroupFormData({
+      name: group.name,
+      description: group.description || "",
+      color: group.color || "#3B82F6",
+    });
+  };
+
+  // 取消编辑
+  const handleCancelEditGroup = () => {
+    setEditingGroup(null);
+    setGroupFormData({ name: "", description: "", color: "#3B82F6" });
   };
 
   const handleDeleteGroup = async (groupId: number) => {
@@ -558,12 +598,6 @@ export default function CopyTradingPage() {
   // 格式化地址
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
-
-  // 复制地址
-  const copyAddress = (address: string) => {
-    navigator.clipboard.writeText(address);
-    addToast({ title: "已复制地址", color: "success" });
   };
 
   // 表格列
@@ -598,24 +632,15 @@ export default function CopyTradingPage() {
           );
         case "address":
           return (
-            <div className="flex items-center gap-2">
-              <Tooltip content={item.address}>
-                <span
-                  className="cursor-pointer hover:text-primary"
-                  onClick={() => navigate(`/traders/${item.address}`)}
-                >
-                  {formatAddress(item.address)}
-                </span>
-              </Tooltip>
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                onPress={() => copyAddress(item.address)}
-              >
-                <Icon icon="lucide:copy" width={14} />
-              </Button>
-            </div>
+            <a
+              href={`/traders/${item.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {formatAddress(item.address)}
+            </a>
           );
         case "name":
           return item.name || "-";
@@ -1217,7 +1242,12 @@ export default function CopyTradingPage() {
               {/* 现有分组列表 */}
               <div className="space-y-2 mb-4">
                 {groups.map((group) => (
-                  <div key={group.id} className="flex items-center justify-between p-2 border rounded">
+                  <div
+                    key={group.id}
+                    className={`flex items-center justify-between p-2 border rounded transition-colors ${
+                      editingGroup?.id === group.id ? "border-primary bg-primary-50" : ""
+                    }`}
+                  >
                     <div className="flex items-center gap-2">
                       <div
                         className="w-4 h-4 rounded"
@@ -1226,24 +1256,52 @@ export default function CopyTradingPage() {
                       <span>{group.name}</span>
                       <span className="text-sm text-gray-500">({group.address_count || 0})</span>
                     </div>
-                    {group.id !== 1 && (
-                      <Button
-                        isIconOnly
-                        size="sm"
-                        variant="light"
-                        color="danger"
-                        onPress={() => handleDeleteGroup(group.id)}
-                      >
-                        <Icon icon="lucide:trash-2" width={16} />
-                      </Button>
-                    )}
+                    <div className="flex gap-1">
+                      <Tooltip content="编辑">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          color="primary"
+                          onPress={() => handleEditGroup(group)}
+                        >
+                          <Icon icon="lucide:edit" width={16} />
+                        </Button>
+                      </Tooltip>
+                      {group.id !== 1 && (
+                        <Tooltip content="删除">
+                          <Button
+                            isIconOnly
+                            size="sm"
+                            variant="light"
+                            color="danger"
+                            onPress={() => handleDeleteGroup(group.id)}
+                          >
+                            <Icon icon="lucide:trash-2" width={16} />
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* 新建分组 */}
+              {/* 新建/编辑分组 */}
               <div className="border-t pt-4">
-                <h4 className="text-sm font-medium mb-2">新建分组</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium">
+                    {editingGroup ? "编辑分组" : "新建分组"}
+                  </h4>
+                  {editingGroup && (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      onPress={handleCancelEditGroup}
+                    >
+                      取消编辑
+                    </Button>
+                  )}
+                </div>
                 <div className="space-y-2">
                   <Input
                     label="分组名称"
@@ -1257,17 +1315,31 @@ export default function CopyTradingPage() {
                     value={groupFormData.description}
                     onValueChange={(v) => setGroupFormData({ ...groupFormData, description: v })}
                   />
-                  <Input
-                    type="color"
-                    label="颜色"
-                    value={groupFormData.color}
-                    onValueChange={(v) => setGroupFormData({ ...groupFormData, color: v })}
-                  />
+                  <div className="space-y-2">
+                    <label className="text-sm text-default-600">颜色</label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {presetColors.map((color) => (
+                        <div
+                          key={color}
+                          className={`w-8 h-8 rounded-lg cursor-pointer transition-all ${
+                            groupFormData.color === color
+                              ? "ring-2 ring-offset-2 ring-primary scale-110"
+                              : "hover:scale-105"
+                          }`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => setGroupFormData({ ...groupFormData, color })}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </ModalBody>
             <ModalFooter>
-              <Button variant="flat" onPress={() => setIsGroupModalOpen(false)}>
+              <Button variant="flat" onPress={() => {
+                setIsGroupModalOpen(false);
+                handleCancelEditGroup();
+              }}>
                 关闭
               </Button>
               <Button
@@ -1275,7 +1347,7 @@ export default function CopyTradingPage() {
                 onPress={handleSaveGroup}
                 isDisabled={!groupFormData.name}
               >
-                创建分组
+                {editingGroup ? "更新分组" : "创建分组"}
               </Button>
             </ModalFooter>
           </ModalContent>
