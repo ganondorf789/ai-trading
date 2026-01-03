@@ -29,10 +29,6 @@ else
     exit 1
 fi
 
-# 2. 安装 Python 依赖
-echo -e "${YELLOW}[2/5] 安装 Python 依赖...${NC}"
-pip3 install --upgrade pip
-pip3 install -r "$PROJECT_DIR/requirements.txt"
 
 # 3. 创建日志目录
 echo -e "${YELLOW}[3/5] 创建日志目录...${NC}"
@@ -66,8 +62,27 @@ stderr_logfile_backups=10
 priority=100
 EOF
 
-# 复制配置到 Supervisor 目录
-sudo cp /tmp/copy_trading.conf /etc/supervisor/conf.d/copy_trading.conf
+# 复制配置到 Supervisor 目录（自动检测路径和扩展名）
+if [ -d "/etc/supervisor/conf.d" ]; then
+    SUPERVISOR_CONF_DIR="/etc/supervisor/conf.d"
+    CONF_EXT="conf"
+elif [ -d "/etc/supervisord.d" ]; then
+    SUPERVISOR_CONF_DIR="/etc/supervisord.d"
+    # 检测 supervisord.conf 中 include 使用的扩展名
+    if grep -q "\.ini" /etc/supervisord.conf 2>/dev/null; then
+        CONF_EXT="ini"
+    else
+        CONF_EXT="conf"
+    fi
+else
+    echo -e "${RED}无法找到 Supervisor 配置目录${NC}"
+    echo "尝试创建 /etc/supervisord.d ..."
+    sudo mkdir -p /etc/supervisord.d
+    SUPERVISOR_CONF_DIR="/etc/supervisord.d"
+    CONF_EXT="ini"
+fi
+echo "Supervisor 配置目录: $SUPERVISOR_CONF_DIR (扩展名: .$CONF_EXT)"
+sudo cp /tmp/copy_trading.conf "$SUPERVISOR_CONF_DIR/copy_trading.$CONF_EXT"
 
 # 5. 启动服务
 echo -e "${YELLOW}[5/5] 启动服务...${NC}"
