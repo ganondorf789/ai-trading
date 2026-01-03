@@ -177,6 +177,8 @@ async def run():
         status = bot.get_status()
         logger.info("\n运行统计:")
         logger.info(f"  跟单目标数: {status['target_count']}")
+        if status.get('locked_target'):
+            logger.info(f"  锁定交易员: {status['locked_target'][:10]}...")
         logger.info(f"  总复制次数: {status['total_stats']['total_copies_today']}")
         logger.info(f"  成功: {status['total_stats']['successful_copies']}")
         logger.info(f"  失败: {status['total_stats']['failed_copies']}")

@@ -97,6 +97,9 @@ class MultiTargetCopyTradingBot:
         # 自己的持仓
         self.my_positions: Dict[str, Position] = {}
 
+        # 锁定状态：成功跟单后锁定单一交易员
+        self.locked_target: Optional[str] = None
+
         # 运行状态
         self.is_running = False
         self.last_config_reload: Optional[pendulum.DateTime] = None
@@ -313,6 +316,12 @@ class MultiTargetCopyTradingBot:
                 logger.info(f"[{target_state.address[:8]}] 开仓成功: {symbol} {side} {size}")
                 order_data['status'] = 'success'
                 target_state.successful_copies += 1
+
+                # 锁定该交易员
+                if self.locked_target is None:
+                    self.locked_target = target_state.address
+                    logger.info(f"🔒 锁定交易员: {target_state.address[:10]}... (谁先开仓跟谁)")
+
                 if self._on_copy:
                     self._on_copy(target_state.address, symbol, side, size)
             else:
@@ -532,6 +541,12 @@ class MultiTargetCopyTradingBot:
             target_state.initialized = True
             target_state.init_timestamp = pendulum.now()
             target_state.last_check = pendulum.now()
+
+            # 恢复锁定状态：如果有已跟单仓位，锁定该交易员
+            if self.locked_target is None:
+                self.locked_target = address
+                logger.info(f"🔒 恢复锁定交易员: {address[:10]}... (已有跟单仓位)")
+
             return  # 恢复成功，跳过初始化流程
         
         target_state.init_timestamp = pendulum.now()
@@ -600,6 +615,10 @@ class MultiTargetCopyTradingBot:
         """同步单个目标的持仓"""
         config = target_state.config
         address = target_state.address
+
+        # 检查锁定状态：如果已锁定其他交易员，跳过此目标
+        if self.locked_target and self.locked_target != address:
+            return
 
         # 检查每日交易次数限制
         if target_state.copies_today >= config.max_daily_trades:
@@ -709,6 +728,11 @@ class MultiTargetCopyTradingBot:
         except Exception as e:
             logger.warning(f"[{address[:8]}] 保存跟单状态失败: {e}")
 
+        # 检查是否需要解除锁定：当锁定的交易员所有仓位都平掉后
+        if self.locked_target == address and not target_state.copied_positions:
+            logger.info(f"🔓 解除锁定: {address[:10]}... (仓位已全部平仓)")
+            self.locked_target = None
+
         target_state.last_check = pendulum.now()
 
     async def _sync_all_targets(self):
@@ -802,6 +826,7 @@ class MultiTargetCopyTradingBot:
         return {
             'is_running': self.is_running,
             'target_count': len(self.targets),
+            'locked_target': self.locked_target,
             'targets': targets_status,
             'my_positions': [
                 {
