@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import 'github-markdown-css/github-markdown-light.css';
 import type { Selection, SortDescriptor } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Tabs, Tab } from '@heroui/tabs';
@@ -1544,9 +1545,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
-                                  <ReactMarkdown>{aiAnalysisData.summary}</ReactMarkdown>
-                                </div>
+                                <ReactMarkdown>{aiAnalysisData.summary}</ReactMarkdown>
                               </CardBody>
                             </Card>
                           </div>
@@ -1561,7 +1560,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card className="bg-green-50 dark:bg-green-900/20">
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.strengths}</ReactMarkdown>
                                 </div>
                               </CardBody>
@@ -1578,7 +1577,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card className="bg-red-50 dark:bg-red-900/20">
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.risks}</ReactMarkdown>
                                 </div>
                               </CardBody>
@@ -1595,7 +1594,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card>
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.trading_style}</ReactMarkdown>
                                 </div>
                               </CardBody>
@@ -1612,7 +1611,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card className="bg-indigo-50 dark:bg-indigo-900/20">
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.copy_trading_advice}</ReactMarkdown>
                                 </div>
                               </CardBody>
@@ -1629,7 +1628,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card className="bg-orange-50 dark:bg-orange-900/20">
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.improvement_suggestions}</ReactMarkdown>
                                 </div>
                               </CardBody>
@@ -1646,7 +1645,7 @@ export default function TraderDetailPage() {
                             </h3>
                             <Card>
                               <CardBody>
-                                <div className="prose prose-sm max-w-none dark:prose-invert">
+                                <div className="markdown-body">
                                   <ReactMarkdown>{aiAnalysisData.analysis_text}</ReactMarkdown>
                                 </div>
                               </CardBody>
