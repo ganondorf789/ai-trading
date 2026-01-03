@@ -152,7 +152,7 @@ async def run():
     bot = MultiTargetCopyTradingBot(
         client=client,
         db_path="data/traders.db",
-        check_interval=2.0,  # 检查间隔（秒）
+        check_interval=10.0,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
     )
 

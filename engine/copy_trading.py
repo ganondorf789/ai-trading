@@ -770,22 +770,27 @@ class MultiTargetCopyTradingBot:
 
         try:
             while self.is_running:
-                # 检查是否需要重载配置
-                if (self.last_config_reload is None or
-                    (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
-                    self.reload_configs()
+                try:
+                    # 检查是否需要重载配置
+                    if (self.last_config_reload is None or
+                        (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
+                        self.reload_configs()
 
-                if self.targets:
-                    await self._sync_all_targets()
+                    if self.targets:
+                        await self._sync_all_targets()
+
+                except asyncio.CancelledError:
+                    raise  # 重新抛出取消异常
+                except Exception as e:
+                    # API 错误等，记录后继续等待下一个周期
+                    logger.warning(f"同步时遇到错误，将在下一周期重试: {e}")
+                    if self._on_error:
+                        self._on_error(e)
 
                 await asyncio.sleep(self.check_interval)
 
         except asyncio.CancelledError:
             logger.info("多目标跟单机器人被取消")
-        except Exception as e:
-            logger.error(f"多目标跟单机器人异常: {e}")
-            if self._on_error:
-                self._on_error(e)
         finally:
             self.is_running = False
             logger.info("多目标跟单机器人停止")
