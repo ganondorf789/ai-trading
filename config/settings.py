@@ -67,7 +67,7 @@ class AIModelSettings(BaseSettings):
     qwen_api_key: str = Field(default="", description="通义千问 API密钥")
     qwen_model: str = Field(default="qwen-max", description="通义千问模型名称")
     qwen_api_url: str = Field(
-        default="https://dashscope.aliyuncs.com/api/v1",
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         description="通义千问 API地址"
     )
 
