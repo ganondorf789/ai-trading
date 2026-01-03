@@ -490,7 +490,7 @@ export default function TraderDetailPage() {
       case 'sz':
         return <span>{formatNumber(fill.sz, 4)}</span>;
       case 'start_position':
-        return <span>{fill.start_position !== undefined ? formatNumber(fill.start_position, 4) : '-'}</span>;
+        return <span>{fill.start_position != null ? formatNumber(fill.start_position, 4) : '-'}</span>;
       case 'value':
         return <span>${formatNumber(fill.px * fill.sz, 2)}</span>;
       case 'closed_pnl':

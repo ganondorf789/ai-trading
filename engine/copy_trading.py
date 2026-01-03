@@ -381,9 +381,9 @@ class MultiTargetCopyTradingBot:
                 break
         adjustment_size = round(adjustment_size, decimals)
 
-        if adjustment_size == 0:
-            logger.debug(f"[{target_state.address[:8]}] {symbol} 调整数量太小，跳过")
-            return True
+        if adjustment_size < 11:
+            logger.debug(f"[{target_state.address[:8]}] {symbol} 调整数量 {adjustment_size} < 11，使用最小值 11")
+            adjustment_size = 11
 
         is_long = my_pos.side == PositionSide.LONG
 
