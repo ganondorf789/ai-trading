@@ -1860,6 +1860,26 @@ class TraderDatabase:
             """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
             return cursor.rowcount > 0
 
+    def toggle_copy_trading_sync_position(self, address: str, sync_position: bool) -> bool:
+        """
+        切换同步仓位状态
+
+        Args:
+            address: 交易者地址
+            sync_position: 是否同步仓位
+
+        Returns:
+            是否更新成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE copy_trading_addresses
+                SET sync_position = ?, updated_at = ?
+                WHERE address = ?
+            """, (sync_position, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
+            return cursor.rowcount > 0
+
     def batch_update_copy_trading_addresses(
         self,
         addresses: List[str],

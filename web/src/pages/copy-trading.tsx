@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Table,
@@ -41,6 +41,68 @@ const ratingColors: Record<string, "success" | "primary" | "secondary" | "warnin
   D: "danger",
   F: "default",
 };
+
+// 状态开关组件
+function StatusSwitch({ address, isEnabled, onToggle }: {
+  address: string;
+  isEnabled: boolean;
+  onToggle: (address: string, value: boolean) => void;
+}) {
+  const isFirstRender = useRef(true);
+  const [value, setValue] = useState(Boolean(isEnabled));
+
+  useEffect(() => {
+    setValue(Boolean(isEnabled));
+  }, [isEnabled]);
+
+  const handleChange = (checked: boolean) => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setValue(checked);
+    onToggle(address, checked);
+  };
+
+  return (
+    <Switch
+      size="sm"
+      isSelected={value}
+      onValueChange={handleChange}
+    />
+  );
+}
+
+// 同步仓位开关组件
+function SyncPositionSwitch({ address, syncPosition, onToggle }: {
+  address: string;
+  syncPosition: boolean;
+  onToggle: (address: string, value: boolean) => void;
+}) {
+  const isFirstRender = useRef(true);
+  const [value, setValue] = useState(Boolean(syncPosition));
+
+  useEffect(() => {
+    setValue(Boolean(syncPosition));
+  }, [syncPosition]);
+
+  const handleChange = (checked: boolean) => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setValue(checked);
+    onToggle(address, checked);
+  };
+
+  return (
+    <Switch
+      size="sm"
+      isSelected={value}
+      onValueChange={handleChange}
+    />
+  );
+}
 
 export default function CopyTradingPage() {
   const navigate = useNavigate();
@@ -445,6 +507,25 @@ export default function CopyTradingPage() {
     }
   };
 
+  // 处理同步仓位开关（使用乐观更新避免无限循环）
+  const handleToggleSyncPosition = async (address: string, syncPosition: boolean) => {
+    // 乐观更新本地状态
+    setAddresses((prev) =>
+      prev.map((a) => (a.address === address ? { ...a, sync_position: syncPosition } : a))
+    );
+
+    try {
+      await copyTradingApi.toggleSyncPosition(address, syncPosition);
+    } catch (error) {
+      // 失败时回滚状态
+      setAddresses((prev) =>
+        prev.map((a) => (a.address === address ? { ...a, sync_position: !syncPosition } : a))
+      );
+      console.error("Failed to toggle sync position:", error);
+      addToast({ title: "操作失败", color: "danger" });
+    }
+  };
+
   // 批量删除确认状态
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
 
@@ -557,6 +638,9 @@ export default function CopyTradingPage() {
     { key: "win_rate", label: "胜率" },
     { key: "trader_pnl", label: "盈亏" },
     { key: "copy_ratio", label: "跟单比例" },
+    { key: "position_size", label: "仓位范围" },
+    { key: "max_leverage", label: "最大杠杆" },
+    { key: "sync_position", label: "同步仓位" },
     { key: "symbols", label: "币种限制" },
     { key: "updated_at", label: "更新时间" },
     { key: "actions", label: "操作" },
@@ -568,10 +652,10 @@ export default function CopyTradingPage() {
       switch (columnKey) {
         case "status":
           return (
-            <Switch
-              size="sm"
-              isSelected={item.is_enabled}
-              onValueChange={(checked) => handleToggle(item.address, checked)}
+            <StatusSwitch
+              address={item.address}
+              isEnabled={item.is_enabled}
+              onToggle={handleToggle}
             />
           );
         case "address":
@@ -625,6 +709,22 @@ export default function CopyTradingPage() {
           );
         case "copy_ratio":
           return `${(item.copy_ratio * 100).toFixed(0)}%`;
+        case "position_size":
+          return (
+            <span className="text-sm">
+              ${item.min_position_size_usd} - ${item.max_position_size_usd}
+            </span>
+          );
+        case "max_leverage":
+          return `${item.max_leverage}x`;
+        case "sync_position":
+          return (
+            <SyncPositionSwitch
+              address={item.address}
+              syncPosition={item.sync_position}
+              onToggle={handleToggleSyncPosition}
+            />
+          );
         case "symbols":
           const whiteCount = item.symbols_whitelist?.length || 0;
           const blackCount = item.symbols_blacklist?.length || 0;

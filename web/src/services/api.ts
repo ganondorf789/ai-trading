@@ -410,6 +410,10 @@ export const copyTradingApi = {
   toggleAddress: (address: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/toggle`, { is_enabled: isEnabled }),
 
+  // 切换同步仓位状态
+  toggleSyncPosition: (address: string, syncPosition: boolean) =>
+    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/sync-position`, { sync_position: syncPosition }),
+
   // 批量操作
   batchAction: (action: 'enable' | 'disable' | 'delete' | 'move_group', addresses: string[], groupId?: number) =>
     api.post<any, ApiResponse<void> & { affected_count?: number; message?: string }>('/copy-trading/addresses/batch', {

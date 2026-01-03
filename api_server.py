@@ -1362,6 +1362,38 @@ def toggle_copy_trading_address(address: str):
         }), 500
 
 
+@app.route('/api/copy-trading/addresses/<address>/sync-position', methods=['POST'])
+def toggle_copy_trading_sync_position(address: str):
+    """切换同步仓位状态"""
+    try:
+        data = request.get_json()
+        if data is None or 'sync_position' not in data:
+            return jsonify({
+                'success': False,
+                'error': '缺少 sync_position 参数'
+            }), 400
+
+        sync_position = bool(data['sync_position'])
+        success = db.toggle_copy_trading_sync_position(address, sync_position)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '已启用同步仓位' if sync_position else '已禁用同步仓位'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '地址不存在'
+            }), 404
+    except Exception as e:
+        logger.error(f"切换同步仓位状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/copy-trading/addresses/batch', methods=['POST'])
 def batch_update_copy_trading_addresses():
     """
