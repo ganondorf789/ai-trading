@@ -210,8 +210,8 @@ class MultiTargetCopyTradingBot:
             return symbol in config.symbols_whitelist
         return True
 
-    def _get_target_positions(self, address: str) -> Dict[str, Dict]:
-        """获取目标交易者的当前持仓"""
+    def _get_target_positions(self, address: str) -> Optional[Dict[str, Dict]]:
+        """获取目标交易者的当前持仓，失败时返回 None"""
         try:
             info = Info(self.client.api_url, skip_ws=True)
             state = info.user_state(address)
@@ -239,7 +239,7 @@ class MultiTargetCopyTradingBot:
 
         except Exception as e:
             logger.error(f"获取目标持仓失败 {address[:10]}...: {e}")
-            return {}
+            return None  # 返回 None 表示获取失败，区别于空仓位 {}
 
     def _get_my_positions(self) -> Dict[str, Position]:
         """获取自己的当前持仓"""
@@ -629,6 +629,12 @@ class MultiTargetCopyTradingBot:
 
         # 获取目标持仓
         target_positions = self._get_target_positions(address)
+
+        # 获取失败时跳过本次同步，避免误判为平仓
+        if target_positions is None:
+            logger.warning(f"[{address[:8]}] 获取持仓失败，跳过本次同步")
+            return
+
         target_state.positions = target_positions
 
         # 首次初始化
