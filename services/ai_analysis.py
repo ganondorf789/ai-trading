@@ -2,7 +2,7 @@
 AI分析服务
 使用AI模型分析交易员表现并生成专业报告
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from loguru import logger
 from clients import get_ai_client
 
@@ -24,19 +24,26 @@ class TraderAIAnalyzer:
             logger.error(f"AI分析器初始化失败: {e}")
             raise
 
-    def analyze_trader(self, trader_data: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_trader(
+        self,
+        trader_data: Dict[str, Any],
+        coin_stats: Optional[List[Dict[str, Any]]] = None,
+        positions: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
         """
         分析交易员并生成AI报告
 
         Args:
             trader_data: 交易员数据字典
+            coin_stats: 币种统计数据列表
+            positions: 当前持仓数据列表
 
         Returns:
             包含AI分析结果的字典
         """
         try:
             # 构建分析提示词
-            prompt = self._build_analysis_prompt(trader_data)
+            prompt = self._build_analysis_prompt(trader_data, coin_stats, positions)
 
             # 调用AI模型生成分析
             logger.info(f"开始AI分析交易员: {trader_data.get('address', 'Unknown')}")
@@ -56,7 +63,12 @@ class TraderAIAnalyzer:
             logger.error(f"AI分析失败: {e}")
             raise
 
-    def _build_analysis_prompt(self, trader: Dict[str, Any]) -> str:
+    def _build_analysis_prompt(
+        self,
+        trader: Dict[str, Any],
+        coin_stats: Optional[List[Dict[str, Any]]] = None,
+        positions: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
         """构建分析提示词"""
 
         # 提取关键数据
@@ -89,6 +101,39 @@ class TraderAIAnalyzer:
         # 近期表现
         recent_7d_pnl = trader.get('recent_7d_pnl', 0)
         recent_7d_win_rate = trader.get('recent_7d_win_rate', 0) * 100
+
+        # 构建币种统计部分
+        coin_stats_text = ""
+        if coin_stats and len(coin_stats) > 0:
+            coin_stats_text = "\n【币种统计】\n"
+            # 按盈亏排序，取前10个
+            sorted_coins = sorted(coin_stats, key=lambda x: abs(x.get('total_pnl', 0)), reverse=True)[:10]
+            for coin in sorted_coins:
+                coin_name = coin.get('coin', '-')
+                coin_count = coin.get('count', 0)
+                coin_pnl = coin.get('total_pnl', 0)
+                avg_pnl = coin_pnl / coin_count if coin_count > 0 else 0
+                coin_stats_text += f"- {coin_name}: {coin_count}笔交易, 总盈亏${coin_pnl:.2f}, 平均${avg_pnl:.2f}\n"
+
+        # 构建当前持仓部分
+        positions_text = ""
+        if positions and len(positions) > 0:
+            positions_text = "\n【当前持仓】\n"
+            total_unrealized_pnl = 0
+            for pos in positions:
+                coin = pos.get('coin', '-')
+                szi = pos.get('szi', 0)
+                side = "多" if szi > 0 else "空"
+                entry_px = pos.get('entry_px', 0)
+                position_value = abs(pos.get('position_value', 0))
+                unrealized_pnl = pos.get('unrealized_pnl', 0)
+                roe = pos.get('return_on_equity', 0) * 100
+                leverage = pos.get('leverage_value', 1)
+                total_unrealized_pnl += unrealized_pnl
+                positions_text += f"- {coin} ({side}): 数量{abs(szi):.4f}, 开仓价${entry_px:.4f}, 持仓价值${position_value:.2f}, 未实现盈亏${unrealized_pnl:.2f} ({roe:.2f}%), {leverage}x杠杆\n"
+            positions_text += f"- 总未实现盈亏: ${total_unrealized_pnl:.2f}\n"
+        else:
+            positions_text = "\n【当前持仓】\n- 无当前持仓\n"
 
         prompt = f"""
 作为专业的加密货币交易分析师，请深度分析以下交易员的表现数据，并提供专业的投资建议。
@@ -123,7 +168,7 @@ class TraderAIAnalyzer:
 【近期表现】
 - 7天盈亏: ${recent_7d_pnl:.2f}
 - 7天胜率: {recent_7d_win_rate:.2f}%
-
+{coin_stats_text}{positions_text}
 请按以下格式提供分析报告：
 
 ## 一、综合评价
@@ -136,7 +181,7 @@ class TraderAIAnalyzer:
 （列举2-4个需要注意的风险点，每点1-2句话）
 
 ## 四、交易风格
-（分析交易员的交易风格特点，如激进/稳健、偏好品种等）
+（分析交易员的交易风格特点，如激进/稳健、偏好品种、持仓特点等）
 
 ## 五、跟单建议
 （提供具体的跟单建议，包括建议跟单比例、止损设置等）
@@ -150,6 +195,8 @@ class TraderAIAnalyzer:
 3. 数据支撑每个观点
 4. 风险提示要明确
 5. 建议要可执行
+6. 结合币种统计分析交易偏好
+7. 结合当前持仓分析仓位风险
 """
         return prompt
 
@@ -232,7 +279,9 @@ class TraderAIAnalyzer:
 
 def generate_trader_analysis(
     trader_data: Dict[str, Any],
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    coin_stats: Optional[List[Dict[str, Any]]] = None,
+    positions: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     生成交易员AI分析（便捷函数）
@@ -240,9 +289,11 @@ def generate_trader_analysis(
     Args:
         trader_data: 交易员数据
         provider: AI提供商
+        coin_stats: 币种统计数据列表
+        positions: 当前持仓数据列表
 
     Returns:
         AI分析结果
     """
     analyzer = TraderAIAnalyzer(provider=provider)
-    return analyzer.analyze_trader(trader_data)
+    return analyzer.analyze_trader(trader_data, coin_stats, positions)
