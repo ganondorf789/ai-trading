@@ -636,9 +636,9 @@ export default function CopyTradingPage() {
             "-"
           );
         case "win_rate":
-          return item.win_rate !== undefined ? `${(item.win_rate * 100).toFixed(1)}%` : "-";
+          return item.win_rate != null ? `${(item.win_rate * 100).toFixed(1)}%` : "-";
         case "trader_pnl":
-          return item.trader_pnl !== undefined ? (
+          return item.trader_pnl != null ? (
             <span className={item.trader_pnl >= 0 ? "text-success" : "text-danger"}>
               ${item.trader_pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
