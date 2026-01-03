@@ -99,7 +99,15 @@ const TraderCard = ({
             {isFinalist && (
               <Icon icon="solar:medal-ribbon-bold" className="text-success text-lg" />
             )}
-            <span className="font-mono text-sm">{shortAddr}</span>
+            <a
+              href={`/traders/${address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm hover:text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {shortAddr}
+            </a>
           </div>
           <div className="flex items-center gap-1">
             {showEliminatedRound && trader.eliminated_round && (
@@ -284,7 +292,23 @@ export default function GroupComparisonPage() {
                       onClick={() => loadSessionDetail(session.id)}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">#{session.id}</span>
+                        <div className="flex items-center gap-2">
+                          {session.rating && (
+                            <span
+                              className={`text-sm font-bold ${
+                                session.rating === 'S' ? 'text-purple-500' :
+                                session.rating === 'A' ? 'text-blue-500' :
+                                session.rating === 'B' ? 'text-green-500' :
+                                session.rating === 'C' ? 'text-yellow-500' :
+                                session.rating === 'D' ? 'text-orange-500' :
+                                session.rating === 'F' ? 'text-red-500' :
+                                'text-gray-500'
+                              }`}
+                            >
+                              {session.rating}
+                            </span>
+                          )}
+                        </div>
                         <StatusBadge status={session.status} />
                       </div>
                       <div className="text-xs text-default-500">
@@ -467,11 +491,9 @@ export default function GroupComparisonPage() {
                                     </div>
                                     <div className="flex gap-2">
                                       <Chip size="sm" variant="flat" color="success">
-                                        <Icon icon="solar:arrow-up-bold" className="mr-1" />
                                         晋级 {promotedCount}
                                       </Chip>
                                       <Chip size="sm" variant="flat" color="danger">
-                                        <Icon icon="solar:close-circle-bold" className="mr-1" />
                                         淘汰 {eliminatedCount}
                                       </Chip>
                                     </div>
@@ -496,9 +518,6 @@ export default function GroupComparisonPage() {
                                                 <span>第 {group.group_num} 组</span>
                                                 <Chip size="sm" variant="flat">
                                                   {group.total_in_group} 人
-                                                </Chip>
-                                                <Chip size="sm" variant="flat" color="success">
-                                                  晋级 {promoted.length}
                                                 </Chip>
                                               </div>
                                             }
@@ -546,14 +565,8 @@ export default function GroupComparisonPage() {
 
                                               {/* AI 分析 */}
                                               {group.analysis && (
-                                                <div className="mt-4 p-4 bg-content2/50 rounded-lg">
-                                                  <div className="text-xs text-default-500 mb-2 flex items-center gap-1">
-                                                    <Icon icon="solar:magic-stick-3-bold" />
-                                                    AI 分析
-                                                  </div>
-                                                  <div className="markdown-body text-sm p-4 rounded-lg">
-                                                    <ReactMarkdown>{group.analysis}</ReactMarkdown>
-                                                  </div>
+                                                <div className="markdown-body text-sm p-4 rounded-lg mt-4">
+                                                  <ReactMarkdown>{group.analysis}</ReactMarkdown>
                                                 </div>
                                               )}
                                             </div>
