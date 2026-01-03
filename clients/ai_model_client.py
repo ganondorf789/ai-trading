@@ -19,13 +19,6 @@ except ImportError:
     OpenAI = None
     logger.warning("openai SDK not installed. Install with: pip install openai")
 
-try:
-    import dashscope
-    from dashscope import Generation
-except ImportError:
-    dashscope = None
-    Generation = None
-    logger.warning("dashscope SDK not installed. Install with: pip install dashscope")
 
 
 class BaseAIModelClient(ABC):
@@ -125,19 +118,23 @@ class ZhipuAIClient(BaseAIModelClient):
 
 
 class QwenClient(BaseAIModelClient):
-    """通义千问客户端 - 使用阿里云DashScope SDK"""
+    """通义千问客户端 - 使用OpenAI兼容SDK"""
 
     def __init__(self, api_key: str, api_url: str, model: str, **kwargs):
         super().__init__(api_key, api_url, model, **kwargs)
 
-        if dashscope is None or Generation is None:
+        if OpenAI is None:
             raise ImportError(
-                "dashscope SDK is required for QwenClient. "
-                "Install with: pip install dashscope"
+                "openai SDK is required for QwenClient. "
+                "Install with: pip install openai"
             )
 
-        # 设置API Key
-        dashscope.api_key = api_key
+        # 初始化OpenAI客户端，指向阿里云API
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=api_url,
+            timeout=self.timeout
+        )
 
     def generate(self, prompt: str, **kwargs) -> str:
         """生成文本（转换为chat接口调用）"""
@@ -147,23 +144,16 @@ class QwenClient(BaseAIModelClient):
         """
         对话接口
 
-        使用阿里云DashScope SDK
+        通义千问使用OpenAI兼容的API
         """
         try:
-            response = Generation.call(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                result_format='message',
-                temperature=kwargs.get("temperature", self.temperature),
-                timeout=kwargs.get("timeout", self.timeout)
+                temperature=kwargs.get("temperature", self.temperature)
             )
 
-            if response.status_code == 200:
-                return response.output.choices[0].message.content
-            else:
-                error_msg = f"Qwen API error: {response.code} - {response.message}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+            return response.choices[0].message.content
 
         except Exception as e:
             logger.error(f"Qwen request failed: {e}")
