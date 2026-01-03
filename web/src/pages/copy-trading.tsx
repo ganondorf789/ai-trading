@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Table,
@@ -41,68 +41,6 @@ const ratingColors: Record<string, "success" | "primary" | "secondary" | "warnin
   D: "danger",
   F: "default",
 };
-
-// 状态开关组件
-function StatusSwitch({ address, isEnabled, onToggle }: {
-  address: string;
-  isEnabled: boolean;
-  onToggle: (address: string, value: boolean) => void;
-}) {
-  const isFirstRender = useRef(true);
-  const [value, setValue] = useState(Boolean(isEnabled));
-
-  useEffect(() => {
-    setValue(Boolean(isEnabled));
-  }, [isEnabled]);
-
-  const handleChange = (checked: boolean) => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    setValue(checked);
-    onToggle(address, checked);
-  };
-
-  return (
-    <Switch
-      size="sm"
-      isSelected={value}
-      onValueChange={handleChange}
-    />
-  );
-}
-
-// 同步仓位开关组件
-function SyncPositionSwitch({ address, syncPosition, onToggle }: {
-  address: string;
-  syncPosition: boolean;
-  onToggle: (address: string, value: boolean) => void;
-}) {
-  const isFirstRender = useRef(true);
-  const [value, setValue] = useState(Boolean(syncPosition));
-
-  useEffect(() => {
-    setValue(Boolean(syncPosition));
-  }, [syncPosition]);
-
-  const handleChange = (checked: boolean) => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    setValue(checked);
-    onToggle(address, checked);
-  };
-
-  return (
-    <Switch
-      size="sm"
-      isSelected={value}
-      onValueChange={handleChange}
-    />
-  );
-}
 
 export default function CopyTradingPage() {
   const navigate = useNavigate();
@@ -652,10 +590,10 @@ export default function CopyTradingPage() {
       switch (columnKey) {
         case "status":
           return (
-            <StatusSwitch
-              address={item.address}
-              isEnabled={item.is_enabled}
-              onToggle={handleToggle}
+            <Switch
+              size="sm"
+              isSelected={item.is_enabled}
+              onChange={(e) => handleToggle(item.address, e.target.checked)}
             />
           );
         case "address":
@@ -719,10 +657,10 @@ export default function CopyTradingPage() {
           return `${item.max_leverage}x`;
         case "sync_position":
           return (
-            <SyncPositionSwitch
-              address={item.address}
-              syncPosition={item.sync_position}
-              onToggle={handleToggleSyncPosition}
+            <Switch
+              size="sm"
+              isSelected={item.sync_position}
+              onChange={(e) => handleToggleSyncPosition(item.address, e.target.checked)}
             />
           );
         case "symbols":
@@ -1231,13 +1169,13 @@ export default function CopyTradingPage() {
                 <div className="col-span-2 flex flex-wrap gap-6">
                   <Switch
                     isSelected={formData.is_enabled}
-                    onValueChange={(v) => setFormData({ ...formData, is_enabled: v })}
+                    onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
                   >
                     启用跟单
                   </Switch>
                   <Switch
                     isSelected={formData.copy_leverage}
-                    onValueChange={(v) => setFormData({ ...formData, copy_leverage: v })}
+                    onChange={(e) => setFormData({ ...formData, copy_leverage: e.target.checked })}
                   >
                     复制杠杆
                   </Switch>
@@ -1245,7 +1183,7 @@ export default function CopyTradingPage() {
                     <div>
                       <Switch
                         isSelected={formData.sync_position}
-                        onValueChange={(v) => setFormData({ ...formData, sync_position: v })}
+                        onChange={(e) => setFormData({ ...formData, sync_position: e.target.checked })}
                       >
                         同步仓位
                       </Switch>
@@ -1253,7 +1191,7 @@ export default function CopyTradingPage() {
                   </Tooltip>
                   <Switch
                     isSelected={formData.dry_run}
-                    onValueChange={(v) => setFormData({ ...formData, dry_run: v })}
+                    onChange={(e) => setFormData({ ...formData, dry_run: e.target.checked })}
                   >
                     模拟模式
                   </Switch>
