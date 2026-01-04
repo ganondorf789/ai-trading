@@ -5,6 +5,8 @@
 从数据库加载跟单配置，支持同时跟单多个交易者
 使用前请先在 Web 跟单管理页面添加并启用跟单地址
 """
+
+VERSION = "1.1.0"
 import asyncio
 import os
 import sys
@@ -131,7 +133,7 @@ async def run():
     setup_logging()
 
     logger.info("=" * 60)
-    logger.info("Hyperliquid 跟单机器人")
+    logger.info(f"Hyperliquid 跟单机器人 v{VERSION}")
     logger.info("=" * 60)
 
     # 初始化飞书通知器
