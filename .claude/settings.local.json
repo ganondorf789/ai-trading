@@ -24,7 +24,8 @@
       "Bash(timeout 5 python:*)",
       "Bash(timeout 30 python:*)",
       "Bash(cat:*)",
-      "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\copy-trading.tsx\")"
+      "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\copy-trading.tsx\")",
+      "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\trader-detail.tsx\")"
     ]
   }
 }
