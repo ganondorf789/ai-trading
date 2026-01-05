@@ -28,7 +28,8 @@
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\trader-detail.tsx\")",
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\traders.tsx\")",
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\group-comparison.tsx\")",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\positions.tsx\")"
     ]
   }
 }
