@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
-from screener.database import TraderDatabase
+from database import TraderDatabase
 
 
 def add_top_traders_to_copy_trading(

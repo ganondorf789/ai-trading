@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from loguru import logger
 from leaderboard.fetch_leaderboard import fetch_leaderboard
 from screener.trader_screener import TraderScreener, ScreenerConfig
-from screener.database import TraderDatabase
+from database import TraderDatabase
 
 
 def get_memory_usage():

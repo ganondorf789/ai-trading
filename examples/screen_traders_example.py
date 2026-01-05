@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from loguru import logger
 from screener.trader_screener import TraderScreener, ScreenerConfig, QualityRating
 from screener.address_sources import AddressSource
-from screener.database import TraderDatabase
+from database import TraderDatabase
 
 
 def progress_callback(current: int, total: int, address: str, result):

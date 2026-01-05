@@ -1,0 +1,61 @@
+"""
+数据库管理模块
+整合所有数据库操作功能
+"""
+from loguru import logger
+
+from .base import DatabaseBase
+from .migrations import DatabaseMigrations
+from .trader_metrics import TraderMetricsOps
+from .trader_fills import TraderFillsOps
+from .positions import PositionsOps
+from .screening import ScreeningOps
+from .copy_trading import CopyTradingOps
+from .copy_orders import CopyOrdersOps
+from .coins import CoinsOps
+from .ai_analysis import AIAnalysisOps
+from .group_comparison import GroupComparisonOps
+
+
+class TraderDatabase(
+    DatabaseBase,
+    DatabaseMigrations,
+    TraderMetricsOps,
+    TraderFillsOps,
+    PositionsOps,
+    ScreeningOps,
+    CopyTradingOps,
+    CopyOrdersOps,
+    CoinsOps,
+    AIAnalysisOps,
+    GroupComparisonOps
+):
+    """
+    交易者数据库管理器
+
+    整合了所有数据库操作功能，包括：
+    - 交易者指标管理
+    - 交易记录管理
+    - 持仓管理
+    - 筛选会话管理
+    - 跟单地址和分组管理
+    - 跟单订单管理
+    - Hyperliquid 币种管理
+    - AI 分析管理
+    - 分组对比分析管理
+    """
+
+    def __init__(self, db_path: str = None):
+        """
+        初始化数据库
+
+        Args:
+            db_path: 数据库文件路径
+        """
+        super().__init__(db_path)
+        self._init_database()
+        logger.info(f"数据库初始化完成: {self.db_path}")
+
+
+# 导出主要类
+__all__ = ['TraderDatabase']

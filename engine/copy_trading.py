@@ -120,7 +120,7 @@ class MultiTargetCopyTradingBot:
     def db(self):
         """延迟加载数据库"""
         if self._db is None:
-            from screener.database import TraderDatabase
+            from database import TraderDatabase
             self._db = TraderDatabase(self.db_path)
         return self._db
 

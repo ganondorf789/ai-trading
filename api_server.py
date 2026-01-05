@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 import logging
 
-from screener.database import TraderDatabase
+from database import TraderDatabase
 from screener.trader_screener import TraderScreener, ScreenerConfig
 from services.ai_analysis import generate_trader_analysis
 

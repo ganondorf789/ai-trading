@@ -55,7 +55,7 @@ import pendulum
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from screener.database import TraderDatabase
+from database import TraderDatabase
 from services.ai_analysis import TraderAIAnalyzer, generate_trader_analysis
 from clients import get_ai_client
 
