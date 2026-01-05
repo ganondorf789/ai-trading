@@ -1,7 +1,7 @@
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { GroupComparisonSession } from '@/services/api';
-import { formatTime } from '../utils';
+import { formatTime } from '@/utils';
 import { StatusBadge } from './StatusBadge';
 
 interface SessionListProps {

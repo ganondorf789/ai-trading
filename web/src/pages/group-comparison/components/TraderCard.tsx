@@ -1,7 +1,7 @@
 import { Card, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { Icon } from '@iconify/react';
-import { formatNumber, formatUSD, formatPercent } from '../utils';
+import { formatNumber, formatUSD, formatPercent } from '@/utils';
 
 interface TraderCardProps {
   trader: any;

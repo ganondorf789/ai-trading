@@ -1,6 +1,6 @@
 import type { Trader } from '@/services/api';
 import type { ColumnKey } from '../types';
-import { getRatingColor, formatNumber, formatPercent, formatDate } from '../utils';
+import { getRatingColor, formatNumber, formatPercent, formatDate } from '@/utils';
 
 interface TraderTableCellProps {
   trader: Trader;
