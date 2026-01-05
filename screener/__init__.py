@@ -23,7 +23,6 @@ from screener.trader_screener import (
     QualityRating,
     discover_active_traders
 )
-from screener.address_sources import AddressSource
 
 __all__ = [
     'TraderScreener',
