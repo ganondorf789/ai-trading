@@ -220,7 +220,8 @@ def calculate_sortino_ratio(
     negative_returns = excess_returns[excess_returns < 0]
     
     if len(negative_returns) == 0:
-        return float('inf') if np.mean(excess_returns) > 0 else 0.0
+        # 没有负收益时返回一个较大的有限值，而不是Infinity
+        return 999.0 if np.mean(excess_returns) > 0 else 0.0
     
     downside_std = np.std(negative_returns)
     if downside_std == 0:
