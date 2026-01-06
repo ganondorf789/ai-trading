@@ -21,7 +21,11 @@ export const siteConfig = {
       href: "/copy-trading",
     },
     {
-      label: "Positions",
+      label: "Trader Positions",
+      href: "/trader-positions",
+    },
+    {
+      label: "Position States",
       href: "/positions",
     }
   ],

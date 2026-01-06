@@ -289,6 +289,52 @@ export interface CopyPositionStats {
   by_side: Record<string, { count: number; notional: number }>;
 }
 
+// 跟单交易员的实时持仓
+export interface TraderPosition {
+  id: number;
+  address: string;
+  coin: string;
+  szi: number;
+  entry_px: number;
+  position_value: number;
+  unrealized_pnl: number;
+  return_on_equity: number;
+  liquidation_px: number | null;
+  margin_used: number;
+  max_leverage: number;
+  leverage_type: string;
+  leverage_value: number;
+  updated_at: string;
+  // 关联字段
+  trader_name: string | null;
+  group_id: number | null;
+  group_name: string | null;
+  group_color: string | null;
+}
+
+export interface TraderPositionsStats {
+  total_positions: number;
+  total_traders: number;
+  total_notional: number;
+  long_count: number;
+  short_count: number;
+  long_notional: number;
+  short_notional: number;
+  by_coin: Array<{
+    coin: string;
+    count: number;
+    notional: number;
+    long: number;
+    short: number;
+  }>;
+  by_trader: Array<{
+    address: string;
+    name: string | null;
+    count: number;
+    notional: number;
+  }>;
+}
+
 // ==================== Hyperliquid 类型 ====================
 
 export interface HyperliquidCoin {

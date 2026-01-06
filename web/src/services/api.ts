@@ -14,6 +14,8 @@ import type {
   HyperliquidCoin,
   CopyPositionState,
   CopyPositionStats,
+  TraderPosition,
+  TraderPositionsStats,
   GroupComparisonSession,
   GroupComparisonGroup,
   GroupComparisonTrader,
@@ -39,6 +41,8 @@ export type {
   HyperliquidCoin,
   CopyPositionState,
   CopyPositionStats,
+  TraderPosition,
+  TraderPositionsStats,
   GroupComparisonSession,
   GroupComparisonGroup,
   GroupComparisonTrader,
@@ -332,6 +336,22 @@ export const copyPositionStatesApi = {
   // 清空所有仓位状态
   clearAll: () =>
     api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/copy-trading/positions/clear-all'),
+};
+
+// ==================== 跟单交易员实时持仓 API ====================
+
+export const traderPositionsApi = {
+  // 获取所有跟单交易员的当前持仓
+  getPositions: (params?: { enabled_only?: boolean; group_id?: number }) =>
+    api.get<any, ApiResponse<TraderPosition[]> & { stats?: TraderPositionsStats }>('/copy-trading/trader-positions', { params }),
+
+  // 刷新所有跟单交易员的持仓数据
+  refresh: (enabledOnly: boolean = true) =>
+    api.post<any, ApiResponse<{ refreshed_count: number; total_positions: number; errors?: Array<{ address: string; error: string }> }> & { message?: string }>(
+      '/copy-trading/trader-positions/refresh',
+      null,
+      { params: { enabled_only: enabledOnly }, timeout: 120000 }  // 2分钟超时
+    ),
 };
 
 // ==================== 分组对比分析 API ====================

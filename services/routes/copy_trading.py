@@ -735,3 +735,220 @@ def clear_all_position_states():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ==================== 跟单交易员实时持仓 API ====================
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions', methods=['GET'])
+def get_all_trader_positions():
+    """
+    获取所有跟单交易员的当前持仓（从数据库 asset_positions 表）
+    Query Parameters:
+        - enabled_only: bool, 是否只显示已启用的跟单地址，默认 true
+        - group_id: int, 按分组筛选
+    """
+    try:
+        enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
+        group_id = request.args.get('group_id', type=int)
+
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 构建跟单地址查询
+            address_query = """
+                SELECT address, name, group_id, is_enabled
+                FROM copy_trading_addresses
+                WHERE 1=1
+            """
+            params = []
+
+            if enabled_only:
+                address_query += " AND is_enabled = 1"
+
+            if group_id is not None:
+                address_query += " AND group_id = ?"
+                params.append(group_id)
+
+            cursor.execute(address_query, params)
+            copy_addresses = {row['address']: dict(row) for row in cursor.fetchall()}
+
+            if not copy_addresses:
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'stats': {
+                        'total_positions': 0,
+                        'total_traders': 0,
+                        'total_notional': 0,
+                        'long_count': 0,
+                        'short_count': 0,
+                        'long_notional': 0,
+                        'short_notional': 0
+                    }
+                })
+
+            # 获取这些地址的持仓
+            placeholders = ','.join(['?' for _ in copy_addresses])
+            cursor.execute(f"""
+                SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color
+                FROM asset_positions ap
+                LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
+                LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
+                WHERE ap.address IN ({placeholders})
+                ORDER BY ABS(ap.position_value) DESC
+            """, list(copy_addresses.keys()))
+
+            positions = []
+            stats = {
+                'total_positions': 0,
+                'total_traders': set(),
+                'total_notional': 0,
+                'long_count': 0,
+                'short_count': 0,
+                'long_notional': 0,
+                'short_notional': 0,
+                'by_coin': {},
+                'by_trader': {}
+            }
+
+            for row in cursor.fetchall():
+                pos = dict(row)
+                positions.append(pos)
+
+                # 统计
+                stats['total_positions'] += 1
+                stats['total_traders'].add(pos['address'])
+
+                position_value = abs(float(pos.get('position_value', 0)))
+                stats['total_notional'] += position_value
+
+                # 判断多空方向
+                szi = float(pos.get('szi', 0))
+                if szi > 0:
+                    stats['long_count'] += 1
+                    stats['long_notional'] += position_value
+                else:
+                    stats['short_count'] += 1
+                    stats['short_notional'] += position_value
+
+                # 按币种统计
+                coin = pos.get('coin', 'Unknown')
+                if coin not in stats['by_coin']:
+                    stats['by_coin'][coin] = {'count': 0, 'notional': 0, 'long': 0, 'short': 0}
+                stats['by_coin'][coin]['count'] += 1
+                stats['by_coin'][coin]['notional'] += position_value
+                if szi > 0:
+                    stats['by_coin'][coin]['long'] += 1
+                else:
+                    stats['by_coin'][coin]['short'] += 1
+
+                # 按交易员统计
+                address = pos.get('address')
+                if address not in stats['by_trader']:
+                    stats['by_trader'][address] = {
+                        'name': pos.get('trader_name'),
+                        'count': 0,
+                        'notional': 0
+                    }
+                stats['by_trader'][address]['count'] += 1
+                stats['by_trader'][address]['notional'] += position_value
+
+            # 转换统计数据
+            stats['total_traders'] = len(stats['total_traders'])
+            stats['by_coin'] = [
+                {'coin': k, **v}
+                for k, v in sorted(stats['by_coin'].items(), key=lambda x: -x[1]['notional'])
+            ]
+            stats['by_trader'] = [
+                {'address': k, **v}
+                for k, v in sorted(stats['by_trader'].items(), key=lambda x: -x[1]['notional'])
+            ]
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'stats': stats
+        })
+    except Exception as e:
+        logger.error(f"获取跟单交易员持仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
+def refresh_all_trader_positions():
+    """
+    刷新所有跟单交易员的当前持仓（从 Hyperliquid API 获取最新数据）
+    Query Parameters:
+        - enabled_only: bool, 是否只刷新已启用的跟单地址，默认 true
+    """
+    try:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        import time
+
+        enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
+
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 获取跟单地址列表
+            if enabled_only:
+                cursor.execute("SELECT address, name FROM copy_trading_addresses WHERE is_enabled = 1")
+            else:
+                cursor.execute("SELECT address, name FROM copy_trading_addresses")
+
+            addresses = [dict(row) for row in cursor.fetchall()]
+
+        if not addresses:
+            return jsonify({
+                'success': True,
+                'data': {'refreshed_count': 0, 'total_positions': 0},
+                'message': '没有需要刷新的跟单地址'
+            })
+
+        logger.info(f"开始刷新 {len(addresses)} 个跟单交易员的持仓数据...")
+
+        info = Info(constants.MAINNET_API_URL, skip_ws=True)
+        refreshed_count = 0
+        total_positions = 0
+        errors = []
+
+        for addr_info in addresses:
+            address = addr_info['address']
+            try:
+                # 获取最新持仓
+                user_state = info.user_state(address)
+
+                if user_state:
+                    asset_positions = user_state.get('assetPositions', [])
+                    positions_saved = db.save_positions(address, asset_positions)
+                    total_positions += positions_saved
+                    refreshed_count += 1
+                    logger.debug(f"刷新 {address[:10]}... 持仓: {positions_saved} 个")
+
+                # 添加小延迟避免 API 限流
+                time.sleep(0.1)
+            except Exception as e:
+                logger.warning(f"刷新 {address[:10]}... 持仓失败: {e}")
+                errors.append({'address': address, 'error': str(e)})
+
+        logger.info(f"持仓刷新完成: {refreshed_count}/{len(addresses)} 个地址，共 {total_positions} 个持仓")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'refreshed_count': refreshed_count,
+                'total_positions': total_positions,
+                'errors': errors if errors else None
+            },
+            'message': f'已刷新 {refreshed_count} 个交易员的持仓数据，共 {total_positions} 个持仓'
+        })
+    except Exception as e:
+        logger.error(f"刷新跟单交易员持仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

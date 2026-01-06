@@ -5,6 +5,7 @@ import TradersPage from "@/pages/traders";
 import TraderDetailPage from "@/pages/trader-detail";
 import CopyTradingPage from "@/pages/copy-trading";
 import PositionsPage from "@/pages/positions";
+import TraderPositionsPage from "@/pages/trader-positions";
 import GroupComparisonPage from "@/pages/group-comparison";
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
       <Route element={<TraderDetailPage />} path="/traders/:address" />
       <Route element={<CopyTradingPage />} path="/copy-trading" />
       <Route element={<PositionsPage />} path="/positions" />
+      <Route element={<TraderPositionsPage />} path="/trader-positions" />
       <Route element={<GroupComparisonPage />} path="/group-comparison" />
     </Routes>
   );
