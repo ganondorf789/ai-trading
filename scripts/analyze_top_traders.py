@@ -10,7 +10,7 @@ AI 分析顶级交易员脚本
 5. 找出最优秀的交易员并给出推荐排名
 6. 生成综合分析报告
 
-预筛选指标：
+预筛选指标（在 analyzers/pre_filter.py 的 DEFAULT_FILTER_CONFIG 中配置）：
 - 近7天盈亏：筛选近期盈利的交易员
 - 最大回撤：控制风险，排除高回撤交易员
 - Sharpe比率：综合考虑收益和风险
@@ -26,18 +26,7 @@ AI 分析顶级交易员脚本
     --top N                   分析前 N 名交易员 (默认: 全部)
     --provider PROVIDER       AI 提供商 (默认: 自动选择)
     --output FILE             输出报告文件路径 (默认: data/top_traders_analysis.json)
-
-    预筛选条件：
-    --min-pnl FLOAT           最小总盈亏 (默认: 10000)
-    --min-7d-pnl FLOAT        最小近7天盈亏 (默认: 0，不筛选负收益)
-    --max-drawdown FLOAT      最大回撤比例 (默认: 0.3，即30%)
-    --min-sharpe FLOAT        最小Sharpe比率 (默认: 0.5)
-    --min-profit-factor FLOAT 最小盈亏比 (默认: 1.2)
-    --min-win-rate FLOAT      最小胜率 (默认: 0.35，即35%)
-    --active-days INT         最近N天内有交易 (默认: 7)
     --no-filter               禁用所有预筛选条件
-
-    其他选项：
     --dry-run                 仅显示要分析的交易员，不实际分析
     --verbose                 显示详细输出
     --concurrent              使用并发刷新持仓（更快）
@@ -105,65 +94,10 @@ def parse_args() -> argparse.Namespace:
     )
 
     # 预筛选条件
-    filter_group = parser.add_argument_group('预筛选条件')
-    filter_group.add_argument(
-        '--min-pnl',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_pnl'],
-        help=f'最小总盈亏 (默认: {DEFAULT_FILTER_CONFIG["min_pnl"]:,.0f})'
-    )
-    filter_group.add_argument(
-        '--min-7d-pnl',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_7d_pnl'],
-        help=f'最小近7天盈亏 (默认: {DEFAULT_FILTER_CONFIG["min_7d_pnl"]:,.0f})'
-    )
-    filter_group.add_argument(
-        '--max-drawdown',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['max_drawdown'],
-        help=f'最大回撤比例 (默认: {DEFAULT_FILTER_CONFIG["max_drawdown"]})'
-    )
-    filter_group.add_argument(
-        '--min-sharpe',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_sharpe'],
-        help=f'最小Sharpe比率 (默认: {DEFAULT_FILTER_CONFIG["min_sharpe"]})'
-    )
-    filter_group.add_argument(
-        '--min-sortino',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_sortino'],
-        help=f'最小Sortino比率 (默认: {DEFAULT_FILTER_CONFIG["min_sortino"]})'
-    )
-    filter_group.add_argument(
-        '--min-profit-factor',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_profit_factor'],
-        help=f'最小盈亏比 (默认: {DEFAULT_FILTER_CONFIG["min_profit_factor"]})'
-    )
-    filter_group.add_argument(
-        '--min-win-rate',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['min_win_rate'],
-        help=f'最小胜率 (默认: {DEFAULT_FILTER_CONFIG["min_win_rate"]})'
-    )
-    filter_group.add_argument(
-        '--max-win-rate',
-        type=float,
-        default=DEFAULT_FILTER_CONFIG['max_win_rate'],
-        help=f'最大胜率 (默认: {DEFAULT_FILTER_CONFIG["max_win_rate"]}，避免小赚大亏型)'
-    )
-    filter_group.add_argument(
-        '--active-days',
-        type=int,
-        default=DEFAULT_FILTER_CONFIG['active_days'],
-        help=f'最近N天内有交易 (默认: {DEFAULT_FILTER_CONFIG["active_days"]})'
-    )
-    filter_group.add_argument(
+    parser.add_argument(
         '--no-filter',
         action='store_true',
-        help='禁用所有预筛选条件'
+        help='禁用所有预筛选条件（筛选参数在 DEFAULT_FILTER_CONFIG 中配置）'
     )
 
     # 分组对比选项
@@ -310,20 +244,10 @@ def main():
     logger.info(f"  - 跳过分组: {'是' if args.skip_group_compare else '否'}")
     logger.info(f"  - 跳过决赛: {'是' if args.skip_final else '否'}")
 
-    # 构建筛选配置
+    # 构建筛选配置（使用 DEFAULT_FILTER_CONFIG）
     filter_config = None
     if not args.no_filter:
-        filter_config = FilterConfig(
-            min_pnl=args.min_pnl,
-            min_7d_pnl=args.min_7d_pnl,
-            max_drawdown=args.max_drawdown,
-            min_sharpe=args.min_sharpe,
-            min_sortino=args.min_sortino,
-            min_profit_factor=args.min_profit_factor,
-            min_win_rate=args.min_win_rate,
-            max_win_rate=args.max_win_rate,
-            active_days=args.active_days,
-        )
+        filter_config = FilterConfig(**DEFAULT_FILTER_CONFIG)
         pre_filter = TraderPreFilter(filter_config)
         pre_filter.print_config()
     else:
@@ -363,8 +287,8 @@ def main():
 
             if not traders:
                 logger.warning("所有交易员都被预筛选条件筛除")
-                logger.info("建议: 可以尝试放宽筛选条件，例如:")
-                logger.info("   --min-pnl 5000 --max-drawdown 0.4 --min-sharpe 0.3")
+                logger.info("建议: 修改 analyzers/pre_filter.py 中的 DEFAULT_FILTER_CONFIG 放宽筛选条件")
+                logger.info("   或使用 --no-filter 禁用预筛选")
                 return
 
         # 限制分析数量
@@ -453,12 +377,9 @@ def main():
                     'group_size': args.group_size,
                     'top_per_group': args.top_per_group,
                     'final_size': args.final_size,
-                    'min_sharpe': args.min_sharpe,
-                    'min_sortino': args.min_sortino,
-                    'max_drawdown': args.max_drawdown,
-                    'min_win_rate': args.min_win_rate,
-                    'max_win_rate': args.max_win_rate,
                 }
+                if filter_config:
+                    config.update(filter_config.model_dump())
                 session_id = analyzer.save_to_database(
                     all_traders=traders,
                     finalists=finalists,
@@ -499,12 +420,9 @@ def main():
             'group_size': args.group_size,
             'top_per_group': args.top_per_group,
             'final_size': args.final_size,
-            'min_sharpe': args.min_sharpe,
-            'min_sortino': args.min_sortino,
-            'max_drawdown': args.max_drawdown,
-            'min_win_rate': args.min_win_rate,
-            'max_win_rate': args.max_win_rate,
         }
+        if filter_config:
+            config.update(filter_config.model_dump())
         session_id = analyzer.save_to_database(
             all_traders=traders,
             finalists=finalists,
