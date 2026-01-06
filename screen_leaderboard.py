@@ -79,12 +79,11 @@ def screen_leaderboard_traders(
 
     # 2. 初始化筛选器和数据库
     logger.info(f"\n[2/3] 初始化分析器...")
-    config = ScreenerConfig(
-        lookback_days=lookback_days,
-        max_fills_per_trader=max_fills,
-        api_call_delay=0.5,  # 避免请求过快
-        max_retries=3,
-    )
+    config = ScreenerConfig()
+    config.data.lookback_days = lookback_days
+    config.data.max_fills_per_trader = max_fills
+    config.api.api_call_delay = 0.5  # 避免请求过快
+    config.api.max_retries = 3
     screener = TraderScreener(config)
     db = TraderDatabase()
 

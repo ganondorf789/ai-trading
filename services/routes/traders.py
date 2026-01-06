@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import logging
 
 from database import TraderDatabase
-from screener.trader_screener import TraderScreener, ScreenerConfig
+from screener import TraderScreener, ScreenerConfig
 from services.ai_analysis import generate_trader_analysis
 
 logger = logging.getLogger(__name__)
@@ -178,9 +178,13 @@ def get_traders():
                 'profit_factor': trader.get('profit_factor', 0),
                 # 风险指标
                 'max_drawdown': trader.get('max_drawdown', 0),
+                'max_drawdown_abs': trader.get('max_drawdown_abs', 0),
                 'sharpe_ratio': trader.get('sharpe_ratio', 0),
                 'sortino_ratio': trader.get('sortino_ratio', 0),
                 'calmar_ratio': trader.get('calmar_ratio', 0),
+                'var_95': trader.get('var_95', 0),
+                'var_99': trader.get('var_99', 0),
+                'cvar_95': trader.get('cvar_95', 0),
                 # 评分
                 'overall_score': trader.get('overall_score', 0),
                 'rating': trader.get('rating', 'F'),
@@ -193,6 +197,7 @@ def get_traders():
                 'current_positions': trader.get('current_positions', 0),
                 'active_days': trader.get('active_days', 0),
                 'avg_leverage': trader.get('avg_leverage', 1),
+                'max_leverage': trader.get('max_leverage', 1),
                 'last_trade_time': trader.get('last_trade_time'),
                 'first_trade_time': trader.get('first_trade_time'),
                 # 新增分析字段
@@ -271,12 +276,11 @@ def add_trader():
         logger.info(f"开始分析新交易者: {address}")
 
         # 初始化筛选器
-        config = ScreenerConfig(
-            lookback_days=lookback_days,
-            max_fills_per_trader=max_fills,
-            api_call_delay=0.5,
-            max_retries=3,
-        )
+        config = ScreenerConfig()
+        config.data.lookback_days = lookback_days
+        config.data.max_fills_per_trader = max_fills
+        config.api.api_call_delay = 0.5
+        config.api.max_retries = 3
         screener = TraderScreener(config)
 
         # 分析交易者
@@ -362,12 +366,11 @@ def refresh_trader(address: str):
         logger.info(f"开始重新分析交易者: {address}")
 
         # 初始化筛选器
-        config = ScreenerConfig(
-            lookback_days=lookback_days,
-            max_fills_per_trader=max_fills,
-            api_call_delay=0.5,
-            max_retries=3,
-        )
+        config = ScreenerConfig()
+        config.data.lookback_days = lookback_days
+        config.data.max_fills_per_trader = max_fills
+        config.api.api_call_delay = 0.5
+        config.api.max_retries = 3
         screener = TraderScreener(config)
 
         # 分析交易者

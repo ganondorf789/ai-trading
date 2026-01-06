@@ -19,12 +19,18 @@ export interface Trader {
   profit_factor: number;
   // 风险指标
   max_drawdown: number;
+  max_drawdown_abs?: number;  // 最大回撤绝对值
   sharpe_ratio: number;
   sortino_ratio?: number;
+  calmar_ratio?: number;
+  var_95?: number;  // 95% VaR
+  var_99?: number;  // 99% VaR
+  cvar_95?: number;  // 95% CVaR (Expected Shortfall)
   // 交易特征
   avg_holding_time_hours?: number;
   trade_frequency_per_day?: number;
   avg_leverage?: number;
+  max_leverage?: number;  // 最大杠杆
   // 活跃度
   active_days: number;
   last_trade_time: string;
@@ -53,7 +59,6 @@ export interface Trader {
   recent_7d_win_rate?: number;
   long_short_ratio?: number;
   // 时间周期统计
-  calmar_ratio?: number;
   daily_pnl?: number;
   weekly_pnl?: number;
   monthly_pnl?: number;

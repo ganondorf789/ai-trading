@@ -178,6 +178,10 @@ export function TraderOverviewCard({
               <p className="text-lg font-bold text-red-500">{formatPercent(trader.max_drawdown)}</p>
             </div>
             <div>
+              <p className="text-xs text-gray-500">最大回撤 (USD)</p>
+              <p className="text-lg font-bold text-red-500">${formatNumber(trader.max_drawdown_abs || 0)}</p>
+            </div>
+            <div>
               <p className="text-xs text-gray-500">Sharpe Ratio</p>
               <p className="text-lg font-bold">{formatNumber(trader.sharpe_ratio)}</p>
             </div>
@@ -186,8 +190,31 @@ export function TraderOverviewCard({
               <p className="text-lg font-bold">{formatNumber(trader.sortino_ratio || 0)}</p>
             </div>
             <div>
+              <p className="text-xs text-gray-500">Calmar Ratio</p>
+              <p className="text-lg font-bold">{formatNumber(trader.calmar_ratio || 0)}</p>
+            </div>
+            <div>
               <p className="text-xs text-gray-500">平均杠杆</p>
               <p className="text-lg font-bold">{formatNumber(trader.avg_leverage || 1)}x</p>
+            </div>
+          </div>
+          {/* VaR 指标 */}
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mt-3">
+            <div>
+              <p className="text-xs text-gray-500">95% VaR</p>
+              <p className="text-lg font-bold text-orange-500">${formatNumber(trader.var_95 || 0)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">99% VaR</p>
+              <p className="text-lg font-bold text-orange-500">${formatNumber(trader.var_99 || 0)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">95% CVaR</p>
+              <p className="text-lg font-bold text-orange-500">${formatNumber(trader.cvar_95 || 0)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">最大杠杆</p>
+              <p className="text-lg font-bold">{formatNumber(trader.max_leverage || trader.avg_leverage || 1)}x</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">最大单笔盈利</p>
