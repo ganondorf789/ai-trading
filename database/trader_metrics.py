@@ -5,11 +5,120 @@ from typing import List, Dict, Optional, Any
 import pendulum
 from loguru import logger
 
-from screener.trader_screener import TraderMetrics, SHANGHAI_TZ
+from screener import TraderMetrics, SHANGHAI_TZ
 
 
 class TraderMetricsOps:
     """交易者指标相关操作"""
+
+    def _get_metric_value(self, metrics: TraderMetrics, attr_path: str, default=0.0):
+        """
+        安全获取指标值，支持嵌套属性
+        
+        Args:
+            metrics: TraderMetrics 对象
+            attr_path: 属性路径，如 'risk.var_95' 或 'total_pnl'
+            default: 默认值
+        
+        Returns:
+            属性值或默认值
+        """
+        try:
+            parts = attr_path.split('.')
+            value = metrics
+            for part in parts:
+                value = getattr(value, part)
+            return value if value is not None else default
+        except (AttributeError, TypeError):
+            return default
+
+    def _prepare_metrics_values(self, metrics: TraderMetrics) -> tuple:
+        """
+        准备用于数据库插入的指标值元组
+        
+        Args:
+            metrics: TraderMetrics 对象
+        
+        Returns:
+            值元组
+        """
+        # 获取 ROI 值（兼容新旧结构）
+        roi_value = self._get_metric_value(metrics, 'roi.roi', 0.0)
+        
+        # 获取新增风险指标
+        max_drawdown_abs = self._get_metric_value(metrics, 'risk.max_drawdown_abs', 0.0)
+        var_95 = self._get_metric_value(metrics, 'risk.var_95', 0.0)
+        var_99 = self._get_metric_value(metrics, 'risk.var_99', 0.0)
+        cvar_95 = self._get_metric_value(metrics, 'risk.cvar_95', 0.0)
+        
+        # 获取 max_leverage（兼容新旧结构）
+        max_leverage = self._get_metric_value(metrics, 'position.max_leverage', metrics.avg_leverage)
+        
+        # 处理 profit_factor 的无穷大值
+        profit_factor = metrics.profit_factor
+        if profit_factor == float('inf'):
+            profit_factor = 999999.0
+        
+        return (
+            metrics.address,
+            pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
+            metrics.total_trades,
+            metrics.winning_trades,
+            metrics.losing_trades,
+            metrics.total_pnl,
+            metrics.realized_pnl,
+            metrics.unrealized_pnl,
+            metrics.total_volume,
+            roi_value,
+            metrics.avg_profit_per_trade,
+            metrics.win_rate,
+            profit_factor,
+            metrics.max_drawdown,
+            max_drawdown_abs,
+            metrics.sharpe_ratio,
+            metrics.sortino_ratio,
+            metrics.calmar_ratio,
+            var_95,
+            var_99,
+            cvar_95,
+            metrics.avg_holding_time_hours,
+            metrics.trade_frequency_per_day,
+            metrics.avg_leverage,
+            max_leverage,
+            metrics.active_days,
+            metrics.last_trade_time.isoformat() if metrics.last_trade_time else None,
+            metrics.first_trade_time.isoformat() if metrics.first_trade_time else None,
+            metrics.current_positions,
+            metrics.current_equity,
+            metrics.overall_score,
+            metrics.rating.value,
+            metrics.profitability_score,
+            metrics.risk_score,
+            metrics.consistency_score,
+            metrics.activity_score,
+            metrics.avg_trade_price,
+            metrics.avg_trade_size,
+            metrics.max_single_win,
+            metrics.max_single_loss,
+            metrics.max_consecutive_wins,
+            metrics.max_consecutive_losses,
+            metrics.avg_win_amount,
+            metrics.avg_loss_amount,
+            metrics.unique_symbols,
+            metrics.favorite_symbol,
+            metrics.recent_7d_pnl,
+            metrics.recent_7d_win_rate,
+            metrics.long_short_ratio,
+            metrics.daily_pnl,
+            metrics.weekly_pnl,
+            metrics.monthly_pnl,
+            metrics.daily_roi,
+            metrics.weekly_roi,
+            metrics.monthly_roi,
+            metrics.daily_volume,
+            metrics.weekly_volume,
+            metrics.monthly_volume,
+        )
 
     def save_trader(self, metrics: TraderMetrics) -> int:
         """
@@ -30,8 +139,10 @@ class TraderMetricsOps:
                     total_trades, winning_trades, losing_trades,
                     total_pnl, realized_pnl, unrealized_pnl, total_volume,
                     roi, avg_profit_per_trade,
-                    win_rate, profit_factor, max_drawdown, sharpe_ratio, sortino_ratio, calmar_ratio,
-                    avg_holding_time_hours, trade_frequency_per_day, avg_leverage,
+                    win_rate, profit_factor, max_drawdown, max_drawdown_abs,
+                    sharpe_ratio, sortino_ratio, calmar_ratio,
+                    var_95, var_99, cvar_95,
+                    avg_holding_time_hours, trade_frequency_per_day, avg_leverage, max_leverage,
                     active_days, last_trade_time, first_trade_time,
                     current_positions, current_equity,
                     overall_score, rating,
@@ -44,7 +155,7 @@ class TraderMetricsOps:
                     daily_pnl, weekly_pnl, monthly_pnl,
                     daily_roi, weekly_roi, monthly_roi,
                     daily_volume, weekly_volume, monthly_volume
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(address) DO UPDATE SET
                     analyzed_at = excluded.analyzed_at,
                     total_trades = excluded.total_trades,
@@ -59,12 +170,17 @@ class TraderMetricsOps:
                     win_rate = excluded.win_rate,
                     profit_factor = excluded.profit_factor,
                     max_drawdown = excluded.max_drawdown,
+                    max_drawdown_abs = excluded.max_drawdown_abs,
                     sharpe_ratio = excluded.sharpe_ratio,
                     sortino_ratio = excluded.sortino_ratio,
                     calmar_ratio = excluded.calmar_ratio,
+                    var_95 = excluded.var_95,
+                    var_99 = excluded.var_99,
+                    cvar_95 = excluded.cvar_95,
                     avg_holding_time_hours = excluded.avg_holding_time_hours,
                     trade_frequency_per_day = excluded.trade_frequency_per_day,
                     avg_leverage = excluded.avg_leverage,
+                    max_leverage = excluded.max_leverage,
                     active_days = excluded.active_days,
                     last_trade_time = excluded.last_trade_time,
                     first_trade_time = excluded.first_trade_time,
@@ -98,61 +214,7 @@ class TraderMetricsOps:
                     daily_volume = excluded.daily_volume,
                     weekly_volume = excluded.weekly_volume,
                     monthly_volume = excluded.monthly_volume
-            """, (
-                metrics.address,
-                pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
-                metrics.total_trades,
-                metrics.winning_trades,
-                metrics.losing_trades,
-                metrics.total_pnl,
-                metrics.realized_pnl,
-                metrics.unrealized_pnl,
-                metrics.total_volume,
-                metrics.roi,
-                metrics.avg_profit_per_trade,
-                metrics.win_rate,
-                metrics.profit_factor if metrics.profit_factor != float('inf') else 999999.0,
-                metrics.max_drawdown,
-                metrics.sharpe_ratio,
-                metrics.sortino_ratio,
-                metrics.calmar_ratio,
-                metrics.avg_holding_time_hours,
-                metrics.trade_frequency_per_day,
-                metrics.avg_leverage,
-                metrics.active_days,
-                metrics.last_trade_time.isoformat() if metrics.last_trade_time else None,
-                metrics.first_trade_time.isoformat() if metrics.first_trade_time else None,
-                metrics.current_positions,
-                metrics.current_equity,
-                metrics.overall_score,
-                metrics.rating.value,
-                metrics.profitability_score,
-                metrics.risk_score,
-                metrics.consistency_score,
-                metrics.activity_score,
-                metrics.avg_trade_price,
-                metrics.avg_trade_size,
-                metrics.max_single_win,
-                metrics.max_single_loss,
-                metrics.max_consecutive_wins,
-                metrics.max_consecutive_losses,
-                metrics.avg_win_amount,
-                metrics.avg_loss_amount,
-                metrics.unique_symbols,
-                metrics.favorite_symbol,
-                metrics.recent_7d_pnl,
-                metrics.recent_7d_win_rate,
-                metrics.long_short_ratio,
-                metrics.daily_pnl,
-                metrics.weekly_pnl,
-                metrics.monthly_pnl,
-                metrics.daily_roi,
-                metrics.weekly_roi,
-                metrics.monthly_roi,
-                metrics.daily_volume,
-                metrics.weekly_volume,
-                metrics.monthly_volume
-            ))
+            """, self._prepare_metrics_values(metrics))
 
             return cursor.lastrowid
 

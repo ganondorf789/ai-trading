@@ -38,14 +38,19 @@ class DatabaseMigrations:
                     win_rate REAL DEFAULT 0.0,
                     profit_factor REAL DEFAULT 0.0,
                     max_drawdown REAL DEFAULT 0.0,
+                    max_drawdown_abs REAL DEFAULT 0.0,
                     sharpe_ratio REAL DEFAULT 0.0,
                     sortino_ratio REAL DEFAULT 0.0,
                     calmar_ratio REAL DEFAULT 0.0,
+                    var_95 REAL DEFAULT 0.0,
+                    var_99 REAL DEFAULT 0.0,
+                    cvar_95 REAL DEFAULT 0.0,
 
                     -- 交易特征
                     avg_holding_time_hours REAL DEFAULT 0.0,
                     trade_frequency_per_day REAL DEFAULT 0.0,
                     avg_leverage REAL DEFAULT 1.0,
+                    max_leverage REAL DEFAULT 1.0,
 
                     -- 活跃度
                     active_days INTEGER DEFAULT 0,
@@ -556,6 +561,12 @@ class DatabaseMigrations:
             ("daily_volume", "REAL DEFAULT 0.0"),
             ("weekly_volume", "REAL DEFAULT 0.0"),
             ("monthly_volume", "REAL DEFAULT 0.0"),
+            # 新增风险指标 (v2.0)
+            ("max_drawdown_abs", "REAL DEFAULT 0.0"),
+            ("var_95", "REAL DEFAULT 0.0"),
+            ("var_99", "REAL DEFAULT 0.0"),
+            ("cvar_95", "REAL DEFAULT 0.0"),
+            ("max_leverage", "REAL DEFAULT 1.0"),
         ]
 
         # 添加缺失的列
