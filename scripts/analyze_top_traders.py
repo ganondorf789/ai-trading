@@ -26,7 +26,7 @@ AI 分析顶级交易员脚本
     --top N                   分析前 N 名交易员 (默认: 全部)
     --provider PROVIDER       AI 提供商 (默认: 自动选择)
     --output FILE             输出报告文件路径 (默认: data/top_traders_analysis.json)
-    
+
     预筛选条件：
     --min-pnl FLOAT           最小总盈亏 (默认: 10000)
     --min-7d-pnl FLOAT        最小近7天盈亏 (默认: 0，不筛选负收益)
@@ -36,1129 +36,40 @@ AI 分析顶级交易员脚本
     --min-win-rate FLOAT      最小胜率 (默认: 0.35，即35%)
     --active-days INT         最近N天内有交易 (默认: 7)
     --no-filter               禁用所有预筛选条件
-    
+
     其他选项：
     --dry-run                 仅显示要分析的交易员，不实际分析
     --verbose                 显示详细输出
+    --concurrent              使用并发刷新持仓（更快）
 """
 import argparse
-import json
-import time
-from datetime import datetime
+import math
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
 
-from loguru import logger
 import pendulum
+from loguru import logger
 
 # 添加项目根目录到路径
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database import TraderDatabase
-from services.ai_analysis import TraderAIAnalyzer, generate_trader_analysis
-from clients import get_ai_client
 
-# Hyperliquid API for refreshing positions
-from hyperliquid.info import Info
-from hyperliquid.utils import constants
+# 导入重构后的模块
+from analyzers import (
+    FilterConfig,
+    GroupCompareConfig,
+    TraderPreFilter,
+    TopTradersAnalyzer,
+    DEFAULT_FILTER_CONFIG,
+)
 
 # 上海时区
 SHANGHAI_TZ = "Asia/Shanghai"
 
 
-# 预筛选条件默认值（专业交易员筛选标准）
-DEFAULT_FILTER_CONFIG = {
-    'min_pnl': 10000,           # 最小总盈亏 $10,000
-    'min_7d_pnl': 0,            # 最小近7天盈亏（0 表示不允许亏损）
-    'max_drawdown': 0.25,       # 最大回撤 25%
-    'min_sharpe': 1.5,          # 最小 Sharpe 比率
-    'min_sortino': 2.5,         # 最小 Sortino 比率（关注下行风险）
-    'min_profit_factor': 1.2,   # 最小盈亏比
-    'min_win_rate': 0.40,       # 最小胜率 40%
-    'max_win_rate': 0.65,       # 最大胜率 65%（避免小赚大亏型）
-    'active_days': 7,           # 最近7天内有交易
-}
-
-
-class TraderPreFilter:
-    """交易员预筛选器"""
-
-    def __init__(self, config: Dict[str, Any] = None):
-        """
-        初始化预筛选器
-
-        Args:
-            config: 筛选配置
-        """
-        self.config = {**DEFAULT_FILTER_CONFIG, **(config or {})}
-
-    def filter_traders(
-        self,
-        traders: List[Dict],
-        verbose: bool = False
-    ) -> tuple[List[Dict], Dict[str, List[Dict]]]:
-        """
-        筛选交易员
-
-        Args:
-            traders: 交易员列表
-            verbose: 是否显示详细信息
-
-        Returns:
-            (通过筛选的交易员, 被筛除的交易员分类)
-        """
-        passed = []
-        filtered_out = {
-            'low_pnl': [],
-            'negative_7d_pnl': [],
-            'high_drawdown': [],
-            'low_sharpe': [],
-            'low_sortino': [],
-            'low_profit_factor': [],
-            'low_win_rate': [],
-            'high_win_rate': [],
-            'inactive': [],
-        }
-
-        now = pendulum.now(SHANGHAI_TZ)
-
-        for trader in traders:
-            address = trader.get('address', 'Unknown')
-            reasons = []
-
-            # 1. 总盈亏检查
-            total_pnl = trader.get('total_pnl', 0)
-            if total_pnl < self.config['min_pnl']:
-                reasons.append('low_pnl')
-                filtered_out['low_pnl'].append(trader)
-
-            # 2. 近7天盈亏检查
-            recent_7d_pnl = trader.get('recent_7d_pnl', 0)
-            if recent_7d_pnl < self.config['min_7d_pnl']:
-                reasons.append('negative_7d_pnl')
-                filtered_out['negative_7d_pnl'].append(trader)
-
-            # 3. 最大回撤检查
-            max_drawdown = trader.get('max_drawdown', 0)
-            if max_drawdown > self.config['max_drawdown']:
-                reasons.append('high_drawdown')
-                filtered_out['high_drawdown'].append(trader)
-
-            # 4. Sharpe 比率检查
-            sharpe_ratio = trader.get('sharpe_ratio', 0)
-            if sharpe_ratio < self.config['min_sharpe']:
-                reasons.append('low_sharpe')
-                filtered_out['low_sharpe'].append(trader)
-
-            # 5. Sortino 比率检查（下行风险）
-            sortino_ratio = trader.get('sortino_ratio', 0)
-            if self.config.get('min_sortino', 0) > 0 and sortino_ratio < self.config['min_sortino']:
-                reasons.append('low_sortino')
-                filtered_out['low_sortino'].append(trader)
-
-            # 7. 盈亏比检查
-            profit_factor = trader.get('profit_factor', 0)
-            if profit_factor < self.config['min_profit_factor']:
-                reasons.append('low_profit_factor')
-                filtered_out['low_profit_factor'].append(trader)
-
-            # 8. 胜率检查（最小值）
-            win_rate = trader.get('win_rate', 0)
-            if win_rate < self.config['min_win_rate']:
-                reasons.append('low_win_rate')
-                filtered_out['low_win_rate'].append(trader)
-
-            # 9. 胜率检查（最大值）- 避免高胜率低盈亏比的交易员
-            max_win_rate = self.config.get('max_win_rate', 1.0)
-            if max_win_rate < 1.0 and win_rate > max_win_rate:
-                reasons.append('high_win_rate')
-                filtered_out['high_win_rate'].append(trader)
-
-            # 10. 活跃度检查
-            last_trade_time = trader.get('last_trade_time')
-            if last_trade_time and self.config['active_days'] > 0:
-                try:
-                    if isinstance(last_trade_time, str):
-                        last_trade = pendulum.parse(last_trade_time)
-                    else:
-                        last_trade = last_trade_time
-                    days_since_last = (now - last_trade).days
-                    if days_since_last > self.config['active_days']:
-                        reasons.append('inactive')
-                        filtered_out['inactive'].append(trader)
-                except Exception:
-                    pass  # 解析失败则跳过活跃度检查
-
-            # 如果没有被任何条件筛除，则通过
-            if not reasons:
-                passed.append(trader)
-            elif verbose:
-                logger.debug(f"筛除 {address[:10]}...: {', '.join(reasons)}")
-
-        return passed, filtered_out
-
-    def print_filter_summary(
-        self,
-        total: int,
-        passed: int,
-        filtered_out: Dict[str, List[Dict]]
-    ):
-        """打印筛选摘要"""
-        logger.info(f"预筛选结果:")
-        logger.info("-" * 60)
-        logger.info(f"  总交易员数: {total}")
-        logger.info(f"  通过筛选: {passed}")
-        logger.info(f"  被筛除: {total - passed}")
-        logger.info("-" * 60)
-        logger.info(f"  筛除原因统计:")
-
-        reason_names = {
-            'low_pnl': f'总盈亏 < ${self.config["min_pnl"]:,.0f}',
-            'negative_7d_pnl': f'近7天盈亏 < ${self.config["min_7d_pnl"]:,.0f}',
-            'high_drawdown': f'最大回撤 > {self.config["max_drawdown"]*100:.0f}%',
-            'low_sharpe': f'Sharpe比率 < {self.config["min_sharpe"]:.1f}',
-            'low_sortino': f'Sortino比率 < {self.config.get("min_sortino", 0):.1f}',
-            'low_profit_factor': f'盈亏比 < {self.config["min_profit_factor"]:.1f}',
-            'low_win_rate': f'胜率 < {self.config["min_win_rate"]*100:.0f}%',
-            'high_win_rate': f'胜率 > {self.config.get("max_win_rate", 1.0)*100:.0f}%（可能小赚大亏）',
-            'inactive': f'超过 {self.config["active_days"]} 天未交易',
-        }
-
-        for reason, traders in filtered_out.items():
-            if traders:
-                logger.info(f"    - {reason_names[reason]}: {len(traders)} 人")
-
-        logger.info("-" * 60)
-
-
-class TopTradersAnalyzer:
-    """顶级交易员分析器"""
-
-    def __init__(
-        self,
-        db: TraderDatabase,
-        ai_provider: Optional[str] = None,
-        verbose: bool = False
-    ):
-        """
-        初始化分析器
-
-        Args:
-            db: 数据库实例
-            ai_provider: AI 提供商
-            verbose: 是否显示详细输出
-        """
-        self.db = db
-        self.ai_provider = ai_provider
-        self.verbose = verbose
-
-        # 初始化 AI 客户端
-        try:
-            self.ai_client = get_ai_client(provider=ai_provider)
-            logger.info(f"AI 客户端初始化成功，提供商: {ai_provider or '默认'}")
-        except Exception as e:
-            logger.error(f"AI 客户端初始化失败: {e}")
-            raise
-
-        # 初始化 Hyperliquid Info 客户端（用于刷新持仓）
-        self.hl_info = Info(constants.MAINNET_API_URL, skip_ws=True)
-
-    def refresh_trader_positions(self, address: str) -> List[Dict]:
-        """
-        刷新单个交易员的持仓数据
-
-        Args:
-            address: 交易员地址
-
-        Returns:
-            持仓列表
-        """
-        try:
-            user_state = self.hl_info.user_state(address)
-            asset_positions = user_state.get('assetPositions', [])
-
-            # 保存到数据库
-            if asset_positions:
-                self.db.save_positions(address, asset_positions)
-
-            return asset_positions
-        except Exception as e:
-            logger.warning(f"刷新持仓失败 {address[:10]}...: {e}")
-            return []
-
-    def refresh_all_positions(
-        self,
-        traders: List[Dict],
-        delay: float = 0.2
-    ) -> Dict[str, List[Dict]]:
-        """
-        批量刷新所有交易员的持仓
-
-        Args:
-            traders: 交易员列表
-            delay: 请求间隔（秒）
-
-        Returns:
-            {address: positions} 映射
-        """
-        logger.info(f"开始刷新 {len(traders)} 个交易员的持仓...")
-        positions_map = {}
-
-        for i, trader in enumerate(traders, 1):
-            address = trader.get('address')
-            positions = self.refresh_trader_positions(address)
-            positions_map[address] = positions
-
-            if self.verbose:
-                pos_count = len(positions)
-                logger.debug(f"[{i}/{len(traders)}] {address[:10]}... 持仓: {pos_count} 个")
-
-            if i < len(traders):
-                time.sleep(delay)
-
-        total_with_positions = sum(1 for p in positions_map.values() if p)
-        logger.info(f"持仓刷新完成: {total_with_positions}/{len(traders)} 个交易员有持仓")
-
-        return positions_map
-
-    def get_trader_coin_stats(self, address: str, top_n: int = 5) -> List[Dict]:
-        """
-        获取交易员的币种统计（Top N）
-
-        Args:
-            address: 交易员地址
-            top_n: 返回前 N 个币种
-
-        Returns:
-            币种统计列表
-        """
-        try:
-            summary = self.db.get_fills_summary(address, exclude_user_perps=True)
-            by_coin = summary.get('by_coin', [])
-
-            # 按盈亏绝对值排序，取 Top N
-            sorted_coins = sorted(by_coin, key=lambda x: abs(x.get('total_pnl', 0)), reverse=True)
-            return sorted_coins[:top_n]
-        except Exception as e:
-            logger.warning(f"获取币种统计失败 {address[:10]}...: {e}")
-            return []
-
-    def get_trader_positions(self, address: str) -> List[Dict]:
-        """
-        获取交易员的当前持仓
-
-        Args:
-            address: 交易员地址
-
-        Returns:
-            持仓列表
-        """
-        try:
-            return self.db.get_positions(address)
-        except Exception as e:
-            logger.warning(f"获取持仓失败 {address[:10]}...: {e}")
-            return []
-
-    def get_traders_by_rating(
-        self,
-        rating: str = 'S',
-        top_n: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        获取指定评级的交易员
-
-        Args:
-            rating: 评级 (S/A/B/C/D/F)
-            top_n: 获取前 N 名
-
-        Returns:
-            交易员列表
-        """
-        traders = self.db.get_traders_by_rating(rating)
-
-        # 按评分排序
-        traders.sort(key=lambda x: x.get('overall_score', 0), reverse=True)
-
-        if top_n and top_n > 0:
-            traders = traders[:top_n]
-
-        logger.info(f"获取到 {len(traders)} 个 {rating} 级交易员")
-        return traders
-
-    def analyze_single_trader(
-        self,
-        trader: Dict
-    ) -> Optional[Dict]:
-        """
-        分析单个交易员
-
-        Args:
-            trader: 交易员数据
-
-        Returns:
-            分析结果
-        """
-        address = trader.get('address')
-
-        try:
-            logger.info(f"AI 分析交易员: {address[:10]}...")
-
-            # 使用 AI 分析
-            analysis = generate_trader_analysis(trader, provider=self.ai_provider)
-
-            # 添加 AI 提供商信息
-            analysis['ai_provider'] = self.ai_provider or 'default'
-            analysis['analyzed_at'] = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
-
-            # 保存到数据库
-            self.db.save_trader_ai_analysis(address, analysis)
-
-            logger.info(f"✅ 分析完成并已保存: {address[:10]}...")
-
-            return analysis
-
-        except Exception as e:
-            logger.error(f"分析交易员 {address[:10]}... 失败: {e}")
-            return None
-
-    def analyze_all_traders(
-        self,
-        traders: List[Dict],
-        delay: float = 1.0,
-        one_by_one: bool = False
-    ) -> List[Dict]:
-        """
-        分析所有交易员
-
-        Args:
-            traders: 交易员列表
-            delay: 请求间隔（秒）
-            one_by_one: 逐个分析模式（分析完一个后询问是否继续）
-
-        Returns:
-            分析结果列表
-        """
-        results = []
-        total = len(traders)
-        analyzed = 0
-
-        for i, trader in enumerate(traders, 1):
-            address = trader.get('address')
-
-            # 逐个分析模式：分析前确认
-            if one_by_one and analyzed > 0:
-                logger.info("=" * 60)
-                logger.info(f"已完成 {analyzed} 个分析，还剩 {total - i + 1} 个待分析")
-                try:
-                    user_input = input("继续分析下一个? (y/n/q): ").strip().lower()
-                    if user_input in ('n', 'q', 'quit', 'exit'):
-                        logger.info("用户中断分析")
-                        break
-                except KeyboardInterrupt:
-                    logger.info("\n用户中断分析")
-                    break
-
-            logger.info(f"[{i}/{total}] 分析: {address[:10]}...")
-
-            analysis = self.analyze_single_trader(trader)
-            if analysis:
-                # 合并交易员数据和分析结果
-                combined = {**trader, 'ai_analysis': analysis}
-                results.append(combined)
-                analyzed += 1
-
-                # 逐个分析模式：显示分析结果摘要
-                if one_by_one:
-                    self._print_analysis_summary(trader, analysis)
-
-            # 请求间隔
-            if i < total and not one_by_one:
-                time.sleep(delay)
-
-        logger.info(f"分析完成: 共分析 {analyzed} 个，共 {len(results)} 个结果")
-        return results
-
-    def _print_analysis_summary(self, trader: Dict, analysis: Dict):
-        """打印单个分析结果摘要"""
-        logger.info("-" * 60)
-        logger.info(f"交易员: {trader.get('address')[:10]}...{trader.get('address')[-6:]}")
-        logger.info(f"   评分: {trader.get('overall_score', 0):.1f} | "
-              f"胜率: {trader.get('win_rate', 0)*100:.1f}% | "
-              f"PnL: ${trader.get('total_pnl', 0):,.0f}")
-        logger.info("-" * 60)
-
-        if analysis.get('summary'):
-            logger.info(f"综合评价: {analysis['summary'][:200]}...")
-
-        if analysis.get('copy_trading_advice'):
-            logger.info(f"跟单建议: {analysis['copy_trading_advice'][:200]}...")
-
-        logger.info("-" * 60)
-
-    def compare_in_groups(
-        self,
-        traders: List[Dict],
-        group_size: int = 6,
-        top_per_group: int = 2,
-        final_size: int = 6,
-        delay: float = 1.0
-    ) -> tuple[List[Dict], Dict[str, Any]]:
-        """
-        分组对比：将交易员分组比较，多轮淘汰直到人数足够少
-
-        Args:
-            traders: 交易员列表
-            group_size: 每组人数
-            top_per_group: 每组晋级人数
-            final_size: 决赛最大人数，超过则继续淘汰
-            delay: 请求间隔
-
-        Returns:
-            (决赛交易员列表, 分组对比报告)
-        """
-        import math
-
-        all_rounds = []
-        current_traders = traders
-        round_num = 0
-
-        while len(current_traders) > final_size:
-            round_num += 1
-            total = len(current_traders)
-
-            # 分组
-            num_groups = math.ceil(total / group_size)
-            groups = []
-            for i in range(num_groups):
-                start = i * group_size
-                end = min(start + group_size, total)
-                groups.append(current_traders[start:end])
-
-            logger.info("=" * 60)
-            logger.info(f"第 {round_num} 轮淘汰: {total} 人分为 {num_groups} 组，每组选 {top_per_group} 人晋级")
-            logger.info("=" * 60)
-
-            round_finalists = []
-            group_reports = []
-
-            for i, group in enumerate(groups, 1):
-                logger.info(f"第 {i}/{num_groups} 组对比 ({len(group)} 人)")
-                logger.info("-" * 40)
-
-                # 显示本组交易员
-                for j, t in enumerate(group, 1):
-                    addr = f"{t['address'][:6]}...{t['address'][-4:]}"
-                    logger.info(f"  {j}. {addr} | 评分: {t.get('overall_score', 0):.1f} | "
-                          f"PnL: ${t.get('total_pnl', 0):,.0f}")
-
-                # AI 对比本组
-                group_result = self._compare_group(group, i, num_groups, top_per_group)
-
-                if group_result:
-                    winners = group_result.get('winners', [])
-                    round_finalists.extend(winners)
-
-                    group_reports.append({
-                        'group_num': i,
-                        'total_in_group': len(group),
-                        'all_traders': [t.get('address') for t in group],
-                        'winners': [w.get('address') for w in winners],
-                        'analysis': group_result.get('analysis', '')
-                    })
-
-                    logger.info(f"晋级者: {len(winners)} 人")
-                    for w in winners:
-                        addr = f"{w['address'][:6]}...{w['address'][-4:]}"
-                        logger.info(f"   {addr}")
-
-                # 请求间隔
-                if i < num_groups:
-                    time.sleep(delay)
-
-            all_rounds.append({
-                'round': round_num,
-                'input_count': total,
-                'output_count': len(round_finalists),
-                'groups': group_reports
-            })
-
-            logger.info(f"第 {round_num} 轮完成: {total} -> {len(round_finalists)} 人")
-            current_traders = round_finalists
-
-            if not current_traders:
-                logger.warning("没有晋级者，淘汰结束")
-                break
-
-        logger.info(f"淘汰赛完成，共 {round_num} 轮，最终 {len(current_traders)} 人进入决赛")
-
-        return current_traders, {
-            'total_rounds': round_num,
-            'initial_count': len(traders),
-            'final_count': len(current_traders),
-            'rounds': all_rounds
-        }
-
-    def _compare_group(
-        self,
-        group: List[Dict],
-        group_num: int,
-        total_groups: int,
-        top_n: int,
-        max_retries: int = 3,
-        timeout: float = 60.0
-    ) -> Optional[Dict]:
-        """
-        对比单个分组，选出前 N 名
-
-        Args:
-            group: 分组交易员列表
-            group_num: 当前组号
-            total_groups: 总组数
-            top_n: 选出前 N 名
-            max_retries: 超时时最大重试次数
-            timeout: 请求超时时间（秒）
-
-        Returns:
-            {winners: [...], analysis: "..."}
-        """
-        if len(group) <= top_n:
-            return {'winners': group, 'analysis': '人数不足，全部晋级'}
-
-        # 构建分组对比提示词
-        prompt = self._build_group_comparison_prompt(group, group_num, total_groups, top_n)
-
-        last_error = None
-        for attempt in range(1, max_retries + 1):
-            try:
-                logger.info(f"AI 对比中... (尝试 {attempt}/{max_retries}, 超时 {timeout}s)")
-                # AI 对比
-                result = self.ai_client.generate(
-                    prompt,
-                    temperature=0.7,
-                )
-
-                # 解析结果，选出前 N 名
-                winners = self._parse_group_winners(group, result, top_n)
-
-                return {
-                    'winners': winners,
-                    'analysis': result
-                }
-
-            except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
-                # 检查是否是超时错误
-                if 'timeout' in error_str or 'timed out' in error_str:
-                    logger.warning(f"分组对比超时 (尝试 {attempt}/{max_retries}): {e}")
-                    if attempt < max_retries:
-                        logger.info(f"等待 5 秒后重试...")
-                        time.sleep(5)
-                        continue
-                else:
-                    # 非超时错误，直接跳出
-                    logger.error(f"分组对比失败: {e}")
-                    break
-
-        # 所有重试都失败，按评分排序选取
-        logger.error(f"分组对比最终失败: {last_error}")
-        sorted_group = sorted(group, key=lambda x: x.get('overall_score', 0), reverse=True)
-        return {
-            'winners': sorted_group[:top_n],
-            'analysis': f'AI分析失败，按评分排序: {last_error}'
-        }
-
-    def _build_group_comparison_prompt(
-        self,
-        group: List[Dict],
-        group_num: int,
-        total_groups: int,
-        top_n: int
-    ) -> str:
-        """构建分组对比提示词（包含币种统计和当前持仓）"""
-        traders_info = []
-
-        for i, t in enumerate(group, 1):
-            address = t.get('address')
-
-            # 获取币种统计（Top 3）
-            coin_stats = self.get_trader_coin_stats(address, top_n=3)
-            coin_stats_str = ""
-            if coin_stats:
-                coins_lines = []
-                for cs in coin_stats:
-                    pnl = cs.get('total_pnl', 0)
-                    sign = "+" if pnl >= 0 else ""
-                    coins_lines.append(f"  · {cs.get('coin')}: {cs.get('count')}笔, {sign}${pnl:,.0f}")
-                coin_stats_str = "\n".join(coins_lines)
-
-            # 获取当前持仓
-            positions = self.get_trader_positions(address)
-            positions_str = ""
-            if positions:
-                pos_lines = []
-                total_value = 0
-                total_upnl = 0
-                for pos in positions[:5]:  # 最多显示5个持仓
-                    coin = pos.get('coin', '')
-                    szi = pos.get('szi', 0)
-                    direction = "多" if szi > 0 else "空"
-                    value = abs(pos.get('position_value', 0))
-                    upnl = pos.get('unrealized_pnl', 0)
-                    roe = pos.get('return_on_equity', 0) * 100
-                    leverage = pos.get('leverage_value', 1)
-                    sign = "+" if upnl >= 0 else ""
-                    pos_lines.append(f"  · {coin} {direction} ${value:,.0f} ({leverage}x, {sign}{roe:.1f}% ROE)")
-                    total_value += value
-                    total_upnl += upnl
-                if len(positions) > 5:
-                    pos_lines.append(f"  · ... 还有 {len(positions) - 5} 个持仓")
-                upnl_sign = "+" if total_upnl >= 0 else ""
-                pos_lines.append(f"  总敞口: ${total_value:,.0f}, 未实现盈亏: {upnl_sign}${total_upnl:,.0f}")
-                positions_str = "\n".join(pos_lines)
-
-            info = f"""
-【交易员 {i}】{address}
-- 综合评分: {t.get('overall_score', 0):.1f}/100
-- 胜率: {t.get('win_rate', 0) * 100:.1f}%
-- 盈亏比: {t.get('profit_factor', 0):.2f}
-- 总盈亏: ${t.get('total_pnl', 0):,.0f}
-- 近7天盈亏: ${t.get('recent_7d_pnl', 0):,.0f}
-- 最大回撤: {t.get('max_drawdown', 0) * 100:.1f}%
-- Sharpe: {t.get('sharpe_ratio', 0):.2f}
-- Sortino: {t.get('sortino_ratio', 0):.2f}
-- 活跃天数: {t.get('active_days', 0)}
-"""
-            # 添加币种统计
-            if coin_stats_str:
-                info += f"- 主要交易币种:\n{coin_stats_str}\n"
-
-            # 添加当前持仓
-            if positions_str:
-                info += f"- 当前持仓:\n{positions_str}\n"
-            else:
-                info += "- 当前持仓: 无\n"
-
-            traders_info.append(info)
-
-        prompt = f"""
-你是专业的加密货币交易分析师。这是第 {group_num}/{total_groups} 组对比。
-
-请从以下 {len(group)} 位交易员中选出最优秀的 {top_n} 位进入决赛。
-
-{''.join(traders_info)}
-
-选择标准：
-1. 风险调整收益（Sharpe/Sortino 比率）
-2. 盈利稳定性（盈亏比、胜率在合理范围）
-3. 风险控制（最大回撤）
-4. 近期表现（近7天盈亏）
-5. 当前持仓风险（杠杆水平、未实现盈亏）
-6. 交易专注度（主要币种表现）
-
-请输出：
-## 晋级名单
-按推荐顺序列出 {top_n} 位晋级者的地址（完整地址），并简述理由。
-
-格式：
-1. 0x... - 理由
-2. 0x... - 理由
-
-## 淘汰原因
-简述其他交易员未晋级的主要原因。
-"""
-        return prompt
-
-    def _parse_group_winners(
-        self,
-        group: List[Dict],
-        ai_result: str,
-        top_n: int
-    ) -> List[Dict]:
-        """从 AI 结果中解析晋级者"""
-        winners = []
-        group_addresses = {t['address']: t for t in group}
-
-        # 尝试从结果中提取地址
-        import re
-        # 匹配以太坊地址
-        addresses_found = re.findall(r'0x[a-fA-F0-9]{40}', ai_result)
-
-        for addr in addresses_found:
-            if addr in group_addresses and group_addresses[addr] not in winners:
-                winners.append(group_addresses[addr])
-                if len(winners) >= top_n:
-                    break
-
-        # 如果没找到足够的地址，按评分补充
-        if len(winners) < top_n:
-            sorted_group = sorted(group, key=lambda x: x.get('overall_score', 0), reverse=True)
-            for t in sorted_group:
-                if t not in winners:
-                    winners.append(t)
-                    if len(winners) >= top_n:
-                        break
-
-        return winners
-
-    def generate_comparison_prompt(self, traders_with_analysis: List[Dict]) -> str:
-        """
-        生成综合比较提示词（包含币种统计和当前持仓）
-
-        Args:
-            traders_with_analysis: 带分析结果的交易员列表
-
-        Returns:
-            提示词
-        """
-        traders_summary = []
-
-        for i, t in enumerate(traders_with_analysis, 1):
-            address = t.get('address')
-            analysis = t.get('ai_analysis', {})
-
-            # 获取币种统计（Top 5）
-            coin_stats = self.get_trader_coin_stats(address, top_n=5)
-            coin_stats_str = ""
-            if coin_stats:
-                coins_lines = []
-                for cs in coin_stats:
-                    pnl = cs.get('total_pnl', 0)
-                    sign = "+" if pnl >= 0 else ""
-                    coins_lines.append(f"    · {cs.get('coin')}: {cs.get('count')}笔, {sign}${pnl:,.0f}")
-                coin_stats_str = "\n".join(coins_lines)
-
-            # 获取当前持仓
-            positions = self.get_trader_positions(address)
-            positions_str = ""
-            if positions:
-                pos_lines = []
-                total_value = 0
-                total_upnl = 0
-                for pos in positions[:5]:  # 最多显示5个持仓
-                    coin = pos.get('coin', '')
-                    szi = pos.get('szi', 0)
-                    direction = "多" if szi > 0 else "空"
-                    value = abs(pos.get('position_value', 0))
-                    upnl = pos.get('unrealized_pnl', 0)
-                    roe = pos.get('return_on_equity', 0) * 100
-                    leverage = pos.get('leverage_value', 1)
-                    sign = "+" if upnl >= 0 else ""
-                    pos_lines.append(f"    · {coin} {direction} ${value:,.0f} ({leverage}x, {sign}{roe:.1f}% ROE)")
-                    total_value += value
-                    total_upnl += upnl
-                if len(positions) > 5:
-                    pos_lines.append(f"    · ... 还有 {len(positions) - 5} 个持仓")
-                upnl_sign = "+" if total_upnl >= 0 else ""
-                pos_lines.append(f"    总敞口: ${total_value:,.0f}, 未实现盈亏: {upnl_sign}${total_upnl:,.0f}")
-                positions_str = "\n".join(pos_lines)
-
-            summary = f"""
-【交易员 {i}】
-- 地址: {address[:10]}...{address[-6:]}
-- 综合评分: {t.get('overall_score', 0):.1f}/100
-- 胜率: {t.get('win_rate', 0) * 100:.1f}%
-- 盈亏比: {t.get('profit_factor', 0):.2f}
-- 总盈亏: ${t.get('total_pnl', 0):,.2f}
-- 最大回撤: {t.get('max_drawdown', 0) * 100:.1f}%
-- Sharpe比率: {t.get('sharpe_ratio', 0):.2f}
-- Sortino比率: {t.get('sortino_ratio', 0):.2f}
-- 活跃天数: {t.get('active_days', 0)}
-- 近7天盈亏: ${t.get('recent_7d_pnl', 0):,.2f}
-"""
-            # 添加币种统计
-            if coin_stats_str:
-                summary += f"- 主要交易币种（按盈亏排序）:\n{coin_stats_str}\n"
-
-            # 添加当前持仓
-            if positions_str:
-                summary += f"- 当前持仓:\n{positions_str}\n"
-            else:
-                summary += "- 当前持仓: 无\n"
-
-            # 添加 AI 评价摘要
-            if analysis.get('summary'):
-                summary += f"- AI评价摘要: {analysis.get('summary', '')[:200]}\n"
-
-            traders_summary.append(summary)
-
-        prompt = f"""
-作为专业的加密货币投资顾问，请综合分析以下 {len(traders_with_analysis)} 位 S 级顶尖交易员，并给出最终推荐排名。
-
-{''.join(traders_summary)}
-
-请按以下格式输出：
-
-## 一、综合排名
-
-根据以下维度综合评估后，给出最终推荐排名（从最优到次优）：
-1. 盈利能力（总盈亏、ROI）
-2. 风险控制（最大回撤、Sharpe/Sortino比率）
-3. 稳定性（胜率、盈亏比、连续表现）
-4. 活跃度（近期表现、交易频率）
-5. 跟单适合度（交易风格、杠杆使用）
-6. 当前持仓风险（持仓敞口、未实现盈亏、杠杆水平）
-7. 交易专注度（主要币种及其盈利情况）
-
-列出排名及简要理由。
-
-## 二、最佳跟单推荐
-
-推荐 1-3 位最适合跟单的交易员，详细说明：
-- 为什么推荐
-- 适合什么类型的跟单者
-- 建议跟单比例
-- 风险提示
-
-## 三、交易风格分类
-
-将这些交易员按交易风格分类：
-- 稳健型：低回撤、稳定收益
-- 激进型：高收益、高风险
-- 均衡型：收益和风险平衡
-
-## 四、特别警示
-
-指出任何需要特别注意的风险点或问题交易员。
-
-## 五、总结建议
-
-给出整体投资建议和注意事项。
-
-要求：
-1. 分析要专业、客观、基于数据
-2. 排名要有明确依据
-3. 推荐要考虑不同投资者需求
-4. 风险提示要明确具体
-5. 结合当前持仓情况评估实时风险
-"""
-        return prompt
-
-    def generate_final_ranking(
-        self,
-        traders_with_analysis: List[Dict],
-        max_retries: int = 3,
-        timeout: float = 60.0
-    ) -> Dict[str, Any]:
-        """
-        生成最终综合排名报告
-
-        Args:
-            traders_with_analysis: 带分析结果的交易员列表
-            max_retries: 超时时最大重试次数
-            timeout: 请求超时时间（秒）
-
-        Returns:
-            综合排名报告
-        """
-        if not traders_with_analysis:
-            return {'error': '没有可分析的交易员'}
-
-        logger.info(f"生成 {len(traders_with_analysis)} 位交易员的综合排名...")
-
-        # 构建比较提示词
-        prompt = self.generate_comparison_prompt(traders_with_analysis)
-
-        last_error = None
-        for attempt in range(1, max_retries + 1):
-            try:
-                logger.info(f"AI 综合排名中... (尝试 {attempt}/{max_retries}, 超时 {timeout}s)")
-                # 调用 AI 生成综合排名
-                comparison_result = self.ai_client.generate(
-                    prompt,
-                    temperature=0.7,
-                )
-
-                # 构建报告
-                report = {
-                    'generated_at': pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
-                    'ai_provider': self.ai_provider or 'default',
-                    'total_traders_analyzed': len(traders_with_analysis),
-                    'comparison_analysis': comparison_result,
-                    'traders': [
-                        {
-                            'rank': i + 1,
-                            'address': t.get('address'),
-                            'overall_score': t.get('overall_score', 0),
-                            'win_rate': t.get('win_rate', 0),
-                            'profit_factor': t.get('profit_factor', 0),
-                            'total_pnl': t.get('total_pnl', 0),
-                            'max_drawdown': t.get('max_drawdown', 0),
-                            'sharpe_ratio': t.get('sharpe_ratio', 0),
-                            'recent_7d_pnl': t.get('recent_7d_pnl', 0),
-                            'ai_summary': t.get('ai_analysis', {}).get('summary', '')
-                        }
-                        for i, t in enumerate(traders_with_analysis)
-                    ]
-                }
-
-                logger.info("综合排名报告生成完成")
-                return report
-
-            except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
-                # 检查是否是超时错误
-                if 'timeout' in error_str or 'timed out' in error_str:
-                    logger.warning(f"综合排名超时 (尝试 {attempt}/{max_retries}): {e}")
-                    if attempt < max_retries:
-                        logger.info(f"等待 5 秒后重试...")
-                        time.sleep(5)
-                        continue
-                else:
-                    # 非超时错误，直接跳出
-                    logger.error(f"生成综合排名失败: {e}")
-                    break
-
-        logger.error(f"生成综合排名最终失败: {last_error}")
-        return {'error': str(last_error)}
-
-    def save_report(self, report: Dict, filepath: str):
-        """
-        保存报告
-
-        Args:
-            report: 报告数据
-            filepath: 输出文件路径
-        """
-        # 确保目录存在
-        Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-
-        logger.info(f"报告已保存至: {filepath}")
-
-    def save_to_database(
-        self,
-        all_traders: List[Dict],
-        finalists: List[Dict],
-        group_report: Dict,
-        final_ranking: str = None,
-        config: Dict = None
-    ) -> int:
-        """
-        保存分组对比结果到数据库
-
-        Args:
-            all_traders: 所有参与的交易员
-            finalists: 最终晋级者
-            group_report: 分组对比报告
-            final_ranking: 最终排名分析
-            config: 配置参数
-
-        Returns:
-            会话ID
-        """
-        config = config or {}
-
-        # 保存会话
-        session_data = {
-            'rating': config.get('rating', 'S'),
-            'total_traders': len(all_traders),
-            'group_size': config.get('group_size', 6),
-            'top_per_group': config.get('top_per_group', 2),
-            'final_size': config.get('final_size', 6),
-            'num_groups': sum(len(r.get('groups', [])) for r in group_report.get('rounds', [])),
-            'total_rounds': group_report.get('total_rounds', 0),
-            'min_sharpe': config.get('min_sharpe'),
-            'min_sortino': config.get('min_sortino'),
-            'max_drawdown': config.get('max_drawdown'),
-            'min_win_rate': config.get('min_win_rate'),
-            'max_win_rate': config.get('max_win_rate'),
-            'finalists_count': len(finalists),
-            'final_ranking': final_ranking,
-            'ai_provider': self.ai_provider or 'default',
-            'status': 'completed'
-        }
-        session_id = self.db.save_group_comparison_session(session_data)
-
-        # 记录所有交易员的地址到淘汰轮次映射
-        trader_elimination = {}  # address -> eliminated_round
-        finalist_addresses = {f['address'] for f in finalists}
-
-        # 遍历每轮，记录被淘汰的交易员
-        for round_info in group_report.get('rounds', []):
-            round_num = round_info.get('round', 1)
-
-            for group_info in round_info.get('groups', []):
-                # 保存分组
-                group_id = self.db.save_group_comparison_group(
-                    session_id=session_id,
-                    round_num=round_num,
-                    group_num=group_info.get('group_num', 0),
-                    total_in_group=group_info.get('total_in_group', 0),
-                    analysis=group_info.get('analysis', '')
-                )
-
-                # 获取本组晋级者地址
-                winner_addresses = set(group_info.get('winners', []))
-
-                # 找出本组所有交易员（需要从原始数据中查找）
-                # 被淘汰者 = 本组所有人 - 晋级者
-                # 这里我们标记未晋级者的淘汰轮次
-                for addr in group_info.get('all_traders', []):
-                    if addr not in winner_addresses and addr not in trader_elimination:
-                        trader_elimination[addr] = round_num
-
-        # 保存所有交易员
-        for t in all_traders:
-            addr = t.get('address')
-            is_finalist = addr in finalist_addresses
-            eliminated_round = None if is_finalist else trader_elimination.get(addr)
-
-            self.db.save_group_comparison_traders(
-                session_id=session_id,
-                traders=[t],
-                group_id=None,  # 可以后续关联
-                is_finalist=is_finalist,
-                eliminated_round=eliminated_round
-            )
-
-        logger.info(f"已保存到数据库: session_id={session_id}, 交易员={len(all_traders)}, 晋级者={len(finalists)}")
-        return session_id
-
-    def print_report(self, report: Dict):
-        """
-        打印报告摘要
-
-        Args:
-            report: 报告数据
-        """
-        logger.info("=" * 80)
-        logger.info("S 级顶尖交易员综合分析报告")
-        logger.info("=" * 80)
-        logger.info(f"生成时间: {report.get('generated_at', 'N/A')}")
-        logger.info(f"AI 提供商: {report.get('ai_provider', 'N/A')}")
-        logger.info(f"分析交易员数量: {report.get('total_traders_analyzed', 0)}")
-        logger.info("-" * 80)
-
-        # 打印交易员列表
-        logger.info("交易员评分排名:")
-        logger.info("-" * 80)
-        logger.info(f"{'排名':<4} {'地址':<18} {'评分':<8} {'胜率':<8} {'盈亏比':<8} {'总PnL':<14} {'回撤':<8} {'Sharpe':<8}")
-        logger.info("-" * 80)
-
-        for t in report.get('traders', []):
-            addr = f"{t['address'][:6]}...{t['address'][-4:]}"
-            pnl_str = f"${t['total_pnl']:,.0f}"
-            logger.info(f"{t['rank']:<4} {addr:<18} {t['overall_score']:>6.1f} "
-                  f"{t['win_rate']*100:>6.1f}% {t['profit_factor']:>7.2f} "
-                  f"{pnl_str:>13} {t['max_drawdown']*100:>6.1f}% {t['sharpe_ratio']:>7.2f}")
-
-        logger.info("-" * 80)
-
-        # 打印 AI 综合分析
-        if report.get('comparison_analysis'):
-            logger.info("AI 综合分析:")
-            logger.info("-" * 80)
-            logger.info(report['comparison_analysis'])
-
-        logger.info("=" * 80)
-
-
-def main():
+def parse_args() -> argparse.Namespace:
+    """解析命令行参数"""
     parser = argparse.ArgumentParser(
         description='AI 分析顶级交易员并生成推荐排名',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1304,8 +215,74 @@ def main():
         default=1.0,
         help='API 请求间隔（秒，默认: 1.0）'
     )
+    parser.add_argument(
+        '--concurrent',
+        action='store_true',
+        help='使用并发刷新持仓（更快，默认: 否）'
+    )
+    parser.add_argument(
+        '--max-workers',
+        type=int,
+        default=5,
+        help='并发刷新的最大线程数（默认: 5）'
+    )
 
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def print_traders_list(traders: list, title: str = "交易员列表") -> None:
+    """打印交易员列表"""
+    logger.info(f"{title}:")
+    logger.info("-" * 100)
+    logger.info(f"  {'#':>2}  {'地址':<14} {'评分':>5} {'胜率':>6} {'PnL':>12} {'7D PnL':>10} {'DD':>6} {'Sharpe':>7} {'Sortino':>7}")
+    logger.info("-" * 100)
+
+    for i, t in enumerate(traders, 1):
+        addr = f"{t['address'][:6]}...{t['address'][-4:]}"
+        pnl = f"${t.get('total_pnl', 0):,.0f}"
+        pnl_7d = f"${t.get('recent_7d_pnl', 0):,.0f}"
+        drawdown = f"{t.get('max_drawdown', 0)*100:.1f}%"
+        sharpe = f"{t.get('sharpe_ratio', 0):.2f}"
+        sortino = f"{t.get('sortino_ratio', 0):.2f}"
+        logger.info(f"  {i:>2}. {addr} {t.get('overall_score', 0):>5.1f} "
+              f"{t.get('win_rate', 0)*100:>5.1f}% {pnl:>12} "
+              f"{pnl_7d:>10} {drawdown:>6} {sharpe:>7} {sortino:>7}")
+
+    logger.info("-" * 100)
+
+
+def estimate_ai_calls(num_traders: int, group_size: int, top_per_group: int, final_size: int) -> dict:
+    """预估 AI 调用次数"""
+    current = num_traders
+    round_num = 0
+    total_ai_calls = 0
+    rounds_detail = []
+
+    while current > final_size:
+        round_num += 1
+        num_groups = math.ceil(current / group_size)
+        next_round = num_groups * top_per_group
+        total_ai_calls += num_groups
+        rounds_detail.append({
+            'round': round_num,
+            'input': current,
+            'groups': num_groups,
+            'output': next_round
+        })
+        current = next_round
+
+    total_ai_calls += 1  # 决赛
+
+    return {
+        'total_rounds': round_num,
+        'total_ai_calls': total_ai_calls,
+        'final_count': current,
+        'rounds': rounds_detail
+    }
+
+
+def main():
+    args = parse_args()
 
     # 配置日志
     logger.remove()
@@ -1324,6 +301,7 @@ def main():
     logger.info(f"  - 分析数量: {args.top or '全部'}")
     logger.info(f"  - AI 提供商: {args.provider or '自动选择'}")
     logger.info(f"  - 输出文件: {args.output}")
+    logger.info(f"  - 并发刷新: {'是' if args.concurrent else '否'}")
 
     logger.info(f"分组对比配置:")
     logger.info(f"  - 每组人数: {args.group_size}")
@@ -1332,18 +310,24 @@ def main():
     logger.info(f"  - 跳过分组: {'是' if args.skip_group_compare else '否'}")
     logger.info(f"  - 跳过决赛: {'是' if args.skip_final else '否'}")
 
+    # 构建筛选配置
+    filter_config = None
     if not args.no_filter:
-        logger.info(f"预筛选条件（专业级标准）:")
-        logger.info(f"  - 最小总盈亏: ${args.min_pnl:,.0f}")
-        logger.info(f"  - 最小近7天盈亏: ${args.min_7d_pnl:,.0f}")
-        logger.info(f"  - 最大回撤: {args.max_drawdown*100:.0f}%")
-        logger.info(f"  - 最小Sharpe比率: {args.min_sharpe:.1f}")
-        logger.info(f"  - 最小Sortino比率: {args.min_sortino:.1f}")
-        logger.info(f"  - 最小盈亏比: {args.min_profit_factor:.1f}")
-        logger.info(f"  - 胜率范围: {args.min_win_rate*100:.0f}% - {args.max_win_rate*100:.0f}%")
-        logger.info(f"  - 最近活跃天数: {args.active_days} 天")
+        filter_config = FilterConfig(
+            min_pnl=args.min_pnl,
+            min_7d_pnl=args.min_7d_pnl,
+            max_drawdown=args.max_drawdown,
+            min_sharpe=args.min_sharpe,
+            min_sortino=args.min_sortino,
+            min_profit_factor=args.min_profit_factor,
+            min_win_rate=args.min_win_rate,
+            max_win_rate=args.max_win_rate,
+            active_days=args.active_days,
+        )
+        pre_filter = TraderPreFilter(filter_config)
+        pre_filter.print_config()
     else:
-        logger.info(f"预筛选: 已禁用")
+        logger.info("预筛选: 已禁用")
 
     logger.info("-" * 60)
 
@@ -1359,46 +343,19 @@ def main():
         )
 
         # 获取指定评级的交易员
-        traders = analyzer.get_traders_by_rating(args.rating, None)  # 先获取全部
+        traders = analyzer.get_traders_by_rating(args.rating, None)
 
         if not traders:
             logger.warning(f"未找到 {args.rating} 级交易员")
             return
 
         logger.info(f"找到 {len(traders)} 个 {args.rating} 级交易员:")
-        logger.info("-" * 100)
-        logger.info(f"  {'#':>2}  {'地址':<14} {'评分':>5} {'胜率':>6} {'PnL':>12} {'7D PnL':>10} {'DD':>6} {'Sharpe':>7} {'Sortino':>7}")
-        logger.info("-" * 100)
-        for i, t in enumerate(traders, 1):
-            addr = f"{t['address'][:6]}...{t['address'][-4:]}"
-            pnl = f"${t.get('total_pnl', 0):,.0f}"
-            pnl_7d = f"${t.get('recent_7d_pnl', 0):,.0f}"
-            drawdown = f"{t.get('max_drawdown', 0)*100:.1f}%"
-            sharpe = f"{t.get('sharpe_ratio', 0):.2f}"
-            sortino = f"{t.get('sortino_ratio', 0):.2f}"
-            logger.info(f"  {i:>2}. {addr} {t.get('overall_score', 0):>5.1f} "
-                  f"{t.get('win_rate', 0)*100:>5.1f}% {pnl:>12} "
-                  f"{pnl_7d:>10} {drawdown:>6} {sharpe:>7} {sortino:>7}")
-        logger.info("-" * 100)
+        print_traders_list(traders, f"{args.rating} 级交易员")
 
         # 预筛选
         if not args.no_filter:
-            filter_config = {
-                'min_pnl': args.min_pnl,
-                'min_7d_pnl': args.min_7d_pnl,
-                'max_drawdown': args.max_drawdown,
-                'min_sharpe': args.min_sharpe,
-                'min_sortino': args.min_sortino,
-                'min_profit_factor': args.min_profit_factor,
-                'min_win_rate': args.min_win_rate,
-                'max_win_rate': args.max_win_rate,
-                'active_days': args.active_days,
-            }
-            pre_filter = TraderPreFilter(filter_config)
             traders, filtered_out = pre_filter.filter_traders(traders, args.verbose)
-
-            # 打印筛选摘要
-            pre_filter.print_filter_summary(
+            pre_filter.print_summary(
                 total=len(traders) + sum(len(v) for v in filtered_out.values()),
                 passed=len(traders),
                 filtered_out=filtered_out
@@ -1417,68 +374,53 @@ def main():
 
         # 打印最终待分析列表
         logger.info(f"最终待分析交易员: {len(traders)} 个")
-        logger.info("-" * 60)
-        for i, t in enumerate(traders, 1):
-            addr = f"{t['address'][:6]}...{t['address'][-4:]}"
-            pnl = f"${t.get('total_pnl', 0):,.0f}"
-            logger.info(f"  {i}. {addr} | 评分: {t.get('overall_score', 0):.1f} | PnL: {pnl}")
-        logger.info("-" * 60)
+        print_traders_list(traders, "待分析交易员")
 
         # Dry run 模式
         if args.dry_run:
             logger.warning("Dry-run 模式，不执行实际分析")
+            estimate = estimate_ai_calls(
+                len(traders), args.group_size, args.top_per_group, args.final_size
+            )
             logger.info(f"预估淘汰赛情况:")
-            import math
-
-            current = len(traders)
-            round_num = 0
-            total_ai_calls = 0
-
-            while current > args.final_size:
-                round_num += 1
-                num_groups = math.ceil(current / args.group_size)
-                next_round = num_groups * args.top_per_group
-                total_ai_calls += num_groups
-                logger.info(f"   第 {round_num} 轮: {current} 人 -> {num_groups} 组 -> {next_round} 人晋级")
-                current = next_round
-
-            total_ai_calls += 1  # 决赛
-            logger.info(f"   决赛: {current} 人")
-            logger.info(f"   预计 AI 调用次数: {total_ai_calls} (淘汰赛 {total_ai_calls - 1} + 决赛 1)")
+            for r in estimate['rounds']:
+                logger.info(f"   第 {r['round']} 轮: {r['input']} 人 -> {r['groups']} 组 -> {r['output']} 人晋级")
+            logger.info(f"   决赛: {estimate['final_count']} 人")
+            logger.info(f"   预计 AI 调用次数: {estimate['total_ai_calls']} (淘汰赛 {estimate['total_ai_calls'] - 1} + 决赛 1)")
             return
 
         # ========== 刷新持仓数据 ==========
         logger.info("刷新所有交易员的持仓数据...")
-        analyzer.refresh_all_positions(traders, delay=0.2)
+        if args.concurrent:
+            analyzer.refresh_all_positions_concurrent(traders, max_workers=args.max_workers)
+        else:
+            analyzer.refresh_all_positions(traders, delay=0.2)
 
         # ========== 分组对比流程 ==========
         group_report = {}
         finalists = traders
+
+        # 构建分组对比配置
+        group_config = GroupCompareConfig(
+            group_size=args.group_size,
+            top_per_group=args.top_per_group,
+            final_size=args.final_size,
+            delay=args.delay,
+        )
 
         # Step 1: 分组对比（如果人数较多）
         if not args.skip_group_compare and len(traders) > args.final_size:
             logger.info(f"开始分组淘汰赛...")
             logger.info(f"   每组 {args.group_size} 人，每组选 {args.top_per_group} 人，决赛最多 {args.final_size} 人")
 
-            finalists, group_report = analyzer.compare_in_groups(
-                traders,
-                group_size=args.group_size,
-                top_per_group=args.top_per_group,
-                final_size=args.final_size,
-                delay=args.delay
-            )
+            finalists, group_report = analyzer.compare_in_groups(traders, group_config)
 
             if not finalists:
                 logger.warning("分组对比后没有晋级者")
                 return
 
             logger.info(f"淘汰赛完成! 晋级决赛: {len(finalists)} 人")
-            logger.info("-" * 60)
-            for i, f in enumerate(finalists, 1):
-                addr = f"{f['address'][:6]}...{f['address'][-4:]}"
-                logger.info(f"   {i}. {addr} | 评分: {f.get('overall_score', 0):.1f} | "
-                      f"PnL: ${f.get('total_pnl', 0):,.0f}")
-            logger.info("-" * 60)
+            print_traders_list(finalists, "决赛选手")
         else:
             if args.skip_group_compare:
                 logger.info("跳过分组对比，直接进入决赛...")
@@ -1531,7 +473,7 @@ def main():
         logger.info(f"开始决赛（综合排名）...")
         logger.info(f"   参与决赛: {len(finalists)} 人")
 
-        # 为决赛选手添加空的 ai_analysis（因为使用分组对比，不需要单独分析）
+        # 为决赛选手添加空的 ai_analysis
         finalists_with_analysis = [
             {**f, 'ai_analysis': {}}
             for f in finalists
@@ -1574,6 +516,10 @@ def main():
         # 打印报告
         analyzer.print_report(report)
 
+        # 打印指标摘要
+        metrics = analyzer.get_metrics_summary()
+        logger.info(f"分析指标: {metrics}")
+
         logger.info("分析完成!")
         logger.info(f"完整报告已保存至: {args.output}")
         logger.info(f"数据库会话ID: {session_id}")
@@ -1587,4 +533,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
