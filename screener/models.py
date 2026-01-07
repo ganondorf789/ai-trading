@@ -148,12 +148,56 @@ class ScoreMetrics:
     risk_score: float = 0.0  # 风险控制评分
     consistency_score: float = 0.0  # 稳定性评分
     activity_score: float = 0.0  # 活跃度评分
+    timing_score: float = 0.0  # 择时能力评分（技术面）
     rating: QualityRating = QualityRating.F_TIER  # 质量等级
     
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
         result['rating'] = self.rating.value
         return result
+
+
+@dataclass
+class TechnicalMetrics:
+    """技术面增强指标"""
+    
+    # 入场时机指标
+    entry_timing_score: float = 0.0  # 入场时机综合评分 (0-100)
+    trend_alignment_rate: float = 0.0  # 趋势顺应率 (0-1)
+    ma_entry_quality: float = 0.0  # 均线入场质量 (0-100)
+    rsi_entry_quality: float = 0.0  # RSI 入场质量 (0-100)
+    
+    # 波动率调整指标
+    atr_normalized_pnl: float = 0.0  # ATR 标准化收益
+    volatility_timing_score: float = 0.0  # 波动率择时能力 (0-100)
+    avg_entry_atr_ratio: float = 0.0  # 平均入场 ATR 比率
+    
+    # 当前持仓分析
+    position_health_score: float = 0.0  # 持仓健康度 (0-100)
+    position_trend_alignment: float = 0.0  # 持仓趋势一致性 (0-1)
+    position_atr_distance: float = 0.0  # 入场价距当前价(ATR单位)
+    positions_in_profit: int = 0  # 盈利持仓数
+    positions_in_loss: int = 0  # 亏损持仓数
+    
+    # 分类胜率
+    trend_trades: int = 0  # 顺势交易数
+    counter_trend_trades: int = 0  # 逆势交易数
+    trend_win_rate: float = 0.0  # 顺势交易胜率
+    counter_trend_win_rate: float = 0.0  # 逆势交易胜率
+    high_vol_trades: int = 0  # 高波动期交易数
+    low_vol_trades: int = 0  # 低波动期交易数
+    high_vol_win_rate: float = 0.0  # 高波动期胜率
+    low_vol_win_rate: float = 0.0  # 低波动期胜率
+    
+    # 支撑/阻力分析
+    support_resistance_accuracy: float = 0.0  # 支撑/阻力准确率
+    breakout_success_rate: float = 0.0  # 突破成功率
+    
+    # 综合评分
+    overall_technical_score: float = 0.0  # 技术面综合评分 (0-100)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -173,6 +217,7 @@ class TraderMetrics:
     position: PositionMetrics = field(default_factory=PositionMetrics)
     roi: ROIMetrics = field(default_factory=ROIMetrics)
     score: ScoreMetrics = field(default_factory=ScoreMetrics)
+    technical: TechnicalMetrics = field(default_factory=TechnicalMetrics)  # 技术面指标
     
     # 原始数据（可选）
     fills: List[Dict] = field(default_factory=list)
@@ -379,10 +424,44 @@ class TraderMetrics:
     def monthly_roi(self) -> float:
         return self.roi.monthly_roi
     
+    # ===== 技术面便捷属性 =====
+    @property
+    def entry_timing_score(self) -> float:
+        return self.technical.entry_timing_score
+    
+    @property
+    def trend_alignment_rate(self) -> float:
+        return self.technical.trend_alignment_rate
+    
+    @property
+    def atr_normalized_pnl(self) -> float:
+        return self.technical.atr_normalized_pnl
+    
+    @property
+    def position_health_score(self) -> float:
+        return self.technical.position_health_score
+    
+    @property
+    def trend_win_rate(self) -> float:
+        return self.technical.trend_win_rate
+    
+    @property
+    def counter_trend_win_rate(self) -> float:
+        return self.technical.counter_trend_win_rate
+    
+    @property
+    def overall_technical_score(self) -> float:
+        return self.technical.overall_technical_score
+    
+    @property
+    def timing_score(self) -> float:
+        return self.score.timing_score
+    
     def to_dict(
         self,
         include_fills: bool = False,
-        include_positions: bool = False
+        include_positions: bool = False,
+        include_technical: bool = True
     ) -> Dict[str, Any]:
         """
         转换为字典
@@ -390,6 +469,7 @@ class TraderMetrics:
         Args:
             include_fills: 是否包含原始交易记录
             include_positions: 是否包含当前持仓
+            include_technical: 是否包含技术面指标
         
         Returns:
             字典形式的指标数据
@@ -405,6 +485,9 @@ class TraderMetrics:
             'score': self.score.to_dict(),
         }
         
+        if include_technical:
+            result['technical'] = self.technical.to_dict()
+        
         if include_fills:
             result['fills'] = self.fills
         
@@ -416,7 +499,8 @@ class TraderMetrics:
     def to_flat_dict(
         self,
         include_fills: bool = False,
-        include_positions: bool = False
+        include_positions: bool = False,
+        include_technical: bool = True
     ) -> Dict[str, Any]:
         """
         转换为扁平字典（向后兼容）
@@ -424,6 +508,7 @@ class TraderMetrics:
         Args:
             include_fills: 是否包含原始交易记录
             include_positions: 是否包含当前持仓
+            include_technical: 是否包含技术面指标
         
         Returns:
             扁平化的字典
@@ -503,8 +588,29 @@ class TraderMetrics:
             'risk_score': self.score.risk_score,
             'consistency_score': self.score.consistency_score,
             'activity_score': self.score.activity_score,
+            'timing_score': self.score.timing_score,
             'rating': self.score.rating.value,
         }
+        
+        # Technical (技术面指标)
+        if include_technical:
+            result.update({
+                'entry_timing_score': self.technical.entry_timing_score,
+                'trend_alignment_rate': self.technical.trend_alignment_rate,
+                'ma_entry_quality': self.technical.ma_entry_quality,
+                'rsi_entry_quality': self.technical.rsi_entry_quality,
+                'atr_normalized_pnl': self.technical.atr_normalized_pnl,
+                'volatility_timing_score': self.technical.volatility_timing_score,
+                'position_health_score': self.technical.position_health_score,
+                'position_trend_alignment': self.technical.position_trend_alignment,
+                'trend_trades': self.technical.trend_trades,
+                'counter_trend_trades': self.technical.counter_trend_trades,
+                'trend_win_rate': self.technical.trend_win_rate,
+                'counter_trend_win_rate': self.technical.counter_trend_win_rate,
+                'high_vol_win_rate': self.technical.high_vol_win_rate,
+                'low_vol_win_rate': self.technical.low_vol_win_rate,
+                'overall_technical_score': self.technical.overall_technical_score,
+            })
         
         if include_fills:
             result['fills'] = self.fills

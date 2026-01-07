@@ -88,7 +88,7 @@ class TraderScreener:
         # 初始化组件
         self._cache = get_cache_manager(self.config.cache)
         self._api_client = SyncAPIClient(self.config.api, self._cache)
-        self._metrics_calculator = MetricsCalculator()
+        self._metrics_calculator = MetricsCalculator(self.config.technical)
         self._scorer = TraderScorer(self.config.scoring)
         
         # 状态存储
@@ -491,7 +491,7 @@ class TraderScreener:
         header = (
             f"{'#':<3} {'等级':<3} {'地址':<14} {'评分':<6} {'胜率':<7} "
             f"{'盈亏比':<7} {'总PnL':<11} {'交易数':<6} {'回撤':<6} "
-            f"{'Sharpe':<7} {'活跃天':<6} {'杠杆':<5} {'持仓':<4}"
+            f"{'Sharpe':<7} {'择时':<5} {'趋势率':<6} {'持仓':<4}"
         )
         logger.info(header)
         logger.info("-" * 120)
@@ -505,13 +505,15 @@ class TraderScreener:
                 else "∞"
             )
             sharpe_str = f"{t.sharpe_ratio:.2f}" if t.sharpe_ratio else "N/A"
+            timing_str = f"{t.timing_score:.0f}" if t.timing_score else "N/A"
+            trend_str = f"{t.trend_alignment_rate:.0%}" if t.trend_alignment_rate else "N/A"
             
             row = (
                 f"{i:<3} {t.rating.value:<3} {addr_short:<14} "
                 f"{t.overall_score:>5.1f} {t.win_rate:>6.1%} "
                 f"{pf_str:>6} {pnl_str:>10} {t.total_trades:>5} "
                 f"{t.max_drawdown:>5.1%} {sharpe_str:>6} "
-                f"{t.active_days:>5} {t.avg_leverage:>4.0f}x {t.current_positions:>3}"
+                f"{timing_str:>4} {trend_str:>5} {t.current_positions:>3}"
             )
             logger.info(row)
         
@@ -571,6 +573,26 @@ class TraderScreener:
                 f"    平均盈利={format_pnl(t.avg_win_amount)}, "
                 f"平均亏损={format_pnl(-t.avg_loss_amount)}"
             )
+            # 技术面指标
+            tech = t.technical
+            if tech.entry_timing_score > 0 or tech.trend_trades > 0:
+                logger.info(
+                    f"    技术面: 入场评分={tech.entry_timing_score:.1f}, "
+                    f"趋势顺应率={tech.trend_alignment_rate:.1%}, "
+                    f"持仓健康度={tech.position_health_score:.1f}"
+                )
+                logger.info(
+                    f"    分类胜率: 顺势={tech.trend_win_rate:.1%}({tech.trend_trades}笔), "
+                    f"逆势={tech.counter_trend_win_rate:.1%}({tech.counter_trend_trades}笔)"
+                )
+                logger.info(
+                    f"    波动率: 高波动胜率={tech.high_vol_win_rate:.1%}({tech.high_vol_trades}笔), "
+                    f"低波动胜率={tech.low_vol_win_rate:.1%}({tech.low_vol_trades}笔)"
+                )
+                logger.info(
+                    f"    ATR标准化收益={tech.atr_normalized_pnl:.2f}, "
+                    f"波动率择时={tech.volatility_timing_score:.1f}"
+                )
     
     def _print_recommendations(self, traders: List[TraderMetrics]) -> None:
         """打印推荐列表"""

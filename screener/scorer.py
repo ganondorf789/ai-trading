@@ -52,10 +52,13 @@ class TraderScorer:
         # 4. 活跃度评分
         score.activity_score = self._calculate_activity_score(metrics)
         
-        # 5. 综合评分
+        # 5. 择时能力评分（技术面）
+        score.timing_score = self._calculate_timing_score(metrics)
+        
+        # 6. 综合评分
         score.overall_score = self._calculate_overall_score(score)
         
-        # 6. 确定评级
+        # 7. 确定评级
         score.rating = self._determine_rating(score.overall_score)
         
         return metrics
@@ -221,6 +224,48 @@ class TraderScorer:
         
         return min(score, 100.0)
     
+    def _calculate_timing_score(self, metrics: TraderMetrics) -> float:
+        """
+        计算择时能力评分 (0-100)
+        
+        评分因素（基于技术面分析）:
+        - 入场时机质量
+        - 趋势顺应能力
+        - 波动率择时
+        - 持仓健康度
+        """
+        tech = metrics.technical
+        score = 0.0
+        weights_sum = 0.0
+        
+        # 入场时机评分 (权重 40%)
+        if tech.entry_timing_score > 0:
+            score += tech.entry_timing_score * 0.40
+            weights_sum += 0.40
+        
+        # 趋势顺应率 (权重 25%)
+        if tech.trend_trades > 0:
+            trend_score = tech.trend_alignment_rate * 100
+            score += trend_score * 0.25
+            weights_sum += 0.25
+        
+        # 波动率择时 (权重 20%)
+        if tech.volatility_timing_score > 0:
+            score += tech.volatility_timing_score * 0.20
+            weights_sum += 0.20
+        
+        # 持仓健康度 (权重 15%)
+        if tech.position_health_score > 0:
+            score += tech.position_health_score * 0.15
+            weights_sum += 0.15
+        
+        # 归一化
+        if weights_sum > 0:
+            return score / weights_sum
+        
+        # 没有技术面数据时返回默认分数
+        return 50.0
+    
     def _calculate_overall_score(self, score: ScoreMetrics) -> float:
         """
         计算综合评分
@@ -237,7 +282,8 @@ class TraderScorer:
             score.profitability_score * config.profitability_weight +
             score.risk_score * config.risk_weight +
             score.consistency_score * config.consistency_weight +
-            score.activity_score * config.activity_weight
+            score.activity_score * config.activity_weight +
+            score.timing_score * config.timing_weight
         )
         
         return overall
@@ -371,6 +417,7 @@ def get_score_breakdown(metrics: TraderMetrics) -> dict:
         评分细分字典
     """
     score = metrics.score
+    tech = metrics.technical
     
     return {
         'overall': {
@@ -381,13 +428,13 @@ def get_score_breakdown(metrics: TraderMetrics) -> dict:
         'breakdown': {
             'profitability': {
                 'score': score.profitability_score,
-                'weight': 0.35,
-                'weighted_score': score.profitability_score * 0.35,
+                'weight': 0.30,
+                'weighted_score': score.profitability_score * 0.30,
             },
             'risk': {
                 'score': score.risk_score,
-                'weight': 0.30,
-                'weighted_score': score.risk_score * 0.30,
+                'weight': 0.25,
+                'weighted_score': score.risk_score * 0.25,
             },
             'consistency': {
                 'score': score.consistency_score,
@@ -398,6 +445,11 @@ def get_score_breakdown(metrics: TraderMetrics) -> dict:
                 'score': score.activity_score,
                 'weight': 0.15,
                 'weighted_score': score.activity_score * 0.15,
+            },
+            'timing': {
+                'score': score.timing_score,
+                'weight': 0.10,
+                'weighted_score': score.timing_score * 0.10,
             },
         },
         'key_factors': {
@@ -411,5 +463,14 @@ def get_score_breakdown(metrics: TraderMetrics) -> dict:
             'sharpe_ratio': f"{metrics.risk.sharpe_ratio:.2f}",
             'total_trades': metrics.trade.total_trades,
             'active_days': metrics.activity.active_days,
+        },
+        'technical_factors': {
+            'entry_timing_score': f"{tech.entry_timing_score:.1f}",
+            'trend_alignment_rate': f"{tech.trend_alignment_rate:.1%}",
+            'trend_win_rate': f"{tech.trend_win_rate:.1%}",
+            'counter_trend_win_rate': f"{tech.counter_trend_win_rate:.1%}",
+            'position_health_score': f"{tech.position_health_score:.1f}",
+            'volatility_timing_score': f"{tech.volatility_timing_score:.1f}",
+            'atr_normalized_pnl': f"{tech.atr_normalized_pnl:.2f}",
         }
     }
