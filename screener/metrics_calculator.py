@@ -17,9 +17,7 @@ from .models import (
     PositionMetrics,
     ROIMetrics,
     ScoreMetrics,
-    TechnicalMetrics,
 )
-from .config import TechnicalConfig
 from .utils import (
     SHANGHAI_TZ,
     timestamp_to_pendulum,
@@ -45,33 +43,16 @@ class MetricsCalculator:
     从成交记录和用户状态计算交易者的各种指标
     """
     
-    def __init__(self, technical_config: Optional[TechnicalConfig] = None):
-        """
-        初始化计算器
-        
-        Args:
-            technical_config: 技术面分析配置
-        """
-        self.technical_config = technical_config or TechnicalConfig()
-        self._technical_analyzer = None
-    
-    def _get_technical_analyzer(self):
-        """延迟初始化技术面分析器"""
-        if self._technical_analyzer is None and self.technical_config.enabled:
-            try:
-                from .technical_analyzer import TechnicalAnalyzer
-                self._technical_analyzer = TechnicalAnalyzer(self.technical_config)
-            except Exception as e:
-                logger.debug(f"初始化技术面分析器失败: {e}")
-        return self._technical_analyzer
+    def __init__(self):
+        """初始化计算器"""
+        pass
     
     def calculate(
         self,
         address: str,
         fills: List[Dict],
         user_state: Optional[Dict] = None,
-        store_fills: bool = True,
-        enable_technical: bool = True
+        store_fills: bool = True
     ) -> TraderMetrics:
         """
         计算交易者指标
@@ -81,7 +62,6 @@ class MetricsCalculator:
             fills: 成交记录列表
             user_state: 用户状态
             store_fills: 是否存储原始交易记录
-            enable_technical: 是否启用技术面分析
         
         Returns:
             TraderMetrics 对象
@@ -105,10 +85,6 @@ class MetricsCalculator:
             self._calculate_position_metrics(metrics, user_state)
             self._calculate_roi_metrics(metrics, user_state)
         
-        # 技术面分析
-        if enable_technical and self.technical_config.enabled:
-            self._calculate_technical_metrics(metrics, processed_fills, user_state)
-        
         # 存储原始数据
         if store_fills:
             metrics.fills = processed_fills
@@ -117,58 +93,6 @@ class MetricsCalculator:
             metrics.asset_positions = user_state.get('assetPositions', [])
         
         return metrics
-    
-    def _calculate_technical_metrics(
-        self,
-        metrics: TraderMetrics,
-        fills: List[Dict],
-        user_state: Optional[Dict]
-    ) -> None:
-        """
-        计算技术面增强指标
-        
-        Args:
-            metrics: 指标对象
-            fills: 成交记录
-            user_state: 用户状态
-        """
-        analyzer = self._get_technical_analyzer()
-        if analyzer is None:
-            return
-        
-        try:
-            technical_metrics = analyzer.analyze_fills(fills, user_state)
-            
-            # 将分析结果复制到 metrics.technical
-            metrics.technical.entry_timing_score = technical_metrics.entry_timing_score
-            metrics.technical.trend_alignment_rate = technical_metrics.trend_alignment_rate
-            metrics.technical.ma_entry_quality = technical_metrics.ma_entry_quality
-            metrics.technical.rsi_entry_quality = technical_metrics.rsi_entry_quality
-            metrics.technical.atr_normalized_pnl = technical_metrics.atr_normalized_pnl
-            metrics.technical.volatility_timing_score = technical_metrics.volatility_timing_score
-            metrics.technical.avg_entry_atr_ratio = technical_metrics.avg_entry_atr_ratio
-            metrics.technical.position_health_score = technical_metrics.position_health_score
-            metrics.technical.position_trend_alignment = technical_metrics.position_trend_alignment
-            metrics.technical.position_atr_distance = technical_metrics.position_atr_distance
-            metrics.technical.positions_in_profit = technical_metrics.positions_in_profit
-            metrics.technical.positions_in_loss = technical_metrics.positions_in_loss
-            metrics.technical.trend_trades = technical_metrics.trend_trades
-            metrics.technical.counter_trend_trades = technical_metrics.counter_trend_trades
-            metrics.technical.trend_win_rate = technical_metrics.trend_win_rate
-            metrics.technical.counter_trend_win_rate = technical_metrics.counter_trend_win_rate
-            metrics.technical.high_vol_trades = technical_metrics.high_vol_trades
-            metrics.technical.low_vol_trades = technical_metrics.low_vol_trades
-            metrics.technical.high_vol_win_rate = technical_metrics.high_vol_win_rate
-            metrics.technical.low_vol_win_rate = technical_metrics.low_vol_win_rate
-            metrics.technical.overall_technical_score = technical_metrics.overall_technical_score
-            
-            logger.debug(
-                f"技术面分析完成: 入场评分={technical_metrics.entry_timing_score:.1f}, "
-                f"趋势顺应率={technical_metrics.trend_alignment_rate:.1%}"
-            )
-            
-        except Exception as e:
-            logger.debug(f"技术面分析失败: {e}")
     
     def _preprocess_fills(self, fills: List[Dict]) -> List[Dict]:
         """
@@ -537,9 +461,7 @@ def calculate_metrics(
     address: str,
     fills: List[Dict],
     user_state: Optional[Dict] = None,
-    store_fills: bool = True,
-    technical_config: Optional[TechnicalConfig] = None,
-    enable_technical: bool = True
+    store_fills: bool = True
 ) -> TraderMetrics:
     """
     计算交易者指标（便捷函数）
@@ -549,13 +471,9 @@ def calculate_metrics(
         fills: 成交记录列表
         user_state: 用户状态
         store_fills: 是否存储原始交易记录
-        technical_config: 技术面分析配置
-        enable_technical: 是否启用技术面分析
     
     Returns:
         TraderMetrics 对象
     """
-    calculator = MetricsCalculator(technical_config)
-    return calculator.calculate(
-        address, fills, user_state, store_fills, enable_technical
-    )
+    calculator = MetricsCalculator()
+    return calculator.calculate(address, fills, user_state, store_fills)

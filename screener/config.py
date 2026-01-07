@@ -23,11 +23,10 @@ class FilterConfig:
 class ScoringConfig:
     """评分配置"""
     # 权重配置 (总和为 1.0)
-    profitability_weight: float = 0.30  # 盈利能力权重
-    risk_weight: float = 0.25  # 风险控制权重
+    profitability_weight: float = 0.35  # 盈利能力权重
+    risk_weight: float = 0.30  # 风险控制权重
     consistency_weight: float = 0.20  # 稳定性权重
     activity_weight: float = 0.15  # 活跃度权重
-    timing_weight: float = 0.10  # 择时能力权重（技术面）
     
     # 评级阈值
     rating_thresholds: Dict[str, float] = field(default_factory=lambda: {
@@ -117,36 +116,6 @@ class OutputConfig:
 
 
 @dataclass
-class TechnicalConfig:
-    """技术面分析配置"""
-    
-    # 是否启用技术面分析
-    enabled: bool = True
-    
-    # K线配置
-    candle_interval: str = "1h"  # K线间隔 (1m, 5m, 15m, 1h, 4h, 1d)
-    lookback_bars: int = 50  # 回溯K线数量
-    min_candles_required: int = 20  # 最少需要的K线数量
-    
-    # 技术指标参数
-    sma_period: int = 20  # 简单移动平均周期
-    rsi_period: int = 14  # RSI 周期
-    atr_period: int = 14  # ATR 周期
-    atr_lookback_bars: int = 30  # ATR 计算回溯K线数
-    
-    # 评分权重
-    trend_weight: float = 0.40  # 趋势一致性权重
-    rsi_weight: float = 0.30  # RSI 入场质量权重
-    ma_weight: float = 0.30  # 均线位置权重
-    
-    # 缓存配置
-    max_cache_size: int = 500  # 最大K线缓存条目数
-    
-    # 评分系统配置
-    timing_score_weight: float = 0.10  # 择时评分在总评分中的权重
-
-
-@dataclass
 class ScreenerConfig:
     """
     筛选器主配置
@@ -161,7 +130,6 @@ class ScreenerConfig:
     cache: CacheConfig = field(default_factory=CacheConfig)
     data: DataConfig = field(default_factory=DataConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
-    technical: TechnicalConfig = field(default_factory=TechnicalConfig)  # 技术面分析配置
     
     # ===== 便捷属性（向后兼容）=====
     @property
@@ -272,8 +240,6 @@ class ScreenerConfig:
             config.data = DataConfig(**data['data'])
         if 'output' in data:
             config.output = OutputConfig(**data['output'])
-        if 'technical' in data:
-            config.technical = TechnicalConfig(**data['technical'])
         
         # 支持旧版扁平配置格式
         flat_mappings = {
@@ -299,9 +265,6 @@ class ScreenerConfig:
             'lookback_days': ('data', 'lookback_days'),
             'top_n': ('output', 'top_n'),
             'output_file': ('output', 'output_file'),
-            'technical_enabled': ('technical', 'enabled'),
-            'candle_interval': ('technical', 'candle_interval'),
-            'timing_weight': ('scoring', 'timing_weight'),
         }
         
         for key, (sub_config, attr) in flat_mappings.items():

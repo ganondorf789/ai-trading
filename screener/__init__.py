@@ -91,7 +91,6 @@ from screener.models import (
     PositionMetrics,
     ROIMetrics,
     ScoreMetrics,
-    TechnicalMetrics,
     FillData,
 )
 
@@ -105,14 +104,7 @@ from screener.config import (
     CacheConfig,
     DataConfig,
     OutputConfig,
-    TechnicalConfig,
     PresetConfigs,
-)
-
-# 技术面分析
-from screener.technical_analyzer import (
-    TechnicalAnalyzer,
-    analyze_technical,
 )
 
 # 缓存
@@ -202,7 +194,6 @@ __all__ = [
     "PositionMetrics",
     "ROIMetrics",
     "ScoreMetrics",
-    "TechnicalMetrics",
     "FillData",
     
     # 配置
@@ -214,7 +205,6 @@ __all__ = [
     "CacheConfig",
     "DataConfig",
     "OutputConfig",
-    "TechnicalConfig",
     "PresetConfigs",
     
     # 缓存
@@ -232,10 +222,6 @@ __all__ = [
     # 指标计算
     "MetricsCalculator",
     "calculate_metrics",
-    
-    # 技术面分析
-    "TechnicalAnalyzer",
-    "analyze_technical",
     
     # 评分系统
     "TraderScorer",
