@@ -742,18 +742,26 @@ class MultiTargetCopyTradingBot:
         target_state.last_check = pendulum.now()
 
     async def _sync_all_targets(self):
-        """同步所有目标"""
+        """同步所有目标（如果已锁定交易员，只同步锁定的交易员）"""
         # 更新自己的持仓
         self.my_positions = self._get_my_positions()
 
-        # 并发同步所有目标
-        tasks = [self._sync_target(state) for state in self.targets.values()]
+        # 确定要同步的目标
+        if self.locked_target and self.locked_target in self.targets:
+            # 已锁定交易员，只同步该交易员
+            targets_to_sync = {self.locked_target: self.targets[self.locked_target]}
+        else:
+            # 未锁定，同步所有目标
+            targets_to_sync = self.targets
+
+        # 并发同步目标
+        tasks = [self._sync_target(state) for state in targets_to_sync.values()]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 检查并记录异常
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                target_address = list(self.targets.keys())[i]
+                target_address = list(targets_to_sync.keys())[i]
                 logger.error(f"同步目标 {target_address[:10]}... 失败: {result}")
                 if self._on_error:
                     self._on_error(result)
