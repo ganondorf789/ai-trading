@@ -16,7 +16,7 @@ class PostgreSQLSettings(BaseSettings):
     port: int = Field(default=5433, description="PostgreSQL 端口")
     user: str = Field(default="trading", description="数据库用户名")
     password: str = Field(default="trading123", description="数据库密码")
-    database: str = Field(default="auto_trading", description="数据库名称")
+    database: str = Field(default="autotrading", description="数据库名称")
     min_connections: int = Field(default=2, description="连接池最小连接数")
     max_connections: int = Field(default=10, description="连接池最大连接数")
 
