@@ -183,8 +183,8 @@ class DatabaseMigrations:
                     tid BIGINT,
                     trade_type TEXT,
 
-                    -- 唯一约束
-                    UNIQUE(address, time, oid)
+                    -- 唯一约束：使用 tid 作为唯一标识（tid 是交易的真正唯一ID）
+                    UNIQUE(address, tid)
                 )
             """)
 

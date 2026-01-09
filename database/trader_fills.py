@@ -47,7 +47,7 @@ class TraderFillsOps:
                             address, coin, side, px, sz, time, trade_time,
                             closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT(address, time, oid) DO UPDATE SET
+                        ON CONFLICT(address, tid) DO UPDATE SET
                             closed_pnl = EXCLUDED.closed_pnl,
                             px = EXCLUDED.px,
                             sz = EXCLUDED.sz,
