@@ -449,3 +449,30 @@ class TraderMetricsOps:
                 LIMIT %s
             """, (limit,))
             return [dict(row) for row in cursor.fetchall()]
+
+    def update_total_trades(self, address: str, total_trades: int) -> bool:
+        """
+        更新交易者的总交易数
+
+        Args:
+            address: 交易者地址
+            total_trades: 新的总交易数
+
+        Returns:
+            是否更新成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE trader_metrics
+                SET total_trades = %s, analyzed_at = NOW()
+                WHERE address = %s
+            """, (total_trades, address))
+            updated = cursor.rowcount > 0
+            
+            # 使缓存失效
+            if updated:
+                cache.invalidate_trader(address)
+                logger.info(f"交易者 {address[:10]}... total_trades 更新为: {total_trades}")
+            
+            return updated

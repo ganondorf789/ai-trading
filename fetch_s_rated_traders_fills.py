@@ -304,7 +304,7 @@ def get_s_rated_traders(db: TraderDatabase, min_trades: int = 2000) -> List[Dict
         cursor.execute("""
             SELECT address, total_trades, total_pnl, win_rate, overall_score
             FROM trader_metrics
-            WHERE rating = 'S' AND total_trades > %s
+            WHERE rating = 'S' AND total_trades = %s
             ORDER BY overall_score DESC
         """, (min_trades,))
         return [dict(row) for row in cursor.fetchall()]
@@ -360,7 +360,7 @@ def main():
     logger.info("=" * 80)
     logger.info("S级交易员历史交易记录获取工具")
     logger.info("=" * 80)
-    logger.info(f"筛选条件: rating='S' AND total_trades > {args.min_trades}")
+    logger.info(f"筛选条件: rating='S' AND total_trades = {args.min_trades}")
     logger.info(f"停止条件: 连续 {args.empty_months} 个月无记录")
     if args.skip_existing:
         logger.info("模式: 跳过已有交易记录的交易员")
@@ -485,6 +485,10 @@ def main():
             if saved_count > 0:
                 logger.success(f"  ✓ 总共保存 {saved_count} 条记录")
                 total_fills_saved += saved_count
+                
+                # 更新交易员的 total_trades 字段
+                actual_fills_count = get_existing_fills_count(db, address)
+                db.update_total_trades(address, actual_fills_count)
             else:
                 logger.warning(f"  - 没有获取到交易记录")
             
