@@ -2,7 +2,7 @@
 # 跟单机器人管理脚本
 
 PROGRAM="copy_trading"
-PROJECT_DIR="/root/ai-trading"
+PROJECT_DIR="/www/ai-trading"
 LOG_FILE="$PROJECT_DIR/logs/supervisor_copy_trading.log"
 
 case "$1" in

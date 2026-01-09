@@ -4,7 +4,7 @@
 set -e
 
 # 配置变量 - 请根据实际情况修改
-PROJECT_DIR="/root/ai-trading"
+PROJECT_DIR="/www/ai-trading"
 USER="root"
 
 # 颜色输出
@@ -63,7 +63,7 @@ priority=100
 EOF
 
 # 复制配置到 Supervisor 目录
-sudo cp /root/ai-trading/deploy/supervisor/copy_trading.conf /etc/supervisord.d/copy_trading.ini
+sudo cp /www/ai-trading/deploy/supervisor/copy_trading.conf /etc/supervisord.d/copy_trading.ini
 
 # 5. 启动服务
 echo -e "${YELLOW}[5/5] 启动服务...${NC}"
