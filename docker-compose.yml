@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,7 +9,7 @@ services:
       POSTGRES_DB: auto_trading
       TZ: Asia/Shanghai
     ports:
-      - "5432:5432"
+      - "5433:5432" # 使用5433避免与已有PostgreSQL冲突
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,7 +28,7 @@ services:
     environment:
       TZ: Asia/Shanghai
     ports:
-      - "6379:6379"
+      - "6380:6379" # 使用6380避免与已有Redis冲突
     volumes:
       - redis_data:/data
     healthcheck:

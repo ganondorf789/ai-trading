@@ -13,7 +13,7 @@ class PostgreSQLSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='POSTGRES_')
 
     host: str = Field(default="localhost", description="PostgreSQL 主机地址")
-    port: int = Field(default=5432, description="PostgreSQL 端口")
+    port: int = Field(default=5433, description="PostgreSQL 端口")
     user: str = Field(default="trading", description="数据库用户名")
     password: str = Field(default="trading123", description="数据库密码")
     database: str = Field(default="auto_trading", description="数据库名称")
@@ -31,7 +31,7 @@ class RedisSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='REDIS_')
 
     host: str = Field(default="localhost", description="Redis 主机地址")
-    port: int = Field(default=6379, description="Redis 端口")
+    port: int = Field(default=6380, description="Redis 端口")
     password: str = Field(default="", description="Redis 密码")
     db: int = Field(default=0, description="Redis 数据库编号")
     max_connections: int = Field(default=10, description="连接池最大连接数")
