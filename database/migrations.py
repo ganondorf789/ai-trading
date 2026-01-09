@@ -484,6 +484,17 @@ class DatabaseMigrations:
                 ON copy_position_states(target_address)
             """)
 
+            # 创建系统配置表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_config (
+                    id SERIAL PRIMARY KEY,
+                    config_key TEXT NOT NULL UNIQUE,
+                    config_value TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

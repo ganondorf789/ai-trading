@@ -23,6 +23,7 @@ import type {
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
+  RiskControlConfig,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -50,6 +51,7 @@ export type {
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
+  RiskControlConfig,
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -403,6 +405,18 @@ export const groupComparisonApi = {
   // 获取统计信息
   getStats: () =>
     api.get<any, ApiResponse<GroupComparisonStats>>('/group-comparison/stats'),
+};
+
+// ==================== 风控配置 API ====================
+
+export const riskControlApi = {
+  // 获取风控配置
+  getConfig: () =>
+    api.get<any, ApiResponse<RiskControlConfig>>('/copy-trading/risk-control'),
+
+  // 更新风控配置
+  updateConfig: (data: Partial<RiskControlConfig>) =>
+    api.put<any, ApiResponse<RiskControlConfig> & { message?: string }>('/copy-trading/risk-control', data),
 };
 
 export default api;

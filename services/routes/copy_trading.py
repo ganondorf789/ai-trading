@@ -1019,6 +1019,109 @@ def get_all_trader_positions():
         }), 500
 
 
+@copy_trading_bp.route('/api/copy-trading/risk-control', methods=['GET'])
+def get_risk_control_config():
+    """
+    获取风控配置
+    """
+    import json
+    try:
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT config_value FROM system_config WHERE config_key = 'risk_control'
+            """)
+            row = cursor.fetchone()
+
+            if row:
+                config = json.loads(row[0])
+            else:
+                # 返回默认配置
+                config = {
+                    'max_total_positions': 10,
+                    'max_daily_trades': 50,
+                    'max_single_loss_usd': 100.0,
+                    'max_daily_loss_usd': 500.0,
+                    'max_drawdown_pct': 10.0,
+                    'max_margin_usage_pct': 80.0,
+                    'pause_on_consecutive_losses': 5,
+                    'max_order_retries': 3,
+                    'retry_base_delay': 1.0,
+                }
+
+        return jsonify({
+            'success': True,
+            'data': config
+        })
+    except Exception as e:
+        logger.error(f"获取风控配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/risk-control', methods=['PUT'])
+def update_risk_control_config():
+    """
+    更新风控配置
+    """
+    import json
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证配置字段
+        valid_fields = {
+            'max_total_positions': (int, 1, 100),
+            'max_daily_trades': (int, 1, 1000),
+            'max_single_loss_usd': (float, 0, 100000),
+            'max_daily_loss_usd': (float, 0, 1000000),
+            'max_drawdown_pct': (float, 0, 100),
+            'max_margin_usage_pct': (float, 0, 100),
+            'pause_on_consecutive_losses': (int, 1, 100),
+            'max_order_retries': (int, 0, 10),
+            'retry_base_delay': (float, 0.1, 60),
+        }
+
+        config = {}
+        for field, (field_type, min_val, max_val) in valid_fields.items():
+            if field in data:
+                value = data[field]
+                if field_type == int:
+                    value = int(value)
+                else:
+                    value = float(value)
+                # 范围验证
+                value = max(min_val, min(max_val, value))
+                config[field] = value
+
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO system_config (config_key, config_value, description, updated_at)
+                VALUES ('risk_control', %s, '跟单风控配置', CURRENT_TIMESTAMP)
+                ON CONFLICT (config_key)
+                DO UPDATE SET config_value = %s, updated_at = CURRENT_TIMESTAMP
+            """, (json.dumps(config), json.dumps(config)))
+
+        return jsonify({
+            'success': True,
+            'data': config,
+            'message': '风控配置更新成功'
+        })
+    except Exception as e:
+        logger.error(f"更新风控配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @copy_trading_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
 def refresh_all_trader_positions():
     """

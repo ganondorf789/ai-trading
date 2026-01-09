@@ -8,6 +8,7 @@ import CopyOrdersPage from "@/pages/copy-orders";
 import PositionsPage from "@/pages/positions";
 import TraderPositionsPage from "@/pages/trader-positions";
 import GroupComparisonPage from "@/pages/group-comparison";
+import RiskControlPage from "@/pages/risk-control";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
       <Route element={<PositionsPage />} path="/positions" />
       <Route element={<TraderPositionsPage />} path="/trader-positions" />
       <Route element={<GroupComparisonPage />} path="/group-comparison" />
+      <Route element={<RiskControlPage />} path="/risk-control" />
     </Routes>
   );
 }

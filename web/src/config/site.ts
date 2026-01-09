@@ -31,6 +31,10 @@ export const siteConfig = {
     {
       label: "Position States",
       href: "/positions",
+    },
+    {
+      label: "Risk Control",
+      href: "/risk-control",
     }
   ],
   navMenuItems: [

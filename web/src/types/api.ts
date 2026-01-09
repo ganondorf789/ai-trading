@@ -421,3 +421,28 @@ export interface GroupComparisonStats {
   recent_sessions: number;
   avg_finalists: number;
 }
+
+// ==================== 风控配置类型 ====================
+
+export interface RiskControlConfig {
+  // 仓位限制
+  max_total_positions: number;
+  max_daily_trades: number;
+  
+  // 单笔风控
+  max_single_loss_usd: number;
+  
+  // 累计风控
+  max_daily_loss_usd: number;
+  max_drawdown_pct: number;
+  
+  // 资金使用率
+  max_margin_usage_pct: number;
+  
+  // 暂停条件
+  pause_on_consecutive_losses: number;
+  
+  // 订单重试
+  max_order_retries: number;
+  retry_base_delay: number;
+}
