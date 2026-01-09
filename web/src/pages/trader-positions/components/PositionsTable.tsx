@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Table,
@@ -10,15 +11,34 @@ import {
   Spinner,
   Tooltip,
   Progress,
+  Button,
 } from "@heroui/react";
+import { Icon } from "@iconify/react";
 import { TraderPosition } from "@/services/api";
 
 interface PositionsTableProps {
   positions: TraderPosition[];
   loading: boolean;
+  onRefreshTrader?: (address: string) => Promise<void>;
 }
 
-export function PositionsTable({ positions, loading }: PositionsTableProps) {
+export function PositionsTable({ positions, loading, onRefreshTrader }: PositionsTableProps) {
+  const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
+
+  const handleRefreshTrader = async (address: string) => {
+    if (!onRefreshTrader || refreshingAddresses.has(address)) return;
+    
+    setRefreshingAddresses(prev => new Set(prev).add(address));
+    try {
+      await onRefreshTrader(address);
+    } finally {
+      setRefreshingAddresses(prev => {
+        const next = new Set(prev);
+        next.delete(address);
+        return next;
+      });
+    }
+  };
   const navigate = useNavigate();
 
   const formatTime = (timeStr: string | null) => {
@@ -72,6 +92,7 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
         <TableColumn>ROE</TableColumn>
         <TableColumn>杠杆</TableColumn>
         <TableColumn>更新时间</TableColumn>
+        <TableColumn width={60}>操作</TableColumn>
       </TableHeader>
       <TableBody emptyContent="暂无持仓数据" isLoading={loading} loadingContent={<Spinner />}>
         {positions.map((position) => {
@@ -162,6 +183,19 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
               </TableCell>
               <TableCell>
                 <span className="text-sm text-default-500">{formatTime(position.updated_at)}</span>
+              </TableCell>
+              <TableCell>
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    color="primary"
+                    isLoading={refreshingAddresses.has(position.address)}
+                    onPress={() => handleRefreshTrader(position.address)}
+                    isDisabled={!onRefreshTrader}
+                  >
+                    <Icon icon="solar:refresh-bold-duotone" width={16} />
+                  </Button>
               </TableCell>
             </TableRow>
           );

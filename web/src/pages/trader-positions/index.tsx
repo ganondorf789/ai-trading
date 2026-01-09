@@ -6,6 +6,7 @@ import DefaultLayout from "@/layouts/default";
 import {
   traderPositionsApi,
   copyTradingApi,
+  traderApi,
   TraderPosition,
   TraderPositionsStats,
   CopyTradingGroup,
@@ -142,6 +143,30 @@ export default function TraderPositionsPage() {
       setRefreshing(false);
     }
   };
+
+  // 刷新单个交易员的持仓数据
+  const handleRefreshTrader = useCallback(async (address: string) => {
+    try {
+      const response = await traderApi.refreshTraderPositions(address);
+
+      if (response.success) {
+        addToast({
+          title: "刷新成功",
+          description: response.message || `已刷新交易员持仓`,
+          color: "success",
+        });
+        // 重新加载数据
+        await fetchPositions();
+      }
+    } catch (error) {
+      console.error("Failed to refresh trader positions:", error);
+      addToast({
+        title: "刷新失败",
+        description: "无法从 Hyperliquid 获取最新数据",
+        color: "danger",
+      });
+    }
+  }, [fetchPositions]);
 
   // 重置所有筛选
   const handleReset = () => {
@@ -322,7 +347,11 @@ export default function TraderPositionsPage() {
         )}
 
         {/* Positions Table */}
-        <PositionsTable positions={filteredPositions} loading={loading} />
+        <PositionsTable 
+          positions={filteredPositions} 
+          loading={loading} 
+          onRefreshTrader={handleRefreshTrader}
+        />
       </div>
     </DefaultLayout>
   );
