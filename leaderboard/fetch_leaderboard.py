@@ -29,14 +29,14 @@ def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> Li
         leaderboard_rows = data.get("leaderboardRows", [])
         logger.info(f"获取到 {len(leaderboard_rows)} 个交易者")
 
-        # 按 month pnl 从大到小排序
+        # 按最近30天的成交量从大到小排序
         if sort_by_pnl:
             for row in leaderboard_rows:
                 performances = dict(row.get("windowPerformances", []))
                 month_data = performances.get("month", {})
-                row["_pnl"] = float(month_data.get("pnl", 0))
-            leaderboard_rows.sort(key=lambda x: x.get("_pnl", 0), reverse=True)
-            logger.info("已按 month PnL 从大到小排序")
+                row["_vlm"] = float(month_data.get("vlm", 0))
+            leaderboard_rows.sort(key=lambda x: x.get("_vlm", 0), reverse=True)
+            logger.info("已按最近30天的成交量从大到小排序")
 
         if save_to_file:
             # 保存完整数据到 leaderboard 目录
