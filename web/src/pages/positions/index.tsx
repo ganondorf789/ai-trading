@@ -1,9 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, addToast, useDisclosure } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { copyPositionStatesApi, CopyPositionState, CopyPositionStats } from "@/services/api";
+import { 
+  copyPositionStatesApi, 
+  copyTradingApi,
+  CopyPositionState, 
+  CopyPositionStats,
+  CopyTradingAddress 
+} from "@/services/api";
+import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
 
 import { StatsCards } from "./components/StatsCards";
 import { PositionFilters } from "./components/PositionFilters";
@@ -11,22 +18,51 @@ import { PositionsTable } from "./components/PositionsTable";
 import { DeleteConfirmModal } from "./components/DeleteConfirmModal";
 import { ClearAllModal } from "./components/ClearAllModal";
 
+// 扩展仓位类型，包含交易员指标
+interface CopyPositionStateWithMetrics extends CopyPositionState {
+  win_rate?: number;
+  trader_pnl?: number;
+  overall_score?: number;
+  total_trades?: number;
+  profit_factor?: number;
+  max_drawdown?: number;
+  sharpe_ratio?: number;
+}
+
 export default function PositionsPage() {
   // 数据状态
-  const [positions, setPositions] = useState<CopyPositionState[]>([]);
+  const [positions, setPositions] = useState<CopyPositionStateWithMetrics[]>([]);
   const [stats, setStats] = useState<CopyPositionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [addressMetrics, setAddressMetrics] = useState<Map<string, CopyTradingAddress>>(new Map());
 
   // 筛选状态
   const [search, setSearch] = useState("");
   const [sideFilter, setSideFilter] = useState<string>("all");
   const [targetFilter, setTargetFilter] = useState<string>("all");
+  const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
 
   // 删除确认弹窗
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [deleteTarget, setDeleteTarget] = useState<{ address: string; symbol?: string } | null>(null);
   const [clearAllOpen, setClearAllOpen] = useState(false);
+
+  // 加载跟单地址及其指标
+  const fetchAddressMetrics = useCallback(async () => {
+    try {
+      const response = await copyTradingApi.getAddresses({ limit: 1000 });
+      if (response.success && response.data) {
+        const metricsMap = new Map<string, CopyTradingAddress>();
+        response.data.forEach(addr => {
+          metricsMap.set(addr.address, addr);
+        });
+        setAddressMetrics(metricsMap);
+      }
+    } catch (error) {
+      console.error("Failed to fetch address metrics:", error);
+    }
+  }, []);
 
   // 加载仓位列表
   const fetchPositions = useCallback(async () => {
@@ -41,24 +77,19 @@ export default function PositionsPage() {
       const response = await copyPositionStatesApi.getPositions(params);
 
       if (response.success && response.data) {
-        let filtered = response.data;
+        // 合并交易员指标到仓位数据
+        const positionsWithMetrics = response.data.map(pos => ({
+          ...pos,
+          win_rate: addressMetrics.get(pos.target_address)?.win_rate,
+          trader_pnl: addressMetrics.get(pos.target_address)?.trader_pnl,
+          overall_score: addressMetrics.get(pos.target_address)?.overall_score,
+          total_trades: addressMetrics.get(pos.target_address)?.total_trades,
+          profit_factor: addressMetrics.get(pos.target_address)?.profit_factor,
+          max_drawdown: addressMetrics.get(pos.target_address)?.max_drawdown,
+          sharpe_ratio: addressMetrics.get(pos.target_address)?.sharpe_ratio,
+        }));
 
-        // 本地筛选
-        if (search) {
-          const searchLower = search.toLowerCase();
-          filtered = filtered.filter(
-            (p) =>
-              p.symbol.toLowerCase().includes(searchLower) ||
-              p.target_address.toLowerCase().includes(searchLower) ||
-              (p.target_name && p.target_name.toLowerCase().includes(searchLower))
-          );
-        }
-
-        if (sideFilter !== "all") {
-          filtered = filtered.filter((p) => p.side === sideFilter);
-        }
-
-        setPositions(filtered);
+        setPositions(positionsWithMetrics);
       }
     } catch (error) {
       console.error("Failed to fetch positions:", error);
@@ -70,7 +101,74 @@ export default function PositionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, sideFilter, targetFilter]);
+  }, [targetFilter, addressMetrics]);
+
+  // 应用本地筛选（包括指标筛选）
+  const filteredPositions = useMemo(() => {
+    let filtered = positions;
+
+    // 搜索筛选
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.symbol.toLowerCase().includes(searchLower) ||
+          p.target_address.toLowerCase().includes(searchLower) ||
+          (p.target_name && p.target_name.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // 方向筛选
+    if (sideFilter !== "all") {
+      filtered = filtered.filter((p) => p.side === sideFilter);
+    }
+
+    // 指标筛选
+    if (metricFilters.minWinRate !== undefined) {
+      filtered = filtered.filter((p) => (p.win_rate ?? 0) >= metricFilters.minWinRate!);
+    }
+    if (metricFilters.maxWinRate !== undefined) {
+      filtered = filtered.filter((p) => (p.win_rate ?? 100) <= metricFilters.maxWinRate!);
+    }
+    if (metricFilters.minProfitFactor !== undefined) {
+      filtered = filtered.filter((p) => (p.profit_factor ?? 0) >= metricFilters.minProfitFactor!);
+    }
+    if (metricFilters.maxProfitFactor !== undefined) {
+      filtered = filtered.filter((p) => (p.profit_factor ?? 999) <= metricFilters.maxProfitFactor!);
+    }
+    if (metricFilters.minPnl !== undefined) {
+      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) >= metricFilters.minPnl!);
+    }
+    if (metricFilters.maxPnl !== undefined) {
+      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) <= metricFilters.maxPnl!);
+    }
+    if (metricFilters.minDrawdown !== undefined) {
+      filtered = filtered.filter((p) => (p.max_drawdown ?? 0) >= metricFilters.minDrawdown!);
+    }
+    if (metricFilters.maxDrawdown !== undefined) {
+      filtered = filtered.filter((p) => (p.max_drawdown ?? 100) <= metricFilters.maxDrawdown!);
+    }
+    if (metricFilters.minSharpe !== undefined) {
+      filtered = filtered.filter((p) => (p.sharpe_ratio ?? -999) >= metricFilters.minSharpe!);
+    }
+    if (metricFilters.maxSharpe !== undefined) {
+      filtered = filtered.filter((p) => (p.sharpe_ratio ?? 999) <= metricFilters.maxSharpe!);
+    }
+    if (metricFilters.minTrades !== undefined) {
+      filtered = filtered.filter((p) => (p.total_trades ?? 0) >= metricFilters.minTrades!);
+    }
+    if (metricFilters.maxTrades !== undefined) {
+      filtered = filtered.filter((p) => (p.total_trades ?? 0) <= metricFilters.maxTrades!);
+    }
+    if (metricFilters.minScore !== undefined) {
+      filtered = filtered.filter((p) => (p.overall_score ?? 0) >= metricFilters.minScore!);
+    }
+    if (metricFilters.maxScore !== undefined) {
+      filtered = filtered.filter((p) => (p.overall_score ?? 100) <= metricFilters.maxScore!);
+    }
+
+    return filtered;
+  }, [positions, search, sideFilter, metricFilters]);
 
   // 加载统计数据
   const fetchStats = useCallback(async () => {
@@ -87,6 +185,14 @@ export default function PositionsPage() {
       setStatsLoading(false);
     }
   }, []);
+
+  // 重置所有筛选
+  const handleReset = () => {
+    setSearch("");
+    setSideFilter("all");
+    setTargetFilter("all");
+    setMetricFilters(emptyMetricFilters);
+  };
 
   // 删除单个仓位
   const handleDeletePosition = async () => {
@@ -175,6 +281,10 @@ export default function PositionsPage() {
   };
 
   useEffect(() => {
+    fetchAddressMetrics();
+  }, [fetchAddressMetrics]);
+
+  useEffect(() => {
     fetchPositions();
   }, [fetchPositions]);
 
@@ -188,9 +298,11 @@ export default function PositionsPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Position Management</h1>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+              仓位管理
+            </h1>
             <p className="text-default-500">
-              Manage copy trading position states (used for recovery after restart)
+              管理跟单仓位状态（用于重启后恢复）
             </p>
           </div>
           <div className="flex gap-2">
@@ -200,7 +312,7 @@ export default function PositionsPage() {
               variant="flat"
               onPress={() => setClearAllOpen(true)}
             >
-              Clear All
+              清空全部
             </Button>
             <Button
               color="primary"
@@ -211,7 +323,7 @@ export default function PositionsPage() {
                 fetchStats();
               }}
             >
-              Refresh
+              刷新
             </Button>
           </div>
         </div>
@@ -228,11 +340,21 @@ export default function PositionsPage() {
           targetFilter={targetFilter}
           onTargetFilterChange={setTargetFilter}
           stats={stats}
+          metricFilters={metricFilters}
+          onMetricFiltersChange={setMetricFilters}
+          onReset={handleReset}
         />
+
+        {/* 显示筛选结果数量 */}
+        {!loading && (
+          <div className="mb-4 text-sm text-default-500">
+            显示 {filteredPositions.length} / {positions.length} 条仓位记录
+          </div>
+        )}
 
         {/* Positions Table */}
         <PositionsTable
-          positions={positions}
+          positions={filteredPositions}
           loading={loading}
           onDeletePosition={handleDeleteClick}
           onClearTarget={handleClearTargetClick}

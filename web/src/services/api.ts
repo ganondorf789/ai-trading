@@ -291,21 +291,6 @@ export const copyTradingOrdersApi = {
     days?: number;
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
-    // 指标筛选
-    min_win_rate?: number;
-    max_win_rate?: number;
-    min_profit_factor?: number;
-    max_profit_factor?: number;
-    min_pnl?: number;
-    max_pnl?: number;
-    min_drawdown?: number;
-    max_drawdown?: number;
-    min_sharpe?: number;
-    max_sharpe?: number;
-    min_trades?: number;
-    max_trades?: number;
-    min_score?: number;
-    max_score?: number;
   }) =>
     api.get<any, ApiResponse<CopyTradingOrder[]>>('/copy-trading/orders', { params }),
 
