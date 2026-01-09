@@ -1,8 +1,9 @@
 """
-跟单订单管理模块
+跟单订单管理模块 (PostgreSQL)
 """
 from typing import List, Dict
 import pendulum
+from psycopg2 import extras
 
 from screener.trader_screener import SHANGHAI_TZ
 
@@ -27,7 +28,8 @@ class CopyOrdersOps:
                     target_address, symbol, side, action, size, price,
                     leverage, copy_ratio, target_size, target_entry_price,
                     status, error_message, pnl, is_dry_run, created_at, executed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 order.get('target_address'),
                 order.get('symbol'),
@@ -46,7 +48,7 @@ class CopyOrdersOps:
                 order.get('created_at', pendulum.now(SHANGHAI_TZ).to_iso8601_string()),
                 order.get('executed_at')
             ))
-            return cursor.lastrowid
+            return cursor.fetchone()[0]
 
     def update_copy_order(self, order_id: int, updates: Dict) -> bool:
         """
@@ -67,7 +69,7 @@ class CopyOrdersOps:
 
             for key, value in updates.items():
                 if key in ('status', 'error_message', 'pnl', 'executed_at', 'price'):
-                    set_clauses.append(f"{key} = ?")
+                    set_clauses.append(f"{key} = %s")
                     params.append(value)
 
             if not set_clauses:
@@ -77,7 +79,7 @@ class CopyOrdersOps:
             cursor.execute(f"""
                 UPDATE copy_trading_orders
                 SET {', '.join(set_clauses)}
-                WHERE id = ?
+                WHERE id = %s
             """, params)
 
             return cursor.rowcount > 0
@@ -118,41 +120,41 @@ class CopyOrdersOps:
             (订单列表, 总数量)
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             conditions = []
             params = []
 
             if target_address:
-                conditions.append("o.target_address = ?")
+                conditions.append("o.target_address = %s")
                 params.append(target_address)
 
             if symbol:
-                conditions.append("o.symbol = ?")
+                conditions.append("o.symbol = %s")
                 params.append(symbol)
 
             if status:
-                conditions.append("o.status = ?")
+                conditions.append("o.status = %s")
                 params.append(status)
 
             if action:
-                conditions.append("o.action = ?")
+                conditions.append("o.action = %s")
                 params.append(action)
 
             if is_dry_run is not None:
-                conditions.append("o.is_dry_run = ?")
-                params.append(1 if is_dry_run else 0)
+                conditions.append("o.is_dry_run = %s")
+                params.append(is_dry_run)
 
             if days is not None and days > 0:
-                conditions.append("o.created_at >= datetime('now', ?)")
-                params.append(f"-{days} days")
+                conditions.append("o.created_at >= NOW() - INTERVAL '%s days'")
+                params.append(days)
 
             if start_date:
-                conditions.append("o.created_at >= ?")
+                conditions.append("o.created_at >= %s")
                 params.append(start_date)
 
             if end_date:
-                conditions.append("o.created_at <= ?")
+                conditions.append("o.created_at <= %s")
                 params.append(end_date)
 
             where_clause = " AND ".join(conditions) if conditions else "1=1"
@@ -165,12 +167,12 @@ class CopyOrdersOps:
 
             # 查询总数
             cursor.execute(f"""
-                SELECT COUNT(*) FROM copy_trading_orders o
+                SELECT COUNT(*) as count FROM copy_trading_orders o
                 WHERE {where_clause}
             """, params)
-            total_count = cursor.fetchone()[0]
+            total_count = cursor.fetchone()['count']
 
-            # 查询数据（关联地址名称）
+            # 查询数据
             cursor.execute(f"""
                 SELECT
                     o.*,
@@ -179,7 +181,7 @@ class CopyOrdersOps:
                 LEFT JOIN copy_trading_addresses cta ON o.target_address = cta.address
                 WHERE {where_clause}
                 ORDER BY o.{sort_by} {order_direction}
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """, params + [limit, offset])
 
             return [dict(row) for row in cursor.fetchall()], total_count
@@ -200,13 +202,13 @@ class CopyOrdersOps:
             统计数据
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
-            conditions = [f"created_at >= datetime('now', '-{days} days')"]
+            conditions = [f"created_at >= NOW() - INTERVAL '{days} days'"]
             params = []
 
             if target_address:
-                conditions.append("target_address = ?")
+                conditions.append("target_address = %s")
                 params.append(target_address)
 
             where_clause = " AND ".join(conditions)
@@ -220,7 +222,7 @@ class CopyOrdersOps:
                     SUM(CASE WHEN action = 'open' THEN 1 ELSE 0 END) as opens,
                     SUM(CASE WHEN action = 'close' THEN 1 ELSE 0 END) as closes,
                     SUM(pnl) as total_pnl,
-                    SUM(CASE WHEN is_dry_run = 0 THEN 1 ELSE 0 END) as real_orders
+                    SUM(CASE WHEN is_dry_run = FALSE THEN 1 ELSE 0 END) as real_orders
                 FROM copy_trading_orders
                 WHERE {where_clause}
             """, params)
@@ -253,7 +255,7 @@ class CopyOrdersOps:
                 FROM copy_trading_orders o
                 LEFT JOIN copy_trading_addresses cta ON o.target_address = cta.address
                 WHERE {where_clause.replace('target_address', 'o.target_address').replace('created_at', 'o.created_at')}
-                GROUP BY o.target_address
+                GROUP BY o.target_address, cta.name
                 ORDER BY count DESC
             """, params)
 
@@ -275,6 +277,6 @@ class CopyOrdersOps:
             cursor = conn.cursor()
             cursor.execute("""
                 DELETE FROM copy_trading_orders
-                WHERE created_at < datetime('now', ?)
-            """, (f'-{days} days',))
+                WHERE created_at < NOW() - INTERVAL '%s days'
+            """, (days,))
             return cursor.rowcount

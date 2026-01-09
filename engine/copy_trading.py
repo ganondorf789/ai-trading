@@ -76,7 +76,6 @@ class MultiTargetCopyTradingBot:
     def __init__(
         self,
         client: HyperliquidClient,
-        db_path: str = "data/traders.db",
         check_interval: float = 10.0,
         reload_interval: float = 60.0
     ):
@@ -85,12 +84,10 @@ class MultiTargetCopyTradingBot:
 
         Args:
             client: Hyperliquid 客户端（需要已初始化钱包）
-            db_path: 数据库路径
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
         """
         self.client = client
-        self.db_path = db_path
         self.check_interval = check_interval
         self.reload_interval = reload_interval
 
@@ -121,7 +118,7 @@ class MultiTargetCopyTradingBot:
         """延迟加载数据库"""
         if self._db is None:
             from database import TraderDatabase
-            self._db = TraderDatabase(self.db_path)
+            self._db = TraderDatabase()
         return self._db
 
     def set_on_copy(self, callback: Callable[[str, str, str, float], None]):

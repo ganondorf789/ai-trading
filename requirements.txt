@@ -1,6 +1,10 @@
 # Hyperliquid SDK
 hyperliquid-python-sdk>=0.8.0
 
+# Database
+psycopg2-binary>=2.9.9
+redis>=5.0.0
+
 # HTTP requests
 httpx>=0.25.0
 aiohttp>=3.9.0

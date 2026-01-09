@@ -1,5 +1,5 @@
 """
-数据库迁移和表结构初始化
+数据库迁移和表结构初始化 (PostgreSQL)
 """
 from loguru import logger
 
@@ -15,7 +15,7 @@ class DatabaseMigrations:
             # 创建交易者指标表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trader_metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL,
                     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -99,7 +99,7 @@ class DatabaseMigrations:
                 )
             """)
 
-            # 创建唯一索引（address 作为主键）
+            # 创建唯一索引
             cursor.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_trader_address_unique
                 ON trader_metrics(address)
@@ -120,7 +120,7 @@ class DatabaseMigrations:
             # 创建筛选会话表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS screening_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
                     -- 配置
@@ -152,7 +152,7 @@ class DatabaseMigrations:
             # 创建交易记录表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trader_fills (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL,
 
                     -- 交易信息
@@ -160,7 +160,7 @@ class DatabaseMigrations:
                     side TEXT,
                     px REAL,
                     sz REAL,
-                    time INTEGER,
+                    time BIGINT,
                     trade_time TIMESTAMP,
 
                     -- 盈亏
@@ -172,11 +172,11 @@ class DatabaseMigrations:
                     dir TEXT,
                     crossed BOOLEAN,
                     fee REAL DEFAULT 0.0,
-                    oid INTEGER,
-                    tid INTEGER,
-                    trade_type TEXT,  -- 交易类型: open_long/add_long/close_long/open_short/add_short/close_short
+                    oid BIGINT,
+                    tid BIGINT,
+                    trade_type TEXT,
 
-                    -- 唯一约束：同一地址同一时间同一交易
+                    -- 唯一约束
                     UNIQUE(address, time, oid)
                 )
             """)
@@ -190,9 +190,6 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_fills_time
                 ON trader_fills(trade_time DESC)
             """)
-
-            # 迁移：为现有表添加新列（如果不存在）
-            self._migrate_add_new_columns(cursor)
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_fills_coin
                 ON trader_fills(coin)
@@ -202,13 +199,10 @@ class DatabaseMigrations:
                 ON trader_fills(trade_type)
             """)
 
-            # 为 trader_fills 表添加 trade_type 列（如果不存在）
-            self._migrate_fills_add_trade_type(cursor)
-
-            # 创建持仓表（存储 assetPositions）
+            # 创建持仓表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS asset_positions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -225,15 +219,20 @@ class DatabaseMigrations:
                     leverage_type TEXT,
                     leverage_value INTEGER DEFAULT 1,
 
-                    -- 唯一约束：同一地址同一币种只保留一条记录
+                    -- 唯一约束
                     UNIQUE(address, coin)
                 )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_address
+                ON asset_positions(address)
             """)
 
             # 创建AI分析表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trader_ai_analysis (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL UNIQUE,
                     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -257,7 +256,7 @@ class DatabaseMigrations:
             # 创建分组对比分析表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS group_comparison_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
                     -- 配置
@@ -278,21 +277,21 @@ class DatabaseMigrations:
 
                     -- 结果
                     finalists_count INTEGER DEFAULT 0,
-                    final_ranking TEXT,  -- JSON: 最终排名分析
+                    final_ranking TEXT,
                     ai_provider TEXT DEFAULT 'default',
-                    status TEXT DEFAULT 'pending'  -- pending/running/completed/failed
+                    status TEXT DEFAULT 'pending'
                 )
             """)
 
             # 创建分组对比详情表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS group_comparison_groups (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     session_id INTEGER NOT NULL,
                     round_num INTEGER DEFAULT 1,
                     group_num INTEGER NOT NULL,
                     total_in_group INTEGER DEFAULT 0,
-                    analysis TEXT,  -- AI 分析结果
+                    analysis TEXT,
 
                     FOREIGN KEY (session_id) REFERENCES group_comparison_sessions(id)
                 )
@@ -301,7 +300,7 @@ class DatabaseMigrations:
             # 创建分组对比交易员表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS group_comparison_traders (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     session_id INTEGER NOT NULL,
                     group_id INTEGER,
                     address TEXT NOT NULL,
@@ -318,9 +317,9 @@ class DatabaseMigrations:
 
                     -- 分组对比结果
                     is_finalist BOOLEAN DEFAULT FALSE,
-                    final_rank INTEGER,  -- 最终排名
-                    eliminated_round INTEGER,  -- 在第几轮被淘汰（NULL表示未被淘汰）
-                    elimination_reason TEXT,  -- 淘汰原因
+                    final_rank INTEGER,
+                    eliminated_round INTEGER,
+                    elimination_reason TEXT,
 
                     FOREIGN KEY (session_id) REFERENCES group_comparison_sessions(id),
                     FOREIGN KEY (group_id) REFERENCES group_comparison_groups(id)
@@ -336,60 +335,10 @@ class DatabaseMigrations:
                 ON group_comparison_traders(session_id, is_finalist)
             """)
 
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_positions_address
-                ON asset_positions(address)
-            """)
-
-            # 数据库迁移：为已存在的表添加缺失的列
-            migrations = [
-                # group_comparison_sessions 表
-                ('group_comparison_sessions', 'rating', 'TEXT DEFAULT "S"'),
-                ('group_comparison_sessions', 'total_traders', 'INTEGER DEFAULT 0'),
-                ('group_comparison_sessions', 'group_size', 'INTEGER DEFAULT 6'),
-                ('group_comparison_sessions', 'top_per_group', 'INTEGER DEFAULT 2'),
-                ('group_comparison_sessions', 'final_size', 'INTEGER DEFAULT 6'),
-                ('group_comparison_sessions', 'num_groups', 'INTEGER DEFAULT 0'),
-                ('group_comparison_sessions', 'total_rounds', 'INTEGER DEFAULT 0'),
-                ('group_comparison_sessions', 'min_sharpe', 'REAL'),
-                ('group_comparison_sessions', 'min_sortino', 'REAL'),
-                ('group_comparison_sessions', 'max_drawdown', 'REAL'),
-                ('group_comparison_sessions', 'min_win_rate', 'REAL'),
-                ('group_comparison_sessions', 'max_win_rate', 'REAL'),
-                ('group_comparison_sessions', 'finalists_count', 'INTEGER DEFAULT 0'),
-                ('group_comparison_sessions', 'final_ranking', 'TEXT'),
-                ('group_comparison_sessions', 'ai_provider', 'TEXT DEFAULT "default"'),
-                ('group_comparison_sessions', 'status', 'TEXT DEFAULT "pending"'),
-                # group_comparison_traders 表
-                ('group_comparison_traders', 'session_id', 'INTEGER'),
-                ('group_comparison_traders', 'group_id', 'INTEGER'),
-                ('group_comparison_traders', 'address', 'TEXT'),
-                ('group_comparison_traders', 'overall_score', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'win_rate', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'total_pnl', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'recent_7d_pnl', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'max_drawdown', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'sharpe_ratio', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'sortino_ratio', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'profit_factor', 'REAL DEFAULT 0.0'),
-                ('group_comparison_traders', 'is_finalist', 'BOOLEAN DEFAULT FALSE'),
-                ('group_comparison_traders', 'final_rank', 'INTEGER'),
-                ('group_comparison_traders', 'eliminated_round', 'INTEGER'),
-                ('group_comparison_traders', 'elimination_reason', 'TEXT'),
-                # group_comparison_groups 表
-                ('group_comparison_groups', 'session_id', 'INTEGER'),
-                ('group_comparison_groups', 'round_num', 'INTEGER DEFAULT 1'),
-                ('group_comparison_groups', 'group_num', 'INTEGER'),
-                ('group_comparison_groups', 'total_in_group', 'INTEGER DEFAULT 0'),
-                ('group_comparison_groups', 'analysis', 'TEXT'),
-            ]
-            for table, column, column_def in migrations:
-                self._migrate_add_column_if_not_exists(cursor, table, column, column_def)
-
             # 创建跟单分组表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_trading_groups (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
                     description TEXT DEFAULT '',
                     color TEXT DEFAULT '#3B82F6',
@@ -400,14 +349,15 @@ class DatabaseMigrations:
 
             # 插入默认分组
             cursor.execute("""
-                INSERT OR IGNORE INTO copy_trading_groups (id, name, description, color)
+                INSERT INTO copy_trading_groups (id, name, description, color)
                 VALUES (1, '默认分组', '未分组的跟单地址', '#6B7280')
+                ON CONFLICT (id) DO NOTHING
             """)
 
             # 创建跟单地址表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_trading_addresses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL UNIQUE,
                     name TEXT DEFAULT '',
                     group_id INTEGER DEFAULT NULL,
@@ -451,13 +401,10 @@ class DatabaseMigrations:
                 ON copy_trading_addresses(group_id)
             """)
 
-            # 迁移：为 copy_trading_addresses 添加新列
-            self._migrate_copy_trading_addresses(cursor)
-
             # 创建 Hyperliquid 币种表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS hyperliquid_coins (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
                     sz_decimals INTEGER DEFAULT 0,
                     max_leverage INTEGER DEFAULT 1,
@@ -470,7 +417,7 @@ class DatabaseMigrations:
             # 创建跟单订单记录表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_trading_orders (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     target_address TEXT NOT NULL,
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
@@ -507,10 +454,10 @@ class DatabaseMigrations:
                 ON copy_trading_orders(status)
             """)
 
-            # 创建跟单仓位状态表（用于重启后恢复状态）
+            # 创建跟单仓位状态表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_position_states (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     target_address TEXT NOT NULL,
                     symbol TEXT NOT NULL,
                     size REAL NOT NULL,
@@ -520,7 +467,7 @@ class DatabaseMigrations:
                     notional REAL,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-                    -- 唯一约束：每个目标每个币种只保留一条
+                    -- 唯一约束
                     UNIQUE(target_address, symbol)
                 )
             """)
@@ -530,85 +477,4 @@ class DatabaseMigrations:
                 ON copy_position_states(target_address)
             """)
 
-    def _migrate_add_new_columns(self, cursor):
-        """为现有表添加新列（数据库迁移）"""
-        # 获取现有列
-        cursor.execute("PRAGMA table_info(trader_metrics)")
-        existing_columns = {row[1] for row in cursor.fetchall()}
-
-        # 需要添加的新列及其默认值
-        new_columns = [
-            ("avg_trade_price", "REAL DEFAULT 0.0"),
-            ("avg_trade_size", "REAL DEFAULT 0.0"),
-            ("max_single_win", "REAL DEFAULT 0.0"),
-            ("max_single_loss", "REAL DEFAULT 0.0"),
-            ("max_consecutive_wins", "INTEGER DEFAULT 0"),
-            ("max_consecutive_losses", "INTEGER DEFAULT 0"),
-            ("avg_win_amount", "REAL DEFAULT 0.0"),
-            ("avg_loss_amount", "REAL DEFAULT 0.0"),
-            ("unique_symbols", "INTEGER DEFAULT 0"),
-            ("favorite_symbol", "TEXT DEFAULT ''"),
-            ("recent_7d_pnl", "REAL DEFAULT 0.0"),
-            ("recent_7d_win_rate", "REAL DEFAULT 0.0"),
-            ("long_short_ratio", "REAL DEFAULT 0.0"),
-            ("calmar_ratio", "REAL DEFAULT 0.0"),
-            ("daily_pnl", "REAL DEFAULT 0.0"),
-            ("weekly_pnl", "REAL DEFAULT 0.0"),
-            ("monthly_pnl", "REAL DEFAULT 0.0"),
-            ("daily_roi", "REAL DEFAULT 0.0"),
-            ("weekly_roi", "REAL DEFAULT 0.0"),
-            ("monthly_roi", "REAL DEFAULT 0.0"),
-            ("daily_volume", "REAL DEFAULT 0.0"),
-            ("weekly_volume", "REAL DEFAULT 0.0"),
-            ("monthly_volume", "REAL DEFAULT 0.0"),
-            # 新增风险指标 (v2.0)
-            ("max_drawdown_abs", "REAL DEFAULT 0.0"),
-            ("var_95", "REAL DEFAULT 0.0"),
-            ("var_99", "REAL DEFAULT 0.0"),
-            ("cvar_95", "REAL DEFAULT 0.0"),
-            ("max_leverage", "REAL DEFAULT 1.0"),
-        ]
-
-        # 添加缺失的列
-        for col_name, col_type in new_columns:
-            if col_name not in existing_columns:
-                try:
-                    cursor.execute(
-                        f"ALTER TABLE trader_metrics ADD COLUMN {col_name} {col_type}"
-                    )
-                    logger.debug(f"已添加新列: {col_name}")
-                except Exception as e:
-                    logger.debug(f"添加列 {col_name} 失败（可能已存在）: {e}")
-
-    def _migrate_fills_add_trade_type(self, cursor):
-        """为 trader_fills 表添加 trade_type 列（数据库迁移）"""
-        cursor.execute("PRAGMA table_info(trader_fills)")
-        existing_columns = {row[1] for row in cursor.fetchall()}
-
-        if "trade_type" not in existing_columns:
-            try:
-                cursor.execute(
-                    "ALTER TABLE trader_fills ADD COLUMN trade_type TEXT"
-                )
-                logger.debug("已为 trader_fills 添加 trade_type 列")
-            except Exception as e:
-                logger.debug(f"添加 trade_type 列失败（可能已存在）: {e}")
-
-    def _migrate_copy_trading_addresses(self, cursor):
-        """为 copy_trading_addresses 表添加新列（数据库迁移）"""
-        cursor.execute("PRAGMA table_info(copy_trading_addresses)")
-        existing_columns = {row[1] for row in cursor.fetchall()}
-
-        new_columns = [
-            ("sync_position", "BOOLEAN DEFAULT TRUE"),
-        ]
-
-        for col_name, col_type in new_columns:
-            if col_name not in existing_columns:
-                try:
-                    cursor.execute(
-                        f"ALTER TABLE copy_trading_addresses ADD COLUMN {col_name} {col_type}"
-                    )
-                    logger.debug(f"已为 copy_trading_addresses 添加 {col_name} 列")
-                except Exception as e:
-                    logger.debug(f"添加 {col_name} 列失败（可能已存在）: {e}")
+            logger.info("PostgreSQL 数据库表结构初始化完成")

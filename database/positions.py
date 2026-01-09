@@ -1,11 +1,13 @@
 """
-持仓管理模块
+持仓管理模块 (PostgreSQL)
 """
 from typing import List, Dict
 import pendulum
+from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
+from .cache import cache
 
 
 class PositionsOps:
@@ -13,11 +15,11 @@ class PositionsOps:
 
     def save_positions(self, address: str, positions: List[Dict]) -> int:
         """
-        保存交易者的当前持仓（来自 assetPositions）
+        保存交易者的当前持仓
 
         Args:
             address: 交易者地址
-            positions: 持仓列表（从 user_state['assetPositions'] 获取）
+            positions: 持仓列表
 
         Returns:
             保存的记录数
@@ -27,9 +29,10 @@ class PositionsOps:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "DELETE FROM asset_positions WHERE address = ?",
+                    "DELETE FROM asset_positions WHERE address = %s",
                     (address,)
                 )
+            cache.delete(f"positions:{address}")
             return 0
 
         saved_count = 0
@@ -38,7 +41,7 @@ class PositionsOps:
 
             # 先删除旧持仓
             cursor.execute(
-                "DELETE FROM asset_positions WHERE address = ?",
+                "DELETE FROM asset_positions WHERE address = %s",
                 (address,)
             )
 
@@ -58,7 +61,7 @@ class PositionsOps:
                             unrealized_pnl, return_on_equity, liquidation_px,
                             margin_used, max_leverage, leverage_type, leverage_value,
                             updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         address,
                         pos.get('coin'),
@@ -78,6 +81,8 @@ class PositionsOps:
                 except Exception as e:
                     logger.debug(f"保存持仓记录失败: {e}")
 
+        # 使缓存失效
+        cache.delete(f"positions:{address}")
         return saved_count
 
     def get_positions(self, address: str) -> List[Dict]:
@@ -90,18 +95,29 @@ class PositionsOps:
         Returns:
             持仓列表
         """
+        # 尝试从缓存获取
+        cached = cache.get_positions(address)
+        if cached:
+            return cached
+
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM asset_positions
-                WHERE address = ?
+                WHERE address = %s
                 ORDER BY ABS(position_value) DESC
             """, (address,))
-            return [dict(row) for row in cursor.fetchall()]
+            result = [dict(row) for row in cursor.fetchall()]
+
+            # 缓存结果
+            if result:
+                cache.cache_positions(address, result)
+
+            return result
 
     def save_copied_positions(self, target_address: str, positions: Dict[str, Dict]) -> int:
         """
-        保存目标交易者的已跟单仓位状态（用于重启后恢复）
+        保存目标交易者的已跟单仓位状态
 
         Args:
             target_address: 目标地址
@@ -115,7 +131,7 @@ class PositionsOps:
 
             # 先删除该目标的旧状态
             cursor.execute(
-                "DELETE FROM copy_position_states WHERE target_address = ?",
+                "DELETE FROM copy_position_states WHERE target_address = %s",
                 (target_address,)
             )
 
@@ -126,7 +142,7 @@ class PositionsOps:
                         INSERT INTO copy_position_states (
                             target_address, symbol, size, side, entry_price,
                             leverage, notional, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         target_address,
                         symbol,
@@ -145,7 +161,7 @@ class PositionsOps:
 
     def get_copied_positions(self, target_address: str) -> Dict[str, Dict]:
         """
-        获取目标交易者的已跟单仓位状态（用于重启后恢复）
+        获取目标交易者的已跟单仓位状态
 
         Args:
             target_address: 目标地址
@@ -154,10 +170,10 @@ class PositionsOps:
             已跟单仓位 {symbol: position_data}
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM copy_position_states
-                WHERE target_address = ?
+                WHERE target_address = %s
             """, (target_address,))
 
             positions = {}
@@ -187,7 +203,7 @@ class PositionsOps:
             cursor = conn.cursor()
             cursor.execute("""
                 DELETE FROM copy_position_states
-                WHERE target_address = ? AND symbol = ?
+                WHERE target_address = %s AND symbol = %s
             """, (target_address, symbol))
             return cursor.rowcount > 0
 
@@ -204,7 +220,7 @@ class PositionsOps:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM copy_position_states WHERE target_address = ?",
+                "DELETE FROM copy_position_states WHERE target_address = %s",
                 (target_address,)
             )
             return cursor.rowcount

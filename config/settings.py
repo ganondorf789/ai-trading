@@ -8,6 +8,42 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class PostgreSQLSettings(BaseSettings):
+    """PostgreSQL 数据库配置"""
+    model_config = SettingsConfigDict(env_prefix='POSTGRES_')
+
+    host: str = Field(default="localhost", description="PostgreSQL 主机地址")
+    port: int = Field(default=5432, description="PostgreSQL 端口")
+    user: str = Field(default="trading", description="数据库用户名")
+    password: str = Field(default="trading123", description="数据库密码")
+    database: str = Field(default="auto_trading", description="数据库名称")
+    min_connections: int = Field(default=2, description="连接池最小连接数")
+    max_connections: int = Field(default=10, description="连接池最大连接数")
+
+    @property
+    def dsn(self) -> str:
+        """获取数据库连接字符串"""
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+
+
+class RedisSettings(BaseSettings):
+    """Redis 配置"""
+    model_config = SettingsConfigDict(env_prefix='REDIS_')
+
+    host: str = Field(default="localhost", description="Redis 主机地址")
+    port: int = Field(default=6379, description="Redis 端口")
+    password: str = Field(default="", description="Redis 密码")
+    db: int = Field(default=0, description="Redis 数据库编号")
+    max_connections: int = Field(default=10, description="连接池最大连接数")
+
+    @property
+    def url(self) -> str:
+        """获取 Redis 连接字符串"""
+        if self.password:
+            return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
+        return f"redis://{self.host}:{self.port}/{self.db}"
+
+
 class HyperliquidSettings(BaseSettings):
     """Hyperliquid API 配置"""
     model_config = SettingsConfigDict(env_prefix='HYPERLIQUID_')
@@ -170,6 +206,8 @@ class Settings:
             load_dotenv(env_file)
         
         # 初始化各配置模块
+        self.postgres = PostgreSQLSettings()
+        self.redis = RedisSettings()
         self.hyperliquid = HyperliquidSettings()
         self.birdeye = BirdeyeSettings()
         self.feishu = FeishuSettings()

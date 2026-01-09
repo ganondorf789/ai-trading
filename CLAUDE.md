@@ -79,14 +79,43 @@ python screen_traders.py -f addresses.json --min-win-rate 0.55 --min-pnl 1000
 
 ## Configuration
 
-Environment variables (`.env`):
+### Database Setup
+
+The project uses PostgreSQL for data storage and Redis for caching. Start the services using Docker:
+
+```bash
+# Start PostgreSQL and Redis
+docker-compose up -d
+
+# Check service status
+docker-compose ps
 ```
+
+### Environment Variables (`.env`):
+
+```
+# PostgreSQL
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=trading
+POSTGRES_PASSWORD=trading123
+POSTGRES_DATABASE=auto_trading
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Trading APIs
 HYPERLIQUID_PRIVATE_KEY=...    # Required for live trading
 BIRDEYE_API_KEY=...            # Required for Solana historical data
 TESTNET_MODE=True              # Use testnet by default
+
+# AI Models (optional)
+AI_MODEL_DEFAULT_PROVIDER=zhipu
+AI_MODEL_ZHIPU_API_KEY=...
 ```
 
-Settings classes use `pydantic-settings` with environment variable prefixes (`HYPERLIQUID_`, `BIRDEYE_`).
+Settings classes use `pydantic-settings` with environment variable prefixes (`POSTGRES_`, `REDIS_`, `HYPERLIQUID_`, `BIRDEYE_`).
 
 ## Creating Custom Strategies
 

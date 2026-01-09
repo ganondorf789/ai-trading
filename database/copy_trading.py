@@ -1,9 +1,10 @@
 """
-跟单地址和分组管理模块
+跟单地址和分组管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Optional
 import pendulum
 import json
+from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
@@ -22,7 +23,7 @@ class CopyTradingOps:
             分组列表，包含每个分组的地址数量
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT g.*, COUNT(a.id) as address_count
                 FROM copy_trading_groups g
@@ -49,8 +50,8 @@ class CopyTradingOps:
                 # 更新
                 cursor.execute("""
                     UPDATE copy_trading_groups
-                    SET name = ?, description = ?, color = ?, sort_order = ?
-                    WHERE id = ?
+                    SET name = %s, description = %s, color = %s, sort_order = %s
+                    WHERE id = %s
                 """, (
                     data.get('name'),
                     data.get('description', ''),
@@ -63,14 +64,15 @@ class CopyTradingOps:
                 # 插入
                 cursor.execute("""
                     INSERT INTO copy_trading_groups (name, description, color, sort_order)
-                    VALUES (?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
                 """, (
                     data.get('name'),
                     data.get('description', ''),
                     data.get('color', '#3B82F6'),
                     data.get('sort_order', 0)
                 ))
-                return cursor.lastrowid
+                return cursor.fetchone()[0]
 
     def delete_copy_trading_group(self, group_id: int) -> bool:
         """
@@ -91,10 +93,10 @@ class CopyTradingOps:
             cursor.execute("""
                 UPDATE copy_trading_addresses
                 SET group_id = 1
-                WHERE group_id = ?
+                WHERE group_id = %s
             """, (group_id,))
             # 删除分组
-            cursor.execute("DELETE FROM copy_trading_groups WHERE id = ?", (group_id,))
+            cursor.execute("DELETE FROM copy_trading_groups WHERE id = %s", (group_id,))
             return cursor.rowcount > 0
 
     # ==================== 跟单地址管理 ====================
@@ -110,7 +112,7 @@ class CopyTradingOps:
         sort_order: str = 'desc'
     ) -> tuple[List[Dict], int]:
         """
-        获取跟单地址列表（带关联的交易者指标）
+        获取跟单地址列表
 
         Args:
             group_id: 分组ID筛选
@@ -125,22 +127,22 @@ class CopyTradingOps:
             (地址列表, 总数量)
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 构建查询条件
             conditions = []
             params = []
 
             if group_id is not None:
-                conditions.append("cta.group_id = ?")
+                conditions.append("cta.group_id = %s")
                 params.append(group_id)
 
             if is_enabled is not None:
-                conditions.append("cta.is_enabled = ?")
+                conditions.append("cta.is_enabled = %s")
                 params.append(is_enabled)
 
             if search:
-                conditions.append("(cta.address LIKE ? OR cta.name LIKE ?)")
+                conditions.append("(cta.address ILIKE %s OR cta.name ILIKE %s)")
                 params.extend([f'%{search}%', f'%{search}%'])
 
             where_clause = " AND ".join(conditions) if conditions else "1=1"
@@ -162,12 +164,12 @@ class CopyTradingOps:
 
             # 查询总数
             cursor.execute(f"""
-                SELECT COUNT(*) FROM copy_trading_addresses cta
+                SELECT COUNT(*) as count FROM copy_trading_addresses cta
                 WHERE {where_clause}
             """, params)
-            total_count = cursor.fetchone()[0]
+            total_count = cursor.fetchone()['count']
 
-            # 查询数据（关联 trader_metrics 和 groups）
+            # 查询数据
             cursor.execute(f"""
                 SELECT
                     cta.*,
@@ -187,7 +189,7 @@ class CopyTradingOps:
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address
                 WHERE {where_clause}
                 ORDER BY {sort_column} {order_direction}
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
             """, params + [limit, offset])
 
             results = []
@@ -217,7 +219,7 @@ class CopyTradingOps:
             地址详情
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT
                     cta.*,
@@ -235,7 +237,7 @@ class CopyTradingOps:
                 FROM copy_trading_addresses cta
                 LEFT JOIN copy_trading_groups g ON cta.group_id = g.id
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address
-                WHERE cta.address = ?
+                WHERE cta.address = %s
             """, (address,))
             row = cursor.fetchone()
             if not row:
@@ -281,26 +283,27 @@ class CopyTradingOps:
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
                     check_interval, dry_run, sync_position, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
-                    name = excluded.name,
-                    group_id = excluded.group_id,
-                    is_enabled = excluded.is_enabled,
-                    copy_ratio = excluded.copy_ratio,
-                    max_position_size_usd = excluded.max_position_size_usd,
-                    min_position_size_usd = excluded.min_position_size_usd,
-                    copy_leverage = excluded.copy_leverage,
-                    max_leverage = excluded.max_leverage,
-                    default_leverage = excluded.default_leverage,
-                    max_total_positions = excluded.max_total_positions,
-                    max_daily_trades = excluded.max_daily_trades,
-                    slippage = excluded.slippage,
-                    symbols_whitelist = excluded.symbols_whitelist,
-                    symbols_blacklist = excluded.symbols_blacklist,
-                    check_interval = excluded.check_interval,
-                    dry_run = excluded.dry_run,
-                    sync_position = excluded.sync_position,
-                    updated_at = excluded.updated_at
+                    name = EXCLUDED.name,
+                    group_id = EXCLUDED.group_id,
+                    is_enabled = EXCLUDED.is_enabled,
+                    copy_ratio = EXCLUDED.copy_ratio,
+                    max_position_size_usd = EXCLUDED.max_position_size_usd,
+                    min_position_size_usd = EXCLUDED.min_position_size_usd,
+                    copy_leverage = EXCLUDED.copy_leverage,
+                    max_leverage = EXCLUDED.max_leverage,
+                    default_leverage = EXCLUDED.default_leverage,
+                    max_total_positions = EXCLUDED.max_total_positions,
+                    max_daily_trades = EXCLUDED.max_daily_trades,
+                    slippage = EXCLUDED.slippage,
+                    symbols_whitelist = EXCLUDED.symbols_whitelist,
+                    symbols_blacklist = EXCLUDED.symbols_blacklist,
+                    check_interval = EXCLUDED.check_interval,
+                    dry_run = EXCLUDED.dry_run,
+                    sync_position = EXCLUDED.sync_position,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id
             """, (
                 data.get('address'),
                 data.get('name', ''),
@@ -323,7 +326,8 @@ class CopyTradingOps:
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
-            return cursor.lastrowid
+            result = cursor.fetchone()
+            return result[0] if result else None
 
     def delete_copy_trading_address(self, address: str) -> bool:
         """
@@ -338,7 +342,7 @@ class CopyTradingOps:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM copy_trading_addresses WHERE address = ?",
+                "DELETE FROM copy_trading_addresses WHERE address = %s",
                 (address,)
             )
             return cursor.rowcount > 0
@@ -358,8 +362,8 @@ class CopyTradingOps:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE copy_trading_addresses
-                SET is_enabled = ?, updated_at = ?
-                WHERE address = ?
+                SET is_enabled = %s, updated_at = %s
+                WHERE address = %s
             """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
             return cursor.rowcount > 0
 
@@ -378,8 +382,8 @@ class CopyTradingOps:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE copy_trading_addresses
-                SET sync_position = ?, updated_at = ?
-                WHERE address = ?
+                SET sync_position = %s, updated_at = %s
+                WHERE address = %s
             """, (sync_position, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
             return cursor.rowcount > 0
 
@@ -405,31 +409,31 @@ class CopyTradingOps:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            placeholders = ','.join(['?' for _ in addresses])
+            now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
 
             if action == 'enable':
-                cursor.execute(f"""
+                cursor.execute("""
                     UPDATE copy_trading_addresses
-                    SET is_enabled = 1, updated_at = ?
-                    WHERE address IN ({placeholders})
-                """, [pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
+                    SET is_enabled = TRUE, updated_at = %s
+                    WHERE address = ANY(%s)
+                """, (now, addresses))
             elif action == 'disable':
-                cursor.execute(f"""
+                cursor.execute("""
                     UPDATE copy_trading_addresses
-                    SET is_enabled = 0, updated_at = ?
-                    WHERE address IN ({placeholders})
-                """, [pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
+                    SET is_enabled = FALSE, updated_at = %s
+                    WHERE address = ANY(%s)
+                """, (now, addresses))
             elif action == 'delete':
-                cursor.execute(f"""
+                cursor.execute("""
                     DELETE FROM copy_trading_addresses
-                    WHERE address IN ({placeholders})
-                """, addresses)
+                    WHERE address = ANY(%s)
+                """, (addresses,))
             elif action == 'move_group' and group_id is not None:
-                cursor.execute(f"""
+                cursor.execute("""
                     UPDATE copy_trading_addresses
-                    SET group_id = ?, updated_at = ?
-                    WHERE address IN ({placeholders})
-                """, [group_id, pendulum.now(SHANGHAI_TZ).to_iso8601_string()] + addresses)
+                    SET group_id = %s, updated_at = %s
+                    WHERE address = ANY(%s)
+                """, (group_id, now, addresses))
             else:
                 return 0
 
@@ -437,23 +441,22 @@ class CopyTradingOps:
 
     def get_enabled_copy_addresses(self) -> List[Dict]:
         """
-        获取所有启用的跟单地址及其完整配置（供跟单引擎使用）
+        获取所有启用的跟单地址及其完整配置
 
         Returns:
             启用的跟单地址配置列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM copy_trading_addresses
-                WHERE is_enabled = 1
+                WHERE is_enabled = TRUE
                 ORDER BY updated_at DESC
             """)
 
             results = []
             for row in cursor.fetchall():
                 item = dict(row)
-                # 解析 JSON 字段
                 try:
                     item['symbols_whitelist'] = json.loads(item.get('symbols_whitelist') or '[]')
                 except:
@@ -477,10 +480,10 @@ class CopyTradingOps:
             配置字典，如果不存在则返回 None
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM copy_trading_addresses
-                WHERE address = ?
+                WHERE address = %s
             """, (address,))
 
             row = cursor.fetchone()
@@ -488,7 +491,6 @@ class CopyTradingOps:
                 return None
 
             item = dict(row)
-            # 解析 JSON 字段
             try:
                 item['symbols_whitelist'] = json.loads(item.get('symbols_whitelist') or '[]')
             except:

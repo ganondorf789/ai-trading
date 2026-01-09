@@ -1,7 +1,8 @@
 """
-AI 分析管理模块
+AI 分析管理模块 (PostgreSQL)
 """
 from typing import Dict, Any, Optional
+from psycopg2 import extras
 from loguru import logger
 
 
@@ -20,7 +21,7 @@ class AIAnalysisOps:
             cursor = conn.cursor()
 
             cursor.execute("""
-                INSERT OR REPLACE INTO trader_ai_analysis (
+                INSERT INTO trader_ai_analysis (
                     address,
                     rating,
                     overall_score,
@@ -32,7 +33,18 @@ class AIAnalysisOps:
                     copy_trading_advice,
                     improvement_suggestions,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT(address) DO UPDATE SET
+                    rating = EXCLUDED.rating,
+                    overall_score = EXCLUDED.overall_score,
+                    analysis_text = EXCLUDED.analysis_text,
+                    summary = EXCLUDED.summary,
+                    strengths = EXCLUDED.strengths,
+                    risks = EXCLUDED.risks,
+                    trading_style = EXCLUDED.trading_style,
+                    copy_trading_advice = EXCLUDED.copy_trading_advice,
+                    improvement_suggestions = EXCLUDED.improvement_suggestions,
+                    updated_at = CURRENT_TIMESTAMP
             """, (
                 address,
                 analysis.get('rating'),
@@ -59,11 +71,11 @@ class AIAnalysisOps:
             AI分析结果字典，如果不存在返回None
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT *
                 FROM trader_ai_analysis
-                WHERE address = ?
+                WHERE address = %s
             """, (address,))
 
             row = cursor.fetchone()

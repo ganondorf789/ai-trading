@@ -1,9 +1,10 @@
 """
-交易记录管理模块
+交易记录管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Any
 import pendulum
 import re
+from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
@@ -44,12 +45,12 @@ class TraderFillsOps:
                         INSERT INTO trader_fills (
                             address, coin, side, px, sz, time, trade_time,
                             closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT(address, time, oid) DO UPDATE SET
-                            closed_pnl = excluded.closed_pnl,
-                            px = excluded.px,
-                            sz = excluded.sz,
-                            trade_type = excluded.trade_type
+                            closed_pnl = EXCLUDED.closed_pnl,
+                            px = EXCLUDED.px,
+                            sz = EXCLUDED.sz,
+                            trade_type = EXCLUDED.trade_type
                     """, (
                         address,
                         fill.get('coin'),
@@ -112,9 +113,9 @@ class TraderFillsOps:
             address: 交易者地址
             limit: 返回数量
             coin: 筛选特定币种
-            trade_type: 交易类型筛选 (open_long/add_long/close_long/open_short/add_short/close_short)
+            trade_type: 交易类型筛选
             pnl_filter: 盈亏筛选 (profit/loss)
-            sort_by: 排序字段 (time, coin, side, px, sz, closed_pnl, fee)
+            sort_by: 排序字段
             sort_order: 排序方向 (asc, desc)
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
@@ -139,21 +140,21 @@ class TraderFillsOps:
         order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
 
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 构建查询条件
-            conditions = ["address = ?"]
+            conditions = ["address = %s"]
             params = [address]
 
             if coin:
-                conditions.append("coin = ?")
+                conditions.append("coin = %s")
                 params.append(coin)
 
             # 交易类型筛选
             if trade_type:
                 valid_trade_types = {'open_long', 'add_long', 'close_long', 'open_short', 'add_short', 'close_short'}
                 if trade_type in valid_trade_types:
-                    conditions.append("trade_type = ?")
+                    conditions.append("trade_type = %s")
                     params.append(trade_type)
 
             # 盈亏筛选
@@ -162,19 +163,17 @@ class TraderFillsOps:
             elif pnl_filter == 'loss':
                 conditions.append("closed_pnl < 0")
 
-            # 日期范围筛选（将 YYYY-MM-DD 转换为时间戳毫秒）
+            # 日期范围筛选
             if start_date:
-                # 将开始日期转换为当天 00:00:00 的时间戳（毫秒）
                 start_dt = pendulum.parse(start_date, tz=SHANGHAI_TZ).start_of('day')
                 start_timestamp_ms = int(start_dt.timestamp() * 1000)
-                conditions.append("time >= ?")
+                conditions.append("time >= %s")
                 params.append(start_timestamp_ms)
 
             if end_date:
-                # 将结束日期转换为当天 23:59:59.999 的时间戳（毫秒）
                 end_dt = pendulum.parse(end_date, tz=SHANGHAI_TZ).end_of('day')
                 end_timestamp_ms = int(end_dt.timestamp() * 1000)
-                conditions.append("time <= ?")
+                conditions.append("time <= %s")
                 params.append(end_timestamp_ms)
 
             where_clause = " AND ".join(conditions)
@@ -184,7 +183,7 @@ class TraderFillsOps:
                 SELECT * FROM trader_fills
                 WHERE {where_clause}
                 ORDER BY {sort_column} {order_direction}
-                LIMIT ?
+                LIMIT %s
             """, params)
 
             return [dict(row) for row in cursor.fetchall()]
@@ -200,11 +199,11 @@ class TraderFillsOps:
             币种列表（按交易次数降序排列）
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT coin, COUNT(*) as count
                 FROM trader_fills
-                WHERE address = ?
+                WHERE address = %s
                 GROUP BY coin
                 ORDER BY count DESC
             """, (address,))
@@ -220,26 +219,26 @@ class TraderFillsOps:
 
         Args:
             address: 交易者地址
-            exclude_user_perps: 是否排除用户创建的永续合约（@数字格式）
+            exclude_user_perps: 是否排除用户创建的永续合约
 
         Returns:
             汇总信息字典
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 总交易数
             cursor.execute(
-                "SELECT COUNT(*) FROM trader_fills WHERE address = ?",
+                "SELECT COUNT(*) as count FROM trader_fills WHERE address = %s",
                 (address,)
             )
-            total_fills = cursor.fetchone()[0]
+            total_fills = cursor.fetchone()['count']
 
             # 按币种统计
             cursor.execute("""
                 SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
                 FROM trader_fills
-                WHERE address = ?
+                WHERE address = %s
                 GROUP BY coin
                 ORDER BY count DESC
             """, (address,))
@@ -253,15 +252,15 @@ class TraderFillsOps:
                     continue
                 by_coin.append(dict(row))
 
-            # 总盈亏（基于过滤后的币种）
+            # 总盈亏
             if exclude_user_perps:
                 total_pnl = sum(c['total_pnl'] or 0 for c in by_coin)
             else:
                 cursor.execute(
-                    "SELECT SUM(closed_pnl) FROM trader_fills WHERE address = ?",
+                    "SELECT SUM(closed_pnl) as total FROM trader_fills WHERE address = %s",
                     (address,)
                 )
-                total_pnl = cursor.fetchone()[0] or 0
+                total_pnl = cursor.fetchone()['total'] or 0
 
             return {
                 'total_fills': total_fills,
@@ -282,7 +281,7 @@ class TraderFillsOps:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM trader_fills WHERE address = ?",
+                "DELETE FROM trader_fills WHERE address = %s",
                 (address,)
             )
             return cursor.rowcount
@@ -296,20 +295,20 @@ class TraderFillsOps:
         获取所有币种及其统计信息
 
         Args:
-            exclude_user_perps: 是否排除用户创建的永续合约（@数字格式）
+            exclude_user_perps: 是否排除用户创建的永续合约
             address: 可选，筛选特定交易者的币种
 
         Returns:
             币种列表，包含交易次数和总盈亏
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             if address:
                 cursor.execute("""
                     SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
                     FROM trader_fills
-                    WHERE address = ?
+                    WHERE address = %s
                     GROUP BY coin
                     ORDER BY count DESC
                 """, (address,))
@@ -322,14 +321,12 @@ class TraderFillsOps:
                 """)
 
             results = []
-            # 匹配 @数字 格式的用户创建永续合约
             user_perp_pattern = re.compile(r'^@\d+$')
 
             for row in cursor.fetchall():
                 coin = row['coin']
                 is_user_perp = bool(user_perp_pattern.match(coin)) if coin else False
 
-                # 如果需要排除用户永续合约且当前是用户永续合约，则跳过
                 if exclude_user_perps and is_user_perp:
                     continue
 

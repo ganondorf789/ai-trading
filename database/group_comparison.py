@@ -1,9 +1,10 @@
 """
-分组对比分析管理模块
+分组对比分析管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Any, Optional
 import pendulum
 import json
+from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
@@ -31,7 +32,8 @@ class GroupComparisonOps:
                     num_groups, total_rounds,
                     min_sharpe, min_sortino, max_drawdown, min_win_rate, max_win_rate,
                     finalists_count, final_ranking, ai_provider, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 data.get('rating', 'S'),
                 data.get('total_traders', 0),
@@ -52,7 +54,7 @@ class GroupComparisonOps:
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
-            session_id = cursor.lastrowid
+            session_id = cursor.fetchone()[0]
             logger.info(f"保存分组对比会话: session_id={session_id}")
             return session_id
 
@@ -83,10 +85,11 @@ class GroupComparisonOps:
             cursor.execute("""
                 INSERT INTO group_comparison_groups (
                     session_id, round_num, group_num, total_in_group, analysis
-                ) VALUES (?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
             """, (session_id, round_num, group_num, total_in_group, analysis))
 
-            return cursor.lastrowid
+            return cursor.fetchone()[0]
 
     def save_group_comparison_traders(
         self,
@@ -120,7 +123,7 @@ class GroupComparisonOps:
                         overall_score, win_rate, total_pnl, recent_7d_pnl,
                         max_drawdown, sharpe_ratio, sortino_ratio, profit_factor,
                         is_finalist, final_rank, eliminated_round, elimination_reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     session_id,
                     group_id,
@@ -167,7 +170,7 @@ class GroupComparisonOps:
 
             for key, value in updates.items():
                 if key in ('is_finalist', 'final_rank', 'elimination_reason', 'group_id'):
-                    set_clauses.append(f"{key} = ?")
+                    set_clauses.append(f"{key} = %s")
                     params.append(value)
 
             if not set_clauses:
@@ -177,7 +180,7 @@ class GroupComparisonOps:
             cursor.execute(f"""
                 UPDATE group_comparison_traders
                 SET {', '.join(set_clauses)}
-                WHERE session_id = ? AND address = ?
+                WHERE session_id = %s AND address = %s
             """, params)
 
             return cursor.rowcount > 0
@@ -198,20 +201,20 @@ class GroupComparisonOps:
             会话列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             if status:
                 cursor.execute("""
                     SELECT * FROM group_comparison_sessions
-                    WHERE status = ?
+                    WHERE status = %s
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT %s
                 """, (status, limit))
             else:
                 cursor.execute("""
                     SELECT * FROM group_comparison_sessions
                     ORDER BY created_at DESC
-                    LIMIT ?
+                    LIMIT %s
                 """, (limit,))
 
             results = []
@@ -237,12 +240,12 @@ class GroupComparisonOps:
             会话详情
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 获取会话基本信息
             cursor.execute("""
                 SELECT * FROM group_comparison_sessions
-                WHERE id = ?
+                WHERE id = %s
             """, (session_id,))
 
             row = cursor.fetchone()
@@ -259,7 +262,7 @@ class GroupComparisonOps:
             # 获取分组信息
             cursor.execute("""
                 SELECT * FROM group_comparison_groups
-                WHERE session_id = ?
+                WHERE session_id = %s
                 ORDER BY group_num
             """, (session_id,))
             session['groups'] = [dict(r) for r in cursor.fetchall()]
@@ -267,7 +270,7 @@ class GroupComparisonOps:
             # 获取交易员信息
             cursor.execute("""
                 SELECT * FROM group_comparison_traders
-                WHERE session_id = ?
+                WHERE session_id = %s
                 ORDER BY is_finalist DESC, final_rank ASC, overall_score DESC
             """, (session_id,))
             session['traders'] = [dict(r) for r in cursor.fetchall()]
@@ -275,7 +278,7 @@ class GroupComparisonOps:
             # 获取晋级者
             cursor.execute("""
                 SELECT * FROM group_comparison_traders
-                WHERE session_id = ? AND is_finalist = 1
+                WHERE session_id = %s AND is_finalist = TRUE
                 ORDER BY final_rank ASC, overall_score DESC
             """, (session_id,))
             session['finalists'] = [dict(r) for r in cursor.fetchall()]
@@ -307,7 +310,7 @@ class GroupComparisonOps:
                 if key in ('status', 'finalists_count', 'final_ranking', 'ai_provider'):
                     if key == 'final_ranking' and isinstance(value, (dict, list)):
                         value = json.dumps(value, ensure_ascii=False)
-                    set_clauses.append(f"{key} = ?")
+                    set_clauses.append(f"{key} = %s")
                     params.append(value)
 
             if not set_clauses:
@@ -317,7 +320,7 @@ class GroupComparisonOps:
             cursor.execute(f"""
                 UPDATE group_comparison_sessions
                 SET {', '.join(set_clauses)}
-                WHERE id = ?
+                WHERE id = %s
             """, params)
 
             return cursor.rowcount > 0

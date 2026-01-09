@@ -1,11 +1,13 @@
 """
-Hyperliquid 币种管理模块
+Hyperliquid 币种管理模块 (PostgreSQL)
 """
 from typing import List, Dict
 import pendulum
+from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
+from .cache import cache
 
 
 class CoinsOps:
@@ -33,13 +35,13 @@ class CoinsOps:
                     cursor.execute("""
                         INSERT INTO hyperliquid_coins (
                             name, sz_decimals, max_leverage, only_isolated, is_active, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
                         ON CONFLICT(name) DO UPDATE SET
-                            sz_decimals = excluded.sz_decimals,
-                            max_leverage = excluded.max_leverage,
-                            only_isolated = excluded.only_isolated,
-                            is_active = excluded.is_active,
-                            updated_at = excluded.updated_at
+                            sz_decimals = EXCLUDED.sz_decimals,
+                            max_leverage = EXCLUDED.max_leverage,
+                            only_isolated = EXCLUDED.only_isolated,
+                            is_active = EXCLUDED.is_active,
+                            updated_at = EXCLUDED.updated_at
                     """, (
                         coin.get('name'),
                         coin.get('szDecimals', 0),
@@ -51,6 +53,9 @@ class CoinsOps:
                     saved_count += 1
                 except Exception as e:
                     logger.debug(f"保存币种记录失败: {e}")
+
+            # 使缓存失效
+            cache.delete("coins:all")
 
             return saved_count
 
@@ -64,13 +69,19 @@ class CoinsOps:
         Returns:
             币种列表
         """
+        # 尝试从缓存获取
+        if active_only:
+            cached = cache.get_coins()
+            if cached:
+                return cached
+
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             if active_only:
                 cursor.execute("""
                     SELECT * FROM hyperliquid_coins
-                    WHERE is_active = 1
+                    WHERE is_active = TRUE
                     ORDER BY name
                 """)
             else:
@@ -79,7 +90,13 @@ class CoinsOps:
                     ORDER BY name
                 """)
 
-            return [dict(row) for row in cursor.fetchall()]
+            result = [dict(row) for row in cursor.fetchall()]
+
+            # 缓存结果
+            if active_only and result:
+                cache.cache_coins(result)
+
+            return result
 
     def get_hyperliquid_coin_names(self) -> List[str]:
         """
@@ -89,10 +106,10 @@ class CoinsOps:
             币种名称列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT name FROM hyperliquid_coins
-                WHERE is_active = 1
+                WHERE is_active = TRUE
                 ORDER BY name
             """)
             return [row['name'] for row in cursor.fetchall()]

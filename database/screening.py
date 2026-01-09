@@ -1,7 +1,8 @@
 """
-筛选会话管理模块
+筛选会话管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Any
+from psycopg2 import extras
 from loguru import logger
 
 
@@ -34,7 +35,8 @@ class ScreeningOps:
                     lookback_days, min_total_trades, min_win_rate,
                     min_profit_factor, min_total_pnl, max_drawdown,
                     total_analyzed, qualified_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 config.get('lookback_days', 30),
                 config.get('min_total_trades', 10),
@@ -46,17 +48,17 @@ class ScreeningOps:
                 len(traders)
             ))
 
-            session_id = cursor.lastrowid
+            session_id = cursor.fetchone()[0]
 
             # 保存交易者并关联到会话
             for rank, trader in enumerate(traders, 1):
-                # 保存交易者（复用 save_trader 的逻辑）
+                # 保存交易者
                 trader_id = self.save_trader(trader)
 
                 # 关联到会话
                 cursor.execute("""
                     INSERT INTO session_traders (session_id, trader_id, rank)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                 """, (session_id, trader_id, rank))
 
             logger.info(f"筛选会话已保存: session_id={session_id}, traders={len(traders)}")
@@ -73,12 +75,12 @@ class ScreeningOps:
             交易者记录列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT tm.*, st.rank
                 FROM trader_metrics tm
                 JOIN session_traders st ON tm.id = st.trader_id
-                WHERE st.session_id = ?
+                WHERE st.session_id = %s
                 ORDER BY st.rank
             """, (session_id,))
             return [dict(row) for row in cursor.fetchall()]
@@ -94,10 +96,10 @@ class ScreeningOps:
             会话记录列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM screening_sessions
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
             """, (limit,))
             return [dict(row) for row in cursor.fetchall()]

@@ -1,11 +1,13 @@
 """
-交易者指标管理模块
+交易者指标管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Optional, Any
 import pendulum
+from psycopg2 import extras
 from loguru import logger
 
 from screener import TraderMetrics, SHANGHAI_TZ
+from .cache import cache
 
 
 class TraderMetricsOps:
@@ -155,68 +157,75 @@ class TraderMetricsOps:
                     daily_pnl, weekly_pnl, monthly_pnl,
                     daily_roi, weekly_roi, monthly_roi,
                     daily_volume, weekly_volume, monthly_volume
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
-                    analyzed_at = excluded.analyzed_at,
-                    total_trades = excluded.total_trades,
-                    winning_trades = excluded.winning_trades,
-                    losing_trades = excluded.losing_trades,
-                    total_pnl = excluded.total_pnl,
-                    realized_pnl = excluded.realized_pnl,
-                    unrealized_pnl = excluded.unrealized_pnl,
-                    total_volume = excluded.total_volume,
-                    roi = excluded.roi,
-                    avg_profit_per_trade = excluded.avg_profit_per_trade,
-                    win_rate = excluded.win_rate,
-                    profit_factor = excluded.profit_factor,
-                    max_drawdown = excluded.max_drawdown,
-                    max_drawdown_abs = excluded.max_drawdown_abs,
-                    sharpe_ratio = excluded.sharpe_ratio,
-                    sortino_ratio = excluded.sortino_ratio,
-                    calmar_ratio = excluded.calmar_ratio,
-                    var_95 = excluded.var_95,
-                    var_99 = excluded.var_99,
-                    cvar_95 = excluded.cvar_95,
-                    avg_holding_time_hours = excluded.avg_holding_time_hours,
-                    trade_frequency_per_day = excluded.trade_frequency_per_day,
-                    avg_leverage = excluded.avg_leverage,
-                    max_leverage = excluded.max_leverage,
-                    active_days = excluded.active_days,
-                    last_trade_time = excluded.last_trade_time,
-                    first_trade_time = excluded.first_trade_time,
-                    current_positions = excluded.current_positions,
-                    current_equity = excluded.current_equity,
-                    overall_score = excluded.overall_score,
-                    rating = excluded.rating,
-                    profitability_score = excluded.profitability_score,
-                    risk_score = excluded.risk_score,
-                    consistency_score = excluded.consistency_score,
-                    activity_score = excluded.activity_score,
-                    avg_trade_price = excluded.avg_trade_price,
-                    avg_trade_size = excluded.avg_trade_size,
-                    max_single_win = excluded.max_single_win,
-                    max_single_loss = excluded.max_single_loss,
-                    max_consecutive_wins = excluded.max_consecutive_wins,
-                    max_consecutive_losses = excluded.max_consecutive_losses,
-                    avg_win_amount = excluded.avg_win_amount,
-                    avg_loss_amount = excluded.avg_loss_amount,
-                    unique_symbols = excluded.unique_symbols,
-                    favorite_symbol = excluded.favorite_symbol,
-                    recent_7d_pnl = excluded.recent_7d_pnl,
-                    recent_7d_win_rate = excluded.recent_7d_win_rate,
-                    long_short_ratio = excluded.long_short_ratio,
-                    daily_pnl = excluded.daily_pnl,
-                    weekly_pnl = excluded.weekly_pnl,
-                    monthly_pnl = excluded.monthly_pnl,
-                    daily_roi = excluded.daily_roi,
-                    weekly_roi = excluded.weekly_roi,
-                    monthly_roi = excluded.monthly_roi,
-                    daily_volume = excluded.daily_volume,
-                    weekly_volume = excluded.weekly_volume,
-                    monthly_volume = excluded.monthly_volume
+                    analyzed_at = EXCLUDED.analyzed_at,
+                    total_trades = EXCLUDED.total_trades,
+                    winning_trades = EXCLUDED.winning_trades,
+                    losing_trades = EXCLUDED.losing_trades,
+                    total_pnl = EXCLUDED.total_pnl,
+                    realized_pnl = EXCLUDED.realized_pnl,
+                    unrealized_pnl = EXCLUDED.unrealized_pnl,
+                    total_volume = EXCLUDED.total_volume,
+                    roi = EXCLUDED.roi,
+                    avg_profit_per_trade = EXCLUDED.avg_profit_per_trade,
+                    win_rate = EXCLUDED.win_rate,
+                    profit_factor = EXCLUDED.profit_factor,
+                    max_drawdown = EXCLUDED.max_drawdown,
+                    max_drawdown_abs = EXCLUDED.max_drawdown_abs,
+                    sharpe_ratio = EXCLUDED.sharpe_ratio,
+                    sortino_ratio = EXCLUDED.sortino_ratio,
+                    calmar_ratio = EXCLUDED.calmar_ratio,
+                    var_95 = EXCLUDED.var_95,
+                    var_99 = EXCLUDED.var_99,
+                    cvar_95 = EXCLUDED.cvar_95,
+                    avg_holding_time_hours = EXCLUDED.avg_holding_time_hours,
+                    trade_frequency_per_day = EXCLUDED.trade_frequency_per_day,
+                    avg_leverage = EXCLUDED.avg_leverage,
+                    max_leverage = EXCLUDED.max_leverage,
+                    active_days = EXCLUDED.active_days,
+                    last_trade_time = EXCLUDED.last_trade_time,
+                    first_trade_time = EXCLUDED.first_trade_time,
+                    current_positions = EXCLUDED.current_positions,
+                    current_equity = EXCLUDED.current_equity,
+                    overall_score = EXCLUDED.overall_score,
+                    rating = EXCLUDED.rating,
+                    profitability_score = EXCLUDED.profitability_score,
+                    risk_score = EXCLUDED.risk_score,
+                    consistency_score = EXCLUDED.consistency_score,
+                    activity_score = EXCLUDED.activity_score,
+                    avg_trade_price = EXCLUDED.avg_trade_price,
+                    avg_trade_size = EXCLUDED.avg_trade_size,
+                    max_single_win = EXCLUDED.max_single_win,
+                    max_single_loss = EXCLUDED.max_single_loss,
+                    max_consecutive_wins = EXCLUDED.max_consecutive_wins,
+                    max_consecutive_losses = EXCLUDED.max_consecutive_losses,
+                    avg_win_amount = EXCLUDED.avg_win_amount,
+                    avg_loss_amount = EXCLUDED.avg_loss_amount,
+                    unique_symbols = EXCLUDED.unique_symbols,
+                    favorite_symbol = EXCLUDED.favorite_symbol,
+                    recent_7d_pnl = EXCLUDED.recent_7d_pnl,
+                    recent_7d_win_rate = EXCLUDED.recent_7d_win_rate,
+                    long_short_ratio = EXCLUDED.long_short_ratio,
+                    daily_pnl = EXCLUDED.daily_pnl,
+                    weekly_pnl = EXCLUDED.weekly_pnl,
+                    monthly_pnl = EXCLUDED.monthly_pnl,
+                    daily_roi = EXCLUDED.daily_roi,
+                    weekly_roi = EXCLUDED.weekly_roi,
+                    monthly_roi = EXCLUDED.monthly_roi,
+                    daily_volume = EXCLUDED.daily_volume,
+                    weekly_volume = EXCLUDED.weekly_volume,
+                    monthly_volume = EXCLUDED.monthly_volume
+                RETURNING id
             """, self._prepare_metrics_values(metrics))
 
-            return cursor.lastrowid
+            result = cursor.fetchone()
+            trader_id = result[0] if result else None
+
+            # 使缓存失效
+            cache.invalidate_trader(metrics.address)
+
+            return trader_id
 
     def save_traders(self, traders: List[TraderMetrics]) -> List[int]:
         """
@@ -245,16 +254,27 @@ class TraderMetricsOps:
         Returns:
             交易者记录字典
         """
+        # 尝试从缓存获取
+        cached = cache.get_trader(address)
+        if cached:
+            return cached
+
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM trader_metrics
-                WHERE address = ?
+                WHERE address = %s
                 ORDER BY analyzed_at DESC
                 LIMIT 1
             """, (address,))
             row = cursor.fetchone()
-            return dict(row) if row else None
+            result = dict(row) if row else None
+
+            # 缓存结果
+            if result:
+                cache.cache_trader(address, result)
+
+            return result
 
     def get_top_traders(
         self,
@@ -272,22 +292,25 @@ class TraderMetricsOps:
             交易者记录列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            query = "SELECT * FROM trader_metrics WHERE 1=1"
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             if min_rating:
                 rating_order = {'S': 1, 'A': 2, 'B': 3, 'C': 4, 'D': 5, 'F': 6}
                 min_order = rating_order.get(min_rating, 6)
                 valid_ratings = [r for r, o in rating_order.items() if o <= min_order]
-                placeholders = ','.join(['?' for _ in valid_ratings])
-                query += f" AND rating IN ({placeholders})"
-                cursor.execute(
-                    query + " ORDER BY overall_score DESC LIMIT ?",
-                    valid_ratings + [limit]
-                )
+                
+                cursor.execute("""
+                    SELECT * FROM trader_metrics
+                    WHERE rating = ANY(%s)
+                    ORDER BY overall_score DESC
+                    LIMIT %s
+                """, (valid_ratings, limit))
             else:
-                cursor.execute(query + " ORDER BY overall_score DESC LIMIT ?", (limit,))
+                cursor.execute("""
+                    SELECT * FROM trader_metrics
+                    ORDER BY overall_score DESC
+                    LIMIT %s
+                """, (limit,))
 
             return [dict(row) for row in cursor.fetchall()]
 
@@ -302,10 +325,10 @@ class TraderMetricsOps:
             交易者记录列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM trader_metrics
-                WHERE rating = ?
+                WHERE rating = %s
                 ORDER BY overall_score DESC
             """, (rating,))
             return [dict(row) for row in cursor.fetchall()]
@@ -314,22 +337,20 @@ class TraderMetricsOps:
         """
         获取交易者的分析记录
 
-        注意：由于使用 address 作为唯一键，每个地址只保留最新一条记录
-
         Args:
             address: 交易者地址
-            limit: 返回数量（当前每个地址只有一条记录）
+            limit: 返回数量
 
         Returns:
             记录列表
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM trader_metrics
-                WHERE address = ?
+                WHERE address = %s
                 ORDER BY analyzed_at DESC
-                LIMIT ?
+                LIMIT %s
             """, (address, limit))
             return [dict(row) for row in cursor.fetchall()]
 
@@ -341,15 +362,15 @@ class TraderMetricsOps:
             统计信息字典
         """
         with self._get_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 总记录数
-            cursor.execute("SELECT COUNT(*) FROM trader_metrics")
-            total_records = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) as count FROM trader_metrics")
+            total_records = cursor.fetchone()['count']
 
             # 唯一地址数
-            cursor.execute("SELECT COUNT(DISTINCT address) FROM trader_metrics")
-            unique_addresses = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT address) as count FROM trader_metrics")
+            unique_addresses = cursor.fetchone()['count']
 
             # 各评级分布
             cursor.execute("""
@@ -360,8 +381,8 @@ class TraderMetricsOps:
             rating_distribution = {row['rating']: row['count'] for row in cursor.fetchall()}
 
             # 会话数
-            cursor.execute("SELECT COUNT(*) FROM screening_sessions")
-            total_sessions = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) as count FROM screening_sessions")
+            total_sessions = cursor.fetchone()['count']
 
             return {
                 'total_records': total_records,
@@ -381,7 +402,7 @@ class TraderMetricsOps:
             cursor = conn.cursor()
             cursor.execute("""
                 DELETE FROM trader_metrics
-                WHERE analyzed_at < datetime('now', ?)
-            """, (f'-{days} days',))
+                WHERE analyzed_at < NOW() - INTERVAL '%s days'
+            """, (days,))
             deleted = cursor.rowcount
             logger.info(f"已删除 {deleted} 条旧记录")
