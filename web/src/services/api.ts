@@ -291,6 +291,21 @@ export const copyTradingOrdersApi = {
     days?: number;
     sort_by?: string;
     sort_order?: 'asc' | 'desc';
+    // 指标筛选
+    min_win_rate?: number;
+    max_win_rate?: number;
+    min_profit_factor?: number;
+    max_profit_factor?: number;
+    min_pnl?: number;
+    max_pnl?: number;
+    min_drawdown?: number;
+    max_drawdown?: number;
+    min_sharpe?: number;
+    max_sharpe?: number;
+    min_trades?: number;
+    max_trades?: number;
+    min_score?: number;
+    max_score?: number;
   }) =>
     api.get<any, ApiResponse<CopyTradingOrder[]>>('/copy-trading/orders', { params }),
 
@@ -342,7 +357,27 @@ export const copyPositionStatesApi = {
 
 export const traderPositionsApi = {
   // 获取所有跟单交易员的当前持仓
-  getPositions: (params?: { enabled_only?: boolean; group_id?: number }) =>
+  getPositions: (params?: {
+    enabled_only?: boolean;
+    group_id?: number;
+    // 指标筛选
+    min_win_rate?: number;
+    max_win_rate?: number;
+    min_profit_factor?: number;
+    max_profit_factor?: number;
+    min_pnl?: number;
+    max_pnl?: number;
+    min_drawdown?: number;
+    max_drawdown?: number;
+    min_sharpe?: number;
+    max_sharpe?: number;
+    min_sortino?: number;
+    max_sortino?: number;
+    min_trades?: number;
+    max_trades?: number;
+    min_score?: number;
+    max_score?: number;
+  }) =>
     api.get<any, ApiResponse<TraderPosition[]> & { stats?: TraderPositionsStats }>('/copy-trading/trader-positions', { params }),
 
   // 刷新所有跟单交易员的持仓数据

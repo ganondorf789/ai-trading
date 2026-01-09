@@ -424,6 +424,20 @@ def get_copy_trading_orders():
         - days: int, 最近N天，默认7
         - sort_by: str, 排序字段，默认created_at
         - sort_order: str, 排序方向，默认desc
+        - min_win_rate: float, 最小胜率
+        - max_win_rate: float, 最大胜率
+        - min_profit_factor: float, 最小盈亏比
+        - max_profit_factor: float, 最大盈亏比
+        - min_pnl: float, 最小总盈亏
+        - max_pnl: float, 最大总盈亏
+        - min_drawdown: float, 最小回撤
+        - max_drawdown: float, 最大回撤
+        - min_sharpe: float, 最小Sharpe
+        - max_sharpe: float, 最大Sharpe
+        - min_trades: int, 最小交易数
+        - max_trades: int, 最大交易数
+        - min_score: float, 最小综合评分
+        - max_score: float, 最大综合评分
     """
     try:
         page = int(request.args.get('page', 1))
@@ -437,11 +451,46 @@ def get_copy_trading_orders():
         sort_by = request.args.get('sort_by', 'created_at')
         sort_order = request.args.get('sort_order', 'desc')
 
+        # 指标筛选参数
+        min_win_rate = request.args.get('min_win_rate', type=float)
+        max_win_rate = request.args.get('max_win_rate', type=float)
+        min_profit_factor = request.args.get('min_profit_factor', type=float)
+        max_profit_factor = request.args.get('max_profit_factor', type=float)
+        min_pnl = request.args.get('min_pnl', type=float)
+        max_pnl = request.args.get('max_pnl', type=float)
+        min_drawdown = request.args.get('min_drawdown', type=float)
+        max_drawdown = request.args.get('max_drawdown', type=float)
+        min_sharpe = request.args.get('min_sharpe', type=float)
+        max_sharpe = request.args.get('max_sharpe', type=float)
+        min_trades = request.args.get('min_trades', type=int)
+        max_trades = request.args.get('max_trades', type=int)
+        min_score = request.args.get('min_score', type=float)
+        max_score = request.args.get('max_score', type=float)
+
         # 处理 is_dry_run 参数
         if is_dry_run is not None:
             is_dry_run = is_dry_run.lower() == 'true'
 
         offset = (page - 1) * limit
+
+        # 构建指标筛选条件
+        metric_filters = {
+            'min_win_rate': min_win_rate,
+            'max_win_rate': max_win_rate,
+            'min_profit_factor': min_profit_factor,
+            'max_profit_factor': max_profit_factor,
+            'min_pnl': min_pnl,
+            'max_pnl': max_pnl,
+            'min_drawdown': min_drawdown,
+            'max_drawdown': max_drawdown,
+            'min_sharpe': min_sharpe,
+            'max_sharpe': max_sharpe,
+            'min_trades': min_trades,
+            'max_trades': max_trades,
+            'min_score': min_score,
+            'max_score': max_score,
+        }
+
         orders, total_count = db.get_copy_orders(
             target_address=target_address,
             symbol=symbol,
@@ -452,7 +501,8 @@ def get_copy_trading_orders():
             limit=limit,
             offset=offset,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
+            metric_filters=metric_filters
         )
 
         total_pages = (total_count + limit - 1) // limit
@@ -746,30 +796,120 @@ def get_all_trader_positions():
     Query Parameters:
         - enabled_only: bool, 是否只显示已启用的跟单地址，默认 true
         - group_id: int, 按分组筛选
+        - min_win_rate: float, 最小胜率
+        - max_win_rate: float, 最大胜率
+        - min_profit_factor: float, 最小盈亏比
+        - max_profit_factor: float, 最大盈亏比
+        - min_pnl: float, 最小总盈亏
+        - max_pnl: float, 最大总盈亏
+        - min_drawdown: float, 最小回撤
+        - max_drawdown: float, 最大回撤
+        - min_sharpe: float, 最小Sharpe
+        - max_sharpe: float, 最大Sharpe
+        - min_sortino: float, 最小Sortino
+        - max_sortino: float, 最大Sortino
+        - min_trades: int, 最小交易数
+        - max_trades: int, 最大交易数
+        - min_score: float, 最小综合评分
+        - max_score: float, 最大综合评分
     """
     try:
+        from psycopg2 import extras as pg_extras
+
         enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
         group_id = request.args.get('group_id', type=int)
 
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
+        # 指标筛选参数
+        min_win_rate = request.args.get('min_win_rate', type=float)
+        max_win_rate = request.args.get('max_win_rate', type=float)
+        min_profit_factor = request.args.get('min_profit_factor', type=float)
+        max_profit_factor = request.args.get('max_profit_factor', type=float)
+        min_pnl = request.args.get('min_pnl', type=float)
+        max_pnl = request.args.get('max_pnl', type=float)
+        min_drawdown = request.args.get('min_drawdown', type=float)
+        max_drawdown = request.args.get('max_drawdown', type=float)
+        min_sharpe = request.args.get('min_sharpe', type=float)
+        max_sharpe = request.args.get('max_sharpe', type=float)
+        min_sortino = request.args.get('min_sortino', type=float)
+        max_sortino = request.args.get('max_sortino', type=float)
+        min_trades = request.args.get('min_trades', type=int)
+        max_trades = request.args.get('max_trades', type=int)
+        min_score = request.args.get('min_score', type=float)
+        max_score = request.args.get('max_score', type=float)
 
-            # 构建跟单地址查询
-            address_query = """
-                SELECT address, name, group_id, is_enabled
-                FROM copy_trading_addresses
-                WHERE 1=1
-            """
+        with db._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
+
+            # 构建跟单地址查询（包含指标筛选）
+            conditions = ["1=1"]
             params = []
 
             if enabled_only:
-                address_query += " AND is_enabled = 1"
+                conditions.append("cta.is_enabled = TRUE")
 
             if group_id is not None:
-                address_query += " AND group_id = ?"
+                conditions.append("cta.group_id = %s")
                 params.append(group_id)
 
-            cursor.execute(address_query, params)
+            # 指标筛选条件
+            if min_win_rate is not None:
+                conditions.append("COALESCE(tm.win_rate, 0) >= %s")
+                params.append(min_win_rate)
+            if max_win_rate is not None:
+                conditions.append("COALESCE(tm.win_rate, 100) <= %s")
+                params.append(max_win_rate)
+            if min_profit_factor is not None:
+                conditions.append("COALESCE(tm.profit_factor, 0) >= %s")
+                params.append(min_profit_factor)
+            if max_profit_factor is not None:
+                conditions.append("COALESCE(tm.profit_factor, 999) <= %s")
+                params.append(max_profit_factor)
+            if min_pnl is not None:
+                conditions.append("COALESCE(tm.total_pnl, 0) >= %s")
+                params.append(min_pnl)
+            if max_pnl is not None:
+                conditions.append("COALESCE(tm.total_pnl, 0) <= %s")
+                params.append(max_pnl)
+            if min_drawdown is not None:
+                conditions.append("COALESCE(tm.max_drawdown, 0) >= %s")
+                params.append(min_drawdown)
+            if max_drawdown is not None:
+                conditions.append("COALESCE(tm.max_drawdown, 100) <= %s")
+                params.append(max_drawdown)
+            if min_sharpe is not None:
+                conditions.append("COALESCE(tm.sharpe_ratio, -999) >= %s")
+                params.append(min_sharpe)
+            if max_sharpe is not None:
+                conditions.append("COALESCE(tm.sharpe_ratio, 999) <= %s")
+                params.append(max_sharpe)
+            if min_sortino is not None:
+                conditions.append("COALESCE(tm.sortino_ratio, -999) >= %s")
+                params.append(min_sortino)
+            if max_sortino is not None:
+                conditions.append("COALESCE(tm.sortino_ratio, 999) <= %s")
+                params.append(max_sortino)
+            if min_trades is not None:
+                conditions.append("COALESCE(tm.total_trades, 0) >= %s")
+                params.append(min_trades)
+            if max_trades is not None:
+                conditions.append("COALESCE(tm.total_trades, 0) <= %s")
+                params.append(max_trades)
+            if min_score is not None:
+                conditions.append("COALESCE(tm.overall_score, 0) >= %s")
+                params.append(min_score)
+            if max_score is not None:
+                conditions.append("COALESCE(tm.overall_score, 100) <= %s")
+                params.append(max_score)
+
+            where_clause = " AND ".join(conditions)
+
+            # 获取符合条件的跟单地址
+            cursor.execute(f"""
+                SELECT cta.address, cta.name, cta.group_id, cta.is_enabled
+                FROM copy_trading_addresses cta
+                LEFT JOIN trader_metrics tm ON cta.address = tm.address
+                WHERE {where_clause}
+            """, params)
             copy_addresses = {row['address']: dict(row) for row in cursor.fetchall()}
 
             if not copy_addresses:
@@ -788,15 +928,15 @@ def get_all_trader_positions():
                 })
 
             # 获取这些地址的持仓
-            placeholders = ','.join(['?' for _ in copy_addresses])
-            cursor.execute(f"""
+            address_list = list(copy_addresses.keys())
+            cursor.execute("""
                 SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
                 LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
-                WHERE ap.address IN ({placeholders})
+                WHERE ap.address = ANY(%s)
                 ORDER BY ABS(ap.position_value) DESC
-            """, list(copy_addresses.keys()))
+            """, (address_list,))
 
             positions = []
             stats = {

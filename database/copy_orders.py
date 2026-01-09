@@ -97,7 +97,8 @@ class CopyOrdersOps:
         limit: int = 100,
         offset: int = 0,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
+        sort_order: str = "desc",
+        metric_filters: Dict = None
     ) -> tuple[List[Dict], int]:
         """
         获取跟单订单列表
@@ -115,6 +116,7 @@ class CopyOrdersOps:
             offset: 偏移量
             sort_by: 排序字段
             sort_order: 排序方向
+            metric_filters: 交易员指标筛选条件
 
         Returns:
             (订单列表, 总数量)
@@ -157,6 +159,66 @@ class CopyOrdersOps:
                 conditions.append("o.created_at <= %s")
                 params.append(end_date)
 
+            # 处理指标筛选
+            need_trader_metrics_join = False
+            if metric_filters:
+                if metric_filters.get('min_win_rate') is not None:
+                    conditions.append("COALESCE(tm.win_rate, 0) >= %s")
+                    params.append(metric_filters['min_win_rate'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_win_rate') is not None:
+                    conditions.append("COALESCE(tm.win_rate, 100) <= %s")
+                    params.append(metric_filters['max_win_rate'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_profit_factor') is not None:
+                    conditions.append("COALESCE(tm.profit_factor, 0) >= %s")
+                    params.append(metric_filters['min_profit_factor'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_profit_factor') is not None:
+                    conditions.append("COALESCE(tm.profit_factor, 999) <= %s")
+                    params.append(metric_filters['max_profit_factor'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_pnl') is not None:
+                    conditions.append("COALESCE(tm.total_pnl, 0) >= %s")
+                    params.append(metric_filters['min_pnl'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_pnl') is not None:
+                    conditions.append("COALESCE(tm.total_pnl, 0) <= %s")
+                    params.append(metric_filters['max_pnl'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_drawdown') is not None:
+                    conditions.append("COALESCE(tm.max_drawdown, 0) >= %s")
+                    params.append(metric_filters['min_drawdown'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_drawdown') is not None:
+                    conditions.append("COALESCE(tm.max_drawdown, 100) <= %s")
+                    params.append(metric_filters['max_drawdown'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_sharpe') is not None:
+                    conditions.append("COALESCE(tm.sharpe_ratio, -999) >= %s")
+                    params.append(metric_filters['min_sharpe'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_sharpe') is not None:
+                    conditions.append("COALESCE(tm.sharpe_ratio, 999) <= %s")
+                    params.append(metric_filters['max_sharpe'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_trades') is not None:
+                    conditions.append("COALESCE(tm.total_trades, 0) >= %s")
+                    params.append(metric_filters['min_trades'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_trades') is not None:
+                    conditions.append("COALESCE(tm.total_trades, 0) <= %s")
+                    params.append(metric_filters['max_trades'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('min_score') is not None:
+                    conditions.append("COALESCE(tm.overall_score, 0) >= %s")
+                    params.append(metric_filters['min_score'])
+                    need_trader_metrics_join = True
+                if metric_filters.get('max_score') is not None:
+                    conditions.append("COALESCE(tm.overall_score, 100) <= %s")
+                    params.append(metric_filters['max_score'])
+                    need_trader_metrics_join = True
+
             where_clause = " AND ".join(conditions) if conditions else "1=1"
 
             # 验证排序字段
@@ -165,9 +227,14 @@ class CopyOrdersOps:
                 sort_by = 'created_at'
             order_direction = 'ASC' if sort_order.lower() == 'asc' else 'DESC'
 
+            # 构建 JOIN 子句
+            trader_metrics_join = "LEFT JOIN trader_metrics tm ON o.target_address = tm.address" if need_trader_metrics_join else ""
+
             # 查询总数
             cursor.execute(f"""
                 SELECT COUNT(*) as count FROM copy_trading_orders o
+                LEFT JOIN copy_trading_addresses cta ON o.target_address = cta.address
+                {trader_metrics_join}
                 WHERE {where_clause}
             """, params)
             total_count = cursor.fetchone()['count']
@@ -179,6 +246,7 @@ class CopyOrdersOps:
                     cta.name as target_name
                 FROM copy_trading_orders o
                 LEFT JOIN copy_trading_addresses cta ON o.target_address = cta.address
+                {trader_metrics_join}
                 WHERE {where_clause}
                 ORDER BY o.{sort_by} {order_direction}
                 LIMIT %s OFFSET %s
