@@ -18,7 +18,7 @@ Hyperliquid 交易者筛选模块
     ```python
     from screener import TraderScreener, ScreenerConfig
     
-    # 创建筛选器（使用默认配置）
+    # 创建筛选器（使用默认配置，自动保存持仓到数据库）
     screener = TraderScreener()
     
     # 或使用自定义配置
@@ -27,9 +27,10 @@ Hyperliquid 交易者筛选模块
     config.filter.min_profit_factor = 1.5
     screener = TraderScreener(config)
     
-    # 分析单个交易者
+    # 分析单个交易者（会自动保存当前持仓到asset_positions表）
     metrics = screener.analyze_trader("0x...")
     print(f"评分: {metrics.overall_score}, 评级: {metrics.rating.value}")
+    print(f"持仓数: {len(metrics.asset_positions)}")
     
     # 批量筛选
     addresses = ["0x...", "0x...", ...]

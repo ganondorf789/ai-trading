@@ -95,6 +95,15 @@ class TraderScreener:
         self._analyzed_traders: Dict[str, TraderMetrics] = {}
         self._failed_addresses: List[str] = []
         
+        # 数据库连接（用于保存持仓）
+        self._db = None
+        try:
+            from database import TraderDatabase
+            self._db = TraderDatabase()
+            logger.debug("数据库连接已建立，将自动保存持仓数据")
+        except Exception as e:
+            logger.warning(f"无法连接数据库，持仓数据将不会保存: {e}")
+        
         api_url = (
             constants.TESTNET_API_URL 
             if self.config.testnet 
@@ -174,6 +183,14 @@ class TraderScreener:
             
             # 计算评分
             metrics = self._scorer.calculate_scores(metrics)
+            
+            # 保存持仓到数据库
+            if self._db and metrics.asset_positions:
+                try:
+                    saved_count = self._db.save_positions(address, metrics.asset_positions)
+                    logger.debug(f"已保存 {saved_count} 个持仓记录到数据库: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
             # 缓存结果
             self._analyzed_traders[address] = metrics
@@ -289,6 +306,14 @@ class TraderScreener:
                     
                     # 计算评分
                     metrics = self._scorer.calculate_scores(metrics)
+                    
+                    # 保存持仓到数据库
+                    if self._db and metrics.asset_positions:
+                        try:
+                            saved_count = self._db.save_positions(address, metrics.asset_positions)
+                            logger.debug(f"已保存 {saved_count} 个持仓记录到数据库: {short_address(address)}")
+                        except Exception as e:
+                            logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
                     
                     # 缓存结果
                     self._analyzed_traders[address] = metrics
