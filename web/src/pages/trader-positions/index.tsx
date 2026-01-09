@@ -18,15 +18,7 @@ import { StatsCards, PositionFilters, PositionsTable, CoinSummary } from "./comp
 
 // 扩展 TraderPosition 类型，包含交易员指标
 interface TraderPositionWithMetrics extends TraderPosition {
-  // 交易员指标（从跟单地址获取）
-  win_rate?: number;
-  trader_pnl?: number;
-  overall_score?: number;
-  total_trades?: number;
-  profit_factor?: number;
-  max_drawdown?: number;
-  sharpe_ratio?: number;
-  sortino_ratio?: number;
+  // 这些字段已经从后端返回，不需要前端合并
 }
 
 export default function TraderPositionsPage() {
@@ -34,7 +26,6 @@ export default function TraderPositionsPage() {
   const [positions, setPositions] = useState<TraderPositionWithMetrics[]>([]);
   const [stats, setStats] = useState<TraderPositionsStats | null>(null);
   const [groups, setGroups] = useState<CopyTradingGroup[]>([]);
-  const [addressMetrics, setAddressMetrics] = useState<Map<string, CopyTradingAddress>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -59,49 +50,70 @@ export default function TraderPositionsPage() {
     }
   }, []);
 
-  // 加载跟单地址及其指标
-  const fetchAddressMetrics = useCallback(async () => {
-    try {
-      const response = await copyTradingApi.getAddresses({ limit: 1000 });
-      if (response.success && response.data) {
-        const metricsMap = new Map<string, CopyTradingAddress>();
-        response.data.forEach(addr => {
-          metricsMap.set(addr.address, addr);
-        });
-        setAddressMetrics(metricsMap);
-      }
-    } catch (error) {
-      console.error("Failed to fetch address metrics:", error);
-    }
-  }, []);
-
   // 加载持仓数据
   const fetchPositions = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = {
-        enabled_only: true,
-      };
+      const params: Record<string, any> = {};
 
       if (groupFilter !== "all") {
         params.group_id = parseInt(groupFilter);
       }
 
+      // 添加指标筛选参数
+      if (metricFilters.minWinRate !== undefined) {
+        params.min_win_rate = metricFilters.minWinRate;
+      }
+      if (metricFilters.maxWinRate !== undefined) {
+        params.max_win_rate = metricFilters.maxWinRate;
+      }
+      if (metricFilters.minProfitFactor !== undefined) {
+        params.min_profit_factor = metricFilters.minProfitFactor;
+      }
+      if (metricFilters.maxProfitFactor !== undefined) {
+        params.max_profit_factor = metricFilters.maxProfitFactor;
+      }
+      if (metricFilters.minPnl !== undefined) {
+        params.min_pnl = metricFilters.minPnl;
+      }
+      if (metricFilters.maxPnl !== undefined) {
+        params.max_pnl = metricFilters.maxPnl;
+      }
+      if (metricFilters.minDrawdown !== undefined) {
+        params.min_drawdown = metricFilters.minDrawdown;
+      }
+      if (metricFilters.maxDrawdown !== undefined) {
+        params.max_drawdown = metricFilters.maxDrawdown;
+      }
+      if (metricFilters.minSharpe !== undefined) {
+        params.min_sharpe = metricFilters.minSharpe;
+      }
+      if (metricFilters.maxSharpe !== undefined) {
+        params.max_sharpe = metricFilters.maxSharpe;
+      }
+      if (metricFilters.minSortino !== undefined) {
+        params.min_sortino = metricFilters.minSortino;
+      }
+      if (metricFilters.maxSortino !== undefined) {
+        params.max_sortino = metricFilters.maxSortino;
+      }
+      if (metricFilters.minTrades !== undefined) {
+        params.min_trades = metricFilters.minTrades;
+      }
+      if (metricFilters.maxTrades !== undefined) {
+        params.max_trades = metricFilters.maxTrades;
+      }
+      if (metricFilters.minScore !== undefined) {
+        params.min_score = metricFilters.minScore;
+      }
+      if (metricFilters.maxScore !== undefined) {
+        params.max_score = metricFilters.maxScore;
+      }
+
       const response = await traderPositionsApi.getPositions(params);
 
       if (response.success && response.data) {
-        // 合并交易员指标到持仓数据
-        const positionsWithMetrics = response.data.map(pos => ({
-          ...pos,
-          win_rate: addressMetrics.get(pos.address)?.win_rate,
-          trader_pnl: addressMetrics.get(pos.address)?.trader_pnl,
-          overall_score: addressMetrics.get(pos.address)?.overall_score,
-          total_trades: addressMetrics.get(pos.address)?.total_trades,
-          profit_factor: addressMetrics.get(pos.address)?.profit_factor,
-          max_drawdown: addressMetrics.get(pos.address)?.max_drawdown,
-          sharpe_ratio: addressMetrics.get(pos.address)?.sharpe_ratio,
-        }));
-        setPositions(positionsWithMetrics);
+        setPositions(response.data);
         if (response.stats) {
           setStats(response.stats);
         }
@@ -116,33 +128,15 @@ export default function TraderPositionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [groupFilter, addressMetrics]);
+  }, [groupFilter, metricFilters]);
 
   // 刷新持仓数据（从 Hyperliquid API）
   const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const response = await traderPositionsApi.refresh(true);
-
-      if (response.success) {
-        addToast({
-          title: "刷新成功",
-          description: response.message || `已刷新 ${response.data?.refreshed_count} 个交易员的持仓`,
-          color: "success",
-        });
-        // 重新加载数据
-        await fetchPositions();
-      }
-    } catch (error) {
-      console.error("Failed to refresh positions:", error);
-      addToast({
-        title: "刷新失败",
-        description: "无法从 Hyperliquid 获取最新数据",
-        color: "danger",
-      });
-    } finally {
-      setRefreshing(false);
-    }
+    addToast({
+      title: "提示",
+      description: "批量刷新功能已禁用，请使用单个交易员刷新",
+      color: "warning",
+    });
   };
 
   // 刷新单个交易员的持仓数据
@@ -213,7 +207,7 @@ export default function TraderPositionsPage() {
     setMetricFilters(emptyMetricFilters);
   };
 
-  // 应用本地筛选（包括指标筛选）
+  // 应用本地筛选
   const filteredPositions = useMemo(() => {
     let filtered = positions;
 
@@ -252,56 +246,8 @@ export default function TraderPositionsPage() {
       filtered = filtered.filter((p) => !p.is_starred);
     }
 
-    // 指标筛选
-    if (metricFilters.minWinRate !== undefined) {
-      filtered = filtered.filter((p) => (p.win_rate ?? 0) >= metricFilters.minWinRate!);
-    }
-    if (metricFilters.maxWinRate !== undefined) {
-      filtered = filtered.filter((p) => (p.win_rate ?? 100) <= metricFilters.maxWinRate!);
-    }
-    if (metricFilters.minProfitFactor !== undefined) {
-      filtered = filtered.filter((p) => (p.profit_factor ?? 0) >= metricFilters.minProfitFactor!);
-    }
-    if (metricFilters.maxProfitFactor !== undefined) {
-      filtered = filtered.filter((p) => (p.profit_factor ?? 999) <= metricFilters.maxProfitFactor!);
-    }
-    if (metricFilters.minPnl !== undefined) {
-      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) >= metricFilters.minPnl!);
-    }
-    if (metricFilters.maxPnl !== undefined) {
-      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) <= metricFilters.maxPnl!);
-    }
-    if (metricFilters.minDrawdown !== undefined) {
-      filtered = filtered.filter((p) => (p.max_drawdown ?? 0) >= metricFilters.minDrawdown!);
-    }
-    if (metricFilters.maxDrawdown !== undefined) {
-      filtered = filtered.filter((p) => (p.max_drawdown ?? 100) <= metricFilters.maxDrawdown!);
-    }
-    if (metricFilters.minSharpe !== undefined) {
-      filtered = filtered.filter((p) => (p.sharpe_ratio ?? -999) >= metricFilters.minSharpe!);
-    }
-    if (metricFilters.maxSharpe !== undefined) {
-      filtered = filtered.filter((p) => (p.sharpe_ratio ?? 999) <= metricFilters.maxSharpe!);
-    }
-    if (metricFilters.minTrades !== undefined) {
-      filtered = filtered.filter((p) => (p.total_trades ?? 0) >= metricFilters.minTrades!);
-    }
-    if (metricFilters.maxTrades !== undefined) {
-      filtered = filtered.filter((p) => (p.total_trades ?? 0) <= metricFilters.maxTrades!);
-    }
-    if (metricFilters.minScore !== undefined) {
-      filtered = filtered.filter((p) => (p.overall_score ?? 0) >= metricFilters.minScore!);
-    }
-    if (metricFilters.maxScore !== undefined) {
-      filtered = filtered.filter((p) => (p.overall_score ?? 100) <= metricFilters.maxScore!);
-    }
-
     return filtered;
-  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, metricFilters]);
-
-  useEffect(() => {
-    fetchAddressMetrics();
-  }, [fetchAddressMetrics]);
+  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter]);
 
   useEffect(() => {
     fetchPositions();
@@ -321,7 +267,7 @@ export default function TraderPositionsPage() {
               交易员持仓
             </h1>
             <p className="text-default-500">
-              查看所有跟单交易员的当前持仓情况
+              查看符合筛选条件的交易员的当前持仓情况
             </p>
           </div>
           <div className="flex gap-2">

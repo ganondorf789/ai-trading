@@ -481,11 +481,13 @@ class CopyOrdersOps:
         metric_filters: Dict = None
     ) -> tuple:
         """
-        获取跟单交易员持仓（带筛选条件）
+        获取交易员持仓（带筛选条件）
+        
+        注意：此函数获取所有符合筛选条件的交易员持仓，而不仅仅是跟单交易员
 
         Args:
-            enabled_only: 是否只显示已启用的地址
-            group_id: 分组ID筛选
+            enabled_only: 已弃用，保留是为了兼容性（默认显示所有交易员）
+            group_id: 分组ID筛选（仅对跟单交易员有效）
             metric_filters: 指标筛选条件
 
         Returns:
@@ -496,13 +498,11 @@ class CopyOrdersOps:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
-            # 构建跟单地址查询条件
+            # 构建交易员筛选条件
             conditions = ["1=1"]
             params = []
 
-            if enabled_only:
-                conditions.append("cta.is_enabled = TRUE")
-
+            # 如果指定了分组，只查找该分组的跟单交易员
             if group_id is not None:
                 conditions.append("cta.group_id = %s")
                 params.append(group_id)
@@ -534,16 +534,27 @@ class CopyOrdersOps:
 
             where_clause = " AND ".join(conditions)
 
-            # 获取符合条件的跟单地址
-            cursor.execute(f"""
-                SELECT cta.address, cta.name, cta.group_id, cta.is_enabled
-                FROM copy_trading_addresses cta
-                LEFT JOIN trader_metrics tm ON cta.address = tm.address
-                WHERE {where_clause}
-            """, params)
-            copy_addresses = {row['address']: dict(row) for row in cursor.fetchall()}
+            # 获取符合条件的交易员地址（从所有交易员中筛选）
+            if group_id is not None:
+                # 如果指定了分组，只从跟单地址中筛选
+                cursor.execute(f"""
+                    SELECT DISTINCT tm.address
+                    FROM trader_metrics tm
+                    INNER JOIN copy_trading_addresses cta ON tm.address = cta.address
+                    WHERE {where_clause}
+                """, params)
+            else:
+                # 否则从所有交易员中筛选
+                cursor.execute(f"""
+                    SELECT DISTINCT tm.address
+                    FROM trader_metrics tm
+                    LEFT JOIN copy_trading_addresses cta ON tm.address = cta.address
+                    WHERE {where_clause}
+                """, params)
+            
+            trader_addresses = {row['address'] for row in cursor.fetchall()}
 
-            if not copy_addresses:
+            if not trader_addresses:
                 return [], {
                     'total_positions': 0,
                     'total_traders': 0,
@@ -557,9 +568,13 @@ class CopyOrdersOps:
                 }
 
             # 获取这些地址的持仓
-            address_list = list(copy_addresses.keys())
+            address_list = list(trader_addresses)
             cursor.execute("""
-                SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color,
+                SELECT ap.*, 
+                       cta.name as trader_name, 
+                       cta.group_id, 
+                       ctg.name as group_name, 
+                       ctg.color as group_color,
                        tm.is_starred
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address

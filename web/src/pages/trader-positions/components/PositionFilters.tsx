@@ -137,7 +137,6 @@ export function PositionFilters({
 
         <Button
           variant="flat"
-          size="sm"
           startContent={<Icon icon={showAdvanced ? "solar:alt-arrow-up-linear" : "solar:alt-arrow-down-linear"} width={16} />}
           onPress={() => setShowAdvanced(!showAdvanced)}
           color={hasActiveMetricFilters ? "primary" : "default"}
