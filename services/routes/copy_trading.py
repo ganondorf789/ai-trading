@@ -930,10 +930,12 @@ def get_all_trader_positions():
             # 获取这些地址的持仓
             address_list = list(copy_addresses.keys())
             cursor.execute("""
-                SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color
+                SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color,
+                       tm.is_starred
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
                 LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
+                LEFT JOIN trader_metrics tm ON ap.address = tm.address
                 WHERE ap.address = ANY(%s)
                 ORDER BY ABS(ap.position_value) DESC
             """, (address_list,))

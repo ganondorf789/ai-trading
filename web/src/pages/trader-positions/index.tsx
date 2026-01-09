@@ -168,6 +168,39 @@ export default function TraderPositionsPage() {
     }
   }, [fetchPositions]);
 
+  // 收藏状态
+  const [starLoadingAddresses, setStarLoadingAddresses] = useState<Set<string>>(new Set());
+
+  // 切换收藏状态
+  const handleToggleStar = useCallback(async (address: string, isStarred: boolean) => {
+    setStarLoadingAddresses(prev => new Set(prev).add(address));
+    try {
+      const response = await traderApi.toggleStar(address, isStarred);
+      if (response.success) {
+        // 更新本地状态
+        setPositions(prev => prev.map(p => 
+          p.address === address ? { ...p, is_starred: isStarred } : p
+        ));
+        addToast({
+          title: isStarred ? "已收藏" : "已取消收藏",
+          color: "success",
+        });
+      }
+    } catch (error) {
+      console.error("Toggle star failed:", error);
+      addToast({
+        title: "操作失败",
+        color: "danger",
+      });
+    } finally {
+      setStarLoadingAddresses(prev => {
+        const next = new Set(prev);
+        next.delete(address);
+        return next;
+      });
+    }
+  }, []);
+
   // 重置所有筛选
   const handleReset = () => {
     setSearch("");
@@ -351,6 +384,8 @@ export default function TraderPositionsPage() {
           positions={filteredPositions} 
           loading={loading} 
           onRefreshTrader={handleRefreshTrader}
+          onToggleStar={handleToggleStar}
+          starLoadingAddresses={starLoadingAddresses}
         />
       </div>
     </DefaultLayout>

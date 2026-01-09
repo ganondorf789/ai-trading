@@ -95,7 +95,10 @@ class DatabaseMigrations:
                     monthly_roi REAL DEFAULT 0.0,
                     daily_volume REAL DEFAULT 0.0,
                     weekly_volume REAL DEFAULT 0.0,
-                    monthly_volume REAL DEFAULT 0.0
+                    monthly_volume REAL DEFAULT 0.0,
+
+                    -- 用户标记
+                    is_starred BOOLEAN DEFAULT FALSE
                 )
             """)
 
@@ -115,6 +118,10 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_analyzed_at
                 ON trader_metrics(analyzed_at DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trader_starred
+                ON trader_metrics(is_starred)
             """)
 
             # 创建筛选会话表
@@ -477,4 +484,14 @@ class DatabaseMigrations:
                 ON copy_position_states(target_address)
             """)
 
+            # 运行增量迁移
+            self._run_migrations(cursor)
+
             logger.info("PostgreSQL 数据库表结构初始化完成")
+
+    def _run_migrations(self, cursor):
+        """运行增量迁移"""
+        # 添加 is_starred 字段到 trader_metrics 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'is_starred', 'BOOLEAN DEFAULT FALSE'
+        )

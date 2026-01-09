@@ -214,6 +214,8 @@ def get_traders():
                 'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
                 'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
                 'long_short_ratio': trader.get('long_short_ratio', 0),
+                # 用户标记
+                'is_starred': trader.get('is_starred', False),
             })
 
         return jsonify({
@@ -558,6 +560,50 @@ def refresh_trader_positions(address: str):
 
     except Exception as e:
         logger.error(f"刷新持仓数据失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/traders/<address>/star', methods=['POST'])
+def toggle_trader_star(address: str):
+    """
+    切换交易者的收藏状态
+    Request Body:
+        - is_starred: bool, 是否收藏
+    """
+    try:
+        data = request.get_json() or {}
+        is_starred = data.get('is_starred', True)
+
+        logger.info(f"切换收藏状态: {address}, is_starred={is_starred}")
+
+        # 检查交易者是否存在
+        trader = db.get_trader_by_address(address)
+        if not trader:
+            return jsonify({
+                'success': False,
+                'error': 'Trader not found'
+            }), 404
+
+        # 切换收藏状态
+        success = db.toggle_star(address, is_starred)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'data': {'is_starred': is_starred},
+                'message': '已收藏' if is_starred else '已取消收藏'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '更新失败'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"切换收藏状态失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

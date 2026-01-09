@@ -402,3 +402,50 @@ class TraderMetricsOps:
             """, (days,))
             deleted = cursor.rowcount
             logger.info(f"已删除 {deleted} 条旧记录")
+
+    def toggle_star(self, address: str, is_starred: bool) -> bool:
+        """
+        切换交易者收藏状态
+
+        Args:
+            address: 交易者地址
+            is_starred: 是否收藏
+
+        Returns:
+            是否更新成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE trader_metrics
+                SET is_starred = %s
+                WHERE address = %s
+            """, (is_starred, address))
+            updated = cursor.rowcount > 0
+            
+            # 使缓存失效
+            if updated:
+                cache.invalidate_trader(address)
+                logger.info(f"交易者 {address[:10]}... 收藏状态: {is_starred}")
+            
+            return updated
+
+    def get_starred_traders(self, limit: int = 100) -> List[Dict]:
+        """
+        获取所有收藏的交易者
+
+        Args:
+            limit: 返回数量
+
+        Returns:
+            收藏的交易者列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM trader_metrics
+                WHERE is_starred = TRUE
+                ORDER BY overall_score DESC
+                LIMIT %s
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]

@@ -190,6 +190,13 @@ export const traderApi = {
   // 获取AI分析结果
   getTraderAIAnalysis: (address: string) =>
     api.get<any, ApiResponse<TraderAIAnalysis>>(`/traders/${address}/ai-analysis`),
+
+  // 切换收藏状态
+  toggleStar: (address: string, isStarred: boolean) =>
+    api.post<any, ApiResponse<{ is_starred: boolean }> & { message?: string }>(
+      `/traders/${address}/star`,
+      { is_starred: isStarred }
+    ),
 };
 
 // ==================== 跟单地址管理 API ====================

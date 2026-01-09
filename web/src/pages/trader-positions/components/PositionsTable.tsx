@@ -20,9 +20,11 @@ interface PositionsTableProps {
   positions: TraderPosition[];
   loading: boolean;
   onRefreshTrader?: (address: string) => Promise<void>;
+  onToggleStar?: (address: string, isStarred: boolean) => Promise<void>;
+  starLoadingAddresses?: Set<string>;
 }
 
-export function PositionsTable({ positions, loading, onRefreshTrader }: PositionsTableProps) {
+export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set() }: PositionsTableProps) {
   const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
 
   const handleRefreshTrader = async (address: string) => {
@@ -81,6 +83,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader }: Position
       }}
     >
       <TableHeader>
+        <TableColumn width={50}>收藏</TableColumn>
         <TableColumn>交易员</TableColumn>
         <TableColumn>分组</TableColumn>
         <TableColumn>币种</TableColumn>
@@ -102,6 +105,23 @@ export function PositionsTable({ positions, loading, onRefreshTrader }: Position
 
           return (
             <TableRow key={`${position.address}-${position.coin}`}>
+              <TableCell>
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="light"
+                  color={position.is_starred ? "warning" : "default"}
+                  isLoading={starLoadingAddresses.has(position.address)}
+                  onPress={() => onToggleStar?.(position.address, !position.is_starred)}
+                  isDisabled={!onToggleStar}
+                >
+                  <Icon 
+                    icon={position.is_starred ? "solar:star-bold" : "solar:star-line-duotone"} 
+                    width={18} 
+                    className={position.is_starred ? "text-warning" : "text-default-400"}
+                  />
+                </Button>
+              </TableCell>
               <TableCell>
                 <Tooltip content={position.address}>
                   <span

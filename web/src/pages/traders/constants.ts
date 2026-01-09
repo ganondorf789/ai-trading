@@ -2,6 +2,7 @@ import type { Column, ColumnKey } from './types';
 
 export const columns: Column[] = [
   // 基础
+  { uid: 'star', name: '收藏', sortable: false, group: '基础' },
   { uid: 'rating', name: '评级', sortable: true, group: '基础' },
   { uid: 'address', name: '地址', sortable: false, group: '基础' },
   { uid: 'overall_score', name: '评分', sortable: true, group: '基础' },
@@ -34,7 +35,7 @@ export const columns: Column[] = [
 ];
 
 export const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
-  'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
+  'star', 'rating', 'address', 'overall_score', 'total_trades', 'win_rate',
   'total_pnl', 'roi', 'profit_factor', 'max_drawdown', 'sharpe_ratio',
   'sortino_ratio', 'calmar_ratio', 'current_equity', 'active_days', 'avg_leverage',
   'current_positions', 'recent_7d_pnl', 'recent_7d_win_rate',

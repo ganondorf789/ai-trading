@@ -8,6 +8,7 @@ import {
   TableBody,
   TableRow,
   TableCell,
+  addToast,
 } from '@heroui/table';
 import { Spinner } from '@heroui/spinner';
 import { Card, CardBody } from '@heroui/card';
@@ -39,6 +40,36 @@ export default function TradersPage() {
   });
 
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const [starLoadingAddresses, setStarLoadingAddresses] = useState<Set<string>>(new Set());
+
+  const handleToggleStar = useCallback(async (address: string, isStarred: boolean) => {
+    setStarLoadingAddresses(prev => new Set(prev).add(address));
+    try {
+      const response = await traderApi.toggleStar(address, isStarred);
+      if (response.success) {
+        // 更新本地状态
+        setTraders(prev => prev.map(t => 
+          t.address === address ? { ...t, is_starred: isStarred } : t
+        ));
+        addToast({
+          title: isStarred ? '已收藏' : '已取消收藏',
+          color: 'success',
+        });
+      }
+    } catch (error) {
+      console.error('Toggle star failed:', error);
+      addToast({
+        title: '操作失败',
+        color: 'danger',
+      });
+    } finally {
+      setStarLoadingAddresses(prev => {
+        const next = new Set(prev);
+        next.delete(address);
+        return next;
+      });
+    }
+  }, []);
 
   const loadTraders = useCallback(async () => {
     try {
@@ -192,7 +223,12 @@ export default function TradersPage() {
                       >
                         {(columnKey) => (
                           <TableCell>
-                            <TraderTableCell trader={item} columnKey={columnKey as ColumnKey} />
+                            <TraderTableCell 
+                              trader={item} 
+                              columnKey={columnKey as ColumnKey}
+                              onToggleStar={handleToggleStar}
+                              isStarLoading={starLoadingAddresses.has(item.address)}
+                            />
                           </TableCell>
                         )}
                       </TableRow>

@@ -68,6 +68,8 @@ export interface Trader {
   daily_volume?: number;
   weekly_volume?: number;
   monthly_volume?: number;
+  // 用户标记
+  is_starred?: boolean;
 }
 
 export interface TraderFill {
@@ -315,6 +317,8 @@ export interface TraderPosition {
   group_id: number | null;
   group_name: string | null;
   group_color: string | null;
+  // 用户标记
+  is_starred?: boolean;
 }
 
 export interface TraderPositionsStats {

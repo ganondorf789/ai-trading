@@ -1,3 +1,5 @@
+import { Button } from '@heroui/react';
+import { Icon } from '@iconify/react';
 import type { Trader } from '@/services/api';
 import type { ColumnKey } from '../types';
 import { getRatingColor, formatNumber, formatPercent, formatDate } from '@/utils';
@@ -5,10 +7,33 @@ import { getRatingColor, formatNumber, formatPercent, formatDate } from '@/utils
 interface TraderTableCellProps {
   trader: Trader;
   columnKey: ColumnKey;
+  onToggleStar?: (address: string, isStarred: boolean) => void;
+  isStarLoading?: boolean;
 }
 
-export function TraderTableCell({ trader, columnKey }: TraderTableCellProps) {
+export function TraderTableCell({ trader, columnKey, onToggleStar, isStarLoading }: TraderTableCellProps) {
   switch (columnKey) {
+    case 'star':
+      return (
+        <Button
+          isIconOnly
+          size="sm"
+          variant="light"
+          color={trader.is_starred ? "warning" : "default"}
+          isLoading={isStarLoading}
+          onPress={(e) => {
+            e.continuePropagation?.();
+            onToggleStar?.(trader.address, !trader.is_starred);
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Icon 
+            icon={trader.is_starred ? "solar:star-bold" : "solar:star-line-duotone"} 
+            width={18} 
+            className={trader.is_starred ? "text-warning" : "text-default-400"}
+          />
+        </Button>
+      );
     case 'rating':
       return (
         <span className={`font-bold text-lg ${getRatingColor(trader.rating)}`}>
