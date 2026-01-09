@@ -591,27 +591,7 @@ def get_copy_position_states():
     """
     try:
         target_address = request.args.get('target_address')
-
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-
-            if target_address:
-                cursor.execute("""
-                    SELECT cps.*, cta.name as target_name
-                    FROM copy_position_states cps
-                    LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
-                    WHERE cps.target_address = ?
-                    ORDER BY cps.updated_at DESC
-                """, (target_address,))
-            else:
-                cursor.execute("""
-                    SELECT cps.*, cta.name as target_name
-                    FROM copy_position_states cps
-                    LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
-                    ORDER BY cps.updated_at DESC
-                """)
-
-            positions = [dict(row) for row in cursor.fetchall()]
+        positions = db.get_copy_position_states(target_address)
 
         return jsonify({
             'success': True,
@@ -632,60 +612,11 @@ def get_copy_position_stats():
     获取跟单仓位统计
     """
     try:
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # 总仓位数
-            cursor.execute("SELECT COUNT(*) FROM copy_position_states")
-            total_positions = cursor.fetchone()[0]
-
-            # 按目标地址分组统计
-            cursor.execute("""
-                SELECT
-                    cps.target_address,
-                    cta.name as target_name,
-                    COUNT(*) as position_count,
-                    SUM(cps.notional) as total_notional
-                FROM copy_position_states cps
-                LEFT JOIN copy_trading_addresses cta ON cps.target_address = cta.address
-                GROUP BY cps.target_address
-                ORDER BY position_count DESC
-            """)
-            by_target = [dict(row) for row in cursor.fetchall()]
-
-            # 按币种统计
-            cursor.execute("""
-                SELECT
-                    symbol,
-                    side,
-                    COUNT(*) as count,
-                    SUM(ABS(size)) as total_size,
-                    SUM(notional) as total_notional
-                FROM copy_position_states
-                GROUP BY symbol, side
-                ORDER BY total_notional DESC
-            """)
-            by_symbol = [dict(row) for row in cursor.fetchall()]
-
-            # 多空统计
-            cursor.execute("""
-                SELECT
-                    side,
-                    COUNT(*) as count,
-                    SUM(notional) as total_notional
-                FROM copy_position_states
-                GROUP BY side
-            """)
-            by_side = {row['side']: {'count': row['count'], 'notional': row['total_notional']} for row in cursor.fetchall()}
+        stats = db.get_copy_position_stats()
 
         return jsonify({
             'success': True,
-            'data': {
-                'total_positions': total_positions,
-                'by_target': by_target,
-                'by_symbol': by_symbol,
-                'by_side': by_side
-            }
+            'data': stats
         })
     except Exception as e:
         logger.error(f"获取跟单仓位统计失败: {e}")
@@ -769,10 +700,7 @@ def clear_all_position_states():
     清空所有仓位状态（谨慎使用）
     """
     try:
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM copy_position_states")
-            deleted_count = cursor.rowcount
+        deleted_count = db.clear_all_copy_position_states()
 
         return jsonify({
             'success': True,
@@ -814,197 +742,34 @@ def get_all_trader_positions():
         - max_score: float, 最大综合评分
     """
     try:
-        from psycopg2 import extras as pg_extras
-
         enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
         group_id = request.args.get('group_id', type=int)
 
-        # 指标筛选参数
-        min_win_rate = request.args.get('min_win_rate', type=float)
-        max_win_rate = request.args.get('max_win_rate', type=float)
-        min_profit_factor = request.args.get('min_profit_factor', type=float)
-        max_profit_factor = request.args.get('max_profit_factor', type=float)
-        min_pnl = request.args.get('min_pnl', type=float)
-        max_pnl = request.args.get('max_pnl', type=float)
-        min_drawdown = request.args.get('min_drawdown', type=float)
-        max_drawdown = request.args.get('max_drawdown', type=float)
-        min_sharpe = request.args.get('min_sharpe', type=float)
-        max_sharpe = request.args.get('max_sharpe', type=float)
-        min_sortino = request.args.get('min_sortino', type=float)
-        max_sortino = request.args.get('max_sortino', type=float)
-        min_trades = request.args.get('min_trades', type=int)
-        max_trades = request.args.get('max_trades', type=int)
-        min_score = request.args.get('min_score', type=float)
-        max_score = request.args.get('max_score', type=float)
+        # 构建指标筛选条件
+        metric_filters = {
+            'min_win_rate': request.args.get('min_win_rate', type=float),
+            'max_win_rate': request.args.get('max_win_rate', type=float),
+            'min_profit_factor': request.args.get('min_profit_factor', type=float),
+            'max_profit_factor': request.args.get('max_profit_factor', type=float),
+            'min_pnl': request.args.get('min_pnl', type=float),
+            'max_pnl': request.args.get('max_pnl', type=float),
+            'min_drawdown': request.args.get('min_drawdown', type=float),
+            'max_drawdown': request.args.get('max_drawdown', type=float),
+            'min_sharpe': request.args.get('min_sharpe', type=float),
+            'max_sharpe': request.args.get('max_sharpe', type=float),
+            'min_sortino': request.args.get('min_sortino', type=float),
+            'max_sortino': request.args.get('max_sortino', type=float),
+            'min_trades': request.args.get('min_trades', type=int),
+            'max_trades': request.args.get('max_trades', type=int),
+            'min_score': request.args.get('min_score', type=float),
+            'max_score': request.args.get('max_score', type=float),
+        }
 
-        with db._get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=pg_extras.RealDictCursor)
-
-            # 构建跟单地址查询（包含指标筛选）
-            conditions = ["1=1"]
-            params = []
-
-            if enabled_only:
-                conditions.append("cta.is_enabled = TRUE")
-
-            if group_id is not None:
-                conditions.append("cta.group_id = %s")
-                params.append(group_id)
-
-            # 指标筛选条件
-            if min_win_rate is not None:
-                conditions.append("COALESCE(tm.win_rate, 0) >= %s")
-                params.append(min_win_rate)
-            if max_win_rate is not None:
-                conditions.append("COALESCE(tm.win_rate, 100) <= %s")
-                params.append(max_win_rate)
-            if min_profit_factor is not None:
-                conditions.append("COALESCE(tm.profit_factor, 0) >= %s")
-                params.append(min_profit_factor)
-            if max_profit_factor is not None:
-                conditions.append("COALESCE(tm.profit_factor, 999) <= %s")
-                params.append(max_profit_factor)
-            if min_pnl is not None:
-                conditions.append("COALESCE(tm.total_pnl, 0) >= %s")
-                params.append(min_pnl)
-            if max_pnl is not None:
-                conditions.append("COALESCE(tm.total_pnl, 0) <= %s")
-                params.append(max_pnl)
-            if min_drawdown is not None:
-                conditions.append("COALESCE(tm.max_drawdown, 0) >= %s")
-                params.append(min_drawdown)
-            if max_drawdown is not None:
-                conditions.append("COALESCE(tm.max_drawdown, 100) <= %s")
-                params.append(max_drawdown)
-            if min_sharpe is not None:
-                conditions.append("COALESCE(tm.sharpe_ratio, -999) >= %s")
-                params.append(min_sharpe)
-            if max_sharpe is not None:
-                conditions.append("COALESCE(tm.sharpe_ratio, 999) <= %s")
-                params.append(max_sharpe)
-            if min_sortino is not None:
-                conditions.append("COALESCE(tm.sortino_ratio, -999) >= %s")
-                params.append(min_sortino)
-            if max_sortino is not None:
-                conditions.append("COALESCE(tm.sortino_ratio, 999) <= %s")
-                params.append(max_sortino)
-            if min_trades is not None:
-                conditions.append("COALESCE(tm.total_trades, 0) >= %s")
-                params.append(min_trades)
-            if max_trades is not None:
-                conditions.append("COALESCE(tm.total_trades, 0) <= %s")
-                params.append(max_trades)
-            if min_score is not None:
-                conditions.append("COALESCE(tm.overall_score, 0) >= %s")
-                params.append(min_score)
-            if max_score is not None:
-                conditions.append("COALESCE(tm.overall_score, 100) <= %s")
-                params.append(max_score)
-
-            where_clause = " AND ".join(conditions)
-
-            # 获取符合条件的跟单地址
-            cursor.execute(f"""
-                SELECT cta.address, cta.name, cta.group_id, cta.is_enabled
-                FROM copy_trading_addresses cta
-                LEFT JOIN trader_metrics tm ON cta.address = tm.address
-                WHERE {where_clause}
-            """, params)
-            copy_addresses = {row['address']: dict(row) for row in cursor.fetchall()}
-
-            if not copy_addresses:
-                return jsonify({
-                    'success': True,
-                    'data': [],
-                    'stats': {
-                        'total_positions': 0,
-                        'total_traders': 0,
-                        'total_notional': 0,
-                        'long_count': 0,
-                        'short_count': 0,
-                        'long_notional': 0,
-                        'short_notional': 0
-                    }
-                })
-
-            # 获取这些地址的持仓
-            address_list = list(copy_addresses.keys())
-            cursor.execute("""
-                SELECT ap.*, cta.name as trader_name, cta.group_id, ctg.name as group_name, ctg.color as group_color,
-                       tm.is_starred
-                FROM asset_positions ap
-                LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
-                LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
-                LEFT JOIN trader_metrics tm ON ap.address = tm.address
-                WHERE ap.address = ANY(%s)
-                ORDER BY ABS(ap.position_value) DESC
-            """, (address_list,))
-
-            positions = []
-            stats = {
-                'total_positions': 0,
-                'total_traders': set(),
-                'total_notional': 0,
-                'long_count': 0,
-                'short_count': 0,
-                'long_notional': 0,
-                'short_notional': 0,
-                'by_coin': {},
-                'by_trader': {}
-            }
-
-            for row in cursor.fetchall():
-                pos = dict(row)
-                positions.append(pos)
-
-                # 统计
-                stats['total_positions'] += 1
-                stats['total_traders'].add(pos['address'])
-
-                position_value = abs(float(pos.get('position_value', 0)))
-                stats['total_notional'] += position_value
-
-                # 判断多空方向
-                szi = float(pos.get('szi', 0))
-                if szi > 0:
-                    stats['long_count'] += 1
-                    stats['long_notional'] += position_value
-                else:
-                    stats['short_count'] += 1
-                    stats['short_notional'] += position_value
-
-                # 按币种统计
-                coin = pos.get('coin', 'Unknown')
-                if coin not in stats['by_coin']:
-                    stats['by_coin'][coin] = {'count': 0, 'notional': 0, 'long': 0, 'short': 0}
-                stats['by_coin'][coin]['count'] += 1
-                stats['by_coin'][coin]['notional'] += position_value
-                if szi > 0:
-                    stats['by_coin'][coin]['long'] += 1
-                else:
-                    stats['by_coin'][coin]['short'] += 1
-
-                # 按交易员统计
-                address = pos.get('address')
-                if address not in stats['by_trader']:
-                    stats['by_trader'][address] = {
-                        'name': pos.get('trader_name'),
-                        'count': 0,
-                        'notional': 0
-                    }
-                stats['by_trader'][address]['count'] += 1
-                stats['by_trader'][address]['notional'] += position_value
-
-            # 转换统计数据
-            stats['total_traders'] = len(stats['total_traders'])
-            stats['by_coin'] = [
-                {'coin': k, **v}
-                for k, v in sorted(stats['by_coin'].items(), key=lambda x: -x[1]['notional'])
-            ]
-            stats['by_trader'] = [
-                {'address': k, **v}
-                for k, v in sorted(stats['by_trader'].items(), key=lambda x: -x[1]['notional'])
-            ]
+        positions, stats = db.get_trader_positions_with_filters(
+            enabled_only=enabled_only,
+            group_id=group_id,
+            metric_filters=metric_filters
+        )
 
         return jsonify({
             'success': True,
@@ -1024,31 +789,8 @@ def get_risk_control_config():
     """
     获取风控配置
     """
-    import json
     try:
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT config_value FROM system_config WHERE config_key = 'risk_control'
-            """)
-            row = cursor.fetchone()
-
-            if row:
-                config = json.loads(row[0])
-            else:
-                # 返回默认配置
-                config = {
-                    'max_total_positions': 10,
-                    'max_daily_trades': 50,
-                    'max_single_loss_usd': 100.0,
-                    'max_daily_loss_usd': 500.0,
-                    'max_drawdown_pct': 10.0,
-                    'max_margin_usage_pct': 80.0,
-                    'pause_on_consecutive_losses': 5,
-                    'max_order_retries': 3,
-                    'retry_base_delay': 1.0,
-                }
-
+        config = db.get_risk_control_config()
         return jsonify({
             'success': True,
             'data': config
@@ -1066,7 +808,6 @@ def update_risk_control_config():
     """
     更新风控配置
     """
-    import json
     try:
         data = request.get_json()
         if not data:
@@ -1100,20 +841,18 @@ def update_risk_control_config():
                 value = max(min_val, min(max_val, value))
                 config[field] = value
 
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO system_config (config_key, config_value, description, updated_at)
-                VALUES ('risk_control', %s, '跟单风控配置', CURRENT_TIMESTAMP)
-                ON CONFLICT (config_key)
-                DO UPDATE SET config_value = %s, updated_at = CURRENT_TIMESTAMP
-            """, (json.dumps(config), json.dumps(config)))
-
-        return jsonify({
-            'success': True,
-            'data': config,
-            'message': '风控配置更新成功'
-        })
+        success = db.save_risk_control_config(config)
+        if success:
+            return jsonify({
+                'success': True,
+                'data': config,
+                'message': '风控配置更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '保存配置失败'
+            }), 500
     except Exception as e:
         logger.error(f"更新风控配置失败: {e}")
         return jsonify({
@@ -1136,16 +875,7 @@ def refresh_all_trader_positions():
 
         enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
 
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # 获取跟单地址列表
-            if enabled_only:
-                cursor.execute("SELECT address, name FROM copy_trading_addresses WHERE is_enabled = 1")
-            else:
-                cursor.execute("SELECT address, name FROM copy_trading_addresses")
-
-            addresses = [dict(row) for row in cursor.fetchall()]
+        addresses = db.get_copy_trading_addresses_list(enabled_only)
 
         if not addresses:
             return jsonify({

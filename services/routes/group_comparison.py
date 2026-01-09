@@ -147,44 +147,11 @@ def get_group_comparison_stats():
     获取分组对比统计信息
     """
     try:
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # 总会话数
-            cursor.execute("SELECT COUNT(*) FROM group_comparison_sessions")
-            total_sessions = cursor.fetchone()[0]
-
-            # 按状态统计
-            cursor.execute("""
-                SELECT status, COUNT(*) as count
-                FROM group_comparison_sessions
-                GROUP BY status
-            """)
-            by_status = {row['status']: row['count'] for row in cursor.fetchall()}
-
-            # 最近7天会话数
-            cursor.execute("""
-                SELECT COUNT(*) FROM group_comparison_sessions
-                WHERE created_at >= datetime('now', '-7 days')
-            """)
-            recent_sessions = cursor.fetchone()[0]
-
-            # 平均晋级人数
-            cursor.execute("""
-                SELECT AVG(finalists_count) as avg_finalists
-                FROM group_comparison_sessions
-                WHERE status = 'completed'
-            """)
-            avg_finalists = cursor.fetchone()[0] or 0
+        stats = db.get_group_comparison_stats()
 
         return jsonify({
             'success': True,
-            'data': {
-                'total_sessions': total_sessions,
-                'by_status': by_status,
-                'recent_sessions': recent_sessions,
-                'avg_finalists': round(avg_finalists, 1)
-            }
+            'data': stats
         })
     except Exception as e:
         logger.error(f"获取分组对比统计信息失败: {e}")

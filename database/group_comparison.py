@@ -324,3 +324,47 @@ class GroupComparisonOps:
             """, params)
 
             return cursor.rowcount > 0
+
+    def get_group_comparison_stats(self) -> Dict:
+        """
+        获取分组对比统计信息
+
+        Returns:
+            统计数据字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 总会话数
+            cursor.execute("SELECT COUNT(*) as count FROM group_comparison_sessions")
+            total_sessions = cursor.fetchone()['count']
+
+            # 按状态统计
+            cursor.execute("""
+                SELECT status, COUNT(*) as count
+                FROM group_comparison_sessions
+                GROUP BY status
+            """)
+            by_status = {row['status']: row['count'] for row in cursor.fetchall()}
+
+            # 最近7天会话数
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM group_comparison_sessions
+                WHERE created_at >= NOW() - INTERVAL '7 days'
+            """)
+            recent_sessions = cursor.fetchone()['count']
+
+            # 平均晋级人数
+            cursor.execute("""
+                SELECT AVG(finalists_count) as avg_finalists
+                FROM group_comparison_sessions
+                WHERE status = 'completed'
+            """)
+            avg_finalists = cursor.fetchone()['avg_finalists'] or 0
+
+            return {
+                'total_sessions': total_sessions,
+                'by_status': by_status,
+                'recent_sessions': recent_sessions,
+                'avg_finalists': round(float(avg_finalists), 1)
+            }

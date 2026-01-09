@@ -55,6 +55,21 @@ class RiskControl:
     max_order_retries: int = 3  # 订单最大重试次数
     retry_base_delay: float = 1.0  # 重试基础延迟（秒）
 
+    @classmethod
+    def from_dict(cls, config: dict) -> 'RiskControl':
+        """从字典创建配置实例"""
+        return cls(
+            max_total_positions=int(config.get('max_total_positions', 10)),
+            max_daily_trades=int(config.get('max_daily_trades', 50)),
+            max_single_loss_usd=float(config.get('max_single_loss_usd', 100.0)),
+            max_daily_loss_usd=float(config.get('max_daily_loss_usd', 500.0)),
+            max_drawdown_pct=float(config.get('max_drawdown_pct', 10.0)),
+            max_margin_usage_pct=float(config.get('max_margin_usage_pct', 80.0)),
+            pause_on_consecutive_losses=int(config.get('pause_on_consecutive_losses', 5)),
+            max_order_retries=int(config.get('max_order_retries', 3)),
+            retry_base_delay=float(config.get('retry_base_delay', 1.0)),
+        )
+
 
 @dataclass
 class HealthMetrics:
@@ -168,7 +183,8 @@ class MultiTargetCopyTradingBot:
         self.client = client
         self.check_interval = check_interval
         self.reload_interval = reload_interval
-        self.risk_control = risk_control or RiskControl()
+        # 如果没有传入风控配置，则从数据库加载
+        self.risk_control = risk_control or self._load_risk_control_from_db()
         self.feishu_webhook = feishu_webhook
 
         # 目标交易者状态
@@ -247,6 +263,28 @@ class MultiTargetCopyTradingBot:
     def set_on_error(self, callback: Callable[[Exception], None]):
         """设置错误回调"""
         self._on_error = callback
+
+    def _load_risk_control_from_db(self) -> RiskControl:
+        """从数据库加载风控配置"""
+        try:
+            config = self.db.get_risk_control_config()
+            logger.info(f"从数据库加载风控配置: {config}")
+            return RiskControl.from_dict(config)
+        except Exception as e:
+            logger.warning(f"从数据库加载风控配置失败，使用默认值: {e}")
+            return RiskControl()
+
+    def reload_risk_control(self) -> RiskControl:
+        """
+        重新从数据库加载风控配置
+        
+        Returns:
+            RiskControl: 新的风控配置
+        """
+        self.risk_control = self._load_risk_control_from_db()
+        logger.info(f"风控配置已重新加载: 每日最大亏损 ${self.risk_control.max_daily_loss_usd}, "
+                   f"连续亏损暂停 {self.risk_control.pause_on_consecutive_losses} 次")
+        return self.risk_control
 
     # ==================== 通知系统 ====================
 
