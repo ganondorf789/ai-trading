@@ -152,7 +152,6 @@ export function PositionFilters({
         {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all") && (
           <Button
             variant="flat"
-            size="sm"
             color="warning"
             startContent={<Icon icon="solar:restart-linear" width={16} />}
             onPress={onReset}

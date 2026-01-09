@@ -286,15 +286,6 @@ export default function TraderPositionsPage() {
             >
               {refreshing ? "刷新中..." : "刷新数据"}
             </Button>
-            <Button
-              color="default"
-              variant="flat"
-              startContent={<Icon icon="solar:refresh-linear" width={18} />}
-              onPress={() => fetchPositions()}
-              isDisabled={loading}
-            >
-              重新加载
-            </Button>
           </div>
         </div>
 
