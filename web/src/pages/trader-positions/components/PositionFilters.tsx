@@ -80,10 +80,12 @@ export function PositionFilters({
           selectedKeys={[groupFilter]}
           onSelectionChange={(keys) => onGroupFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部分组</SelectItem>
-          {groups.map((group) => (
-            <SelectItem key={group.id.toString()}>{group.name}</SelectItem>
-          ))}
+          {[
+            <SelectItem key="all">全部分组</SelectItem>,
+            ...groups.map((group) => (
+              <SelectItem key={group.id.toString()}>{group.name}</SelectItem>
+            )),
+          ]}
         </Select>
 
         <Select
@@ -92,12 +94,14 @@ export function PositionFilters({
           selectedKeys={[traderFilter]}
           onSelectionChange={(keys) => onTraderFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部交易员</SelectItem>
-          {traderOptions.map((trader) => (
-            <SelectItem key={trader.address}>
-              {trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`} ({trader.count})
-            </SelectItem>
-          ))}
+          {[
+            <SelectItem key="all">全部交易员</SelectItem>,
+            ...traderOptions.map((trader) => (
+              <SelectItem key={trader.address}>
+                {trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`} ({trader.count})
+              </SelectItem>
+            )),
+          ]}
         </Select>
 
         <Select
@@ -106,12 +110,14 @@ export function PositionFilters({
           selectedKeys={[coinFilter]}
           onSelectionChange={(keys) => onCoinFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部币种</SelectItem>
-          {coinOptions.map((coin) => (
-            <SelectItem key={coin.coin}>
-              {coin.coin} ({coin.count})
-            </SelectItem>
-          ))}
+          {[
+            <SelectItem key="all">全部币种</SelectItem>,
+            ...coinOptions.map((coin) => (
+              <SelectItem key={coin.coin}>
+                {coin.coin} ({coin.count})
+              </SelectItem>
+            )),
+          ]}
         </Select>
 
         <Button
