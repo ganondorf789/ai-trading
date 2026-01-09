@@ -248,36 +248,6 @@ export default function AddressFormModal({
               onValueChange={(v) => setFormData({ ...formData, max_leverage: parseInt(v) || 10 })}
               endContent="x"
             />
-            <Input
-              type="number"
-              label="默认杠杆"
-              placeholder="5"
-              value={String(formData.default_leverage || 5)}
-              onValueChange={(v) => setFormData({ ...formData, default_leverage: parseInt(v) || 5 })}
-              endContent="x"
-            />
-            <Input
-              type="number"
-              label="最大持仓数"
-              placeholder="10"
-              value={String(formData.max_total_positions || 10)}
-              onValueChange={(v) => setFormData({ ...formData, max_total_positions: parseInt(v) || 10 })}
-            />
-            <Input
-              type="number"
-              label="日交易上限"
-              placeholder="50"
-              value={String(formData.max_daily_trades || 50)}
-              onValueChange={(v) => setFormData({ ...formData, max_daily_trades: parseInt(v) || 50 })}
-            />
-            <Input
-              type="number"
-              label="检查间隔"
-              placeholder="10"
-              value={String(formData.check_interval || 10)}
-              onValueChange={(v) => setFormData({ ...formData, check_interval: parseFloat(v) || 10 })}
-              endContent="秒"
-            />
 
             {/* 币种限制 */}
             <div className="col-span-2 border rounded-lg p-4 space-y-4">
@@ -450,12 +420,6 @@ export default function AddressFormModal({
                   </Switch>
                 </div>
               </Tooltip>
-              <Switch
-                isSelected={formData.dry_run}
-                onChange={(e) => setFormData({ ...formData, dry_run: e.target.checked })}
-              >
-                模拟模式
-              </Switch>
             </div>
           </div>
         </ModalBody>

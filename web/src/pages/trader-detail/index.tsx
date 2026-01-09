@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { SortDescriptor, DateValue, RangeValue } from '@heroui/react';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
+import { addToast } from "@heroui/react";
 import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
 import { TraderOverviewCard } from './components/TraderOverviewCard';
 import { PerformanceCharts } from './components/PerformanceCharts';
@@ -47,6 +48,31 @@ export default function TraderDetailPage() {
   const [assetPositions, setAssetPositions] = useState<AssetPosition[]>([]);
   const [assetPositionsLoading, setAssetPositionsLoading] = useState(false);
   const [positionsRefreshing, setPositionsRefreshing] = useState(false);
+  const [isStarLoading, setIsStarLoading] = useState(false);
+
+  // 切换收藏状态
+  const handleToggleStar = useCallback(async (address: string, isStarred: boolean) => {
+    setIsStarLoading(true);
+    try {
+      const response = await traderApi.toggleStar(address, isStarred);
+      if (response.success) {
+        // 更新本地状态
+        setTrader(prev => prev ? { ...prev, is_starred: isStarred } : null);
+        addToast({
+          title: isStarred ? '已收藏' : '已取消收藏',
+          color: 'success',
+        });
+      }
+    } catch (error) {
+      console.error('Toggle star failed:', error);
+      addToast({
+        title: '操作失败',
+        color: 'danger',
+      });
+    } finally {
+      setIsStarLoading(false);
+    }
+  }, []);
 
   // 刷新持仓数据
   const handleRefreshPositions = async () => {
@@ -359,6 +385,8 @@ export default function TraderDetailPage() {
           refreshing={refreshing}
           onAiAnalysis={() => handleAiAnalysis(false)}
           onRefresh={handleRefresh}
+          isStarLoading={isStarLoading}
+          onToggleStar={handleToggleStar}
         />
 
         <PerformanceCharts

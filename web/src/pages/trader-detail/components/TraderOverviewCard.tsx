@@ -12,6 +12,8 @@ interface TraderOverviewCardProps {
   refreshing: boolean;
   onAiAnalysis: () => void;
   onRefresh: () => void;
+  isStarLoading?: boolean;
+  onToggleStar?: (address: string, isStarred: boolean) => void;
 }
 
 export function TraderOverviewCard({
@@ -22,6 +24,8 @@ export function TraderOverviewCard({
   refreshing,
   onAiAnalysis,
   onRefresh,
+  isStarLoading = false,
+  onToggleStar,
 }: TraderOverviewCardProps) {
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -54,9 +58,25 @@ export function TraderOverviewCard({
     <Card className="mb-6">
       <CardHeader>
         <div className="flex justify-between items-center w-full">
-          <div>
-            <h1 className="text-2xl font-bold">Trader Overview</h1>
-            <p className="text-sm text-gray-500 font-mono mt-1">{address}</p>
+          <div className="flex items-center gap-3">
+            <Button
+              isIconOnly
+              size="lg"
+              variant="light"
+              color={trader.is_starred ? "warning" : "default"}
+              isLoading={isStarLoading}
+              onPress={() => onToggleStar?.(address, !trader.is_starred)}
+            >
+              <Icon 
+                icon={trader.is_starred ? "solar:star-bold" : "solar:star-line-duotone"} 
+                width={24} 
+                className={trader.is_starred ? "text-warning" : "text-default-400"}
+              />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Trader Overview</h1>
+              <p className="text-sm text-gray-500 font-mono mt-1">{address}</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <Button

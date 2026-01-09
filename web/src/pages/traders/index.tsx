@@ -8,8 +8,8 @@ import {
   TableBody,
   TableRow,
   TableCell,
-  addToast,
 } from '@heroui/table';
+import { addToast } from "@heroui/react";
 import { Spinner } from '@heroui/spinner';
 import { Card, CardBody } from '@heroui/card';
 import { useDisclosure } from '@heroui/modal';
