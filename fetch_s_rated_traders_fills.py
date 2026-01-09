@@ -16,7 +16,6 @@ import sys
 from pathlib import Path
 import pendulum
 from loguru import logger
-from collections import defaultdict
 import time
 from typing import List, Dict, Optional
 import argparse
@@ -175,28 +174,63 @@ def fetch_fills_by_hours(
     return all_fills
 
 
-def fetch_all_fills_for_trader(
+def fetch_and_save_fills_for_trader(
     client: SyncAPIClient,
+    db: TraderDatabase,
     address: str,
-    empty_months_threshold: int = 3
-) -> List[Dict]:
+    empty_months_threshold: int = 3,
+    batch_size: int = 5000
+) -> int:
     """
-    获取单个交易者的所有交易记录
+    获取单个交易者的所有交易记录并分批保存到数据库
+    
+    采用分批处理策略，避免内存溢出：
+    - 每获取一批数据（达到 batch_size）就保存到数据库
+    - 使用 set 记录已处理的 oid+time 组合用于去重，而不是存储完整记录
     
     Args:
         client: API 客户端
+        db: 数据库实例
         address: 交易者地址
         empty_months_threshold: 连续多少个空月份后停止
+        batch_size: 批量保存的阈值
     
     Returns:
-        所有交易记录列表（已去重）
+        保存的记录总数
     """
+    total_saved = 0
+    pending_fills = []  # 待保存的记录
+    seen_keys = set()   # 已处理的记录键（用于去重，只存储键而非完整记录）
+    
+    def save_batch():
+        """保存当前批次并清空"""
+        nonlocal total_saved, pending_fills
+        if pending_fills:
+            saved = db.save_fills(address, pending_fills)
+            total_saved += saved
+            logger.info(f"    💾 批量保存 {saved} 条（累计: {total_saved}）")
+            pending_fills = []  # 清空待保存列表，释放内存
+    
+    def add_fills(fills: List[Dict]):
+        """添加记录到待保存列表，自动去重和批量保存"""
+        nonlocal pending_fills
+        for fill in fills:
+            key = (fill.get('oid'), fill.get('time'))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                pending_fills.append(fill)
+        
+        # 达到批量保存阈值时保存
+        if len(pending_fills) >= batch_size:
+            save_batch()
+    
+    # 步骤1：获取最近的 2000 条记录
     logger.info(f"  获取最近的 2000 条记录...")
     recent_fills = client.get_user_fills(address, limit=0)
     
     if not recent_fills:
         logger.warning(f"  该地址没有任何交易记录")
-        return []
+        return 0
     
     logger.info(f"  ✓ 获取到 {len(recent_fills)} 条最近记录")
     
@@ -207,13 +241,11 @@ def fetch_all_fills_for_trader(
     
     logger.info(f"    最早记录: {earliest_recent_dt.to_datetime_string()}")
     
-    # 所有记录（包括最近的）
-    all_fills_map = {}
-    for fill in recent_fills:
-        key = (fill.get('oid'), fill.get('time'))
-        all_fills_map[key] = fill
+    # 添加最近的记录
+    add_fills(recent_fills)
+    del recent_fills  # 释放内存
     
-    # 往前按月查找
+    # 步骤2：往前按月查找历史记录
     current_end = earliest_recent_dt.start_of('month')
     empty_months_count = 0
     month_num = 0
@@ -232,14 +264,12 @@ def fetch_all_fills_for_trader(
         )
         
         if month_fills:
-            new_count = 0
-            for fill in month_fills:
-                key = (fill.get('oid'), fill.get('time'))
-                if key not in all_fills_map:
-                    all_fills_map[key] = fill
-                    new_count += 1
+            old_seen_count = len(seen_keys)
+            add_fills(month_fills)
+            new_count = len(seen_keys) - old_seen_count
             
             logger.success(f"    ✓ 获取 {len(month_fills)} 条，新增 {new_count} 条")
+            del month_fills  # 释放内存
             empty_months_count = 0
         else:
             logger.info(f"    - 无记录（连续 {empty_months_count + 1}/{empty_months_threshold} 个空月份）")
@@ -248,10 +278,12 @@ def fetch_all_fills_for_trader(
         current_end = current_start
         time.sleep(3.0)
     
-    all_fills = list(all_fills_map.values())
-    logger.info(f"  ✓ 总计获取 {len(all_fills)} 条记录（去重后）")
+    # 保存剩余的记录
+    save_batch()
     
-    return all_fills
+    logger.info(f"  ✓ 总计保存 {total_saved} 条记录（去重后）")
+    
+    return total_saved
 
 
 def get_s_rated_traders(db: TraderDatabase, min_trades: int = 2000) -> List[Dict]:
@@ -441,17 +473,17 @@ def main():
                 continue
         
         try:
-            # 获取所有交易记录
-            fills = fetch_all_fills_for_trader(
-                client, 
-                address, 
-                empty_months_threshold=args.empty_months
+            # 获取并保存所有交易记录（分批处理，避免内存溢出）
+            saved_count = fetch_and_save_fills_for_trader(
+                client,
+                db,
+                address,
+                empty_months_threshold=args.empty_months,
+                batch_size=5000  # 每 5000 条保存一次
             )
             
-            if fills:
-                # 保存到数据库
-                saved_count = db.save_fills(address, fills)
-                logger.success(f"  ✓ 保存 {saved_count} 条记录到数据库")
+            if saved_count > 0:
+                logger.success(f"  ✓ 总共保存 {saved_count} 条记录")
                 total_fills_saved += saved_count
             else:
                 logger.warning(f"  - 没有获取到交易记录")
