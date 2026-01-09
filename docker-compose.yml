@@ -6,14 +6,14 @@ services:
     environment:
       POSTGRES_USER: trading
       POSTGRES_PASSWORD: trading123
-      POSTGRES_DB: auto_trading
+      POSTGRES_DB: autotrading
       TZ: Asia/Shanghai
     ports:
       - "5433:5432" # 使用5433避免与已有PostgreSQL冲突
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trading -d auto_trading"]
+      test: ["CMD-SHELL", "pg_isready -U trading -d autotrading"]
       interval: 10s
       timeout: 5s
       retries: 5
