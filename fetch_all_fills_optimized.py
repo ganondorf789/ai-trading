@@ -384,7 +384,7 @@ def main():
     parser = argparse.ArgumentParser(description="智能获取交易者完整记录")
     parser.add_argument(
         "--address", "-a",
-        required=True,
+        default="0x9c85f3e6d1d00c1ec443834fd1a62b3dd9ab12b9",
         help="交易者地址"
     )
     parser.add_argument(
