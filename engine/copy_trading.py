@@ -547,6 +547,10 @@ class MultiTargetCopyTradingBot:
 
     def reload_configs(self):
         """重新加载配置（添加新的、移除禁用的、更新已有的）"""
+        # 重新加载风控配置
+        self.reload_risk_control()
+
+        # 重新加载跟单目标配置
         configs = self._load_configs_from_db()
         current_addresses = set(self.targets.keys())
         new_addresses = set()
@@ -881,6 +885,15 @@ class MultiTargetCopyTradingBot:
                     lambda: self.client.close_position(symbol, slippage=config.slippage),
                     f"平仓 {symbol}"
                 )
+                
+                # 处理 close_position 返回 None 的情况（未找到持仓）
+                if result is None:
+                    logger.warning(f"[{target_state.address[:8]}] 平仓 {symbol}: 未找到持仓")
+                    order_data['status'] = 'failed'
+                    order_data['error_message'] = '未找到持仓'
+                    order_data['executed_at'] = pendulum.now().isoformat()
+                    self._save_order(order_data)
+                    return False
                 
                 success = result.get('status') == 'ok'
                 order_data['executed_at'] = pendulum.now().isoformat()
