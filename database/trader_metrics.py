@@ -7,6 +7,7 @@ from psycopg2 import extras
 from loguru import logger
 
 from screener import TraderMetrics, SHANGHAI_TZ
+from utils import sanitize_value
 from .cache import cache
 
 
@@ -45,81 +46,76 @@ class TraderMetricsOps:
             值元组
         """
         # 获取 ROI 值（兼容新旧结构）
-        roi_value = self._get_metric_value(metrics, 'roi.roi', 0.0)
+        roi_value = sanitize_value(self._get_metric_value(metrics, 'roi.roi', 0.0))
         
         # 获取新增风险指标
-        max_drawdown_abs = self._get_metric_value(metrics, 'risk.max_drawdown_abs', 0.0)
-        var_95 = self._get_metric_value(metrics, 'risk.var_95', 0.0)
-        var_99 = self._get_metric_value(metrics, 'risk.var_99', 0.0)
-        cvar_95 = self._get_metric_value(metrics, 'risk.cvar_95', 0.0)
+        max_drawdown_abs = sanitize_value(self._get_metric_value(metrics, 'risk.max_drawdown_abs', 0.0))
+        var_95 = sanitize_value(self._get_metric_value(metrics, 'risk.var_95', 0.0))
+        var_99 = sanitize_value(self._get_metric_value(metrics, 'risk.var_99', 0.0))
+        cvar_95 = sanitize_value(self._get_metric_value(metrics, 'risk.cvar_95', 0.0))
         
         # 获取 max_leverage（兼容新旧结构）
-        max_leverage = self._get_metric_value(metrics, 'position.max_leverage', metrics.avg_leverage)
-        
-        # 处理 profit_factor 的无穷大值
-        profit_factor = metrics.profit_factor
-        if profit_factor == float('inf'):
-            profit_factor = 999999.0
+        max_leverage = sanitize_value(self._get_metric_value(metrics, 'position.max_leverage', metrics.avg_leverage))
         
         return (
             metrics.address,
             pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
-            metrics.total_trades,
-            metrics.winning_trades,
-            metrics.losing_trades,
-            metrics.total_pnl,
-            metrics.realized_pnl,
-            metrics.unrealized_pnl,
-            metrics.total_volume,
+            sanitize_value(metrics.total_trades, 0),
+            sanitize_value(metrics.winning_trades, 0),
+            sanitize_value(metrics.losing_trades, 0),
+            sanitize_value(metrics.total_pnl),
+            sanitize_value(metrics.realized_pnl),
+            sanitize_value(metrics.unrealized_pnl),
+            sanitize_value(metrics.total_volume),
             roi_value,
-            metrics.avg_profit_per_trade,
-            metrics.win_rate,
-            profit_factor,
-            metrics.max_drawdown,
+            sanitize_value(metrics.avg_profit_per_trade),
+            sanitize_value(metrics.win_rate),
+            sanitize_value(metrics.profit_factor),
+            sanitize_value(metrics.max_drawdown),
             max_drawdown_abs,
-            metrics.sharpe_ratio,
-            metrics.sortino_ratio,
-            metrics.calmar_ratio,
+            sanitize_value(metrics.sharpe_ratio),
+            sanitize_value(metrics.sortino_ratio),
+            sanitize_value(metrics.calmar_ratio),
             var_95,
             var_99,
             cvar_95,
-            metrics.avg_holding_time_hours,
-            metrics.trade_frequency_per_day,
-            metrics.avg_leverage,
+            sanitize_value(metrics.avg_holding_time_hours),
+            sanitize_value(metrics.trade_frequency_per_day),
+            sanitize_value(metrics.avg_leverage),
             max_leverage,
-            metrics.active_days,
+            sanitize_value(metrics.active_days, 0),
             metrics.last_trade_time.isoformat() if metrics.last_trade_time else None,
             metrics.first_trade_time.isoformat() if metrics.first_trade_time else None,
-            metrics.current_positions,
-            metrics.current_equity,
-            metrics.overall_score,
+            sanitize_value(metrics.current_positions, 0),
+            sanitize_value(metrics.current_equity),
+            sanitize_value(metrics.overall_score),
             metrics.rating.value,
-            metrics.profitability_score,
-            metrics.risk_score,
-            metrics.consistency_score,
-            metrics.activity_score,
-            metrics.avg_trade_price,
-            metrics.avg_trade_size,
-            metrics.max_single_win,
-            metrics.max_single_loss,
-            metrics.max_consecutive_wins,
-            metrics.max_consecutive_losses,
-            metrics.avg_win_amount,
-            metrics.avg_loss_amount,
-            metrics.unique_symbols,
-            metrics.favorite_symbol,
-            metrics.recent_7d_pnl,
-            metrics.recent_7d_win_rate,
-            metrics.long_short_ratio,
-            metrics.daily_pnl,
-            metrics.weekly_pnl,
-            metrics.monthly_pnl,
-            metrics.daily_roi,
-            metrics.weekly_roi,
-            metrics.monthly_roi,
-            metrics.daily_volume,
-            metrics.weekly_volume,
-            metrics.monthly_volume,
+            sanitize_value(metrics.profitability_score),
+            sanitize_value(metrics.risk_score),
+            sanitize_value(metrics.consistency_score),
+            sanitize_value(metrics.activity_score),
+            sanitize_value(metrics.avg_trade_price),
+            sanitize_value(metrics.avg_trade_size),
+            sanitize_value(metrics.max_single_win),
+            sanitize_value(metrics.max_single_loss),
+            sanitize_value(metrics.max_consecutive_wins, 0),
+            sanitize_value(metrics.max_consecutive_losses, 0),
+            sanitize_value(metrics.avg_win_amount),
+            sanitize_value(metrics.avg_loss_amount),
+            sanitize_value(metrics.unique_symbols, 0),
+            metrics.favorite_symbol or '',
+            sanitize_value(metrics.recent_7d_pnl),
+            sanitize_value(metrics.recent_7d_win_rate),
+            sanitize_value(metrics.long_short_ratio),
+            sanitize_value(metrics.daily_pnl),
+            sanitize_value(metrics.weekly_pnl),
+            sanitize_value(metrics.monthly_pnl),
+            sanitize_value(metrics.daily_roi),
+            sanitize_value(metrics.weekly_roi),
+            sanitize_value(metrics.monthly_roi),
+            sanitize_value(metrics.daily_volume),
+            sanitize_value(metrics.weekly_volume),
+            sanitize_value(metrics.monthly_volume),
         )
 
     def save_trader(self, metrics: TraderMetrics) -> int:

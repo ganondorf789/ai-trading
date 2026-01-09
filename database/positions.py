@@ -7,6 +7,7 @@ from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
+from utils import sanitize_float
 from .cache import cache
 
 
@@ -51,7 +52,7 @@ class PositionsOps:
                     leverage = pos.get('leverage', {})
 
                     # 跳过空仓位
-                    szi = float(pos.get('szi', 0))
+                    szi = sanitize_float(pos.get('szi', 0))
                     if szi == 0:
                         continue
 
@@ -66,12 +67,12 @@ class PositionsOps:
                         address,
                         pos.get('coin'),
                         szi,
-                        float(pos.get('entryPx', 0)),
-                        float(pos.get('positionValue', 0)),
-                        float(pos.get('unrealizedPnl', 0)),
-                        float(pos.get('returnOnEquity', 0)),
-                        float(pos.get('liquidationPx')) if pos.get('liquidationPx') else None,
-                        float(pos.get('marginUsed', 0)),
+                        sanitize_float(pos.get('entryPx', 0)),
+                        sanitize_float(pos.get('positionValue', 0)),
+                        sanitize_float(pos.get('unrealizedPnl', 0)),
+                        sanitize_float(pos.get('returnOnEquity', 0)),
+                        sanitize_float(pos.get('liquidationPx')) if pos.get('liquidationPx') else None,
+                        sanitize_float(pos.get('marginUsed', 0)),
                         int(pos.get('maxLeverage', 1)),
                         leverage.get('type'),
                         int(leverage.get('value', 1)),

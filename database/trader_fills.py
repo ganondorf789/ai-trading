@@ -8,6 +8,7 @@ from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
+from utils import sanitize_float
 
 
 class TraderFillsOps:
@@ -55,16 +56,16 @@ class TraderFillsOps:
                         address,
                         fill.get('coin'),
                         fill.get('side'),
-                        float(fill.get('px', 0)),
-                        float(fill.get('sz', 0)),
+                        sanitize_float(fill.get('px', 0)),
+                        sanitize_float(fill.get('sz', 0)),
                         time_ms,
                         trade_time,
-                        float(fill.get('closedPnl', 0)),
+                        sanitize_float(fill.get('closedPnl', 0)),
                         fill.get('hash'),
-                        start_pos if start_pos else None,
+                        sanitize_float(start_pos) if start_pos else None,
                         dir_val,
                         fill.get('crossed'),
-                        float(fill.get('fee', 0)),
+                        sanitize_float(fill.get('fee', 0)),
                         fill.get('oid'),
                         fill.get('tid'),
                         trade_type

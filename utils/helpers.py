@@ -1,10 +1,106 @@
 """
 辅助工具函数
 """
+import math
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import pandas as pd
 import numpy as np
+
+
+def sanitize_value(value: Any, default: float = 0.0) -> Union[int, float, str, None]:
+    """
+    清理数值，处理 numpy 和 Python 的特殊值（nan, inf）
+    
+    用于数据库插入前的数据清理，确保不会出现无效值。
+    
+    Args:
+        value: 输入值
+        default: 默认值（当值为 None/nan 时返回）
+    
+    Returns:
+        安全的数值
+    
+    Examples:
+        >>> sanitize_value(np.inf)
+        999999.0
+        >>> sanitize_value(np.nan)
+        0.0
+        >>> sanitize_value(None, default=1.0)
+        1.0
+    """
+    if value is None:
+        return default
+    
+    # 处理 numpy 类型，转换为 Python 原生类型
+    try:
+        if hasattr(value, 'item'):
+            value = value.item()
+    except (ValueError, AttributeError):
+        pass
+    
+    # 处理特殊浮点值
+    if isinstance(value, float):
+        if math.isnan(value):
+            return default
+        if math.isinf(value):
+            return 999999.0 if value > 0 else -999999.0
+    
+    return value
+
+
+def sanitize_float(value: Any, default: float = 0.0) -> float:
+    """
+    清理并转换为浮点数，处理 numpy/nan/inf
+    
+    Args:
+        value: 输入值
+        default: 默认值
+    
+    Returns:
+        安全的浮点数
+    
+    Examples:
+        >>> sanitize_float("123.45")
+        123.45
+        >>> sanitize_float(np.nan)
+        0.0
+    """
+    if value is None:
+        return default
+    try:
+        if hasattr(value, 'item'):
+            value = value.item()
+        value = float(value)
+        if math.isnan(value) or math.isinf(value):
+            return default
+        return value
+    except (ValueError, TypeError):
+        return default
+
+
+def sanitize_int(value: Any, default: int = 0) -> int:
+    """
+    清理并转换为整数
+    
+    Args:
+        value: 输入值
+        default: 默认值
+    
+    Returns:
+        安全的整数
+    """
+    if value is None:
+        return default
+    try:
+        if hasattr(value, 'item'):
+            value = value.item()
+        value = float(value)
+        if math.isnan(value) or math.isinf(value):
+            return default
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def format_number(value: float, decimals: int = 2) -> str:
