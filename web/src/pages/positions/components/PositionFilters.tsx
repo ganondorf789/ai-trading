@@ -11,6 +11,8 @@ interface PositionFiltersProps {
   onSideFilterChange: (value: string) => void;
   targetFilter: string;
   onTargetFilterChange: (value: string) => void;
+  starFilter: string;
+  onStarFilterChange: (value: string) => void;
   stats: CopyPositionStats | null;
   // 指标筛选
   metricFilters: MetricFilterConfig;
@@ -25,6 +27,8 @@ export function PositionFilters({
   onSideFilterChange,
   targetFilter,
   onTargetFilterChange,
+  starFilter,
+  onStarFilterChange,
   stats,
   metricFilters,
   onMetricFiltersChange,
@@ -40,7 +44,7 @@ export function PositionFilters({
   const hasActiveMetricFilters = Object.values(metricFilters).some(v => v !== undefined);
 
   // 检查是否有任何筛选条件
-  const hasAnyFilter = hasActiveMetricFilters || search || sideFilter !== "all" || targetFilter !== "all";
+  const hasAnyFilter = hasActiveMetricFilters || search || sideFilter !== "all" || targetFilter !== "all" || starFilter !== "all";
 
   return (
     <div className="flex flex-col gap-4 mb-4">
@@ -98,6 +102,24 @@ export function PositionFilters({
             </Select>
           </div>
         )}
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-default-500 whitespace-nowrap">收藏:</span>
+          <Select
+            className="w-28"
+            aria-label="Star"
+            selectedKeys={[starFilter]}
+            size="sm"
+            onSelectionChange={(keys) => {
+              const value = Array.from(keys)[0] as string;
+              onStarFilterChange(value);
+            }}
+          >
+            <SelectItem key="all">全部</SelectItem>
+            <SelectItem key="starred">已收藏 ⭐</SelectItem>
+            <SelectItem key="unstarred">未收藏</SelectItem>
+          </Select>
+        </div>
 
         <Button
           variant="flat"

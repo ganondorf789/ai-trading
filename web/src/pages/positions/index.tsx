@@ -27,6 +27,7 @@ interface CopyPositionStateWithMetrics extends CopyPositionState {
   profit_factor?: number;
   max_drawdown?: number;
   sharpe_ratio?: number;
+  is_starred?: boolean;
 }
 
 export default function PositionsPage() {
@@ -41,6 +42,7 @@ export default function PositionsPage() {
   const [search, setSearch] = useState("");
   const [sideFilter, setSideFilter] = useState<string>("all");
   const [targetFilter, setTargetFilter] = useState<string>("all");
+  const [starFilter, setStarFilter] = useState<string>("all");
   const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
 
   // 删除确认弹窗
@@ -78,16 +80,20 @@ export default function PositionsPage() {
 
       if (response.success && response.data) {
         // 合并交易员指标到仓位数据
-        const positionsWithMetrics = response.data.map(pos => ({
-          ...pos,
-          win_rate: addressMetrics.get(pos.target_address)?.win_rate,
-          trader_pnl: addressMetrics.get(pos.target_address)?.trader_pnl,
-          overall_score: addressMetrics.get(pos.target_address)?.overall_score,
-          total_trades: addressMetrics.get(pos.target_address)?.total_trades,
-          profit_factor: addressMetrics.get(pos.target_address)?.profit_factor,
-          max_drawdown: addressMetrics.get(pos.target_address)?.max_drawdown,
-          sharpe_ratio: addressMetrics.get(pos.target_address)?.sharpe_ratio,
-        }));
+        const positionsWithMetrics = response.data.map(pos => {
+          const addrMetrics = addressMetrics.get(pos.target_address);
+          return {
+            ...pos,
+            win_rate: addrMetrics?.win_rate,
+            trader_pnl: addrMetrics?.trader_pnl,
+            overall_score: addrMetrics?.overall_score,
+            total_trades: addrMetrics?.total_trades,
+            profit_factor: addrMetrics?.profit_factor,
+            max_drawdown: addrMetrics?.max_drawdown,
+            sharpe_ratio: addrMetrics?.sharpe_ratio,
+            is_starred: addrMetrics?.is_starred,
+          };
+        });
 
         setPositions(positionsWithMetrics);
       }
@@ -121,6 +127,13 @@ export default function PositionsPage() {
     // 方向筛选
     if (sideFilter !== "all") {
       filtered = filtered.filter((p) => p.side === sideFilter);
+    }
+
+    // 收藏筛选
+    if (starFilter === "starred") {
+      filtered = filtered.filter((p) => p.is_starred === true);
+    } else if (starFilter === "unstarred") {
+      filtered = filtered.filter((p) => !p.is_starred);
     }
 
     // 指标筛选
@@ -168,7 +181,7 @@ export default function PositionsPage() {
     }
 
     return filtered;
-  }, [positions, search, sideFilter, metricFilters]);
+  }, [positions, search, sideFilter, starFilter, metricFilters]);
 
   // 加载统计数据
   const fetchStats = useCallback(async () => {
@@ -191,6 +204,7 @@ export default function PositionsPage() {
     setSearch("");
     setSideFilter("all");
     setTargetFilter("all");
+    setStarFilter("all");
     setMetricFilters(emptyMetricFilters);
   };
 
@@ -339,6 +353,8 @@ export default function PositionsPage() {
           onSideFilterChange={setSideFilter}
           targetFilter={targetFilter}
           onTargetFilterChange={setTargetFilter}
+          starFilter={starFilter}
+          onStarFilterChange={setStarFilter}
           stats={stats}
           metricFilters={metricFilters}
           onMetricFiltersChange={setMetricFilters}

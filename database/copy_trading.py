@@ -183,7 +183,8 @@ class CopyTradingOps:
                     tm.profit_factor,
                     tm.max_drawdown,
                     tm.sharpe_ratio,
-                    tm.analyzed_at
+                    tm.analyzed_at,
+                    tm.is_starred
                 FROM copy_trading_addresses cta
                 LEFT JOIN copy_trading_groups g ON cta.group_id = g.id
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address

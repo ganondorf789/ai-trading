@@ -224,6 +224,7 @@ export interface CopyTradingAddress {
   max_drawdown?: number;
   sharpe_ratio?: number;
   analyzed_at?: string;
+  is_starred?: boolean;
 }
 
 export interface CopyTradingOrder {

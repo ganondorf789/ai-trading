@@ -15,6 +15,8 @@ interface PositionFiltersProps {
   onCoinFilterChange: (value: string) => void;
   groupFilter: string;
   onGroupFilterChange: (value: string) => void;
+  starFilter: string;
+  onStarFilterChange: (value: string) => void;
   stats: TraderPositionsStats | null;
   groups: CopyTradingGroup[];
   // 指标筛选
@@ -34,6 +36,8 @@ export function PositionFilters({
   onCoinFilterChange,
   groupFilter,
   onGroupFilterChange,
+  starFilter,
+  onStarFilterChange,
   stats,
   groups,
   metricFilters,
@@ -120,6 +124,17 @@ export function PositionFilters({
           ]}
         </Select>
 
+        <Select
+          className="w-32"
+          placeholder="收藏"
+          selectedKeys={[starFilter]}
+          onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
+        >
+          <SelectItem key="all">全部</SelectItem>
+          <SelectItem key="starred">已收藏 ⭐</SelectItem>
+          <SelectItem key="unstarred">未收藏</SelectItem>
+        </Select>
+
         <Button
           variant="flat"
           size="sm"
@@ -135,7 +150,7 @@ export function PositionFilters({
           )}
         </Button>
 
-        {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all") && (
+        {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all") && (
           <Button
             variant="flat"
             size="sm"

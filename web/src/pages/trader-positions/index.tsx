@@ -44,6 +44,7 @@ export default function TraderPositionsPage() {
   const [traderFilter, setTraderFilter] = useState<string>("all");
   const [coinFilter, setCoinFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [starFilter, setStarFilter] = useState<string>("all");
   const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
 
   // 加载分组数据
@@ -208,6 +209,7 @@ export default function TraderPositionsPage() {
     setTraderFilter("all");
     setCoinFilter("all");
     setGroupFilter("all");
+    setStarFilter("all");
     setMetricFilters(emptyMetricFilters);
   };
 
@@ -241,6 +243,13 @@ export default function TraderPositionsPage() {
     // 币种筛选
     if (coinFilter !== "all") {
       filtered = filtered.filter((p) => p.coin === coinFilter);
+    }
+
+    // 收藏筛选
+    if (starFilter === "starred") {
+      filtered = filtered.filter((p) => p.is_starred === true);
+    } else if (starFilter === "unstarred") {
+      filtered = filtered.filter((p) => !p.is_starred);
     }
 
     // 指标筛选
@@ -288,7 +297,7 @@ export default function TraderPositionsPage() {
     }
 
     return filtered;
-  }, [positions, search, sideFilter, traderFilter, coinFilter, metricFilters]);
+  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, metricFilters]);
 
   useEffect(() => {
     fetchAddressMetrics();
@@ -365,6 +374,8 @@ export default function TraderPositionsPage() {
             // 重置其他筛选
             setTraderFilter("all");
           }}
+          starFilter={starFilter}
+          onStarFilterChange={setStarFilter}
           stats={stats}
           groups={groups}
           metricFilters={metricFilters}
