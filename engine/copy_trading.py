@@ -1069,7 +1069,7 @@ class MultiTargetCopyTradingBot:
 
             target_state.copied_positions[symbol] = target_pos
 
-        # 处理平仓
+        # 处理平仓：目标不再持有的仓位
         for symbol in list(target_state.copied_positions.keys()):
             if symbol not in target_positions:
                 if symbol in self.my_positions:
@@ -1082,6 +1082,26 @@ class MultiTargetCopyTradingBot:
                     self.db.delete_copied_position(address, symbol)
                 except Exception as e:
                     logger.warning(f"[{address[:8]}] 删除仓位状态失败: {e}")
+
+        # 锁定状态下：平掉目标没有但我们有的所有仓位
+        # 这可以处理因仓位太小减仓失败的情况
+        if self.lock_state and self.lock_state.target_address == address:
+            for symbol in list(self.my_positions.keys()):
+                # 目标没有这个仓位，但我们有
+                if symbol not in target_positions:
+                    logger.info(
+                        f"[{address[:8]}] 锁定状态下发现目标无仓位，平掉我方仓位: {symbol}"
+                    )
+                    await self._close_position(target_state, symbol)
+                    target_state.copies_today += 1
+                    
+                    # 同时清理 copied_positions（如果存在）
+                    if symbol in target_state.copied_positions:
+                        del target_state.copied_positions[symbol]
+                        try:
+                            self.db.delete_copied_position(address, symbol)
+                        except Exception as e:
+                            logger.warning(f"[{address[:8]}] 删除仓位状态失败: {e}")
 
         # 持久化状态
         try:
