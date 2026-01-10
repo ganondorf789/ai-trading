@@ -34,7 +34,8 @@ def fetch_fills_for_period(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    auto_split: bool = True
+    auto_split: bool = True,
+    db: Optional['TraderDatabase'] = None
 ) -> List[Dict]:
     """
     获取指定时间段的交易记录
@@ -45,15 +46,22 @@ def fetch_fills_for_period(
         start_dt: 开始时间
         end_dt: 结束时间
         auto_split: 如果达到 2000 条，是否自动细分
+        db: 数据库实例（用于记录失败）
     
     Returns:
         交易记录列表
     """
-    fills = client.get_user_fills_by_time(
-        address,
-        int(start_dt.timestamp() * 1000),
-        int(end_dt.timestamp() * 1000)
-    )
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+    
+    try:
+        fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+    except Exception as e:
+        error_msg = f"获取月度数据失败: {repr(e)}"
+        logger.error(f"  ✗ {error_msg}")
+        if db:
+            db.record_fetch_fail(address, 'month', error_msg, start_ms, end_ms)
+        return []
     
     if not fills:
         return []
@@ -61,7 +69,7 @@ def fetch_fills_for_period(
     # 如果达到上限且允许自动细分
     if auto_split and len(fills) >= 2000 and (end_dt - start_dt).days > 1:
         logger.warning(f"  该月达到 2000 条上限，按周细分...")
-        return fetch_fills_by_weeks(client, address, start_dt, end_dt)
+        return fetch_fills_by_weeks(client, address, start_dt, end_dt, db)
     
     return fills
 
@@ -70,7 +78,8 @@ def fetch_fills_by_weeks(
     client: SyncAPIClient,
     address: str,
     start_dt: pendulum.DateTime,
-    end_dt: pendulum.DateTime
+    end_dt: pendulum.DateTime,
+    db: Optional['TraderDatabase'] = None
 ) -> List[Dict]:
     """按周获取交易记录"""
     all_fills = []
@@ -78,14 +87,21 @@ def fetch_fills_by_weeks(
     
     while current < end_dt:
         next_week = min(current.add(weeks=1), end_dt)
+        start_ms = int(current.timestamp() * 1000)
+        end_ms = int(next_week.timestamp() * 1000)
         
         logger.info(f"    [{current.format('MM-DD')} 至 {next_week.format('MM-DD')}]...")
         
-        week_fills = client.get_user_fills_by_time(
-            address,
-            int(current.timestamp() * 1000),
-            int(next_week.timestamp() * 1000)
-        )
+        try:
+            week_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+        except Exception as e:
+            error_msg = f"获取周数据失败: {repr(e)}"
+            logger.error(f"      ✗ {error_msg}")
+            if db:
+                db.record_fetch_fail(address, 'week', error_msg, start_ms, end_ms)
+            current = next_week
+            time.sleep(3.0)
+            continue
         
         if week_fills:
             logger.info(f"      获取 {len(week_fills)} 条")
@@ -93,7 +109,7 @@ def fetch_fills_by_weeks(
             # 如果这周还达到 2000 条，按天细分
             if len(week_fills) >= 2000:
                 logger.warning(f"      单周达到 2000 条，按天细分...")
-                day_fills = fetch_fills_by_days(client, address, current, next_week)
+                day_fills = fetch_fills_by_days(client, address, current, next_week, db)
                 all_fills.extend(day_fills)
             else:
                 all_fills.extend(week_fills)
@@ -110,7 +126,8 @@ def fetch_fills_by_days(
     client: SyncAPIClient,
     address: str,
     start_dt: pendulum.DateTime,
-    end_dt: pendulum.DateTime
+    end_dt: pendulum.DateTime,
+    db: Optional['TraderDatabase'] = None
 ) -> List[Dict]:
     """按天获取交易记录"""
     all_fills = []
@@ -118,17 +135,24 @@ def fetch_fills_by_days(
     
     while current < end_dt:
         next_day = min(current.add(days=1), end_dt)
+        start_ms = int(current.timestamp() * 1000)
+        end_ms = int(next_day.timestamp() * 1000)
         
-        day_fills = client.get_user_fills_by_time(
-            address,
-            int(current.timestamp() * 1000),
-            int(next_day.timestamp() * 1000)
-        )
+        try:
+            day_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+        except Exception as e:
+            error_msg = f"获取日数据失败: {repr(e)}"
+            logger.error(f"        ✗ {current.format('MM-DD')}: {error_msg}")
+            if db:
+                db.record_fetch_fail(address, 'day', error_msg, start_ms, end_ms)
+            current = next_day
+            time.sleep(3.0)
+            continue
         
         if day_fills:
             if len(day_fills) >= 2000:
                 logger.warning(f"        {current.format('MM-DD')}: {len(day_fills)} 条（达到上限，按小时细分...）")
-                hour_fills = fetch_fills_by_hours(client, address, current, next_day)
+                hour_fills = fetch_fills_by_hours(client, address, current, next_day, db)
                 all_fills.extend(hour_fills)
             else:
                 logger.info(f"        {current.format('MM-DD')}: {len(day_fills)} 条")
@@ -144,7 +168,8 @@ def fetch_fills_by_hours(
     client: SyncAPIClient,
     address: str,
     start_dt: pendulum.DateTime,
-    end_dt: pendulum.DateTime
+    end_dt: pendulum.DateTime,
+    db: Optional['TraderDatabase'] = None
 ) -> List[Dict]:
     """按小时获取交易记录（用于极度活跃的交易日）"""
     all_fills = []
@@ -152,12 +177,19 @@ def fetch_fills_by_hours(
     
     while current < end_dt:
         next_hour = min(current.add(hours=1), end_dt)
+        start_ms = int(current.timestamp() * 1000)
+        end_ms = int(next_hour.timestamp() * 1000)
         
-        hour_fills = client.get_user_fills_by_time(
-            address,
-            int(current.timestamp() * 1000),
-            int(next_hour.timestamp() * 1000)
-        )
+        try:
+            hour_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+        except Exception as e:
+            error_msg = f"获取小时数据失败: {repr(e)}"
+            logger.error(f"          ✗ {current.format('MM-DD HH:00')}: {error_msg}")
+            if db:
+                db.record_fetch_fail(address, 'hour', error_msg, start_ms, end_ms)
+            current = next_hour
+            time.sleep(3.0)
+            continue
         
         if hour_fills:
             all_fills.extend(hour_fills)
@@ -226,7 +258,13 @@ def fetch_and_save_fills_for_trader(
     
     # 步骤1：获取最近的 2000 条记录
     logger.info(f"  获取最近的 2000 条记录...")
-    recent_fills = client.get_user_fills(address, limit=0)
+    try:
+        recent_fills = client.get_user_fills(address, limit=0)
+    except Exception as e:
+        error_msg = f"获取最近记录失败: {repr(e)}"
+        logger.error(f"  ✗ {error_msg}")
+        db.record_fetch_fail(address, 'recent', error_msg)
+        return 0
     
     if not recent_fills:
         logger.warning(f"  该地址没有任何交易记录")
@@ -260,7 +298,7 @@ def fetch_and_save_fills_for_trader(
         )
         
         month_fills = fetch_fills_for_period(
-            client, address, current_start, current_end, auto_split=True
+            client, address, current_start, current_end, auto_split=True, db=db
         )
         
         if month_fills:

@@ -556,6 +556,44 @@ class DatabaseMigrations:
                 ON position_history(address, coin)
             """)
 
+            # 创建交易记录获取失败记录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS fetch_fails (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+                    
+                    -- 失败信息
+                    fail_type TEXT NOT NULL,           -- 'recent' | 'month' | 'week' | 'day' | 'hour'
+                    error_message TEXT,                 -- 错误信息
+                    
+                    -- 时间范围（用于重试）
+                    start_time BIGINT,                  -- 开始时间戳（毫秒）
+                    end_time BIGINT,                    -- 结束时间戳（毫秒）
+                    
+                    -- 重试状态
+                    retry_count INTEGER DEFAULT 0,      -- 重试次数
+                    status TEXT DEFAULT 'pending',      -- 'pending' | 'retrying' | 'resolved' | 'failed'
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TIMESTAMP               -- 解决时间
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fetch_fails_address
+                ON fetch_fails(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fetch_fails_status
+                ON fetch_fails(status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fetch_fails_type
+                ON fetch_fails(fail_type)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

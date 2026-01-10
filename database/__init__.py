@@ -17,6 +17,7 @@ from .coins import CoinsOps
 from .ai_analysis import AIAnalysisOps
 from .group_comparison import GroupComparisonOps
 from .position_history import PositionHistoryOps
+from .fetch_fails import FetchFailsOps
 
 
 class TraderDatabase(
@@ -31,7 +32,8 @@ class TraderDatabase(
     CoinsOps,
     AIAnalysisOps,
     GroupComparisonOps,
-    PositionHistoryOps
+    PositionHistoryOps,
+    FetchFailsOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)
@@ -46,6 +48,7 @@ class TraderDatabase(
     - Hyperliquid 币种管理
     - AI 分析管理
     - 分组对比分析管理
+    - 交易记录获取失败记录管理
     """
 
     def __init__(self):
