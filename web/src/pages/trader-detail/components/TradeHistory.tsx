@@ -341,7 +341,6 @@ export function TradeHistory({
             {activeFilters > 0 && (
               <Button
                 className="bg-default-100 text-default-800 shrink-0"
-                size="sm"
                 variant="flat"
                 onPress={onReset}
                 startContent={
@@ -360,7 +359,6 @@ export function TradeHistory({
               <DropdownTrigger>
                 <Button
                   className="bg-default-100 text-default-800"
-                  size="sm"
                   startContent={
                     <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
                   }
@@ -394,7 +392,6 @@ export function TradeHistory({
               <DropdownTrigger>
                 <Button
                   className="bg-default-100 text-default-800"
-                  size="sm"
                   startContent={
                     <Icon
                       className="text-default-400"

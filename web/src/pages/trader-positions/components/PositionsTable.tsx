@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Table,
@@ -12,9 +12,17 @@ import {
   Tooltip,
   Progress,
   Button,
+  Pagination,
+  Input,
+  Select,
+  SelectItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { TraderPosition } from "@/services/api";
+
+// 每页显示条数选项
+const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
+const DEFAULT_ROWS_PER_PAGE = 20;
 
 interface PositionsTableProps {
   positions: TraderPosition[];
@@ -26,6 +34,44 @@ interface PositionsTableProps {
 
 export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set() }: PositionsTableProps) {
   const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
+  
+  // 分页状态
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE);
+  const [jumpPage, setJumpPage] = useState('');
+
+  // 计算分页数据
+  const totalCount = positions.length;
+  const totalPages = Math.ceil(totalCount / rowsPerPage);
+  
+  // 当数据变化时重置页码
+  useEffect(() => {
+    if (page > totalPages && totalPages > 0) {
+      setPage(1);
+    }
+  }, [positions.length, rowsPerPage, page, totalPages]);
+
+  // 获取当前页的数据
+  const paginatedPositions = useMemo(() => {
+    const start = (page - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return positions.slice(start, end);
+  }, [positions, page, rowsPerPage]);
+
+  // 处理每页条数变化
+  const handleRowsPerPageChange = (value: string) => {
+    setRowsPerPage(Number(value));
+    setPage(1); // 重置到第一页
+  };
+
+  // 处理跳转页码
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setPage(pageNum);
+      setJumpPage('');
+    }
+  };
 
   const handleRefreshTrader = async (address: string) => {
     if (!onRefreshTrader || refreshingAddresses.has(address)) return;
@@ -74,6 +120,66 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
     return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
   };
 
+  // 底部分页内容
+  const bottomContent = useMemo(() => {
+    if (totalCount === 0) return null;
+    
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-3 px-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-default-500">
+            显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-default-500">每页</span>
+            <Select
+              size="sm"
+              className="w-20"
+              selectedKeys={[String(rowsPerPage)]}
+              onChange={(e) => handleRowsPerPageChange(e.target.value)}
+              aria-label="每页显示条数"
+            >
+              {ROWS_PER_PAGE_OPTIONS.map((option) => (
+                <SelectItem key={String(option)} textValue={String(option)}>
+                  {option}
+                </SelectItem>
+              ))}
+            </Select>
+            <span className="text-sm text-default-500">条</span>
+          </div>
+        </div>
+        
+        {totalPages > 1 && (
+          <div className="flex items-center gap-3">
+            <Pagination
+              isCompact
+              showControls
+              showShadow
+              color="primary"
+              page={page}
+              total={totalPages}
+              onChange={setPage}
+            />
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-default-500">跳转</span>
+              <Input
+                type="number"
+                size="sm"
+                className="w-16"
+                min={1}
+                max={totalPages}
+                value={jumpPage}
+                onValueChange={setJumpPage}
+                onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
+              />
+              <span className="text-sm text-default-500">页</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [page, totalPages, totalCount, rowsPerPage, jumpPage]);
+
   return (
     <Table
       aria-label="Trader positions table"
@@ -81,6 +187,8 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
         wrapper: "bg-content1/50 backdrop-blur-md",
         th: "bg-content2/50",
       }}
+      bottomContent={bottomContent}
+      bottomContentPlacement="outside"
     >
       <TableHeader>
         <TableColumn width={50}>收藏</TableColumn>
@@ -98,7 +206,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
         <TableColumn width={60}>操作</TableColumn>
       </TableHeader>
       <TableBody emptyContent="暂无持仓数据" isLoading={loading} loadingContent={<Spinner />}>
-        {positions.map((position) => {
+        {paginatedPositions.map((position) => {
           const isLong = position.szi > 0;
           const pnl = position.unrealized_pnl || 0;
           const roe = position.return_on_equity || 0;
