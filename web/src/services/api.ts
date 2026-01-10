@@ -29,6 +29,7 @@ import type {
   PositionHistoryByCoin,
   GlobalPositionHistoryRecord,
   GlobalPositionHistoryStats,
+  PositionsAIAnalysis,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -62,6 +63,7 @@ export type {
   PositionHistoryByCoin,
   GlobalPositionHistoryRecord,
   GlobalPositionHistoryStats,
+  PositionsAIAnalysis,
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -441,6 +443,42 @@ export const traderPositionsApi = {
       '/copy-trading/trader-positions/refresh',
       null,
       { params: { enabled_only: enabledOnly }, timeout: 120000 }  // 2分钟超时
+    ),
+
+  // AI分析：整体持仓分析
+  aiAnalyzeAll: (data: {
+    positions?: TraderPosition[];
+    stats?: TraderPositionsStats;
+    provider?: string;
+    filters?: Record<string, any>;
+  }) =>
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+      '/copy-trading/trader-positions/ai-analysis',
+      data,
+      { timeout: 90000 }  // 90秒超时
+    ),
+
+  // AI分析：单币种分析
+  aiAnalyzeCoin: (data: {
+    coin: string;
+    positions?: TraderPosition[];
+    provider?: string;
+  }) =>
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+      '/copy-trading/trader-positions/ai-analysis/coin',
+      data,
+      { timeout: 90000 }
+    ),
+
+  // AI分析：单仓位分析
+  aiAnalyzeSingle: (data: {
+    position: TraderPosition;
+    provider?: string;
+  }) =>
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+      '/copy-trading/trader-positions/ai-analysis/single',
+      data,
+      { timeout: 60000 }
     ),
 };
 

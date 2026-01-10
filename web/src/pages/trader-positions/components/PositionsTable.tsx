@@ -30,9 +30,10 @@ interface PositionsTableProps {
   onRefreshTrader?: (address: string) => Promise<void>;
   onToggleStar?: (address: string, isStarred: boolean) => Promise<void>;
   starLoadingAddresses?: Set<string>;
+  onAIAnalyze?: (position: TraderPosition) => void;
 }
 
-export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set() }: PositionsTableProps) {
+export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set(), onAIAnalyze }: PositionsTableProps) {
   const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
   
   // 分页状态
@@ -203,7 +204,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
         <TableColumn>ROE</TableColumn>
         <TableColumn>杠杆</TableColumn>
         <TableColumn>更新时间</TableColumn>
-        <TableColumn width={60}>操作</TableColumn>
+        <TableColumn width={80}>操作</TableColumn>
       </TableHeader>
       <TableBody emptyContent="暂无持仓数据" isLoading={loading} loadingContent={<Spinner />}>
         {paginatedPositions.map((position) => {
@@ -313,17 +314,34 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
                 <span className="text-sm text-default-500">{formatTime(position.updated_at)}</span>
               </TableCell>
               <TableCell>
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="light"
-                    color="primary"
-                    isLoading={refreshingAddresses.has(position.address)}
-                    onPress={() => handleRefreshTrader(position.address)}
-                    isDisabled={!onRefreshTrader}
-                  >
-                    <Icon icon="solar:refresh-bold-duotone" width={16} />
-                  </Button>
+                <div className="flex gap-1">
+                  {onAIAnalyze && (
+                    <Tooltip content="AI 风险分析">
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        color="secondary"
+                        onPress={() => onAIAnalyze(position)}
+                      >
+                        <Icon icon="solar:magic-stick-2-bold-duotone" width={16} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                  <Tooltip content="刷新持仓">
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="light"
+                      color="primary"
+                      isLoading={refreshingAddresses.has(position.address)}
+                      onPress={() => handleRefreshTrader(position.address)}
+                      isDisabled={!onRefreshTrader}
+                    >
+                      <Icon icon="solar:refresh-bold-duotone" width={16} />
+                    </Button>
+                  </Tooltip>
+                </div>
               </TableCell>
             </TableRow>
           );

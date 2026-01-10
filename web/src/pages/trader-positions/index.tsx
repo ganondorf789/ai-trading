@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, addToast, Spinner } from "@heroui/react";
+import { Button, addToast, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
@@ -10,11 +10,11 @@ import {
   TraderPosition,
   TraderPositionsStats,
   CopyTradingGroup,
-  CopyTradingAddress,
+  PositionsAIAnalysis,
 } from "@/services/api";
 import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
 
-import { StatsCards, PositionFilters, PositionsTable, CoinSummary } from "./components";
+import { StatsCards, PositionFilters, PositionsTable, CoinSummary, PositionsAIAnalysisModal } from "./components";
 
 // 扩展 TraderPosition 类型，包含交易员指标
 interface TraderPositionWithMetrics extends TraderPosition {
@@ -211,6 +211,13 @@ export default function TraderPositionsPage() {
     setMetricFilters(emptyMetricFilters);
   };
 
+  // ==================== AI 分析状态 ====================
+  const [aiAnalysisOpen, setAiAnalysisOpen] = useState(false);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiAnalysisData, setAiAnalysisData] = useState<PositionsAIAnalysis | null>(null);
+  const [aiAnalysisType, setAiAnalysisType] = useState<'overall' | 'coin' | 'single'>('overall');
+  const [aiAnalysisCoin, setAiAnalysisCoin] = useState<string>('');
+
   // 应用本地筛选
   const filteredPositions = useMemo(() => {
     let filtered = positions;
@@ -348,6 +355,145 @@ export default function TraderPositionsPage() {
     };
   }, [filteredPositions]);
 
+  // ==================== AI 分析函数 ====================
+
+  // 整体持仓 AI 分析
+  const handleAIAnalyzeAll = useCallback(async () => {
+    if (filteredPositions.length === 0) {
+      addToast({
+        title: "无法分析",
+        description: "当前没有持仓数据",
+        color: "warning",
+      });
+      return;
+    }
+
+    setAiAnalysisType('overall');
+    setAiAnalysisData(null);
+    setAiAnalysisOpen(true);
+    setAiAnalyzing(true);
+
+    try {
+      const response = await traderPositionsApi.aiAnalyzeAll({
+        positions: filteredPositions,
+        stats: filteredStats || undefined,
+      });
+
+      if (response.success && response.data) {
+        setAiAnalysisData(response.data);
+        addToast({
+          title: "分析完成",
+          description: response.message || "AI 分析已完成",
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: "分析失败",
+          description: response.error || "未知错误",
+          color: "danger",
+        });
+      }
+    } catch (error: any) {
+      console.error("AI analysis failed:", error);
+      addToast({
+        title: "分析失败",
+        description: error.message || "AI 分析请求失败",
+        color: "danger",
+      });
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }, [filteredPositions, filteredStats]);
+
+  // 币种持仓 AI 分析
+  const handleAIAnalyzeCoin = useCallback(async (coin: string) => {
+    const coinPositions = filteredPositions.filter(p => p.coin === coin);
+    if (coinPositions.length === 0) {
+      addToast({
+        title: "无法分析",
+        description: `没有 ${coin} 的持仓数据`,
+        color: "warning",
+      });
+      return;
+    }
+
+    setAiAnalysisType('coin');
+    setAiAnalysisCoin(coin);
+    setAiAnalysisData(null);
+    setAiAnalysisOpen(true);
+    setAiAnalyzing(true);
+
+    try {
+      const response = await traderPositionsApi.aiAnalyzeCoin({
+        coin,
+        positions: coinPositions,
+      });
+
+      if (response.success && response.data) {
+        setAiAnalysisData(response.data);
+        addToast({
+          title: "分析完成",
+          description: response.message || `${coin} AI 分析已完成`,
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: "分析失败",
+          description: response.error || "未知错误",
+          color: "danger",
+        });
+      }
+    } catch (error: any) {
+      console.error("AI analysis failed:", error);
+      addToast({
+        title: "分析失败",
+        description: error.message || "AI 分析请求失败",
+        color: "danger",
+      });
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }, [filteredPositions]);
+
+  // 单仓位 AI 分析
+  const handleAIAnalyzeSingle = useCallback(async (position: TraderPosition) => {
+    setAiAnalysisType('single');
+    setAiAnalysisCoin(position.coin);
+    setAiAnalysisData(null);
+    setAiAnalysisOpen(true);
+    setAiAnalyzing(true);
+
+    try {
+      const response = await traderPositionsApi.aiAnalyzeSingle({
+        position,
+      });
+
+      if (response.success && response.data) {
+        setAiAnalysisData(response.data);
+        addToast({
+          title: "分析完成",
+          description: response.message || "仓位风险分析已完成",
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: "分析失败",
+          description: response.error || "未知错误",
+          color: "danger",
+        });
+      }
+    } catch (error: any) {
+      console.error("AI analysis failed:", error);
+      addToast({
+        title: "分析失败",
+        description: error.message || "AI 分析请求失败",
+        color: "danger",
+      });
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPositions();
   }, [fetchPositions]);
@@ -370,6 +516,49 @@ export default function TraderPositionsPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Dropdown>
+              <DropdownTrigger>
+                <Button
+                  color="secondary"
+                  variant="flat"
+                  startContent={<Icon icon="solar:magic-stick-2-bold-duotone" width={18} />}
+                  isDisabled={loading || filteredPositions.length === 0}
+                >
+                  AI 分析
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu aria-label="AI分析选项">
+                <DropdownItem
+                  key="overall"
+                  startContent={<Icon icon="solar:chart-2-bold-duotone" width={18} />}
+                  description={`分析当前 ${filteredPositions.length} 个持仓的整体情况`}
+                  onPress={handleAIAnalyzeAll}
+                >
+                  整体持仓分析
+                </DropdownItem>
+                <DropdownItem
+                  key="coin"
+                  startContent={<Icon icon="solar:dollar-bold-duotone" width={18} />}
+                  description="选择一个币种进行深度分析"
+                  onPress={() => {
+                    // 获取当前筛选后的币种列表
+                    const coins = [...new Set(filteredPositions.map(p => p.coin))];
+                    if (coins.length === 0) {
+                      addToast({ title: "无法分析", description: "当前没有持仓数据", color: "warning" });
+                      return;
+                    }
+                    // 默认分析持仓最多的币种
+                    const coinCounts = coins.map(c => ({
+                      coin: c,
+                      count: filteredPositions.filter(p => p.coin === c).length
+                    })).sort((a, b) => b.count - a.count);
+                    handleAIAnalyzeCoin(coinCounts[0].coin);
+                  }}
+                >
+                  币种深度分析
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
             <Button
               color="primary"
               variant="flat"
@@ -392,7 +581,7 @@ export default function TraderPositionsPage() {
         <StatsCards stats={filteredStats} loading={loading && positions.length === 0} />
 
         {/* Coin Summary */}
-        <CoinSummary stats={filteredStats} />
+        <CoinSummary stats={filteredStats} onAIAnalyzeCoin={handleAIAnalyzeCoin} />
 
         {/* Filters */}
         <PositionFilters
@@ -437,8 +626,20 @@ export default function TraderPositionsPage() {
           onRefreshTrader={handleRefreshTrader}
           onToggleStar={handleToggleStar}
           starLoadingAddresses={starLoadingAddresses}
+          onAIAnalyze={handleAIAnalyzeSingle}
         />
       </div>
+
+      {/* AI 分析弹窗 */}
+      <PositionsAIAnalysisModal
+        isOpen={aiAnalysisOpen}
+        analysisData={aiAnalysisData}
+        analyzing={aiAnalyzing}
+        analysisType={aiAnalysisType}
+        coinName={aiAnalysisCoin}
+        onClose={() => setAiAnalysisOpen(false)}
+        onReanalyze={aiAnalysisType === 'overall' ? handleAIAnalyzeAll : undefined}
+      />
     </DefaultLayout>
   );
 }

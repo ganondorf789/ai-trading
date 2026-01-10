@@ -539,6 +539,34 @@ export interface GroupComparisonStats {
   avg_finalists: number;
 }
 
+// ==================== 持仓AI分析类型 ====================
+
+export interface PositionsAIAnalysis {
+  analysis_type: 'overall' | 'coin' | 'single';
+  position_count?: number;
+  coin?: string;
+  address?: string;
+  analysis_text: string;
+  sections: {
+    // 整体分析
+    market_sentiment?: string;
+    long_short_analysis?: string;
+    hot_coins?: string;
+    risk_warning?: string;
+    key_points?: string;
+    suggestions?: string;
+    // 币种分析
+    long_short_comparison?: string;
+    key_levels?: string;
+    trader_consensus?: string;
+    risk_assessment?: string;
+    // 单仓位分析
+    risk_level?: string;
+    key_risks?: string;
+    pnl_analysis?: string;
+  };
+}
+
 // ==================== 风控配置类型 ====================
 
 export interface RiskControlConfig {

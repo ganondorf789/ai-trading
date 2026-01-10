@@ -927,3 +927,280 @@ def refresh_all_trader_positions():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ==================== 持仓 AI 分析 API ====================
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions/ai-analysis', methods=['POST'])
+def ai_analyze_all_positions():
+    """
+    AI分析所有持仓（整体分析）
+    Body (JSON):
+        - positions: List[Dict], 持仓数据列表（可选，不传则从数据库获取）
+        - stats: Dict, 持仓统计数据（可选）
+        - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)
+        - filters: Dict, 筛选条件（可选）
+    """
+    try:
+        from services.positions_analysis import analyze_all_positions
+        
+        data = request.get_json() or {}
+        provider = data.get('provider') or request.args.get('provider')
+        filters = data.get('filters', {})
+        
+        # 如果没有传入持仓数据，从数据库获取
+        positions = data.get('positions')
+        stats = data.get('stats')
+        
+        if not positions:
+            # 构建指标筛选条件
+            metric_filters = {
+                'min_win_rate': filters.get('min_win_rate'),
+                'max_win_rate': filters.get('max_win_rate'),
+                'min_profit_factor': filters.get('min_profit_factor'),
+                'max_profit_factor': filters.get('max_profit_factor'),
+                'min_pnl': filters.get('min_pnl'),
+                'max_pnl': filters.get('max_pnl'),
+                'min_drawdown': filters.get('min_drawdown'),
+                'max_drawdown': filters.get('max_drawdown'),
+                'min_sharpe': filters.get('min_sharpe'),
+                'max_sharpe': filters.get('max_sharpe'),
+                'min_sortino': filters.get('min_sortino'),
+                'max_sortino': filters.get('max_sortino'),
+                'min_trades': filters.get('min_trades'),
+                'max_trades': filters.get('max_trades'),
+                'min_score': filters.get('min_score'),
+                'max_score': filters.get('max_score'),
+            }
+            
+            positions, stats = db.get_trader_positions_with_filters(
+                enabled_only=filters.get('enabled_only', False),
+                group_id=filters.get('group_id'),
+                metric_filters=metric_filters
+            )
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': '没有找到持仓数据'
+            }), 400
+        
+        if not stats:
+            # 构建基础统计
+            stats = _build_positions_stats(positions)
+        
+        logger.info(f"开始整体持仓AI分析，共 {len(positions)} 个持仓，提供商: {provider or '默认'}")
+        
+        analysis = analyze_all_positions(positions, stats, provider=provider)
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'message': 'AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"整体持仓AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions/ai-analysis/coin', methods=['POST'])
+def ai_analyze_coin_positions():
+    """
+    AI分析单个币种的所有持仓
+    Body (JSON):
+        - coin: str, 币种名称（必填）
+        - positions: List[Dict], 该币种的持仓数据列表（可选）
+        - provider: str, AI提供商
+    """
+    try:
+        from services.positions_analysis import analyze_coin_positions
+        
+        data = request.get_json() or {}
+        coin = data.get('coin')
+        provider = data.get('provider') or request.args.get('provider')
+        
+        if not coin:
+            return jsonify({
+                'success': False,
+                'error': '缺少 coin 参数'
+            }), 400
+        
+        # 如果没有传入持仓数据，从数据库获取
+        positions = data.get('positions')
+        if not positions:
+            all_positions, _ = db.get_trader_positions_with_filters(enabled_only=False)
+            positions = [p for p in all_positions if p.get('coin') == coin]
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': f'没有找到 {coin} 的持仓数据'
+            }), 400
+        
+        # 构建币种统计
+        coin_stats = _build_coin_stats(positions)
+        
+        logger.info(f"开始 {coin} 币种持仓AI分析，共 {len(positions)} 个持仓，提供商: {provider or '默认'}")
+        
+        analysis = analyze_coin_positions(coin, positions, coin_stats, provider=provider)
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'message': f'{coin} AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"币种持仓AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions/ai-analysis/single', methods=['POST'])
+def ai_analyze_single_position():
+    """
+    AI分析单个仓位
+    Body (JSON):
+        - position: Dict, 仓位数据（必填）
+        - provider: str, AI提供商
+    """
+    try:
+        from services.positions_analysis import analyze_single_position
+        
+        data = request.get_json() or {}
+        position = data.get('position')
+        provider = data.get('provider') or request.args.get('provider')
+        
+        if not position:
+            return jsonify({
+                'success': False,
+                'error': '缺少 position 参数'
+            }), 400
+        
+        # 尝试获取交易员详细信息
+        trader_info = None
+        address = position.get('address')
+        if address:
+            trader_info = db.get_trader_by_address(address)
+        
+        coin = position.get('coin', 'Unknown')
+        logger.info(f"开始单仓位 {coin} AI分析，提供商: {provider or '默认'}")
+        
+        analysis = analyze_single_position(position, trader_info, provider=provider)
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'message': f'{coin} 仓位AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"单仓位AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+def _build_positions_stats(positions: list) -> dict:
+    """构建持仓统计数据"""
+    if not positions:
+        return {
+            'total_positions': 0,
+            'total_traders': 0,
+            'total_notional': 0,
+            'long_count': 0,
+            'short_count': 0,
+            'long_notional': 0,
+            'short_notional': 0,
+            'total_unrealized_pnl': 0,
+            'profit_count': 0,
+            'loss_count': 0,
+            'profit_pnl': 0,
+            'loss_pnl': 0,
+            'by_coin': [],
+            'by_trader': [],
+        }
+    
+    # 基础统计
+    unique_traders = set(p.get('address') for p in positions)
+    long_positions = [p for p in positions if p.get('szi', 0) > 0]
+    short_positions = [p for p in positions if p.get('szi', 0) < 0]
+    
+    # 盈亏统计
+    profit_positions = [p for p in positions if (p.get('unrealized_pnl') or 0) > 0]
+    loss_positions = [p for p in positions if (p.get('unrealized_pnl') or 0) < 0]
+    
+    total_unrealized_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in positions)
+    profit_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in profit_positions)
+    loss_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in loss_positions)
+    
+    # 按币种分组统计
+    coin_map = {}
+    for p in positions:
+        coin = p.get('coin', '-')
+        if coin not in coin_map:
+            coin_map[coin] = {'count': 0, 'notional': 0, 'long': 0, 'short': 0}
+        coin_map[coin]['count'] += 1
+        coin_map[coin]['notional'] += abs(p.get('position_value', 0) or 0)
+        if p.get('szi', 0) > 0:
+            coin_map[coin]['long'] += 1
+        else:
+            coin_map[coin]['short'] += 1
+    
+    by_coin = sorted(
+        [{'coin': k, **v} for k, v in coin_map.items()],
+        key=lambda x: x['notional'],
+        reverse=True
+    )
+    
+    # 按交易员分组统计
+    trader_map = {}
+    for p in positions:
+        addr = p.get('address', '-')
+        if addr not in trader_map:
+            trader_map[addr] = {'name': p.get('trader_name'), 'count': 0, 'notional': 0}
+        trader_map[addr]['count'] += 1
+        trader_map[addr]['notional'] += abs(p.get('position_value', 0) or 0)
+    
+    by_trader = sorted(
+        [{'address': k, **v} for k, v in trader_map.items()],
+        key=lambda x: x['notional'],
+        reverse=True
+    )
+    
+    return {
+        'total_positions': len(positions),
+        'total_traders': len(unique_traders),
+        'total_notional': sum(abs(p.get('position_value', 0) or 0) for p in positions),
+        'long_count': len(long_positions),
+        'short_count': len(short_positions),
+        'long_notional': sum(abs(p.get('position_value', 0) or 0) for p in long_positions),
+        'short_notional': sum(abs(p.get('position_value', 0) or 0) for p in short_positions),
+        'total_unrealized_pnl': total_unrealized_pnl,
+        'profit_count': len(profit_positions),
+        'loss_count': len(loss_positions),
+        'profit_pnl': profit_pnl,
+        'loss_pnl': loss_pnl,
+        'by_coin': by_coin,
+        'by_trader': by_trader,
+    }
+
+
+def _build_coin_stats(positions: list) -> dict:
+    """构建币种统计数据"""
+    if not positions:
+        return {'notional': 0, 'count': 0, 'long': 0, 'short': 0}
+    
+    long_positions = [p for p in positions if p.get('szi', 0) > 0]
+    short_positions = [p for p in positions if p.get('szi', 0) < 0]
+    
+    return {
+        'notional': sum(abs(p.get('position_value', 0) or 0) for p in positions),
+        'count': len(positions),
+        'long': len(long_positions),
+        'short': len(short_positions),
+    }
