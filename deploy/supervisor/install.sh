@@ -62,20 +62,51 @@ stderr_logfile_backups=10
 priority=100
 EOF
 
+cat > /tmp/api_server.conf << EOF
+[program:api_server]
+command=python3 $PROJECT_DIR/api_server.py
+directory=$PROJECT_DIR
+user=$USER
+environment=PYTHONUNBUFFERED="1"
+autostart=true
+autorestart=true
+startsecs=10
+startretries=3
+stopwaitsecs=30
+stopsignal=SIGTERM
+stdout_logfile=$PROJECT_DIR/logs/supervisor_api_server.log
+stdout_logfile_maxbytes=50MB
+stdout_logfile_backups=10
+stderr_logfile=$PROJECT_DIR/logs/supervisor_api_server_error.log
+stderr_logfile_maxbytes=50MB
+stderr_logfile_backups=10
+priority=90
+EOF
+
 # 复制配置到 Supervisor 目录
 sudo cp /www/ai-trading/deploy/supervisor/copy_trading.conf /etc/supervisord.d/copy_trading.ini
+sudo cp /www/ai-trading/deploy/supervisor/api_server.conf /etc/supervisord.d/api_server.ini
 
 # 5. 启动服务
 echo -e "${YELLOW}[5/5] 启动服务...${NC}"
 sudo supervisorctl reread
 sudo supervisorctl update
+sudo supervisorctl start api_server
 sudo supervisorctl start copy_trading
 
 echo -e "${GREEN}=== 安装完成! ===${NC}"
 echo ""
 echo "常用命令:"
-echo "  查看状态: sudo supervisorctl status copy_trading"
-echo "  启动:     sudo supervisorctl start copy_trading"
-echo "  停止:     sudo supervisorctl stop copy_trading"
-echo "  重启:     sudo supervisorctl restart copy_trading"
-echo "  查看日志: tail -f $PROJECT_DIR/logs/supervisor_copy_trading.log"
+echo "  查看所有状态: sudo supervisorctl status"
+echo ""
+echo "  API Server:"
+echo "    启动:     sudo supervisorctl start api_server"
+echo "    停止:     sudo supervisorctl stop api_server"
+echo "    重启:     sudo supervisorctl restart api_server"
+echo "    查看日志: tail -f $PROJECT_DIR/logs/supervisor_api_server.log"
+echo ""
+echo "  Copy Trading:"
+echo "    启动:     sudo supervisorctl start copy_trading"
+echo "    停止:     sudo supervisorctl stop copy_trading"
+echo "    重启:     sudo supervisorctl restart copy_trading"
+echo "    查看日志: tail -f $PROJECT_DIR/logs/supervisor_copy_trading.log"
