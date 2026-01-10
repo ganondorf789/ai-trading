@@ -10,20 +10,21 @@ interface StatsCardsProps {
 export function StatsCards({ traders, presetName, presetDescription }: StatsCardsProps) {
   // 计算统计数据
   const totalTraders = traders.length;
-  const totalRecentPnl = traders.reduce((sum, t) => sum + (t.recent_pnl || 0), 0);
+  const totalRecentPnl = traders.reduce((sum, t) => sum + Number(t.recent_pnl || 0), 0);
   const avgPositionWinRate = traders.length > 0
-    ? traders.reduce((sum, t) => sum + (t.position_win_rate || 0), 0) / traders.length
+    ? traders.reduce((sum, t) => sum + Number(t.position_win_rate || 0), 0) / traders.length
     : 0;
   const avgSharpe = traders.length > 0
-    ? traders.reduce((sum, t) => sum + (t.sharpe_ratio || 0), 0) / traders.length
+    ? traders.reduce((sum, t) => sum + Number(t.sharpe_ratio || 0), 0) / traders.length
     : 0;
   const starredCount = traders.filter(t => t.is_starred).length;
 
   const formatPnl = (value: number) => {
-    if (value >= 0) {
-      return `+$${value.toLocaleString()}`;
+    const num = Number(value) || 0;
+    if (num >= 0) {
+      return `+$${num.toLocaleString()}`;
     }
-    return `-$${Math.abs(value).toLocaleString()}`;
+    return `-$${Math.abs(num).toLocaleString()}`;
   };
 
   return (

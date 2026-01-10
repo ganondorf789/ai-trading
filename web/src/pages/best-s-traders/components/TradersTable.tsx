@@ -21,16 +21,19 @@ interface TradersTableProps {
   starLoadingAddresses?: Set<string>;
 }
 
-const formatPnl = (value: number) => {
-  if (value >= 0) {
-    return <span className="text-success">${value.toLocaleString()}</span>;
+const formatPnl = (value: number | string | null) => {
+  const num = Number(value) || 0;
+  if (num >= 0) {
+    return <span className="text-success">${num.toLocaleString()}</span>;
   }
-  return <span className="text-danger">-${Math.abs(value).toLocaleString()}</span>;
+  return <span className="text-danger">-${Math.abs(num).toLocaleString()}</span>;
 };
 
-const formatPercent = (value: number | null, decimals = 1) => {
+const formatPercent = (value: number | string | null, decimals = 1) => {
   if (value === null || value === undefined) return 'N/A';
-  return `${value.toFixed(decimals)}%`;
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(num)) return 'N/A';
+  return `${num.toFixed(decimals)}%`;
 };
 
 const getHoldingStyle = (hours: number) => {
@@ -92,7 +95,7 @@ export function TradersTable({
         return (
           <div className="flex items-center gap-1">
             <Chip size="sm" color="warning" variant="flat">S</Chip>
-            <span className="font-medium">{trader.overall_score.toFixed(1)}</span>
+            <span className="font-medium">{Number(trader.overall_score || 0).toFixed(1)}</span>
           </div>
         );
       
@@ -104,8 +107,9 @@ export function TradersTable({
         );
       
       case 'position_pf':
-        return trader.position_profit_factor 
-          ? <span className={trader.position_profit_factor >= 1.5 ? 'text-success' : ''}>{trader.position_profit_factor.toFixed(2)}</span>
+        const pf = Number(trader.position_profit_factor);
+        return !isNaN(pf) && pf > 0
+          ? <span className={pf >= 1.5 ? 'text-success' : ''}>{pf.toFixed(2)}</span>
           : 'N/A';
       
       case 'recent_pnl':
@@ -122,16 +126,18 @@ export function TradersTable({
         return formatPnl(trader.total_pnl);
       
       case 'sharpe':
+        const sharpe = Number(trader.sharpe_ratio || 0);
         return (
-          <span className={trader.sharpe_ratio >= 1 ? 'text-success' : ''}>
-            {trader.sharpe_ratio.toFixed(2)}
+          <span className={sharpe >= 1 ? 'text-success' : ''}>
+            {sharpe.toFixed(2)}
           </span>
         );
       
       case 'drawdown':
+        const drawdown = Number(trader.max_drawdown || 0);
         return (
-          <span className={trader.max_drawdown <= 0.2 ? 'text-success' : 'text-warning'}>
-            {(trader.max_drawdown * 100).toFixed(1)}%
+          <span className={drawdown <= 0.2 ? 'text-success' : 'text-warning'}>
+            {(drawdown * 100).toFixed(1)}%
           </span>
         );
       
