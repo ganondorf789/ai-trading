@@ -36,6 +36,8 @@ export default function TraderPositionsPage() {
   const [coinFilter, setCoinFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [starFilter, setStarFilter] = useState<string>("all");
+  const [pnlFilter, setPnlFilter] = useState<string>("all");
+  const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
 
   // 加载分组数据
@@ -204,6 +206,8 @@ export default function TraderPositionsPage() {
     setCoinFilter("all");
     setGroupFilter("all");
     setStarFilter("all");
+    setPnlFilter("all");
+    setScoreFilter("all");
     setMetricFilters(emptyMetricFilters);
   };
 
@@ -246,8 +250,103 @@ export default function TraderPositionsPage() {
       filtered = filtered.filter((p) => !p.is_starred);
     }
 
+    // 盈亏筛选（基于未实现盈亏）
+    if (pnlFilter === "profit") {
+      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) > 0);
+    } else if (pnlFilter === "loss") {
+      filtered = filtered.filter((p) => (p.unrealized_pnl || 0) < 0);
+    }
+
+    // 评级筛选（基于交易员评级）
+    if (scoreFilter !== "all" && scoreFilter) {
+      filtered = filtered.filter((p) => p.rating === scoreFilter);
+    }
+
     return filtered;
-  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter]);
+  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, pnlFilter, scoreFilter]);
+
+  // 根据筛选后的数据计算统计信息
+  const filteredStats = useMemo((): TraderPositionsStats | null => {
+    if (filteredPositions.length === 0) {
+      return {
+        total_positions: 0,
+        total_traders: 0,
+        total_notional: 0,
+        long_count: 0,
+        short_count: 0,
+        long_notional: 0,
+        short_notional: 0,
+        total_unrealized_pnl: 0,
+        profit_count: 0,
+        loss_count: 0,
+        profit_pnl: 0,
+        loss_pnl: 0,
+        by_coin: [],
+        by_trader: [],
+      };
+    }
+
+    // 计算基础统计
+    const uniqueTraders = new Set(filteredPositions.map(p => p.address));
+    const longPositions = filteredPositions.filter(p => p.szi > 0);
+    const shortPositions = filteredPositions.filter(p => p.szi < 0);
+
+    // 计算盈亏统计
+    const profitPositions = filteredPositions.filter(p => (p.unrealized_pnl || 0) > 0);
+    const lossPositions = filteredPositions.filter(p => (p.unrealized_pnl || 0) < 0);
+    const totalUnrealizedPnl = filteredPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+    const profitPnl = profitPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+    const lossPnl = lossPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+
+    // 按币种分组统计
+    const coinMap = new Map<string, { count: number; notional: number; long: number; short: number }>();
+    filteredPositions.forEach(p => {
+      const existing = coinMap.get(p.coin) || { count: 0, notional: 0, long: 0, short: 0 };
+      existing.count += 1;
+      existing.notional += p.position_value || 0;
+      if (p.szi > 0) {
+        existing.long += 1;
+      } else {
+        existing.short += 1;
+      }
+      coinMap.set(p.coin, existing);
+    });
+
+    // 按交易员分组统计
+    const traderMap = new Map<string, { name: string | null; count: number; notional: number }>();
+    filteredPositions.forEach(p => {
+      const existing = traderMap.get(p.address) || { name: p.trader_name, count: 0, notional: 0 };
+      existing.count += 1;
+      existing.notional += p.position_value || 0;
+      traderMap.set(p.address, existing);
+    });
+
+    // 转换为数组并排序
+    const byCoin = Array.from(coinMap.entries())
+      .map(([coin, data]) => ({ coin, ...data }))
+      .sort((a, b) => b.notional - a.notional);
+
+    const byTrader = Array.from(traderMap.entries())
+      .map(([address, data]) => ({ address, ...data }))
+      .sort((a, b) => b.notional - a.notional);
+
+    return {
+      total_positions: filteredPositions.length,
+      total_traders: uniqueTraders.size,
+      total_notional: filteredPositions.reduce((sum, p) => sum + (p.position_value || 0), 0),
+      long_count: longPositions.length,
+      short_count: shortPositions.length,
+      long_notional: longPositions.reduce((sum, p) => sum + (p.position_value || 0), 0),
+      short_notional: shortPositions.reduce((sum, p) => sum + (p.position_value || 0), 0),
+      total_unrealized_pnl: totalUnrealizedPnl,
+      profit_count: profitPositions.length,
+      loss_count: lossPositions.length,
+      profit_pnl: profitPnl,
+      loss_pnl: lossPnl,
+      by_coin: byCoin,
+      by_trader: byTrader,
+    };
+  }, [filteredPositions]);
 
   useEffect(() => {
     fetchPositions();
@@ -290,10 +389,10 @@ export default function TraderPositionsPage() {
         </div>
 
         {/* Stats Cards */}
-        <StatsCards stats={stats} loading={loading && positions.length === 0} />
+        <StatsCards stats={filteredStats} loading={loading && positions.length === 0} />
 
         {/* Coin Summary */}
-        <CoinSummary stats={stats} />
+        <CoinSummary stats={filteredStats} />
 
         {/* Filters */}
         <PositionFilters
@@ -313,6 +412,10 @@ export default function TraderPositionsPage() {
           }}
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
+          pnlFilter={pnlFilter}
+          onPnlFilterChange={setPnlFilter}
+          scoreFilter={scoreFilter}
+          onScoreFilterChange={setScoreFilter}
           stats={stats}
           groups={groups}
           metricFilters={metricFilters}

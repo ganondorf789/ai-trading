@@ -320,6 +320,10 @@ export interface TraderPosition {
   group_color: string | null;
   // 用户标记
   is_starred?: boolean;
+  // 交易员指标
+  overall_score?: number;
+  rating?: string;
+  trader_pnl?: number;
 }
 
 export interface TraderPositionsStats {
@@ -330,6 +334,12 @@ export interface TraderPositionsStats {
   short_count: number;
   long_notional: number;
   short_notional: number;
+  // 盈亏统计
+  total_unrealized_pnl?: number;
+  profit_count?: number;
+  loss_count?: number;
+  profit_pnl?: number;
+  loss_pnl?: number;
   by_coin: Array<{
     coin: string;
     count: number;

@@ -17,6 +17,10 @@ interface PositionFiltersProps {
   onGroupFilterChange: (value: string) => void;
   starFilter: string;
   onStarFilterChange: (value: string) => void;
+  pnlFilter: string;
+  onPnlFilterChange: (value: string) => void;
+  scoreFilter: string;
+  onScoreFilterChange: (value: string) => void;
   stats: TraderPositionsStats | null;
   groups: CopyTradingGroup[];
   // 指标筛选
@@ -38,6 +42,10 @@ export function PositionFilters({
   onGroupFilterChange,
   starFilter,
   onStarFilterChange,
+  pnlFilter,
+  onPnlFilterChange,
+  scoreFilter,
+  onScoreFilterChange,
   stats,
   groups,
   metricFilters,
@@ -73,9 +81,9 @@ export function PositionFilters({
           selectedKeys={[sideFilter]}
           onSelectionChange={(keys) => onSideFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部方向</SelectItem>
-          <SelectItem key="long">多头</SelectItem>
-          <SelectItem key="short">空头</SelectItem>
+          <SelectItem key="all" textValue="全部方向">全部方向</SelectItem>
+          <SelectItem key="long" textValue="多头">多头</SelectItem>
+          <SelectItem key="short" textValue="空头">空头</SelectItem>
         </Select>
 
         <Select
@@ -85,9 +93,9 @@ export function PositionFilters({
           onSelectionChange={(keys) => onGroupFilterChange(Array.from(keys)[0] as string)}
         >
           {[
-            <SelectItem key="all">全部分组</SelectItem>,
+            <SelectItem key="all" textValue="全部分组">全部分组</SelectItem>,
             ...groups.map((group) => (
-              <SelectItem key={group.id.toString()}>{group.name}</SelectItem>
+              <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
             )),
           ]}
         </Select>
@@ -99,12 +107,15 @@ export function PositionFilters({
           onSelectionChange={(keys) => onTraderFilterChange(Array.from(keys)[0] as string)}
         >
           {[
-            <SelectItem key="all">全部交易员</SelectItem>,
-            ...traderOptions.map((trader) => (
-              <SelectItem key={trader.address}>
-                {trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`} ({trader.count})
-              </SelectItem>
-            )),
+            <SelectItem key="all" textValue="全部交易员">全部交易员</SelectItem>,
+            ...traderOptions.map((trader) => {
+              const displayName = trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`;
+              return (
+                <SelectItem key={trader.address} textValue={displayName}>
+                  {displayName} ({trader.count})
+                </SelectItem>
+              );
+            }),
           ]}
         </Select>
 
@@ -115,9 +126,9 @@ export function PositionFilters({
           onSelectionChange={(keys) => onCoinFilterChange(Array.from(keys)[0] as string)}
         >
           {[
-            <SelectItem key="all">全部币种</SelectItem>,
+            <SelectItem key="all" textValue="全部币种">全部币种</SelectItem>,
             ...coinOptions.map((coin) => (
-              <SelectItem key={coin.coin}>
+              <SelectItem key={coin.coin} textValue={coin.coin}>
                 {coin.coin} ({coin.count})
               </SelectItem>
             )),
@@ -130,9 +141,38 @@ export function PositionFilters({
           selectedKeys={[starFilter]}
           onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部</SelectItem>
-          <SelectItem key="starred">已收藏 ⭐</SelectItem>
-          <SelectItem key="unstarred">未收藏</SelectItem>
+          <SelectItem key="all" textValue="全部">全部</SelectItem>
+          <SelectItem key="starred" textValue="已收藏">已收藏 ⭐</SelectItem>
+          <SelectItem key="unstarred" textValue="未收藏">未收藏</SelectItem>
+        </Select>
+
+        <Select
+          className="w-32"
+          placeholder="盈亏"
+          selectedKeys={[pnlFilter]}
+          onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
+        >
+          <SelectItem key="all" textValue="全部盈亏">全部盈亏</SelectItem>
+          <SelectItem key="profit" textValue="盈利">盈利 📈</SelectItem>
+          <SelectItem key="loss" textValue="亏损">亏损 📉</SelectItem>
+        </Select>
+
+        <Select
+          className="w-28"
+          placeholder="评级"
+          selectedKeys={scoreFilter ? [scoreFilter] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as string;
+            onScoreFilterChange(selected || 'all');
+          }}
+        >
+          <SelectItem key="all" textValue="全部">全部评级</SelectItem>
+          <SelectItem key="S" textValue="S">S</SelectItem>
+          <SelectItem key="A" textValue="A">A</SelectItem>
+          <SelectItem key="B" textValue="B">B</SelectItem>
+          <SelectItem key="C" textValue="C">C</SelectItem>
+          <SelectItem key="D" textValue="D">D</SelectItem>
+          <SelectItem key="F" textValue="F">F</SelectItem>
         </Select>
 
         <Button
@@ -149,7 +189,7 @@ export function PositionFilters({
           )}
         </Button>
 
-        {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all") && (
+        {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all" || pnlFilter !== "all" || scoreFilter !== "all") && (
           <Button
             variant="flat"
             color="warning"

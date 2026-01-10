@@ -575,7 +575,10 @@ class CopyOrdersOps:
                        cta.group_id, 
                        ctg.name as group_name, 
                        ctg.color as group_color,
-                       tm.is_starred
+                       tm.is_starred,
+                       tm.overall_score,
+                       tm.rating,
+                       tm.total_pnl as trader_pnl
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
                 LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
