@@ -81,9 +81,15 @@ export function TradersTable({
         return (
           <div className="flex flex-col">
             <Tooltip content={trader.address}>
-              <span className="font-mono text-sm">
+              <a
+                href={`/traders/${trader.address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-sm text-primary hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {trader.address.slice(0, 8)}...{trader.address.slice(-4)}
-              </span>
+              </a>
             </Tooltip>
             {trader.trader_name && (
               <span className="text-xs text-default-400">{trader.trader_name}</span>
