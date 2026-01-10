@@ -192,6 +192,14 @@ class TraderScreener:
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
+            # 重建历史仓位记录
+            if self._db:
+                try:
+                    history_count = self._db.rebuild_position_history(address)
+                    logger.debug(f"已重建 {history_count} 条历史仓位记录: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"重建历史仓位记录失败 {short_address(address)}: {e}")
+            
             # 缓存结果
             self._analyzed_traders[address] = metrics
             
