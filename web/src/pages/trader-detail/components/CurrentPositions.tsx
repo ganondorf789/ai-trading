@@ -37,6 +37,17 @@ export function CurrentPositions({
     return `${(num * 100).toFixed(2)}%`;
   };
 
+  const formatTime = (timeStr: string | null | undefined) => {
+    if (!timeStr) return '-';
+    const date = new Date(timeStr);
+    return date.toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <Card className="mt-6">
       <CardHeader>
@@ -87,6 +98,7 @@ export function CurrentPositions({
               <TableColumn key="roe">ROE</TableColumn>
               <TableColumn key="leverage">杠杆</TableColumn>
               <TableColumn key="liquidation_px">清算价格</TableColumn>
+              <TableColumn key="open_time">开仓时间</TableColumn>
             </TableHeader>
             <TableBody items={assetPositions}>
               {(item) => (
@@ -119,6 +131,9 @@ export function CurrentPositions({
                   <TableCell>{item.leverage_value}x</TableCell>
                   <TableCell>
                     {item.liquidation_px ? `$${formatNumber(item.liquidation_px, 2)}` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-default-500">{formatTime(item.open_time)}</span>
                   </TableCell>
                 </TableRow>
               )}
