@@ -27,6 +27,8 @@ import type {
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
+  GlobalPositionHistoryRecord,
+  GlobalPositionHistoryStats,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -58,6 +60,8 @@ export type {
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
+  GlobalPositionHistoryRecord,
+  GlobalPositionHistoryStats,
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -232,6 +236,30 @@ export const traderApi = {
   // 获取按币种汇总的仓位历史
   getPositionHistoryByCoin: (address: string) =>
     api.get<any, ApiResponse<PositionHistoryByCoin[]>>(`/traders/${address}/position-history/by-coin`),
+};
+
+// ==================== 全局仓位历史 API ====================
+
+export const positionHistoryApi = {
+  // 获取所有交易员的仓位历史
+  getAll: (params?: {
+    coin?: string;
+    status?: 'open' | 'closed';
+    direction?: 'long' | 'short';
+    min_pnl?: number;
+    max_pnl?: number;
+    page?: number;
+    limit?: number;
+  }) =>
+    api.get<any, ApiResponse<GlobalPositionHistoryRecord[]> & { stats?: GlobalPositionHistoryStats }>('/position-history', { params }),
+
+  // 获取全局仓位历史统计
+  getStats: () =>
+    api.get<any, ApiResponse<GlobalPositionHistoryStats>>('/position-history/stats'),
+
+  // 获取按币种汇总的全局仓位历史
+  getByCoin: () =>
+    api.get<any, ApiResponse<PositionHistoryByCoin[]>>('/position-history/by-coin'),
 };
 
 // ==================== 跟单地址管理 API ====================

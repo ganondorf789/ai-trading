@@ -171,6 +171,59 @@ export interface PositionHistoryByCoin {
   total_pnl: number;
   avg_holding_hours: number;
   total_volume: number;
+  // 全局统计额外字段
+  trader_count?: number;
+  long_count?: number;
+  short_count?: number;
+}
+
+// 全局仓位历史记录（包含交易员信息）
+export interface GlobalPositionHistoryRecord extends PositionHistoryRecord {
+  rating?: string;
+  overall_score?: number;
+  trader_win_rate?: number;
+  trader_pnl?: number;
+  is_starred?: boolean;
+  trader_name?: string;
+  group_id?: number;
+  group_name?: string;
+  group_color?: string;
+}
+
+// 全局仓位历史统计
+export interface GlobalPositionHistoryStats {
+  total_positions: number;
+  total_traders: number;
+  closed_positions: number;
+  open_positions: number;
+  long_count: number;
+  short_count: number;
+  winning_positions: number;
+  losing_positions: number;
+  win_rate: number;
+  total_pnl: number;
+  total_profit: number;
+  total_loss: number;
+  avg_holding_hours: number;
+  avg_pnl: number;
+  total_fees: number;
+  total_volume: number;
+  unique_coins: number;
+  by_coin: Array<{
+    coin: string;
+    total_positions: number;
+    long_count: number;
+    short_count: number;
+    total_pnl: number;
+    total_volume: number;
+  }>;
+  by_trader: Array<{
+    address: string;
+    trader_name: string | null;
+    total_positions: number;
+    total_pnl: number;
+    total_volume: number;
+  }>;
 }
 
 export interface ChartDataPoint {

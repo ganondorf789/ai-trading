@@ -25,6 +25,10 @@ export const siteConfig = {
       href: "/trader-positions",
     },
     {
+      label: "Position History",
+      href: "/position-history",
+    },
+    {
       label: "Position States",
       href: "/positions",
     },

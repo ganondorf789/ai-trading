@@ -452,3 +452,268 @@ class PositionHistoryOps:
                 (address,)
             )
             return cursor.rowcount
+
+    # ==================== 全局统计方法 ====================
+
+    def get_all_position_history(
+        self,
+        coin: str = None,
+        status: str = None,
+        direction: str = None,
+        min_pnl: float = None,
+        max_pnl: float = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        获取所有交易员的仓位历史
+
+        Args:
+            coin: 可选，筛选特定币种
+            status: 可选，筛选状态（'open', 'closed'）
+            direction: 可选，筛选方向（'long', 'short'）
+            min_pnl: 可选，最小盈亏
+            max_pnl: 可选，最大盈亏
+            limit: 返回数量
+            offset: 偏移量
+
+        Returns:
+            仓位历史列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            conditions = ["1=1"]
+            params = []
+
+            if coin:
+                conditions.append("ph.coin = %s")
+                params.append(coin)
+
+            if status:
+                conditions.append("ph.status = %s")
+                params.append(status)
+
+            if direction:
+                conditions.append("ph.direction = %s")
+                params.append(direction)
+
+            if min_pnl is not None:
+                conditions.append("ph.realized_pnl >= %s")
+                params.append(min_pnl)
+
+            if max_pnl is not None:
+                conditions.append("ph.realized_pnl <= %s")
+                params.append(max_pnl)
+
+            where_clause = " AND ".join(conditions)
+            params.extend([limit, offset])
+
+            # 关联查询获取交易员信息
+            cursor.execute(f"""
+                SELECT 
+                    ph.*,
+                    tm.rating,
+                    tm.overall_score,
+                    tm.win_rate as trader_win_rate,
+                    tm.total_pnl as trader_pnl,
+                    tm.is_starred,
+                    ca.name as trader_name,
+                    ca.group_id,
+                    cg.name as group_name,
+                    cg.color as group_color
+                FROM position_history ph
+                LEFT JOIN trader_metrics tm ON ph.address = tm.address
+                LEFT JOIN copy_trading_addresses ca ON ph.address = ca.address
+                LEFT JOIN copy_trading_groups cg ON ca.group_id = cg.id
+                WHERE {where_clause}
+                ORDER BY ph.open_time DESC
+                LIMIT %s OFFSET %s
+            """, params)
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_position_history_count(
+        self,
+        coin: str = None,
+        status: str = None,
+        direction: str = None,
+        min_pnl: float = None,
+        max_pnl: float = None
+    ) -> int:
+        """
+        获取所有仓位历史记录总数
+
+        Returns:
+            记录总数
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            conditions = ["1=1"]
+            params = []
+
+            if coin:
+                conditions.append("coin = %s")
+                params.append(coin)
+
+            if status:
+                conditions.append("status = %s")
+                params.append(status)
+
+            if direction:
+                conditions.append("direction = %s")
+                params.append(direction)
+
+            if min_pnl is not None:
+                conditions.append("realized_pnl >= %s")
+                params.append(min_pnl)
+
+            if max_pnl is not None:
+                conditions.append("realized_pnl <= %s")
+                params.append(max_pnl)
+
+            where_clause = " AND ".join(conditions)
+
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM position_history
+                WHERE {where_clause}
+            """, params)
+
+            return cursor.fetchone()[0]
+
+    def get_all_position_history_stats(self) -> Dict[str, Any]:
+        """
+        获取所有交易员的仓位历史统计信息
+
+        Returns:
+            统计信息字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_positions,
+                    COUNT(DISTINCT address) as total_traders,
+                    COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_positions,
+                    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_positions,
+                    COUNT(CASE WHEN direction = 'long' THEN 1 END) as long_count,
+                    COUNT(CASE WHEN direction = 'short' THEN 1 END) as short_count,
+                    COUNT(CASE WHEN realized_pnl > 0 AND status = 'closed' THEN 1 END) as winning_positions,
+                    COUNT(CASE WHEN realized_pnl < 0 AND status = 'closed' THEN 1 END) as losing_positions,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                    COALESCE(SUM(CASE WHEN realized_pnl > 0 THEN realized_pnl ELSE 0 END), 0) as total_profit,
+                    COALESCE(SUM(CASE WHEN realized_pnl < 0 THEN realized_pnl ELSE 0 END), 0) as total_loss,
+                    COALESCE(AVG(CASE WHEN status = 'closed' THEN holding_hours END), 0) as avg_holding_hours,
+                    COALESCE(AVG(realized_pnl), 0) as avg_pnl,
+                    COALESCE(SUM(total_fee), 0) as total_fees,
+                    COALESCE(SUM(total_volume), 0) as total_volume,
+                    COUNT(DISTINCT coin) as unique_coins
+                FROM position_history
+            """)
+
+            row = cursor.fetchone()
+
+            if not row:
+                return {
+                    'total_positions': 0,
+                    'total_traders': 0,
+                    'closed_positions': 0,
+                    'open_positions': 0,
+                    'long_count': 0,
+                    'short_count': 0,
+                    'winning_positions': 0,
+                    'losing_positions': 0,
+                    'win_rate': 0,
+                    'total_pnl': 0,
+                    'total_profit': 0,
+                    'total_loss': 0,
+                    'avg_holding_hours': 0,
+                    'avg_pnl': 0,
+                    'total_fees': 0,
+                    'total_volume': 0,
+                    'unique_coins': 0,
+                    'by_coin': [],
+                    'by_trader': []
+                }
+
+            stats = dict(row)
+
+            # 计算胜率
+            closed = stats.get('closed_positions', 0)
+            winning = stats.get('winning_positions', 0)
+            stats['win_rate'] = winning / closed if closed > 0 else 0
+
+            # 获取币种统计
+            cursor.execute("""
+                SELECT
+                    coin,
+                    COUNT(*) as total_positions,
+                    COUNT(CASE WHEN direction = 'long' THEN 1 END) as long_count,
+                    COUNT(CASE WHEN direction = 'short' THEN 1 END) as short_count,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                    COALESCE(SUM(total_volume), 0) as total_volume
+                FROM position_history
+                GROUP BY coin
+                ORDER BY total_pnl DESC
+                LIMIT 20
+            """)
+            stats['by_coin'] = [dict(row) for row in cursor.fetchall()]
+
+            # 获取交易员统计
+            cursor.execute("""
+                SELECT
+                    ph.address,
+                    ca.name as trader_name,
+                    COUNT(*) as total_positions,
+                    COALESCE(SUM(ph.realized_pnl), 0) as total_pnl,
+                    COALESCE(SUM(ph.total_volume), 0) as total_volume
+                FROM position_history ph
+                LEFT JOIN copy_trading_addresses ca ON ph.address = ca.address
+                GROUP BY ph.address, ca.name
+                ORDER BY total_pnl DESC
+                LIMIT 20
+            """)
+            stats['by_trader'] = [dict(row) for row in cursor.fetchall()]
+
+            return stats
+
+    def get_all_position_history_by_coin(self) -> List[Dict[str, Any]]:
+        """
+        获取所有交易员按币种汇总的仓位历史
+
+        Returns:
+            按币种汇总的列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT
+                    coin,
+                    COUNT(*) as total_positions,
+                    COUNT(DISTINCT address) as trader_count,
+                    COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_positions,
+                    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_positions,
+                    COUNT(CASE WHEN direction = 'long' THEN 1 END) as long_count,
+                    COUNT(CASE WHEN direction = 'short' THEN 1 END) as short_count,
+                    COUNT(CASE WHEN realized_pnl > 0 AND status = 'closed' THEN 1 END) as winning_positions,
+                    COUNT(CASE WHEN realized_pnl < 0 AND status = 'closed' THEN 1 END) as losing_positions,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                    COALESCE(AVG(CASE WHEN status = 'closed' THEN holding_hours END), 0) as avg_holding_hours,
+                    COALESCE(SUM(total_volume), 0) as total_volume
+                FROM position_history
+                GROUP BY coin
+                ORDER BY total_pnl DESC
+            """)
+
+            results = []
+            for row in cursor.fetchall():
+                stats = dict(row)
+                closed = stats.get('closed_positions', 0)
+                winning = stats.get('winning_positions', 0)
+                stats['win_rate'] = winning / closed if closed > 0 else 0
+                results.append(stats)
+
+            return results

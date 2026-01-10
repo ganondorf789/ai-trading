@@ -684,6 +684,116 @@ def get_trader_position_history_by_coin(address: str):
         }), 500
 
 
+# ==================== 全局仓位历史 API ====================
+
+@traders_bp.route('/api/position-history', methods=['GET'])
+def get_all_position_history():
+    """
+    获取所有交易员的仓位历史
+    Query Parameters:
+        - coin: str, 筛选特定币种（可选）
+        - status: str, 筛选状态 'open'/'closed'（可选）
+        - direction: str, 筛选方向 'long'/'short'（可选）
+        - min_pnl: float, 最小盈亏（可选）
+        - max_pnl: float, 最大盈亏（可选）
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认50
+    """
+    try:
+        coin = request.args.get('coin')
+        status = request.args.get('status')
+        direction = request.args.get('direction')
+        min_pnl = request.args.get('min_pnl', type=float)
+        max_pnl = request.args.get('max_pnl', type=float)
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        offset = (page - 1) * limit
+
+        # 获取仓位历史
+        positions = db.get_all_position_history(
+            coin=coin,
+            status=status,
+            direction=direction,
+            min_pnl=min_pnl,
+            max_pnl=max_pnl,
+            limit=limit,
+            offset=offset
+        )
+
+        # 获取总数
+        total_count = db.get_all_position_history_count(
+            coin=coin,
+            status=status,
+            direction=direction,
+            min_pnl=min_pnl,
+            max_pnl=max_pnl
+        )
+
+        # 获取统计信息
+        stats = db.get_all_position_history_stats()
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'stats': stats,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取全局仓位历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/position-history/stats', methods=['GET'])
+def get_all_position_history_stats():
+    """
+    获取所有交易员的仓位历史统计
+    """
+    try:
+        stats = db.get_all_position_history_stats()
+
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+
+    except Exception as e:
+        logger.error(f"获取全局仓位历史统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/position-history/by-coin', methods=['GET'])
+def get_all_position_history_by_coin():
+    """
+    获取所有交易员按币种汇总的仓位历史
+    """
+    try:
+        by_coin = db.get_all_position_history_by_coin()
+
+        return jsonify({
+            'success': True,
+            'data': by_coin
+        })
+
+    except Exception as e:
+        logger.error(f"获取币种仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @traders_bp.route('/api/traders/<address>/star', methods=['POST'])
 def toggle_trader_star(address: str):
     """
