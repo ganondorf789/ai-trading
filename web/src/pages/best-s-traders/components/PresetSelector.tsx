@@ -1,4 +1,3 @@
-import { Select, SelectItem } from '@heroui/select';
 import { Chip } from '@heroui/chip';
 import type { BestSPreset } from '@/services/api';
 
@@ -18,49 +17,42 @@ const presetColors: Record<string, 'default' | 'primary' | 'secondary' | 'succes
   hot: 'danger',
 };
 
+const presetIcons: Record<string, string> = {
+  default: '📊',
+  safe: '🛡️',
+  aggressive: '🔥',
+  scalper: '⚡',
+  swing: '🌊',
+  hot: '🚀',
+};
+
 export function PresetSelector({
   presets,
   selectedPreset,
   onPresetChange,
-  isLoading,
 }: PresetSelectorProps) {
   return (
-    <Select
-      label="筛选预设"
-      placeholder="选择预设配置"
-      selectedKeys={selectedPreset ? [selectedPreset] : []}
-      onSelectionChange={(keys) => {
-        const selected = Array.from(keys)[0] as string;
-        if (selected) onPresetChange(selected);
-      }}
-      isLoading={isLoading}
-      className="max-w-xs"
-      size="sm"
-      renderValue={(items) => {
-        return items.map((item) => {
-          const preset = presets.find((p) => p.key === item.key);
-          return (
-            <div key={item.key} className="flex items-center gap-2">
-              <Chip size="sm" color={presetColors[item.key as string] || 'default'}>
-                {preset?.name || item.key}
-              </Chip>
-            </div>
-          );
-        });
-      }}
-    >
-      {presets.map((preset) => (
-        <SelectItem key={preset.key} textValue={preset.name}>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <Chip size="sm" color={presetColors[preset.key] || 'default'}>
-                {preset.name}
-              </Chip>
-            </div>
-            <span className="text-xs text-default-400 mt-1">{preset.description}</span>
-          </div>
-        </SelectItem>
-      ))}
-    </Select>
+    <div className="flex flex-wrap gap-2">
+      {presets.map((preset) => {
+        const isSelected = selectedPreset === preset.key;
+        const color = presetColors[preset.key] || 'default';
+        const icon = presetIcons[preset.key] || '📌';
+
+        return (
+          <Chip
+            key={preset.key}
+            color={color}
+            variant={isSelected ? 'solid' : 'flat'}
+            className={`cursor-pointer transition-all hover:scale-105 ${
+              isSelected ? 'shadow-md' : 'opacity-70 hover:opacity-100'
+            }`}
+            onClick={() => onPresetChange(preset.key)}
+            startContent={<span>{icon}</span>}
+          >
+            {preset.name}
+          </Chip>
+        );
+      })}
+    </div>
   );
 }
