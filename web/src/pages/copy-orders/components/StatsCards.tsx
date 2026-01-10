@@ -60,9 +60,6 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
       <Card>
         <CardBody className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <Icon icon="solar:document-text-linear" className="text-primary" width={20} />
-          </div>
           <div className="text-2xl font-bold">{stats.total_orders || 0}</div>
           <div className="text-sm text-default-500">Total Orders</div>
         </CardBody>
@@ -70,9 +67,6 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
 
       <Card>
         <CardBody className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <Icon icon="solar:check-circle-linear" className="text-success" width={20} />
-          </div>
           <div className="text-2xl font-bold text-success">{stats.successful || 0}</div>
           <div className="text-sm text-default-500">Success ({successRate}%)</div>
         </CardBody>
@@ -80,9 +74,6 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
 
       <Card>
         <CardBody className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <Icon icon="solar:close-circle-linear" className="text-danger" width={20} />
-          </div>
           <div className="text-2xl font-bold text-danger">{stats.failed || 0}</div>
           <div className="text-sm text-default-500">Failed</div>
         </CardBody>
@@ -103,9 +94,6 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
 
       <Card>
         <CardBody className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <Icon icon="solar:dollar-linear" className={(stats.total_pnl || 0) >= 0 ? "text-success" : "text-danger"} width={20} />
-          </div>
           <div className={`text-2xl font-bold ${(stats.total_pnl || 0) >= 0 ? "text-success" : "text-danger"}`}>
             {formatPnl(stats.total_pnl)}
           </div>

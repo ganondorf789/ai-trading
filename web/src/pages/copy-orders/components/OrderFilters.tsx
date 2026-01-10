@@ -55,7 +55,7 @@ export function OrderFilters({
         {/* Target Address Filter */}
         <Select
           className="w-48"
-          label="Trader"
+          aria-label="Trader"
           placeholder="All Traders"
           selectedKeys={targetFilter ? [targetFilter] : []}
           size="sm"
@@ -76,8 +76,8 @@ export function OrderFilters({
         {/* Side Filter */}
         <Select
           className="w-32"
-          label="Side"
-          placeholder="All"
+          aria-label="Side"
+          placeholder="All Sides"
           selectedKeys={sideFilter ? [sideFilter] : []}
           size="sm"
           onChange={(e) => onSideFilterChange(e.target.value)}
@@ -94,8 +94,8 @@ export function OrderFilters({
         {/* Action Filter */}
         <Select
           className="w-32"
-          label="Action"
-          placeholder="All"
+          aria-label="Action"
+          placeholder="All Actions"
           selectedKeys={actionFilter ? [actionFilter] : []}
           size="sm"
           onChange={(e) => onActionFilterChange(e.target.value)}
@@ -108,8 +108,8 @@ export function OrderFilters({
         {/* Status Filter */}
         <Select
           className="w-32"
-          label="Status"
-          placeholder="All"
+          aria-label="Status"
+          placeholder="All Status"
           selectedKeys={statusFilter ? [statusFilter] : []}
           size="sm"
           onChange={(e) => onStatusFilterChange(e.target.value)}
@@ -129,7 +129,7 @@ export function OrderFilters({
         {/* Days Filter */}
         <Select
           className="w-32"
-          label="Period"
+          aria-label="Period"
           placeholder="7 Days"
           selectedKeys={[String(daysFilter)]}
           size="sm"
