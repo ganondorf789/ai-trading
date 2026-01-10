@@ -40,10 +40,13 @@ chown -R $USER:$USER "$PROJECT_DIR/data"
 # 4. 配置 Supervisor
 echo -e "${YELLOW}[4/5] 配置 Supervisor...${NC}"
 
+# Conda 路径配置
+CONDA_PYTHON="/root/miniconda3/bin/python"
+
 # 生成配置文件
 cat > /tmp/copy_trading.conf << EOF
 [program:copy_trading]
-command=python3 $PROJECT_DIR/examples/copy_trading_example.py
+command=$CONDA_PYTHON $PROJECT_DIR/examples/copy_trading_example.py
 directory=$PROJECT_DIR
 user=$USER
 environment=PYTHONUNBUFFERED="1"
@@ -64,7 +67,7 @@ EOF
 
 cat > /tmp/api_server.conf << EOF
 [program:api_server]
-command=python3 $PROJECT_DIR/api_server.py
+command=$CONDA_PYTHON $PROJECT_DIR/api_server.py
 directory=$PROJECT_DIR
 user=$USER
 environment=PYTHONUNBUFFERED="1"
