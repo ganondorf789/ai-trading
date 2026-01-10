@@ -495,6 +495,67 @@ class DatabaseMigrations:
                 )
             """)
 
+            # 创建仓位历史表（记录完整的开仓→平仓周期）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_history (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+                    coin TEXT NOT NULL,
+
+                    -- 仓位方向
+                    direction TEXT NOT NULL,           -- 'long' 或 'short'
+
+                    -- 时间信息
+                    open_time TIMESTAMP NOT NULL,      -- 开仓时间
+                    close_time TIMESTAMP,              -- 平仓时间（NULL表示未平仓）
+
+                    -- 仓位信息
+                    max_size REAL DEFAULT 0.0,         -- 最大仓位大小
+                    avg_entry_price REAL DEFAULT 0.0,  -- 平均开仓价格
+                    avg_close_price REAL,              -- 平均平仓价格
+                    total_volume REAL DEFAULT 0.0,     -- 总交易量（开仓+平仓）
+
+                    -- 盈亏信息
+                    realized_pnl REAL DEFAULT 0.0,     -- 已实现盈亏
+                    total_fee REAL DEFAULT 0.0,        -- 总手续费
+
+                    -- 交易统计
+                    open_trades INTEGER DEFAULT 1,     -- 开仓交易次数（包含加仓）
+                    close_trades INTEGER DEFAULT 0,    -- 平仓交易次数
+
+                    -- 持仓时长（小时）
+                    holding_hours REAL,
+
+                    -- 状态
+                    status TEXT DEFAULT 'open',        -- 'open' 或 'closed'
+
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_history_address
+                ON position_history(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_history_coin
+                ON position_history(coin)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_history_status
+                ON position_history(status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_history_open_time
+                ON position_history(open_time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_history_address_coin
+                ON position_history(address, coin)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

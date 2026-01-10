@@ -16,6 +16,7 @@ from .copy_orders import CopyOrdersOps
 from .coins import CoinsOps
 from .ai_analysis import AIAnalysisOps
 from .group_comparison import GroupComparisonOps
+from .position_history import PositionHistoryOps
 
 
 class TraderDatabase(
@@ -29,7 +30,8 @@ class TraderDatabase(
     CopyOrdersOps,
     CoinsOps,
     AIAnalysisOps,
-    GroupComparisonOps
+    GroupComparisonOps,
+    PositionHistoryOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

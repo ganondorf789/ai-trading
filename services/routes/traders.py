@@ -566,6 +566,124 @@ def refresh_trader_positions(address: str):
         }), 500
 
 
+@traders_bp.route('/api/traders/<address>/position-history', methods=['GET'])
+def get_trader_position_history(address: str):
+    """
+    获取交易者的仓位历史记录
+    Query Parameters:
+        - coin: str, 筛选特定币种（可选）
+        - status: str, 筛选状态 'open'/'closed'（可选）
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认50
+    """
+    try:
+        coin = request.args.get('coin')
+        status = request.args.get('status')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        offset = (page - 1) * limit
+
+        # 获取仓位历史
+        positions = db.get_position_history(
+            address,
+            coin=coin,
+            status=status,
+            limit=limit,
+            offset=offset
+        )
+
+        # 获取总数
+        total_count = db.get_position_history_count(
+            address,
+            coin=coin,
+            status=status
+        )
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取仓位历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/traders/<address>/position-history/rebuild', methods=['POST'])
+def rebuild_trader_position_history(address: str):
+    """
+    重建交易者的仓位历史（从 fills 重新计算）
+    """
+    try:
+        logger.info(f"重建仓位历史: {address}")
+
+        saved_count = db.rebuild_position_history(address)
+
+        return jsonify({
+            'success': True,
+            'message': f'已重建 {saved_count} 条仓位历史记录',
+            'count': saved_count
+        })
+
+    except Exception as e:
+        logger.error(f"重建仓位历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/traders/<address>/position-history/stats', methods=['GET'])
+def get_trader_position_history_stats(address: str):
+    """
+    获取交易者的仓位历史统计信息
+    """
+    try:
+        stats = db.get_position_history_stats(address)
+
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+
+    except Exception as e:
+        logger.error(f"获取仓位历史统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_bp.route('/api/traders/<address>/position-history/by-coin', methods=['GET'])
+def get_trader_position_history_by_coin(address: str):
+    """
+    获取按币种汇总的仓位历史
+    """
+    try:
+        by_coin = db.get_position_history_by_coin(address)
+
+        return jsonify({
+            'success': True,
+            'data': by_coin
+        })
+
+    except Exception as e:
+        logger.error(f"获取币种仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @traders_bp.route('/api/traders/<address>/star', methods=['POST'])
 def toggle_trader_star(address: str):
     """
