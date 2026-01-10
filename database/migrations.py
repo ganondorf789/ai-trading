@@ -506,3 +506,8 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'is_starred', 'BOOLEAN DEFAULT FALSE'
         )
+
+        # 添加 open_time 字段到 asset_positions 表（用于记录仓位开仓时间）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
+        )

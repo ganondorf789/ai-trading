@@ -1,7 +1,7 @@
 """
 持仓管理模块 (PostgreSQL)
 """
-from typing import List, Dict
+from typing import List, Dict, Optional
 import pendulum
 from psycopg2 import extras
 from loguru import logger
@@ -13,6 +13,83 @@ from .cache import cache
 
 class PositionsOps:
     """持仓管理相关操作"""
+
+    def get_position_open_time(self, address: str, coin: str) -> Optional[str]:
+        """
+        根据历史订单计算某个币种的开仓时间
+
+        逻辑：
+        - 从 trader_fills 表中找到该币种最近一次 start_position=0 的开仓记录
+        - 开仓类型为 open_long 或 open_short
+
+        Args:
+            address: 交易者地址
+            coin: 币种
+
+        Returns:
+            开仓时间（ISO8601格式字符串），如果找不到则返回 None
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 找到最近一次从零仓位开始的开仓记录
+            # start_position = 0 表示这是一个全新的仓位
+            cursor.execute("""
+                SELECT trade_time, time
+                FROM trader_fills
+                WHERE address = %s
+                  AND coin = %s
+                  AND trade_type IN ('open_long', 'open_short')
+                ORDER BY time DESC
+                LIMIT 1
+            """, (address, coin))
+
+            row = cursor.fetchone()
+            if row:
+                return row['trade_time']
+
+            return None
+
+    def get_positions_open_times(self, address: str, coins: List[str]) -> Dict[str, Optional[str]]:
+        """
+        批量获取多个币种的开仓时间
+
+        Args:
+            address: 交易者地址
+            coins: 币种列表
+
+        Returns:
+            {coin: open_time} 字典
+        """
+        if not coins:
+            return {}
+
+        result = {coin: None for coin in coins}
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 使用窗口函数一次性获取所有币种最近的开仓时间
+            cursor.execute("""
+                WITH ranked_fills AS (
+                    SELECT
+                        coin,
+                        trade_time,
+                        ROW_NUMBER() OVER (PARTITION BY coin ORDER BY time DESC) as rn
+                    FROM trader_fills
+                    WHERE address = %s
+                      AND coin = ANY(%s)
+                      AND trade_type IN ('open_long', 'open_short')
+                )
+                SELECT coin, trade_time
+                FROM ranked_fills
+                WHERE rn = 1
+            """, (address, coins))
+
+            for row in cursor.fetchall():
+                result[row['coin']] = row['trade_time']
+
+        return result
 
     def save_positions(self, address: str, positions: List[Dict]) -> int:
         """
@@ -36,6 +113,17 @@ class PositionsOps:
             cache.delete(f"positions:{address}")
             return 0
 
+        # 提取所有非空仓位的币种
+        valid_coins = []
+        for pos_data in positions:
+            pos = pos_data.get('position', {})
+            szi = sanitize_float(pos.get('szi', 0))
+            if szi != 0:
+                valid_coins.append(pos.get('coin'))
+
+        # 批量获取开仓时间
+        open_times = self.get_positions_open_times(address, valid_coins)
+
         saved_count = 0
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -56,16 +144,19 @@ class PositionsOps:
                     if szi == 0:
                         continue
 
+                    coin = pos.get('coin')
+                    open_time = open_times.get(coin)
+
                     cursor.execute("""
                         INSERT INTO asset_positions (
                             address, coin, szi, entry_px, position_value,
                             unrealized_pnl, return_on_equity, liquidation_px,
                             margin_used, max_leverage, leverage_type, leverage_value,
-                            updated_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            updated_at, open_time
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         address,
-                        pos.get('coin'),
+                        coin,
                         szi,
                         sanitize_float(pos.get('entryPx', 0)),
                         sanitize_float(pos.get('positionValue', 0)),
@@ -76,7 +167,8 @@ class PositionsOps:
                         int(pos.get('maxLeverage', 1)),
                         leverage.get('type'),
                         int(leverage.get('value', 1)),
-                        pendulum.now(SHANGHAI_TZ).to_iso8601_string()
+                        pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
+                        open_time
                     ))
                     saved_count += 1
                 except Exception as e:
