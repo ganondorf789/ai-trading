@@ -65,16 +65,6 @@ export function PositionFilters({
     <div className="flex flex-col gap-4 mb-6">
       {/* 第一行：基础筛选 */}
       <div className="flex flex-wrap gap-3 items-center">
-        <Input
-          className="w-64"
-          placeholder="搜索币种或交易员..."
-          value={search}
-          onValueChange={onSearchChange}
-          startContent={<Icon icon="solar:magnifer-linear" width={18} className="text-default-400" />}
-          isClearable
-          onClear={() => onSearchChange("")}
-        />
-
         <Select
           className="w-36"
           placeholder="方向"

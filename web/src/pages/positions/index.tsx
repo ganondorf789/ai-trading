@@ -5,12 +5,9 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { 
   copyPositionStatesApi, 
-  copyTradingApi,
   CopyPositionState, 
   CopyPositionStats,
-  CopyTradingAddress 
 } from "@/services/api";
-import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
 
 import { StatsCards } from "./components/StatsCards";
 import { PositionFilters } from "./components/PositionFilters";
@@ -18,53 +15,22 @@ import { PositionsTable } from "./components/PositionsTable";
 import { DeleteConfirmModal } from "./components/DeleteConfirmModal";
 import { ClearAllModal } from "./components/ClearAllModal";
 
-// 扩展仓位类型，包含交易员指标
-interface CopyPositionStateWithMetrics extends CopyPositionState {
-  win_rate?: number;
-  trader_pnl?: number;
-  overall_score?: number;
-  total_trades?: number;
-  profit_factor?: number;
-  max_drawdown?: number;
-  sharpe_ratio?: number;
-  is_starred?: boolean;
-}
-
 export default function PositionsPage() {
   // 数据状态
-  const [positions, setPositions] = useState<CopyPositionStateWithMetrics[]>([]);
+  const [positions, setPositions] = useState<CopyPositionState[]>([]);
   const [stats, setStats] = useState<CopyPositionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [addressMetrics, setAddressMetrics] = useState<Map<string, CopyTradingAddress>>(new Map());
 
   // 筛选状态
   const [search, setSearch] = useState("");
   const [sideFilter, setSideFilter] = useState<string>("all");
   const [targetFilter, setTargetFilter] = useState<string>("all");
-  const [starFilter, setStarFilter] = useState<string>("all");
-  const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
 
   // 删除确认弹窗
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [deleteTarget, setDeleteTarget] = useState<{ address: string; symbol?: string } | null>(null);
   const [clearAllOpen, setClearAllOpen] = useState(false);
-
-  // 加载跟单地址及其指标
-  const fetchAddressMetrics = useCallback(async () => {
-    try {
-      const response = await copyTradingApi.getAddresses({ limit: 1000 });
-      if (response.success && response.data) {
-        const metricsMap = new Map<string, CopyTradingAddress>();
-        response.data.forEach(addr => {
-          metricsMap.set(addr.address, addr);
-        });
-        setAddressMetrics(metricsMap);
-      }
-    } catch (error) {
-      console.error("Failed to fetch address metrics:", error);
-    }
-  }, []);
 
   // 加载仓位列表
   const fetchPositions = useCallback(async () => {
@@ -79,23 +45,7 @@ export default function PositionsPage() {
       const response = await copyPositionStatesApi.getPositions(params);
 
       if (response.success && response.data) {
-        // 合并交易员指标到仓位数据
-        const positionsWithMetrics = response.data.map(pos => {
-          const addrMetrics = addressMetrics.get(pos.target_address);
-          return {
-            ...pos,
-            win_rate: addrMetrics?.win_rate,
-            trader_pnl: addrMetrics?.trader_pnl,
-            overall_score: addrMetrics?.overall_score,
-            total_trades: addrMetrics?.total_trades,
-            profit_factor: addrMetrics?.profit_factor,
-            max_drawdown: addrMetrics?.max_drawdown,
-            sharpe_ratio: addrMetrics?.sharpe_ratio,
-            is_starred: addrMetrics?.is_starred,
-          };
-        });
-
-        setPositions(positionsWithMetrics);
+        setPositions(response.data);
       }
     } catch (error) {
       console.error("Failed to fetch positions:", error);
@@ -107,9 +57,9 @@ export default function PositionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [targetFilter, addressMetrics]);
+  }, [targetFilter]);
 
-  // 应用本地筛选（包括指标筛选）
+  // 应用本地筛选
   const filteredPositions = useMemo(() => {
     let filtered = positions;
 
@@ -129,59 +79,8 @@ export default function PositionsPage() {
       filtered = filtered.filter((p) => p.side === sideFilter);
     }
 
-    // 收藏筛选
-    if (starFilter === "starred") {
-      filtered = filtered.filter((p) => p.is_starred === true);
-    } else if (starFilter === "unstarred") {
-      filtered = filtered.filter((p) => !p.is_starred);
-    }
-
-    // 指标筛选
-    if (metricFilters.minWinRate !== undefined) {
-      filtered = filtered.filter((p) => (p.win_rate ?? 0) >= metricFilters.minWinRate!);
-    }
-    if (metricFilters.maxWinRate !== undefined) {
-      filtered = filtered.filter((p) => (p.win_rate ?? 100) <= metricFilters.maxWinRate!);
-    }
-    if (metricFilters.minProfitFactor !== undefined) {
-      filtered = filtered.filter((p) => (p.profit_factor ?? 0) >= metricFilters.minProfitFactor!);
-    }
-    if (metricFilters.maxProfitFactor !== undefined) {
-      filtered = filtered.filter((p) => (p.profit_factor ?? 999) <= metricFilters.maxProfitFactor!);
-    }
-    if (metricFilters.minPnl !== undefined) {
-      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) >= metricFilters.minPnl!);
-    }
-    if (metricFilters.maxPnl !== undefined) {
-      filtered = filtered.filter((p) => (p.trader_pnl ?? 0) <= metricFilters.maxPnl!);
-    }
-    if (metricFilters.minDrawdown !== undefined) {
-      filtered = filtered.filter((p) => (p.max_drawdown ?? 0) >= metricFilters.minDrawdown!);
-    }
-    if (metricFilters.maxDrawdown !== undefined) {
-      filtered = filtered.filter((p) => (p.max_drawdown ?? 100) <= metricFilters.maxDrawdown!);
-    }
-    if (metricFilters.minSharpe !== undefined) {
-      filtered = filtered.filter((p) => (p.sharpe_ratio ?? -999) >= metricFilters.minSharpe!);
-    }
-    if (metricFilters.maxSharpe !== undefined) {
-      filtered = filtered.filter((p) => (p.sharpe_ratio ?? 999) <= metricFilters.maxSharpe!);
-    }
-    if (metricFilters.minTrades !== undefined) {
-      filtered = filtered.filter((p) => (p.total_trades ?? 0) >= metricFilters.minTrades!);
-    }
-    if (metricFilters.maxTrades !== undefined) {
-      filtered = filtered.filter((p) => (p.total_trades ?? 0) <= metricFilters.maxTrades!);
-    }
-    if (metricFilters.minScore !== undefined) {
-      filtered = filtered.filter((p) => (p.overall_score ?? 0) >= metricFilters.minScore!);
-    }
-    if (metricFilters.maxScore !== undefined) {
-      filtered = filtered.filter((p) => (p.overall_score ?? 100) <= metricFilters.maxScore!);
-    }
-
     return filtered;
-  }, [positions, search, sideFilter, starFilter, metricFilters]);
+  }, [positions, search, sideFilter]);
 
   // 加载统计数据
   const fetchStats = useCallback(async () => {
@@ -204,8 +103,6 @@ export default function PositionsPage() {
     setSearch("");
     setSideFilter("all");
     setTargetFilter("all");
-    setStarFilter("all");
-    setMetricFilters(emptyMetricFilters);
   };
 
   // 删除单个仓位
@@ -295,10 +192,6 @@ export default function PositionsPage() {
   };
 
   useEffect(() => {
-    fetchAddressMetrics();
-  }, [fetchAddressMetrics]);
-
-  useEffect(() => {
     fetchPositions();
   }, [fetchPositions]);
 
@@ -353,11 +246,7 @@ export default function PositionsPage() {
           onSideFilterChange={setSideFilter}
           targetFilter={targetFilter}
           onTargetFilterChange={setTargetFilter}
-          starFilter={starFilter}
-          onStarFilterChange={setStarFilter}
           stats={stats}
-          metricFilters={metricFilters}
-          onMetricFiltersChange={setMetricFilters}
           onReset={handleReset}
         />
 
