@@ -9,6 +9,10 @@ export const siteConfig = {
       href: "/traders",
     },
     {
+      label: "S级优选",
+      href: "/best-s-traders",
+    },
+    {
       label: "Group Comparison",
       href: "/group-comparison",
     },

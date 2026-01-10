@@ -476,3 +476,260 @@ class TraderMetricsOps:
                 logger.info(f"交易者 {address[:10]}... total_trades 更新为: {total_trades}")
             
             return updated
+
+    def get_best_s_traders(
+        self,
+        # 基础筛选
+        min_sharpe: float = 0.5,
+        max_drawdown: float = 0.3,
+        min_profit_factor: float = 1.2,
+        # 仓位级别筛选
+        min_closed_positions: int = 20,
+        min_position_win_rate: float = 0.45,
+        min_position_profit_factor: float = 1.0,
+        # 近期表现筛选
+        recent_days: int = 30,
+        min_recent_positions: int = 3,
+        require_recent_profit: bool = True,
+        # 活跃度筛选
+        max_days_since_last_trade: int = 7,
+        # 持仓风格筛选
+        min_holding_hours: float = None,
+        max_holding_hours: float = None,
+        # 排序和限制
+        sort_by: str = 'recent_pnl',  # recent_pnl, position_win_rate, overall_score, sharpe_ratio
+        limit: int = 20
+    ) -> List[Dict]:
+        """
+        从 S 级交易员中筛选最优秀的交易员
+        
+        结合 trader_metrics 和 position_history 进行综合筛选
+        
+        Args:
+            min_sharpe: 最小夏普比率
+            max_drawdown: 最大回撤限制
+            min_profit_factor: 最小盈亏比（交易级别）
+            min_closed_positions: 最小已平仓位数量
+            min_position_win_rate: 最小仓位胜率
+            min_position_profit_factor: 最小仓位盈亏比
+            recent_days: 近期天数
+            min_recent_positions: 近期最小仓位数
+            require_recent_profit: 是否要求近期盈利
+            max_days_since_last_trade: 最后交易距今最大天数
+            min_holding_hours: 最小平均持仓时长（小时）
+            max_holding_hours: 最大平均持仓时长（小时）
+            sort_by: 排序字段
+            limit: 返回数量
+            
+        Returns:
+            符合条件的交易员列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            # 构建排序字段
+            sort_mapping = {
+                'recent_pnl': 'ps.recent_pnl DESC NULLS LAST',
+                'position_win_rate': 'position_win_rate DESC NULLS LAST',
+                'overall_score': 'tm.overall_score DESC',
+                'sharpe_ratio': 'tm.sharpe_ratio DESC',
+                'position_profit_factor': 'position_profit_factor DESC NULLS LAST',
+                'total_pnl': 'tm.total_pnl DESC'
+            }
+            order_by = sort_mapping.get(sort_by, 'ps.recent_pnl DESC NULLS LAST')
+            
+            # 构建持仓风格条件
+            holding_conditions = []
+            if min_holding_hours is not None:
+                holding_conditions.append(f"ps.avg_holding_hours >= {min_holding_hours}")
+            if max_holding_hours is not None:
+                holding_conditions.append(f"ps.avg_holding_hours <= {max_holding_hours}")
+            holding_clause = " AND ".join(holding_conditions) if holding_conditions else "TRUE"
+            
+            # 近期盈利条件
+            recent_profit_clause = "ps.recent_pnl > 0" if require_recent_profit else "TRUE"
+            
+            query = f"""
+                WITH position_stats AS (
+                    SELECT 
+                        address,
+                        COUNT(*) as total_positions,
+                        COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_positions,
+                        COUNT(CASE WHEN realized_pnl > 0 AND status = 'closed' THEN 1 END) as winning_positions,
+                        COUNT(CASE WHEN realized_pnl < 0 AND status = 'closed' THEN 1 END) as losing_positions,
+                        COALESCE(SUM(realized_pnl), 0) as position_total_pnl,
+                        AVG(holding_hours) FILTER (WHERE status = 'closed' AND holding_hours IS NOT NULL) as avg_holding_hours,
+                        AVG(open_trades) as avg_build_trades,
+                        AVG(realized_pnl) FILTER (WHERE realized_pnl > 0 AND status = 'closed') as avg_win_pnl,
+                        AVG(ABS(realized_pnl)) FILTER (WHERE realized_pnl < 0 AND status = 'closed') as avg_loss_pnl,
+                        -- 近期数据
+                        COUNT(*) FILTER (WHERE close_time > NOW() - INTERVAL '{recent_days} days' AND status = 'closed') as recent_positions,
+                        SUM(realized_pnl) FILTER (WHERE close_time > NOW() - INTERVAL '{recent_days} days' AND status = 'closed') as recent_pnl,
+                        COUNT(CASE WHEN realized_pnl > 0 AND close_time > NOW() - INTERVAL '{recent_days} days' AND status = 'closed' THEN 1 END) as recent_wins
+                    FROM position_history
+                    GROUP BY address
+                )
+                SELECT 
+                    tm.address,
+                    tm.overall_score,
+                    tm.rating,
+                    tm.win_rate as trade_win_rate,
+                    tm.profit_factor as trade_profit_factor,
+                    tm.sharpe_ratio,
+                    tm.sortino_ratio,
+                    tm.max_drawdown,
+                    tm.total_pnl,
+                    tm.total_trades,
+                    tm.recent_7d_pnl,
+                    tm.last_trade_time,
+                    tm.current_positions,
+                    tm.is_starred,
+                    -- 仓位统计
+                    COALESCE(ps.total_positions, 0) as total_positions,
+                    COALESCE(ps.closed_positions, 0) as closed_positions,
+                    COALESCE(ps.winning_positions, 0) as winning_positions,
+                    COALESCE(ps.losing_positions, 0) as losing_positions,
+                    ROUND(
+                        COALESCE(ps.winning_positions, 0)::numeric / 
+                        NULLIF(ps.closed_positions, 0) * 100, 1
+                    ) as position_win_rate,
+                    ROUND(
+                        (COALESCE(ps.avg_win_pnl, 0) / 
+                        NULLIF(ps.avg_loss_pnl, 0))::numeric, 2
+                    ) as position_profit_factor,
+                    ROUND(COALESCE(ps.avg_holding_hours, 0)::numeric, 1) as avg_holding_hours,
+                    ROUND(COALESCE(ps.avg_build_trades, 1)::numeric, 1) as avg_build_trades,
+                    COALESCE(ps.position_total_pnl, 0) as position_total_pnl,
+                    -- 近期仓位表现
+                    COALESCE(ps.recent_positions, 0) as recent_positions,
+                    COALESCE(ps.recent_pnl, 0) as recent_pnl,
+                    COALESCE(ps.recent_wins, 0) as recent_wins,
+                    ROUND(
+                        (COALESCE(ps.recent_wins, 0)::numeric / 
+                        NULLIF(ps.recent_positions, 0) * 100)::numeric, 1
+                    ) as recent_position_win_rate,
+                    -- 跟单信息
+                    ca.name as trader_name,
+                    cg.name as group_name
+                FROM trader_metrics tm
+                LEFT JOIN position_stats ps ON tm.address = ps.address
+                LEFT JOIN copy_trading_addresses ca ON tm.address = ca.address
+                LEFT JOIN copy_trading_groups cg ON ca.group_id = cg.id
+                WHERE tm.rating = 'S'
+                  -- 基础筛选
+                  AND tm.sharpe_ratio >= %s
+                  AND tm.max_drawdown <= %s
+                  AND tm.profit_factor >= %s
+                  -- 活跃度筛选
+                  AND tm.last_trade_time > NOW() - INTERVAL '%s days'
+                  -- 仓位级别筛选
+                  AND COALESCE(ps.closed_positions, 0) >= %s
+                  AND COALESCE(ps.winning_positions, 0)::numeric / NULLIF(ps.closed_positions, 0) >= %s
+                  AND COALESCE(ps.avg_win_pnl, 0) / NULLIF(ps.avg_loss_pnl, 1) >= %s
+                  -- 近期表现
+                  AND COALESCE(ps.recent_positions, 0) >= %s
+                  AND {recent_profit_clause}
+                  -- 持仓风格
+                  AND {holding_clause}
+                ORDER BY {order_by}
+                LIMIT %s
+            """
+            
+            cursor.execute(query, (
+                min_sharpe,
+                max_drawdown,
+                min_profit_factor,
+                max_days_since_last_trade,
+                min_closed_positions,
+                min_position_win_rate,
+                min_position_profit_factor,
+                min_recent_positions,
+                limit
+            ))
+            
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_position_analysis_for_trader(self, address: str) -> Dict[str, Any]:
+        """
+        获取交易员的仓位分析详情
+        
+        Args:
+            address: 交易者地址
+            
+        Returns:
+            仓位分析详情
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            # 基础统计
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_positions,
+                    COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed_positions,
+                    COUNT(CASE WHEN status = 'open' THEN 1 END) as open_positions,
+                    COUNT(CASE WHEN realized_pnl > 0 AND status = 'closed' THEN 1 END) as winning_positions,
+                    COUNT(CASE WHEN realized_pnl < 0 AND status = 'closed' THEN 1 END) as losing_positions,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                    COALESCE(AVG(realized_pnl) FILTER (WHERE status = 'closed'), 0) as avg_pnl,
+                    COALESCE(AVG(realized_pnl) FILTER (WHERE realized_pnl > 0 AND status = 'closed'), 0) as avg_win_pnl,
+                    COALESCE(AVG(ABS(realized_pnl)) FILTER (WHERE realized_pnl < 0 AND status = 'closed'), 0) as avg_loss_pnl,
+                    MAX(realized_pnl) as best_position,
+                    MIN(realized_pnl) as worst_position,
+                    COALESCE(AVG(holding_hours) FILTER (WHERE status = 'closed'), 0) as avg_holding_hours,
+                    COALESCE(AVG(open_trades), 1) as avg_build_trades,
+                    COALESCE(SUM(total_fee), 0) as total_fees,
+                    COUNT(DISTINCT coin) as unique_coins
+                FROM position_history
+                WHERE address = %s
+            """, (address,))
+            
+            stats = dict(cursor.fetchone())
+            
+            # 计算胜率和盈亏比
+            closed = stats.get('closed_positions', 0)
+            winning = stats.get('winning_positions', 0)
+            stats['position_win_rate'] = round(winning / closed * 100, 1) if closed > 0 else 0
+            
+            avg_win = stats.get('avg_win_pnl', 0)
+            avg_loss = stats.get('avg_loss_pnl', 0)
+            stats['position_profit_factor'] = round(avg_win / avg_loss, 2) if avg_loss > 0 else 0
+            
+            # 按币种统计
+            cursor.execute("""
+                SELECT
+                    coin,
+                    COUNT(*) as positions,
+                    COUNT(CASE WHEN realized_pnl > 0 AND status = 'closed' THEN 1 END) as wins,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl,
+                    COALESCE(AVG(holding_hours) FILTER (WHERE status = 'closed'), 0) as avg_holding
+                FROM position_history
+                WHERE address = %s AND status = 'closed'
+                GROUP BY coin
+                ORDER BY total_pnl DESC
+                LIMIT 10
+            """, (address,))
+            
+            stats['by_coin'] = [dict(row) for row in cursor.fetchall()]
+            
+            # 近期表现（30天）
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as positions,
+                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as wins,
+                    COALESCE(SUM(realized_pnl), 0) as total_pnl
+                FROM position_history
+                WHERE address = %s 
+                  AND status = 'closed'
+                  AND close_time > NOW() - INTERVAL '30 days'
+            """, (address,))
+            
+            recent = cursor.fetchone()
+            stats['recent_30d'] = {
+                'positions': recent['positions'],
+                'wins': recent['wins'],
+                'total_pnl': recent['total_pnl'],
+                'win_rate': round(recent['wins'] / recent['positions'] * 100, 1) if recent['positions'] > 0 else 0
+            }
+            
+            return stats

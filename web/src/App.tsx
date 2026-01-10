@@ -10,6 +10,7 @@ import TraderPositionsPage from "@/pages/trader-positions";
 import PositionHistoryPage from "@/pages/position-history";
 import GroupComparisonPage from "@/pages/group-comparison";
 import RiskControlPage from "@/pages/risk-control";
+import BestSTradersPage from "@/pages/best-s-traders";
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
       <Route element={<IndexPage />} path="/" />
       <Route element={<TradersPage />} path="/traders" />
       <Route element={<TraderDetailPage />} path="/traders/:address" />
+      <Route element={<BestSTradersPage />} path="/best-s-traders" />
       <Route element={<CopyTradingPage />} path="/copy-trading" />
       <Route element={<CopyOrdersPage />} path="/copy-orders" />
       <Route element={<PositionsPage />} path="/positions" />
