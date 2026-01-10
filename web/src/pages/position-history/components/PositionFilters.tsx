@@ -51,39 +51,39 @@ export function PositionFilters({
         {/* 状态筛选 */}
         <Select
           className="w-32"
-          label="状态"
-          size="sm"
+          placeholder="状态"
+          aria-label="状态筛选"
           selectedKeys={[statusFilter]}
-          onChange={(e) => onStatusFilterChange(e.target.value)}
+          onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部</SelectItem>
-          <SelectItem key="closed">已平仓</SelectItem>
-          <SelectItem key="open">持仓中</SelectItem>
+          <SelectItem key="all" textValue="全部状态">全部状态</SelectItem>
+          <SelectItem key="closed" textValue="已平仓">已平仓</SelectItem>
+          <SelectItem key="open" textValue="持仓中">持仓中</SelectItem>
         </Select>
 
         {/* 方向筛选 */}
         <Select
           className="w-32"
-          label="方向"
-          size="sm"
+          placeholder="方向"
+          aria-label="方向筛选"
           selectedKeys={[directionFilter]}
-          onChange={(e) => onDirectionFilterChange(e.target.value)}
+          onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部</SelectItem>
-          <SelectItem key="long">多头</SelectItem>
-          <SelectItem key="short">空头</SelectItem>
+          <SelectItem key="all" textValue="全部方向">全部方向</SelectItem>
+          <SelectItem key="long" textValue="多头">多头</SelectItem>
+          <SelectItem key="short" textValue="空头">空头</SelectItem>
         </Select>
 
         {/* 币种筛选 */}
         <Select
           className="w-36"
-          label="币种"
-          size="sm"
+          placeholder="币种"
+          aria-label="币种筛选"
           selectedKeys={[coinFilter]}
-          onChange={(e) => onCoinFilterChange(e.target.value)}
+          onSelectionChange={(keys) => onCoinFilterChange(Array.from(keys)[0] as string)}
         >
           {coinOptions.map((coin) => (
-            <SelectItem key={coin}>
+            <SelectItem key={coin} textValue={coin === 'all' ? '全部币种' : coin}>
               {coin === 'all' ? '全部币种' : coin}
             </SelectItem>
           ))}
@@ -92,14 +92,14 @@ export function PositionFilters({
         {/* 盈亏筛选 */}
         <Select
           className="w-32"
-          label="盈亏"
-          size="sm"
+          placeholder="盈亏"
+          aria-label="盈亏筛选"
           selectedKeys={[pnlFilter]}
-          onChange={(e) => onPnlFilterChange(e.target.value)}
+          onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
         >
-          <SelectItem key="all">全部</SelectItem>
-          <SelectItem key="profit">盈利</SelectItem>
-          <SelectItem key="loss">亏损</SelectItem>
+          <SelectItem key="all" textValue="全部盈亏">全部盈亏</SelectItem>
+          <SelectItem key="profit" textValue="盈利">盈利</SelectItem>
+          <SelectItem key="loss" textValue="亏损">亏损</SelectItem>
         </Select>
 
         {/* 重置按钮 */}
