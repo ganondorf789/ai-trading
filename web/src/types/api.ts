@@ -117,6 +117,60 @@ export interface AssetPosition {
   max_leverage: number;  // 最大杠杆
   leverage_type: string;  // 杠杆类型
   leverage_value: number;  // 当前杠杆
+  open_time?: string;  // 开仓时间
+}
+
+// 仓位历史记录
+export interface PositionHistoryRecord {
+  id: number;
+  address: string;
+  coin: string;
+  direction: 'long' | 'short';
+  open_time: string;
+  close_time: string | null;
+  max_size: number;
+  avg_entry_price: number;
+  avg_close_price: number | null;
+  total_volume: number;
+  realized_pnl: number;
+  total_fee: number;
+  open_trades: number;
+  close_trades: number;
+  holding_hours: number | null;
+  status: 'open' | 'closed';
+  created_at: string;
+  updated_at: string;
+}
+
+// 仓位历史统计
+export interface PositionHistoryStats {
+  total_positions: number;
+  closed_positions: number;
+  open_positions: number;
+  winning_positions: number;
+  losing_positions: number;
+  win_rate: number;
+  total_pnl: number;
+  total_profit: number;
+  total_loss: number;
+  avg_holding_hours: number;
+  avg_pnl: number;
+  total_fees: number;
+  unique_coins: number;
+}
+
+// 按币种汇总的仓位历史
+export interface PositionHistoryByCoin {
+  coin: string;
+  total_positions: number;
+  closed_positions: number;
+  open_positions: number;
+  winning_positions: number;
+  losing_positions: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_holding_hours: number;
+  total_volume: number;
 }
 
 export interface ChartDataPoint {

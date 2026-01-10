@@ -9,6 +9,7 @@ import { TraderOverviewCard } from './components/TraderOverviewCard';
 import { PerformanceCharts } from './components/PerformanceCharts';
 import { CoinStatistics } from './components/CoinStatistics';
 import { CurrentPositions } from './components/CurrentPositions';
+import { PositionHistory } from './components/PositionHistory';
 import { TradeHistory } from './components/TradeHistory';
 import { AIAnalysisModal } from './components/AIAnalysisModal';
 
@@ -404,6 +405,8 @@ export default function TraderDetailPage() {
           positionsRefreshing={positionsRefreshing}
           onRefresh={handleRefreshPositions}
         />
+
+        <PositionHistory address={address || ''} />
 
         <TradeHistory
           fills={fills}

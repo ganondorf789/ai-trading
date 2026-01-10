@@ -24,6 +24,9 @@ import type {
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
+  PositionHistoryRecord,
+  PositionHistoryStats,
+  PositionHistoryByCoin,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -52,6 +55,9 @@ export type {
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
+  PositionHistoryRecord,
+  PositionHistoryStats,
+  PositionHistoryByCoin,
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -199,6 +205,33 @@ export const traderApi = {
       `/traders/${address}/star`,
       { is_starred: isStarred }
     ),
+
+  // ==================== 仓位历史 ====================
+
+  // 获取仓位历史列表
+  getPositionHistory: (address: string, params?: {
+    coin?: string;
+    status?: 'open' | 'closed';
+    page?: number;
+    limit?: number;
+  }) =>
+    api.get<any, ApiResponse<PositionHistoryRecord[]>>(`/traders/${address}/position-history`, { params }),
+
+  // 重建仓位历史（从 fills 重新计算）
+  rebuildPositionHistory: (address: string) =>
+    api.post<any, ApiResponse<{ count: number }> & { message?: string }>(
+      `/traders/${address}/position-history/rebuild`,
+      null,
+      { timeout: 60000 }  // 60秒超时
+    ),
+
+  // 获取仓位历史统计
+  getPositionHistoryStats: (address: string) =>
+    api.get<any, ApiResponse<PositionHistoryStats>>(`/traders/${address}/position-history/stats`),
+
+  // 获取按币种汇总的仓位历史
+  getPositionHistoryByCoin: (address: string) =>
+    api.get<any, ApiResponse<PositionHistoryByCoin[]>>(`/traders/${address}/position-history/by-coin`),
 };
 
 // ==================== 跟单地址管理 API ====================
