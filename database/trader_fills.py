@@ -287,6 +287,67 @@ class TraderFillsOps:
             )
             return cursor.rowcount
 
+    def get_fills_for_metrics(
+        self,
+        address: str,
+        lookback_days: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        获取用于指标计算的交易记录（转换为 API 格式）
+
+        Args:
+            address: 交易者地址
+            lookback_days: 回溯天数，0 表示获取所有记录
+
+        Returns:
+            API 格式的交易记录列表（按时间升序）
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 构建查询条件
+            conditions = ["address = %s"]
+            params = [address]
+
+            # 时间范围筛选
+            if lookback_days > 0:
+                start_dt = pendulum.now(SHANGHAI_TZ).subtract(days=lookback_days).start_of('day')
+                start_timestamp_ms = int(start_dt.timestamp() * 1000)
+                conditions.append("time >= %s")
+                params.append(start_timestamp_ms)
+
+            where_clause = " AND ".join(conditions)
+
+            cursor.execute(f"""
+                SELECT * FROM trader_fills
+                WHERE {where_clause}
+                ORDER BY time ASC
+            """, params)
+
+            rows = cursor.fetchall()
+
+            # 转换为 API 格式（camelCase）
+            api_fills = []
+            for row in rows:
+                api_fill = {
+                    'time': row['time'],
+                    'coin': row['coin'],
+                    'px': row['px'],
+                    'sz': row['sz'],
+                    'side': row['side'],
+                    'closedPnl': row['closed_pnl'] or 0,
+                    'dir': row['dir'],
+                    'startPosition': row['start_position'],
+                    'hash': row['hash'],
+                    'crossed': row['crossed'],
+                    'fee': row['fee'] or 0,
+                    'oid': row['oid'],
+                    'tid': row['tid'],
+                }
+                api_fills.append(api_fill)
+
+            return api_fills
+
     def get_all_coins(
         self,
         exclude_user_perps: bool = True,

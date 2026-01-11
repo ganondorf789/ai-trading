@@ -375,22 +375,52 @@ def refresh_trader(address: str):
         config.api.max_retries = 3
         screener = TraderScreener(config)
 
-        # 分析交易者
+        # 从 API 获取新的交易记录
         metrics = screener.analyze_trader(address)
 
-        if not metrics or metrics.total_trades == 0:
+        if not metrics:
             return jsonify({
                 'success': False,
-                'error': '无法获取交易者数据或该交易者无交易记录'
+                'error': '无法获取交易者数据'
             }), 404
 
-        # 保存到数据库
-        _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
+        # 保存新获取的 fills 到数据库
+        fills_saved = db.save_fills(address, metrics.fills) if metrics.fills else 0
 
         # 保存持仓数据
         positions_saved = db.save_positions(address, metrics.asset_positions)
 
-        logger.info(f"交易者分析完成: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}, 持仓: {positions_saved}")
+        # 从数据库获取所有交易记录，重新计算指标
+        from screener.metrics_calculator import MetricsCalculator
+        from screener.scorer import TraderScorer
+
+        all_fills = db.get_fills_for_metrics(address, lookback_days=0)  # 获取所有记录
+
+        if not all_fills:
+            return jsonify({
+                'success': False,
+                'error': '该交易者无交易记录'
+            }), 404
+
+        # 使用数据库中的所有 fills 重新计算指标
+        calculator = MetricsCalculator()
+        user_state = {
+            'assetPositions': metrics.asset_positions,
+            'marginSummary': {'accountValue': metrics.current_equity}
+        }
+        recalculated_metrics = calculator.calculate(address, all_fills, user_state, store_fills=False)
+
+        # 计算评分
+        scorer = TraderScorer(config.scoring)
+        recalculated_metrics = scorer.calculate_scores(recalculated_metrics)
+
+        # 保存持仓信息到重新计算的指标
+        recalculated_metrics.asset_positions = metrics.asset_positions
+
+        # 保存重新计算的指标到数据库
+        db.save_trader(recalculated_metrics)
+
+        logger.info(f"交易者分析完成: {address}, 评分: {recalculated_metrics.overall_score:.1f}, 评级: {recalculated_metrics.rating.value}, 持仓: {positions_saved}, 数据库总记录: {len(all_fills)}")
 
         # 返回更新后的数据
         trader = db.get_trader_by_address(address)
@@ -401,9 +431,10 @@ def refresh_trader(address: str):
             'data': {
                 'trader': trader,
                 'fills_summary': fills_summary,
-                'fills_saved': fills_saved
+                'fills_saved': fills_saved,
+                'total_fills_in_db': len(all_fills)
             },
-            'message': f'分析完成，保存了 {fills_saved} 条交易记录'
+            'message': f'分析完成，新增 {fills_saved} 条交易记录，基于数据库中 {len(all_fills)} 条记录计算指标'
         })
 
     except Exception as e:
