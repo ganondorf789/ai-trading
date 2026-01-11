@@ -527,6 +527,14 @@ def main():
                 # 更新交易员的 total_trades 字段
                 actual_fills_count = get_existing_fills_count(db, address)
                 db.update_total_trades(address, actual_fills_count)
+                
+                # 重建仓位历史
+                logger.info(f"  正在重建仓位历史...")
+                try:
+                    position_count = db.rebuild_position_history(address)
+                    logger.success(f"  ✓ 重建仓位历史完成，共 {position_count} 条记录")
+                except Exception as e:
+                    logger.error(f"  ✗ 重建仓位历史失败: {repr(e)}")
             else:
                 logger.warning(f"  - 没有获取到交易记录")
             
