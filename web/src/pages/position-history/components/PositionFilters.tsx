@@ -35,7 +35,7 @@ export function PositionFilters({
   const coinOptions = ['all', ...byCoin.map(c => c.coin)];
 
   return (
-    <div className="bg-content1/50 backdrop-blur-md rounded-xl p-4 mb-6">
+    <div className="bg-content1/50 backdrop-blur-md rounded-xl mb-6">
       <div className="flex flex-wrap items-center gap-4">
         {/* 搜索 */}
         <Input
