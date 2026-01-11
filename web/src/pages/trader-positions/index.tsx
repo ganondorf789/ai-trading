@@ -638,13 +638,6 @@ export default function TraderPositionsPage() {
           onReset={handleReset}
         />
 
-        {/* 显示筛选结果数量 */}
-        {!loading && (
-          <div className="mb-4 text-sm text-default-500">
-            显示 {filteredPositions.length} / {positions.length} 条持仓记录
-          </div>
-        )}
-
         {/* Positions Table */}
         <PositionsTable 
           positions={filteredPositions} 

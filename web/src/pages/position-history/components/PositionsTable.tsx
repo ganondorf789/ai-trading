@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Table,
   TableHeader,
@@ -9,7 +8,6 @@ import {
   TableCell,
   Chip,
   Spinner,
-  Tooltip,
   Pagination,
   Input,
   Select,
@@ -17,6 +15,7 @@ import {
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { GlobalPositionHistoryRecord } from "@/services/api";
+import { getRatingColor } from "@/utils";
 
 // 每页显示条数选项
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
@@ -28,8 +27,6 @@ interface PositionsTableProps {
 }
 
 export function PositionsTable({ positions, loading }: PositionsTableProps) {
-  const navigate = useNavigate();
-  
   // 分页状态
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE);
@@ -170,7 +167,7 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
     >
       <TableHeader>
         <TableColumn>交易员</TableColumn>
-        <TableColumn>分组</TableColumn>
+        <TableColumn>评级</TableColumn>
         <TableColumn>币种</TableColumn>
         <TableColumn>方向</TableColumn>
         <TableColumn>开仓时间</TableColumn>
@@ -194,33 +191,21 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
                   {position.is_starred && (
                     <Icon icon="solar:star-bold" className="text-warning" width={14} />
                   )}
-                  <Tooltip content={position.address}>
-                    <span
-                      className="font-mono text-sm cursor-pointer hover:text-primary transition-colors"
-                      onClick={() => navigate(`/traders/${position.address}`)}
+                    <a
+                      href={`/traders/${position.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-sm text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       {position.trader_name || formatAddress(position.address)}
-                    </span>
-                  </Tooltip>
+                    </a>
                 </div>
               </TableCell>
               <TableCell>
-                {position.group_name ? (
-                  <Chip
-                    size="sm"
-                    variant="flat"
-                    style={{
-                      backgroundColor: `${position.group_color}20`,
-                      color: position.group_color || undefined,
-                      borderColor: position.group_color || undefined,
-                    }}
-                    className="border"
-                  >
-                    {position.group_name}
-                  </Chip>
-                ) : (
-                  <span className="text-default-400">-</span>
-                )}
+                <span className={`font-bold text-lg ${getRatingColor(position.rating)}`}>
+                  {position.rating || '-'}
+                </span>
               </TableCell>
               <TableCell>
                 <span className="font-semibold">{position.coin}</span>

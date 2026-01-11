@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Table,
   TableHeader,
@@ -19,6 +18,7 @@ import {
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { TraderPosition } from "@/services/api";
+import { getRatingColor } from "@/utils";
 
 // 每页显示条数选项
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
@@ -88,7 +88,6 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
       });
     }
   };
-  const navigate = useNavigate();
 
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return "-";
@@ -194,7 +193,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
       <TableHeader>
         <TableColumn width={50}>收藏</TableColumn>
         <TableColumn>交易员</TableColumn>
-        <TableColumn>分组</TableColumn>
+        <TableColumn>评级</TableColumn>
         <TableColumn>币种</TableColumn>
         <TableColumn>方向</TableColumn>
         <TableColumn>数量</TableColumn>
@@ -232,32 +231,20 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
                 </Button>
               </TableCell>
               <TableCell>
-                <Tooltip content={position.address}>
-                  <span
-                    className="font-mono text-sm cursor-pointer hover:text-primary transition-colors"
-                    onClick={() => navigate(`/traders/${position.address}`)}
+                  <a
+                    href={`/traders/${position.address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm text-primary hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     {position.trader_name || formatAddress(position.address)}
-                  </span>
-                </Tooltip>
+                  </a>
               </TableCell>
               <TableCell>
-                {position.group_name ? (
-                  <Chip
-                    size="sm"
-                    variant="flat"
-                    style={{
-                      backgroundColor: `${position.group_color}20`,
-                      color: position.group_color || undefined,
-                      borderColor: position.group_color || undefined,
-                    }}
-                    className="border"
-                  >
-                    {position.group_name}
-                  </Chip>
-                ) : (
-                  <span className="text-default-400">-</span>
-                )}
+                <span className={`font-bold text-lg ${getRatingColor(position.rating)}`}>
+                  {position.rating || '-'}
+                </span>
               </TableCell>
               <TableCell>
                 <span className="font-semibold">{position.coin}</span>
