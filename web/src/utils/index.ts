@@ -1,5 +1,6 @@
 // Rating color utilities
-export const getRatingColor = (rating: string): string => {
+export const getRatingColor = (rating: string | undefined | null): string => {
+  if (!rating) return 'text-gray-500';
   const colors: Record<string, string> = {
     S: 'text-purple-500',
     A: 'text-blue-500',

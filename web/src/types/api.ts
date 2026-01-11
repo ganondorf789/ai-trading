@@ -419,6 +419,7 @@ export interface TraderPosition {
   max_leverage: number;
   leverage_type: string;
   leverage_value: number;
+  open_time: string;
   updated_at: string;
   // 关联字段
   trader_name: string | null;
