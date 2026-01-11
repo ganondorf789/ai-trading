@@ -451,8 +451,9 @@ export const traderPositionsApi = {
     stats?: TraderPositionsStats;
     provider?: string;
     filters?: Record<string, any>;
+    force_refresh?: boolean;
   }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
       '/copy-trading/trader-positions/ai-analysis',
       data,
       { timeout: 90000 }  // 90秒超时
@@ -463,8 +464,9 @@ export const traderPositionsApi = {
     coin: string;
     positions?: TraderPosition[];
     provider?: string;
+    force_refresh?: boolean;
   }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
       '/copy-trading/trader-positions/ai-analysis/coin',
       data,
       { timeout: 90000 }
@@ -474,11 +476,25 @@ export const traderPositionsApi = {
   aiAnalyzeSingle: (data: {
     position: TraderPosition;
     provider?: string;
+    force_refresh?: boolean;
   }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string }>(
+    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
       '/copy-trading/trader-positions/ai-analysis/single',
       data,
       { timeout: 60000 }
+    ),
+
+  // 检查是否已有 AI 分析结果
+  checkAIAnalysis: (data: {
+    analysis_type: 'overall' | 'coin' | 'single';
+    positions: TraderPosition[];
+    coin?: string;
+    address?: string;
+  }) =>
+    api.post<any, ApiResponse<PositionsAIAnalysis | null> & { exists: boolean; analyzed_at?: string }>(
+      '/copy-trading/trader-positions/ai-analysis/check',
+      data,
+      { timeout: 10000 }
     ),
 };
 

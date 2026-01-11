@@ -940,6 +940,7 @@ def ai_analyze_all_positions():
         - stats: Dict, 持仓统计数据（可选）
         - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)
         - filters: Dict, 筛选条件（可选）
+        - force_refresh: bool, 是否强制重新分析（忽略缓存）
     """
     try:
         from services.positions_analysis import analyze_all_positions
@@ -947,6 +948,7 @@ def ai_analyze_all_positions():
         data = request.get_json() or {}
         provider = data.get('provider') or request.args.get('provider')
         filters = data.get('filters', {})
+        force_refresh = data.get('force_refresh', False)
         
         # 如果没有传入持仓数据，从数据库获取
         positions = data.get('positions')
@@ -989,13 +991,41 @@ def ai_analyze_all_positions():
             # 构建基础统计
             stats = _build_positions_stats(positions)
         
+        # 检查是否已有分析结果（除非强制刷新）
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('overall', positions)
+            if existing:
+                logger.info(f"返回已存在的整体持仓AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'position_count': existing.get('position_count'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': '返回已存在的分析结果'
+                })
+        
         logger.info(f"开始整体持仓AI分析，共 {len(positions)} 个持仓，提供商: {provider or '默认'}")
         
         analysis = analyze_all_positions(positions, stats, provider=provider)
         
+        # 保存分析结果到数据库
+        db.save_positions_ai_analysis(
+            analysis_type='overall',
+            analysis=analysis,
+            positions=positions,
+            stats=stats,
+            provider=provider
+        )
+        
         return jsonify({
             'success': True,
             'data': analysis,
+            'cached': False,
             'message': 'AI分析完成'
         })
     except Exception as e:
@@ -1014,6 +1044,7 @@ def ai_analyze_coin_positions():
         - coin: str, 币种名称（必填）
         - positions: List[Dict], 该币种的持仓数据列表（可选）
         - provider: str, AI提供商
+        - force_refresh: bool, 是否强制重新分析
     """
     try:
         from services.positions_analysis import analyze_coin_positions
@@ -1021,6 +1052,7 @@ def ai_analyze_coin_positions():
         data = request.get_json() or {}
         coin = data.get('coin')
         provider = data.get('provider') or request.args.get('provider')
+        force_refresh = data.get('force_refresh', False)
         
         if not coin:
             return jsonify({
@@ -1040,6 +1072,25 @@ def ai_analyze_coin_positions():
                 'error': f'没有找到 {coin} 的持仓数据'
             }), 400
         
+        # 检查是否已有分析结果
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('coin', positions, coin=coin)
+            if existing:
+                logger.info(f"返回已存在的 {coin} 币种AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'coin': existing.get('coin'),
+                        'position_count': existing.get('position_count'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': f'返回已存在的 {coin} 分析结果'
+                })
+        
         # 构建币种统计
         coin_stats = _build_coin_stats(positions)
         
@@ -1047,9 +1098,20 @@ def ai_analyze_coin_positions():
         
         analysis = analyze_coin_positions(coin, positions, coin_stats, provider=provider)
         
+        # 保存分析结果
+        db.save_positions_ai_analysis(
+            analysis_type='coin',
+            analysis=analysis,
+            positions=positions,
+            stats=coin_stats,
+            coin=coin,
+            provider=provider
+        )
+        
         return jsonify({
             'success': True,
             'data': analysis,
+            'cached': False,
             'message': f'{coin} AI分析完成'
         })
     except Exception as e:
@@ -1067,6 +1129,7 @@ def ai_analyze_single_position():
     Body (JSON):
         - position: Dict, 仓位数据（必填）
         - provider: str, AI提供商
+        - force_refresh: bool, 是否强制重新分析
     """
     try:
         from services.positions_analysis import analyze_single_position
@@ -1074,6 +1137,7 @@ def ai_analyze_single_position():
         data = request.get_json() or {}
         position = data.get('position')
         provider = data.get('provider') or request.args.get('provider')
+        force_refresh = data.get('force_refresh', False)
         
         if not position:
             return jsonify({
@@ -1081,24 +1145,108 @@ def ai_analyze_single_position():
                 'error': '缺少 position 参数'
             }), 400
         
+        address = position.get('address')
+        coin = position.get('coin', 'Unknown')
+        
+        # 检查是否已有分析结果
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('single', [position], coin=coin, address=address)
+            if existing:
+                logger.info(f"返回已存在的单仓位 {coin} AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'coin': existing.get('coin'),
+                        'address': existing.get('address'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': f'返回已存在的 {coin} 仓位分析结果'
+                })
+        
         # 尝试获取交易员详细信息
         trader_info = None
-        address = position.get('address')
         if address:
             trader_info = db.get_trader_by_address(address)
         
-        coin = position.get('coin', 'Unknown')
         logger.info(f"开始单仓位 {coin} AI分析，提供商: {provider or '默认'}")
         
         analysis = analyze_single_position(position, trader_info, provider=provider)
         
+        # 保存分析结果
+        db.save_positions_ai_analysis(
+            analysis_type='single',
+            analysis=analysis,
+            positions=[position],
+            coin=coin,
+            address=address,
+            provider=provider
+        )
+        
         return jsonify({
             'success': True,
             'data': analysis,
+            'cached': False,
             'message': f'{coin} 仓位AI分析完成'
         })
     except Exception as e:
         logger.error(f"单仓位AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/trader-positions/ai-analysis/check', methods=['POST'])
+def check_positions_ai_analysis():
+    """
+    检查是否已有持仓 AI 分析结果（不执行分析）
+    Body (JSON):
+        - analysis_type: str, 分析类型 (overall/coin/single)
+        - positions: List[Dict], 持仓数据列表
+        - coin: str, 币种（coin/single类型时需要）
+        - address: str, 地址（single类型时需要）
+    """
+    try:
+        data = request.get_json() or {}
+        analysis_type = data.get('analysis_type', 'overall')
+        positions = data.get('positions', [])
+        coin = data.get('coin')
+        address = data.get('address')
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': '缺少 positions 参数'
+            }), 400
+        
+        existing = db.get_positions_ai_analysis(analysis_type, positions, coin=coin, address=address)
+        
+        if existing:
+            return jsonify({
+                'success': True,
+                'exists': True,
+                'data': {
+                    'analysis_type': existing.get('analysis_type'),
+                    'coin': existing.get('coin'),
+                    'address': existing.get('address'),
+                    'position_count': existing.get('position_count'),
+                    'analysis_text': existing.get('analysis_text'),
+                    'sections': existing.get('sections', {}),
+                },
+                'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'exists': False,
+                'data': None
+            })
+    except Exception as e:
+        logger.error(f"检查持仓AI分析失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

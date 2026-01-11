@@ -9,7 +9,7 @@ export const siteConfig = {
       href: "/traders",
     },
     {
-      label: "S级优选",
+      label: "S-Rank Picks",
       href: "/best-s-traders",
     },
     {

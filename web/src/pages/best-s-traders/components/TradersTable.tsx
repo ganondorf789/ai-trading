@@ -12,6 +12,7 @@ import { Chip } from '@heroui/chip';
 import { Button } from '@heroui/button';
 import { Spinner } from '@heroui/spinner';
 import { Tooltip } from '@heroui/tooltip';
+import { Icon } from '@iconify/react';
 import type { BestSTrader } from '@/services/api';
 
 interface TradersTableProps {
@@ -160,10 +161,16 @@ export function TradersTable({
             isIconOnly
             size="sm"
             variant="light"
-            onPress={() => onToggleStar?.(trader.address, !trader.is_starred)}
+            color={trader.is_starred ? "warning" : "default"}
             isLoading={starLoadingAddresses.has(trader.address)}
+            onPress={() => onToggleStar?.(trader.address, !trader.is_starred)}
+            onClick={(e) => e.stopPropagation()}
           >
-            {trader.is_starred ? '⭐' : '☆'}
+            <Icon 
+              icon={trader.is_starred ? "solar:star-bold" : "solar:star-line-duotone"} 
+              width={18} 
+              className={trader.is_starred ? "text-warning" : "text-default-400"}
+            />
           </Button>
         );
       

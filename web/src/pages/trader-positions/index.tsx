@@ -217,6 +217,8 @@ export default function TraderPositionsPage() {
   const [aiAnalysisData, setAiAnalysisData] = useState<PositionsAIAnalysis | null>(null);
   const [aiAnalysisType, setAiAnalysisType] = useState<'overall' | 'coin' | 'single'>('overall');
   const [aiAnalysisCoin, setAiAnalysisCoin] = useState<string>('');
+  const [aiAnalysisCached, setAiAnalysisCached] = useState(false);  // 是否是缓存的结果
+  const [aiAnalysisTime, setAiAnalysisTime] = useState<string | undefined>();  // 分析时间
 
   // 应用本地筛选
   const filteredPositions = useMemo(() => {
@@ -358,7 +360,7 @@ export default function TraderPositionsPage() {
   // ==================== AI 分析函数 ====================
 
   // 整体持仓 AI 分析
-  const handleAIAnalyzeAll = useCallback(async () => {
+  const handleAIAnalyzeAll = useCallback(async (forceRefresh: boolean = false) => {
     if (filteredPositions.length === 0) {
       addToast({
         title: "无法分析",
@@ -370,6 +372,8 @@ export default function TraderPositionsPage() {
 
     setAiAnalysisType('overall');
     setAiAnalysisData(null);
+    setAiAnalysisCached(false);
+    setAiAnalysisTime(undefined);
     setAiAnalysisOpen(true);
     setAiAnalyzing(true);
 
@@ -377,13 +381,16 @@ export default function TraderPositionsPage() {
       const response = await traderPositionsApi.aiAnalyzeAll({
         positions: filteredPositions,
         stats: filteredStats || undefined,
+        force_refresh: forceRefresh,
       });
 
       if (response.success && response.data) {
         setAiAnalysisData(response.data);
+        setAiAnalysisCached(response.cached || false);
+        setAiAnalysisTime(response.analyzed_at);
         addToast({
-          title: "分析完成",
-          description: response.message || "AI 分析已完成",
+          title: response.cached ? "加载完成" : "分析完成",
+          description: response.message || (response.cached ? "已加载历史分析结果" : "AI 分析已完成"),
           color: "success",
         });
       } else {
@@ -406,7 +413,7 @@ export default function TraderPositionsPage() {
   }, [filteredPositions, filteredStats]);
 
   // 币种持仓 AI 分析
-  const handleAIAnalyzeCoin = useCallback(async (coin: string) => {
+  const handleAIAnalyzeCoin = useCallback(async (coin: string, forceRefresh: boolean = false) => {
     const coinPositions = filteredPositions.filter(p => p.coin === coin);
     if (coinPositions.length === 0) {
       addToast({
@@ -420,6 +427,8 @@ export default function TraderPositionsPage() {
     setAiAnalysisType('coin');
     setAiAnalysisCoin(coin);
     setAiAnalysisData(null);
+    setAiAnalysisCached(false);
+    setAiAnalysisTime(undefined);
     setAiAnalysisOpen(true);
     setAiAnalyzing(true);
 
@@ -427,13 +436,16 @@ export default function TraderPositionsPage() {
       const response = await traderPositionsApi.aiAnalyzeCoin({
         coin,
         positions: coinPositions,
+        force_refresh: forceRefresh,
       });
 
       if (response.success && response.data) {
         setAiAnalysisData(response.data);
+        setAiAnalysisCached(response.cached || false);
+        setAiAnalysisTime(response.analyzed_at);
         addToast({
-          title: "分析完成",
-          description: response.message || `${coin} AI 分析已完成`,
+          title: response.cached ? "加载完成" : "分析完成",
+          description: response.message || (response.cached ? `已加载 ${coin} 历史分析结果` : `${coin} AI 分析已完成`),
           color: "success",
         });
       } else {
@@ -456,23 +468,28 @@ export default function TraderPositionsPage() {
   }, [filteredPositions]);
 
   // 单仓位 AI 分析
-  const handleAIAnalyzeSingle = useCallback(async (position: TraderPosition) => {
+  const handleAIAnalyzeSingle = useCallback(async (position: TraderPosition, forceRefresh: boolean = false) => {
     setAiAnalysisType('single');
     setAiAnalysisCoin(position.coin);
     setAiAnalysisData(null);
+    setAiAnalysisCached(false);
+    setAiAnalysisTime(undefined);
     setAiAnalysisOpen(true);
     setAiAnalyzing(true);
 
     try {
       const response = await traderPositionsApi.aiAnalyzeSingle({
         position,
+        force_refresh: forceRefresh,
       });
 
       if (response.success && response.data) {
         setAiAnalysisData(response.data);
+        setAiAnalysisCached(response.cached || false);
+        setAiAnalysisTime(response.analyzed_at);
         addToast({
-          title: "分析完成",
-          description: response.message || "仓位风险分析已完成",
+          title: response.cached ? "加载完成" : "分析完成",
+          description: response.message || (response.cached ? "已加载历史分析结果" : "仓位风险分析已完成"),
           color: "success",
         });
       } else {
@@ -493,6 +510,15 @@ export default function TraderPositionsPage() {
       setAiAnalyzing(false);
     }
   }, []);
+
+  // 当前分析的单仓位（用于重新分析）
+  const [currentSinglePosition, setCurrentSinglePosition] = useState<TraderPosition | null>(null);
+
+  // 包装单仓位分析以保存当前位置
+  const handleAIAnalyzeSingleWrapper = useCallback(async (position: TraderPosition, forceRefresh: boolean = false) => {
+    setCurrentSinglePosition(position);
+    await handleAIAnalyzeSingle(position, forceRefresh);
+  }, [handleAIAnalyzeSingle]);
 
   useEffect(() => {
     fetchPositions();
@@ -532,7 +558,7 @@ export default function TraderPositionsPage() {
                   key="overall"
                   startContent={<Icon icon="solar:chart-2-bold-duotone" width={18} />}
                   description={`分析当前 ${filteredPositions.length} 个持仓的整体情况`}
-                  onPress={handleAIAnalyzeAll}
+                  onPress={() => handleAIAnalyzeAll(false)}
                 >
                   整体持仓分析
                 </DropdownItem>
@@ -626,7 +652,7 @@ export default function TraderPositionsPage() {
           onRefreshTrader={handleRefreshTrader}
           onToggleStar={handleToggleStar}
           starLoadingAddresses={starLoadingAddresses}
-          onAIAnalyze={handleAIAnalyzeSingle}
+          onAIAnalyze={handleAIAnalyzeSingleWrapper}
         />
       </div>
 
@@ -637,8 +663,21 @@ export default function TraderPositionsPage() {
         analyzing={aiAnalyzing}
         analysisType={aiAnalysisType}
         coinName={aiAnalysisCoin}
-        onClose={() => setAiAnalysisOpen(false)}
-        onReanalyze={aiAnalysisType === 'overall' ? handleAIAnalyzeAll : undefined}
+        onClose={() => {
+          setAiAnalysisOpen(false);
+          setCurrentSinglePosition(null);
+        }}
+        onReanalyze={
+          aiAnalysisType === 'overall' 
+            ? () => handleAIAnalyzeAll(true) 
+            : aiAnalysisType === 'coin' 
+              ? () => handleAIAnalyzeCoin(aiAnalysisCoin, true)
+              : currentSinglePosition 
+                ? () => handleAIAnalyzeSingleWrapper(currentSinglePosition, true)
+                : undefined
+        }
+        cached={aiAnalysisCached}
+        analyzedAt={aiAnalysisTime}
       />
     </DefaultLayout>
   );

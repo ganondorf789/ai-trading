@@ -413,6 +413,9 @@ class PositionsAIAnalyzer:
 - 近7天盈亏: ${trader_info.get('recent_7d_pnl', 0):,.2f}
 """
 
+        # 处理清算价格显示
+        liquidation_px_str = f'${liquidation_px:.4f}' if liquidation_px else '未知'
+        
         prompt = f"""
 作为专业的加密货币交易分析师，请对以下仓位进行风险分析。
 
@@ -423,7 +426,7 @@ class PositionsAIAnalyzer:
 - 持仓价值: ${position_value:,.2f}
 - 杠杆倍数: {leverage:.0f}x
 - 使用保证金: ${margin_used:,.2f}
-- 清算价格: ${liquidation_px:.4f if liquidation_px else '未知'}
+- 清算价格: {liquidation_px_str}
 - 未实现盈亏: ${unrealized_pnl:,.2f} ({roe:.2f}%)
 
 【交易员信息】

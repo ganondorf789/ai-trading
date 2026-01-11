@@ -581,6 +581,47 @@ class DatabaseMigrations:
                 )
             """)
 
+            # 创建持仓AI分析结果表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS positions_ai_analysis (
+                    id SERIAL PRIMARY KEY,
+                    
+                    -- 分析类型和标识
+                    analysis_type TEXT NOT NULL,        -- 'overall' | 'coin' | 'single'
+                    analysis_key TEXT NOT NULL UNIQUE,  -- 唯一标识符：overall_hash / coin_{coin}_hash / single_{address}_{coin}_hash
+                    
+                    -- 分析目标信息
+                    coin TEXT,                          -- 币种（coin/single类型时有值）
+                    address TEXT,                       -- 地址（single类型时有值）
+                    position_count INTEGER DEFAULT 0,   -- 分析的持仓数量
+                    
+                    -- 分析结果
+                    analysis_text TEXT,                 -- 完整分析文本
+                    sections JSONB,                     -- 分段解析后的JSON
+                    
+                    -- 分析时的统计数据快照
+                    stats_snapshot JSONB,               -- 统计数据快照
+                    
+                    -- 元数据
+                    ai_provider TEXT DEFAULT 'default',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_ai_analysis_type
+                ON positions_ai_analysis(analysis_type)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_ai_analysis_key
+                ON positions_ai_analysis(analysis_key)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_ai_analysis_coin
+                ON positions_ai_analysis(coin)
+            """)
+
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_fetch_fails_address
                 ON fetch_fails(address)
