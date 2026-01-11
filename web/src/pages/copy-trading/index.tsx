@@ -663,10 +663,6 @@ export default function CopyTradingPage() {
             </Dropdown>
           )}
 
-          <Button variant="flat" onPress={() => loadAddresses()}>
-            <Icon icon="lucide:refresh-cw" width={18} />
-          </Button>
-
           <Button variant="flat" onPress={() => setIsGroupModalOpen(true)}>
             <Icon icon="lucide:folder-plus" width={18} />
             管理分组

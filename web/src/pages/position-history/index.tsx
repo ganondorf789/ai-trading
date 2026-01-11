@@ -154,21 +154,6 @@ export default function PositionHistoryPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button
-              color="primary"
-              variant="flat"
-              startContent={
-                loading ? (
-                  <Spinner size="sm" color="current" />
-                ) : (
-                  <Icon icon="solar:refresh-bold-duotone" width={18} />
-                )
-              }
-              onPress={fetchData}
-              isDisabled={loading}
-            >
-              {loading ? "加载中..." : "刷新数据"}
-            </Button>
           </div>
         </div>
 
@@ -193,13 +178,6 @@ export default function PositionHistoryPage() {
           byCoin={byCoin}
           onReset={handleReset}
         />
-
-        {/* 显示筛选结果数量 */}
-        {!loading && (
-          <div className="mb-4 text-sm text-default-500">
-            显示 {filteredPositions.length} / {positions.length} 条仓位历史记录
-          </div>
-        )}
 
         {/* Positions Table */}
         <PositionsTable positions={filteredPositions} loading={loading} />
