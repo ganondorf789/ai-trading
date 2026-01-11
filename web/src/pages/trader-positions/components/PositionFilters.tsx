@@ -1,4 +1,4 @@
-import { Input, Select, SelectItem, Button } from "@heroui/react";
+import { Input, Select, SelectItem, Button, Autocomplete, AutocompleteItem } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { TraderPositionsStats, CopyTradingGroup } from "@/services/api";
@@ -65,105 +65,124 @@ export function PositionFilters({
     <div className="flex flex-col gap-4 mb-6">
       {/* 第一行：基础筛选 */}
       <div className="flex flex-wrap gap-3 items-center">
-        <Select
-          className="w-36"
-          placeholder="方向"
-          selectedKeys={[sideFilter]}
-          onSelectionChange={(keys) => onSideFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部方向">全部方向</SelectItem>
-          <SelectItem key="long" textValue="多头">多头</SelectItem>
-          <SelectItem key="short" textValue="空头">空头</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">方向</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            selectedKeys={[sideFilter]}
+            onSelectionChange={(keys) => onSideFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="long" textValue="多头">多头</SelectItem>
+            <SelectItem key="short" textValue="空头">空头</SelectItem>
+          </Select>
+        </div>
 
-        <Select
-          className="w-40"
-          placeholder="分组"
-          selectedKeys={[groupFilter]}
-          onSelectionChange={(keys) => onGroupFilterChange(Array.from(keys)[0] as string)}
-        >
-          {[
-            <SelectItem key="all" textValue="全部分组">全部分组</SelectItem>,
-            ...groups.map((group) => (
-              <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
-            )),
-          ]}
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">分组</span>
+          <Select
+            className="min-w-[120px]"
+            size="sm"
+            selectedKeys={[groupFilter]}
+            onSelectionChange={(keys) => onGroupFilterChange(Array.from(keys)[0] as string)}
+          >
+            {[
+              <SelectItem key="all" textValue="全部">全部</SelectItem>,
+              ...groups.map((group) => (
+                <SelectItem key={group.id.toString()} textValue={group.name}>{group.name}</SelectItem>
+              )),
+            ]}
+          </Select>
+        </div>
 
-        <Select
-          className="w-48"
-          placeholder="交易员"
-          selectedKeys={[traderFilter]}
-          onSelectionChange={(keys) => onTraderFilterChange(Array.from(keys)[0] as string)}
-        >
-          {[
-            <SelectItem key="all" textValue="全部交易员">全部交易员</SelectItem>,
-            ...traderOptions.map((trader) => {
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">交易员</span>
+          <Autocomplete
+            className="min-w-[200px]"
+            size="sm"
+            selectedKey={traderFilter}
+            onSelectionChange={(key) => onTraderFilterChange((key as string) || 'all')}
+            allowsCustomValue={false}
+          >
+            <AutocompleteItem key="all" textValue="全部">全部</AutocompleteItem>
+            {traderOptions.map((trader) => {
               const displayName = trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`;
               return (
-                <SelectItem key={trader.address} textValue={displayName}>
+                <AutocompleteItem key={trader.address} textValue={displayName}>
                   {displayName} ({trader.count})
-                </SelectItem>
+                </AutocompleteItem>
               );
-            }),
-          ]}
-        </Select>
+            })}
+          </Autocomplete>
+        </div>
 
-        <Select
-          className="w-36"
-          placeholder="币种"
-          selectedKeys={[coinFilter]}
-          onSelectionChange={(keys) => onCoinFilterChange(Array.from(keys)[0] as string)}
-        >
-          {[
-            <SelectItem key="all" textValue="全部币种">全部币种</SelectItem>,
-            ...coinOptions.map((coin) => (
-              <SelectItem key={coin.coin} textValue={coin.coin}>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">币种</span>
+          <Autocomplete
+            className="min-w-[160px]"
+            size="sm"
+            selectedKey={coinFilter}
+            onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
+            allowsCustomValue={false}
+          >
+            <AutocompleteItem key="all" textValue="全部">全部</AutocompleteItem>
+            {coinOptions.map((coin) => (
+              <AutocompleteItem key={coin.coin} textValue={coin.coin}>
                 {coin.coin} ({coin.count})
-              </SelectItem>
-            )),
-          ]}
-        </Select>
+              </AutocompleteItem>
+            ))}
+          </Autocomplete>
+        </div>
 
-        <Select
-          className="w-32"
-          placeholder="收藏"
-          selectedKeys={[starFilter]}
-          onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部">全部</SelectItem>
-          <SelectItem key="starred" textValue="已收藏">已收藏 ⭐</SelectItem>
-          <SelectItem key="unstarred" textValue="未收藏">未收藏</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">收藏</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            selectedKeys={[starFilter]}
+            onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="starred" textValue="已收藏">已收藏 ⭐</SelectItem>
+            <SelectItem key="unstarred" textValue="未收藏">未收藏</SelectItem>
+          </Select>
+        </div>
 
-        <Select
-          className="w-32"
-          placeholder="盈亏"
-          selectedKeys={[pnlFilter]}
-          onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部盈亏">全部盈亏</SelectItem>
-          <SelectItem key="profit" textValue="盈利">盈利 📈</SelectItem>
-          <SelectItem key="loss" textValue="亏损">亏损 📉</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">盈亏</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            selectedKeys={[pnlFilter]}
+            onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="profit" textValue="盈利">盈利 📈</SelectItem>
+            <SelectItem key="loss" textValue="亏损">亏损 📉</SelectItem>
+          </Select>
+        </div>
 
-        <Select
-          className="w-28"
-          placeholder="评级"
-          selectedKeys={scoreFilter ? [scoreFilter] : []}
-          onSelectionChange={(keys) => {
-            const selected = Array.from(keys)[0] as string;
-            onScoreFilterChange(selected || 'all');
-          }}
-        >
-          <SelectItem key="all" textValue="全部">全部评级</SelectItem>
-          <SelectItem key="S" textValue="S">S</SelectItem>
-          <SelectItem key="A" textValue="A">A</SelectItem>
-          <SelectItem key="B" textValue="B">B</SelectItem>
-          <SelectItem key="C" textValue="C">C</SelectItem>
-          <SelectItem key="D" textValue="D">D</SelectItem>
-          <SelectItem key="F" textValue="F">F</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">评级</span>
+          <Select
+            className="min-w-[80px]"
+            size="sm"
+            selectedKeys={scoreFilter ? [scoreFilter] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onScoreFilterChange(selected || 'all');
+            }}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="S" textValue="S">S</SelectItem>
+            <SelectItem key="A" textValue="A">A</SelectItem>
+            <SelectItem key="B" textValue="B">B</SelectItem>
+            <SelectItem key="C" textValue="C">C</SelectItem>
+            <SelectItem key="D" textValue="D">D</SelectItem>
+            <SelectItem key="F" textValue="F">F</SelectItem>
+          </Select>
+        </div>
 
         <Button
           variant="flat"

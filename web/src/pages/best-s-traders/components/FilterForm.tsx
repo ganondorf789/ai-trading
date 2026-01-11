@@ -36,31 +36,43 @@ export function FilterForm({
     <div className="flex flex-col gap-4">
       {/* 常用筛选 */}
       <div className="flex flex-wrap items-end gap-4">
-        <Select
-          selectedKeys={params.sort_by ? [params.sort_by] : ['recent_pnl']}
-          onSelectionChange={(keys) => handleChange('sort_by', Array.from(keys)[0])}
-          className="w-36"
-        >
-          {sortOptions.map((opt) => (
-            <SelectItem key={opt.key}>{opt.label}</SelectItem>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">排序</span>
+          <Select
+            selectedKeys={params.sort_by ? [params.sort_by] : ['recent_pnl']}
+            onSelectionChange={(keys) => handleChange('sort_by', Array.from(keys)[0])}
+            className="w-36"
+            size="sm"
+          >
+            {sortOptions.map((opt) => (
+              <SelectItem key={opt.key}>{opt.label}</SelectItem>
+            ))}
+          </Select>
+        </div>
 
-        <Input
-          type="number"
-          value={params.limit?.toString() || '20'}
-          onChange={(e) => handleChange('limit', parseInt(e.target.value) || 20)}
-          className="w-24"
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">数量</span>
+          <Input
+            type="number"
+            size="sm"
+            value={params.limit?.toString() || '20'}
+            onChange={(e) => handleChange('limit', parseInt(e.target.value) || 20)}
+            className="w-24"
+          />
+        </div>
 
-        <Select
-          selectedKeys={[params.require_recent_profit !== false ? 'true' : 'false']}
-          onSelectionChange={(keys) => handleChange('require_recent_profit', Array.from(keys)[0] === 'true')}
-          className="w-36"
-        >
-          <SelectItem key="true">要求近期盈利</SelectItem>
-          <SelectItem key="false">不限近期盈利</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">近期盈利</span>
+          <Select
+            selectedKeys={[params.require_recent_profit !== false ? 'true' : 'false']}
+            onSelectionChange={(keys) => handleChange('require_recent_profit', Array.from(keys)[0] === 'true')}
+            className="w-36"
+            size="sm"
+          >
+            <SelectItem key="true">要求</SelectItem>
+            <SelectItem key="false">不限</SelectItem>
+          </Select>
+        </div>
 
         <Button color="primary" onPress={onSearch} isLoading={isLoading}>
           筛选

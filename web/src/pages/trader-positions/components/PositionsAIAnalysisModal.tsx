@@ -122,7 +122,6 @@ export function PositionsAIAnalysisModal({
                 <span>{getTitle()}</span>
                 {cached && (
                   <Chip size="sm" color="secondary" variant="flat">
-                    <Icon icon="solar:history-bold" width={12} className="mr-1" />
                     历史分析
                   </Chip>
                 )}

@@ -1,4 +1,4 @@
-import { Input, Select, SelectItem, Button } from "@heroui/react";
+import { Input, Select, SelectItem, Button, Autocomplete, AutocompleteItem } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { PositionHistoryByCoin } from "@/services/api";
 
@@ -49,58 +49,71 @@ export function PositionFilters({
         />
 
         {/* 状态筛选 */}
-        <Select
-          className="w-32"
-          placeholder="状态"
-          aria-label="状态筛选"
-          selectedKeys={[statusFilter]}
-          onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部状态">全部状态</SelectItem>
-          <SelectItem key="closed" textValue="已平仓">已平仓</SelectItem>
-          <SelectItem key="open" textValue="持仓中">持仓中</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">状态</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            aria-label="状态筛选"
+            selectedKeys={[statusFilter]}
+            onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="closed" textValue="已平仓">已平仓</SelectItem>
+            <SelectItem key="open" textValue="持仓中">持仓中</SelectItem>
+          </Select>
+        </div>
 
         {/* 方向筛选 */}
-        <Select
-          className="w-32"
-          placeholder="方向"
-          aria-label="方向筛选"
-          selectedKeys={[directionFilter]}
-          onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部方向">全部方向</SelectItem>
-          <SelectItem key="long" textValue="多头">多头</SelectItem>
-          <SelectItem key="short" textValue="空头">空头</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">方向</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            aria-label="方向筛选"
+            selectedKeys={[directionFilter]}
+            onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="long" textValue="多头">多头</SelectItem>
+            <SelectItem key="short" textValue="空头">空头</SelectItem>
+          </Select>
+        </div>
 
         {/* 币种筛选 */}
-        <Select
-          className="w-36"
-          placeholder="币种"
-          aria-label="币种筛选"
-          selectedKeys={[coinFilter]}
-          onSelectionChange={(keys) => onCoinFilterChange(Array.from(keys)[0] as string)}
-        >
-          {coinOptions.map((coin) => (
-            <SelectItem key={coin} textValue={coin === 'all' ? '全部币种' : coin}>
-              {coin === 'all' ? '全部币种' : coin}
-            </SelectItem>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">币种</span>
+          <Autocomplete
+            className="min-w-[160px]"
+            size="sm"
+            aria-label="币种筛选"
+            selectedKey={coinFilter}
+            onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
+            allowsCustomValue={false}
+          >
+            {coinOptions.map((coin) => (
+              <AutocompleteItem key={coin} textValue={coin === 'all' ? '全部' : coin}>
+                {coin === 'all' ? '全部' : coin}
+              </AutocompleteItem>
+            ))}
+          </Autocomplete>
+        </div>
 
         {/* 盈亏筛选 */}
-        <Select
-          className="w-32"
-          placeholder="盈亏"
-          aria-label="盈亏筛选"
-          selectedKeys={[pnlFilter]}
-          onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
-        >
-          <SelectItem key="all" textValue="全部盈亏">全部盈亏</SelectItem>
-          <SelectItem key="profit" textValue="盈利">盈利</SelectItem>
-          <SelectItem key="loss" textValue="亏损">亏损</SelectItem>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-sm whitespace-nowrap">盈亏</span>
+          <Select
+            className="min-w-[100px]"
+            size="sm"
+            aria-label="盈亏筛选"
+            selectedKeys={[pnlFilter]}
+            onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
+          >
+            <SelectItem key="all" textValue="全部">全部</SelectItem>
+            <SelectItem key="profit" textValue="盈利">盈利</SelectItem>
+            <SelectItem key="loss" textValue="亏损">亏损</SelectItem>
+          </Select>
+        </div>
 
         {/* 重置按钮 */}
         <Button
