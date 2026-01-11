@@ -181,7 +181,6 @@ def screen_leaderboard_traders(
     logger.info(f"  成功保存: {saved_count} 个交易者")
     logger.info(f"  交易记录: {fills_count} 条")
     logger.info(f"  失败/跳过: {failed_count} 个")
-    logger.info(f"  数据库: {db.db_path}")
     if PSUTIL_AVAILABLE:
         logger.info(f"  最终内存使用: {get_memory_usage():.1f} MB")
 
