@@ -5,6 +5,7 @@ import { Button } from '@heroui/button';
 import { Spinner } from '@heroui/spinner';
 import { Select, SelectItem } from '@heroui/select';
 import { Pagination } from '@heroui/pagination';
+import { Input } from '@heroui/input';
 import { Tabs, Tab } from '@heroui/tabs';
 import { addToast } from '@heroui/react';
 import {
@@ -33,7 +34,17 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   const [totalCount, setTotalCount] = useState(0);
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [selectedTab, setSelectedTab] = useState<string>('list');
+  const [jumpPage, setJumpPage] = useState('');
   const rowsPerPage = 20;
+
+  // 页码跳转
+  const handleJumpPage = () => {
+    const pageNum = parseInt(jumpPage);
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setPage(pageNum);
+      setJumpPage('');
+    }
+  };
 
   const formatNumber = (num: number, decimals = 2) => {
     return num?.toLocaleString('en-US', {
@@ -218,20 +229,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
 
         {selectedTab === 'list' && (
           <>
-            {/* 筛选器 */}
-            <div className="flex items-center gap-4 mb-4">
-              <Select
-                size="sm"
-                label="状态"
-                selectedKeys={[statusFilter]}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="w-32"
-              >
-                <SelectItem key="all">全部</SelectItem>
-                <SelectItem key="closed">已平仓</SelectItem>
-                <SelectItem key="open">持仓中</SelectItem>
-              </Select>
-            </div>
+
 
             {/* 仓位列表表格 */}
             {loading ? (
@@ -302,16 +300,36 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                 </Table>
 
                 {/* 分页 */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center mt-4">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2 mt-4">
+                  <span className="text-sm text-gray-500">
+                    显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
+                  </span>
+                  <div className="flex items-center gap-3">
                     <Pagination
-                      total={totalPages}
-                      page={page}
-                      onChange={setPage}
+                      isCompact
                       showControls
+                      showShadow
+                      color="primary"
+                      page={page}
+                      total={totalPages}
+                      onChange={setPage}
                     />
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm text-gray-500">跳转</span>
+                      <Input
+                        type="number"
+                        size="sm"
+                        className="w-16"
+                        min={1}
+                        max={totalPages}
+                        value={jumpPage}
+                        onValueChange={setJumpPage}
+                        onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
+                      />
+                      <span className="text-sm text-gray-500">页</span>
+                    </div>
                   </div>
-                )}
+                </div>
               </>
             ) : (
               <div className="text-center text-gray-500 py-8">
@@ -337,27 +355,45 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                   <TableColumn key="closed">已平仓</TableColumn>
                   <TableColumn key="win_rate">胜率</TableColumn>
                   <TableColumn key="pnl">总盈亏</TableColumn>
+                  <TableColumn key="avg_pnl">平均盈亏</TableColumn>
+                  <TableColumn key="pnl_ratio">盈亏占比</TableColumn>
                   <TableColumn key="volume">总交易量</TableColumn>
                   <TableColumn key="holding">平均持仓</TableColumn>
                 </TableHeader>
                 <TableBody items={byCoin}>
-                  {(item) => (
-                    <TableRow key={item.coin}>
-                      <TableCell>
-                        <span className="font-bold">{item.coin}</span>
-                      </TableCell>
-                      <TableCell>{item.total_positions}</TableCell>
-                      <TableCell>{item.closed_positions}</TableCell>
-                      <TableCell>{formatPercent(item.win_rate)}</TableCell>
-                      <TableCell>
-                        <span className={item.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
-                          ${formatNumber(item.total_pnl)}
-                        </span>
-                      </TableCell>
-                      <TableCell>${formatNumber(item.total_volume)}</TableCell>
-                      <TableCell>{formatHours(item.avg_holding_hours)}</TableCell>
-                    </TableRow>
-                  )}
+                  {(item) => {
+                    const avgPnl = item.closed_positions > 0 ? item.total_pnl / item.closed_positions : 0;
+                    const pnlRatio = stats?.total_pnl && stats.total_pnl !== 0
+                      ? (item.total_pnl / stats.total_pnl) * 100
+                      : 0;
+                    return (
+                      <TableRow key={item.coin}>
+                        <TableCell>
+                          <span className="font-bold">{item.coin}</span>
+                        </TableCell>
+                        <TableCell>{item.total_positions}</TableCell>
+                        <TableCell>{item.closed_positions}</TableCell>
+                        <TableCell>{formatPercent(item.win_rate)}</TableCell>
+                        <TableCell>
+                          <span className={item.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            ${formatNumber(item.total_pnl)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={avgPnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            ${formatNumber(avgPnl)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className={item.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                            {pnlRatio.toFixed(2)}%
+                          </span>
+                        </TableCell>
+                        <TableCell>${formatNumber(item.total_volume)}</TableCell>
+                        <TableCell>{formatHours(item.avg_holding_hours)}</TableCell>
+                      </TableRow>
+                    );
+                  }}
                 </TableBody>
               </Table>
             ) : (

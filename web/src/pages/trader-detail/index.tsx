@@ -7,7 +7,6 @@ import { addToast } from "@heroui/react";
 import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
 import { TraderOverviewCard } from './components/TraderOverviewCard';
 import { PerformanceCharts } from './components/PerformanceCharts';
-import { CoinStatistics } from './components/CoinStatistics';
 import { CurrentPositions } from './components/CurrentPositions';
 import { PositionHistory } from './components/PositionHistory';
 import { TradeHistory } from './components/TradeHistory';
@@ -396,8 +395,6 @@ export default function TraderDetailPage() {
           chartLoading={chartLoading}
           onTimeRangeChange={setTimeRange}
         />
-
-        <CoinStatistics fillsSummary={fillsSummary} />
 
         <CurrentPositions
           assetPositions={assetPositions}
