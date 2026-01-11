@@ -69,7 +69,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">方向</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             selectedKeys={[sideFilter]}
             onSelectionChange={(keys) => onSideFilterChange(Array.from(keys)[0] as string)}
           >
@@ -83,7 +82,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">分组</span>
           <Select
             className="min-w-[120px]"
-            size="sm"
             selectedKeys={[groupFilter]}
             onSelectionChange={(keys) => onGroupFilterChange(Array.from(keys)[0] as string)}
           >
@@ -100,7 +98,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">交易员</span>
           <Autocomplete
             className="min-w-[200px]"
-            size="sm"
             selectedKey={traderFilter}
             onSelectionChange={(key) => onTraderFilterChange((key as string) || 'all')}
             allowsCustomValue={false}
@@ -125,7 +122,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">币种</span>
           <Autocomplete
             className="min-w-[160px]"
-            size="sm"
             selectedKey={coinFilter}
             onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
             allowsCustomValue={false}
@@ -150,7 +146,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">收藏</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             selectedKeys={[starFilter]}
             onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
           >
@@ -164,7 +159,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">盈亏</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             selectedKeys={[pnlFilter]}
             onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
           >
@@ -178,7 +172,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">评级</span>
           <Select
             className="min-w-[80px]"
-            size="sm"
             selectedKeys={scoreFilter ? [scoreFilter] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;

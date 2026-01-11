@@ -53,7 +53,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">状态</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             aria-label="状态筛选"
             selectedKeys={[statusFilter]}
             onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string)}
@@ -69,7 +68,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">方向</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             aria-label="方向筛选"
             selectedKeys={[directionFilter]}
             onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string)}
@@ -85,7 +83,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">币种</span>
           <Autocomplete
             className="min-w-[160px]"
-            size="sm"
             aria-label="币种筛选"
             selectedKey={coinFilter}
             onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
@@ -108,7 +105,6 @@ export function PositionFilters({
           <span className="text-sm whitespace-nowrap">盈亏</span>
           <Select
             className="min-w-[100px]"
-            size="sm"
             aria-label="盈亏筛选"
             selectedKeys={[pnlFilter]}
             onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
