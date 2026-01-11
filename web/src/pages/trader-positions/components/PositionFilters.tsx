@@ -104,16 +104,20 @@ export function PositionFilters({
             selectedKey={traderFilter}
             onSelectionChange={(key) => onTraderFilterChange((key as string) || 'all')}
             allowsCustomValue={false}
+            defaultItems={[
+              { key: 'all', label: '全部', count: null as number | null },
+              ...traderOptions.map((trader) => ({
+                key: trader.address,
+                label: trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`,
+                count: trader.count as number | null,
+              })),
+            ]}
           >
-            <AutocompleteItem key="all" textValue="全部">全部</AutocompleteItem>
-            {traderOptions.map((trader) => {
-              const displayName = trader.name || `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`;
-              return (
-                <AutocompleteItem key={trader.address} textValue={displayName}>
-                  {displayName} ({trader.count})
-                </AutocompleteItem>
-              );
-            })}
+            {(item) => (
+              <AutocompleteItem key={item.key} textValue={item.label}>
+                {item.label}{item.count ? ` (${item.count})` : ''}
+              </AutocompleteItem>
+            )}
           </Autocomplete>
         </div>
 
@@ -125,13 +129,20 @@ export function PositionFilters({
             selectedKey={coinFilter}
             onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
             allowsCustomValue={false}
+            defaultItems={[
+              { key: 'all', label: '全部', count: null as number | null },
+              ...coinOptions.map((coin) => ({
+                key: coin.coin,
+                label: coin.coin,
+                count: coin.count as number | null,
+              })),
+            ]}
           >
-            <AutocompleteItem key="all" textValue="全部">全部</AutocompleteItem>
-            {coinOptions.map((coin) => (
-              <AutocompleteItem key={coin.coin} textValue={coin.coin}>
-                {coin.coin} ({coin.count})
+            {(item) => (
+              <AutocompleteItem key={item.key} textValue={item.label}>
+                {item.label}{item.count ? ` (${item.count})` : ''}
               </AutocompleteItem>
-            ))}
+            )}
           </Autocomplete>
         </div>
 

@@ -90,12 +90,16 @@ export function PositionFilters({
             selectedKey={coinFilter}
             onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
             allowsCustomValue={false}
+            defaultItems={coinOptions.map((coin) => ({
+              key: coin,
+              label: coin === 'all' ? '全部' : coin,
+            }))}
           >
-            {coinOptions.map((coin) => (
-              <AutocompleteItem key={coin} textValue={coin === 'all' ? '全部' : coin}>
-                {coin === 'all' ? '全部' : coin}
+            {(item) => (
+              <AutocompleteItem key={item.key} textValue={item.label}>
+                {item.label}
               </AutocompleteItem>
-            ))}
+            )}
           </Autocomplete>
         </div>
 
