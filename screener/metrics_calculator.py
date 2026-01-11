@@ -92,6 +92,9 @@ class MetricsCalculator:
         if user_state:
             metrics.asset_positions = user_state.get('assetPositions', [])
         
+        # 清理临时属性，避免内存泄漏
+        self._cleanup_temp_attributes(metrics)
+        
         return metrics
     
     def _preprocess_fills(self, fills: List[Dict]) -> List[Dict]:
@@ -454,6 +457,19 @@ class MetricsCalculator:
         roi.daily_roi = safe_divide(metrics.pnl.daily_pnl, equity)
         roi.weekly_roi = safe_divide(metrics.pnl.weekly_pnl, equity)
         roi.monthly_roi = safe_divide(metrics.pnl.monthly_pnl, equity)
+    
+    def _cleanup_temp_attributes(self, metrics: TraderMetrics) -> None:
+        """
+        清理临时属性，避免内存泄漏
+        
+        Args:
+            metrics: 指标对象
+        """
+        # 删除计算过程中添加的临时属性
+        temp_attrs = ['_pnl_list', '_total_profit', '_total_loss', '_daily_pnl']
+        for attr in temp_attrs:
+            if hasattr(metrics, attr):
+                delattr(metrics, attr)
 
 
 # 便捷函数

@@ -57,7 +57,8 @@ class SyncAPIClient(BaseAPIClient):
     def __init__(
         self,
         config: Optional[APIConfig] = None,
-        cache_manager: Optional[CacheManager] = None
+        cache_manager: Optional[CacheManager] = None,
+        cache_fills: bool = True
     ):
         """
         初始化同步客户端
@@ -65,9 +66,11 @@ class SyncAPIClient(BaseAPIClient):
         Args:
             config: API 配置
             cache_manager: 缓存管理器
+            cache_fills: 是否缓存 fills 数据（批量处理时建议关闭以节省内存）
         """
         self.config = config or APIConfig()
         self._cache = cache_manager or get_cache_manager()
+        self._cache_fills = cache_fills
         
         # 确定 API URL
         api_url = (
@@ -77,7 +80,7 @@ class SyncAPIClient(BaseAPIClient):
         )
         self._info = Info(api_url, skip_ws=True)
         
-        logger.debug(f"同步 API 客户端初始化完成: {api_url}")
+        logger.debug(f"同步 API 客户端初始化完成: {api_url}, 缓存fills: {cache_fills}")
     
     def _call_with_retry(self, func, *args, **kwargs) -> Any:
         """
@@ -164,11 +167,12 @@ class SyncAPIClient(BaseAPIClient):
         Returns:
             成交记录列表
         """
-        # 检查缓存
-        cache_key = f"{address}:{limit}"
-        cached = self._cache.get('fills', cache_key)
-        if cached is not None:
-            return cached
+        # 检查缓存（仅在启用缓存时）
+        if self._cache_fills:
+            cache_key = f"{address}:{limit}"
+            cached = self._cache.get('fills', cache_key)
+            if cached is not None:
+                return cached
         
         try:
             fills = self._call_with_retry(self._info.user_fills, address)
@@ -179,7 +183,10 @@ class SyncAPIClient(BaseAPIClient):
             if limit > 0 and len(fills) > limit:
                 fills = fills[:limit]
             
-            self._cache.set('fills', cache_key, fills)
+            # 仅在启用缓存时缓存数据
+            if self._cache_fills:
+                cache_key = f"{address}:{limit}"
+                self._cache.set('fills', cache_key, fills)
             return fills
         except APIError as e:
             logger.debug(f"获取用户成交记录失败 {address[:10]}...: {e}")
@@ -202,11 +209,12 @@ class SyncAPIClient(BaseAPIClient):
         Returns:
             成交记录列表
         """
-        # 检查缓存
-        cache_key = f"{address}:{start_time_ms}:{end_time_ms}"
-        cached = self._cache.get('fills', cache_key)
-        if cached is not None:
-            return cached
+        # 检查缓存（仅在启用缓存时）
+        if self._cache_fills:
+            cache_key = f"{address}:{start_time_ms}:{end_time_ms}"
+            cached = self._cache.get('fills', cache_key)
+            if cached is not None:
+                return cached
         
         try:
             fills = self._call_with_retry(
@@ -217,7 +225,10 @@ class SyncAPIClient(BaseAPIClient):
             )
             
             if fills:
-                self._cache.set('fills', cache_key, fills)
+                # 仅在启用缓存时缓存数据
+                if self._cache_fills:
+                    cache_key = f"{address}:{start_time_ms}:{end_time_ms}"
+                    self._cache.set('fills', cache_key, fills)
                 return fills
             return []
         except APIError as e:

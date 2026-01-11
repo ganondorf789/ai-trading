@@ -84,7 +84,8 @@ def screen_leaderboard_traders(
     config.data.max_fills_per_trader = max_fills
     config.api.api_call_delay = 0.5  # 避免请求过快
     config.api.max_retries = 3
-    screener = TraderScreener(config)
+    # 批量处理时禁用 fills 缓存，避免内存溢出
+    screener = TraderScreener(config, cache_fills=False)
     db = TraderDatabase()
 
     # 3. 逐个分析并保存
@@ -125,8 +126,12 @@ def screen_leaderboard_traders(
                 )
 
                 # 立即清空 fills 并删除对象以释放内存
-                metrics.fills = []
-                metrics.asset_positions = []
+                if hasattr(metrics, 'fills'):
+                    metrics.fills.clear()
+                    metrics.fills = []
+                if hasattr(metrics, 'asset_positions'):
+                    metrics.asset_positions.clear()
+                    metrics.asset_positions = []
                 del fills
                 del metrics
             else:
@@ -135,11 +140,20 @@ def screen_leaderboard_traders(
                     f"[{current_index}/{resume_from + total if resume_from else total}] "
                     f"✗ {address[:10]}... 无交易数据"
                 )
+                # 即使没有数据，也清理 metrics 对象
+                if metrics:
+                    del metrics
+
+            # 每个交易者处理完后立即清理 _analyzed_traders 中的当前地址
+            if address in screener._analyzed_traders:
+                del screener._analyzed_traders[address]
 
             # 定期清理内存（每10个交易者）
             if i % 10 == 0:
                 # 清空 screener 的缓存
                 screener._analyzed_traders.clear()
+                # 清空 API 缓存（这是内存泄漏的主要来源）
+                screener.clear_cache()
                 # 强制垃圾回收
                 gc.collect()
                 if PSUTIL_AVAILABLE:
