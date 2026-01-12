@@ -258,11 +258,29 @@ def quick_add_copy_trading_address():
         # 检查地址是否已存在
         existing = db.get_copy_trading_address(address)
         if existing:
-            return jsonify({
-                'success': False,
-                'error': '该交易员已在跟单列表中',
-                'exists': True
-            }), 409  # Conflict
+            # 如果已存在但是禁用状态，则重新启用
+            if not existing.get('is_enabled', True):
+                existing['is_enabled'] = True
+                # 更新同步仓位币种（如果提供了）
+                if data.get('sync_position_symbols'):
+                    existing['sync_position_symbols'] = data.get('sync_position_symbols')
+                existing['sync_position'] = True
+                record_id = db.save_copy_trading_address(existing)
+                
+                sync_symbols = existing.get('sync_position_symbols', [])
+                sync_msg = f"，同步币种: {', '.join(sync_symbols)}" if sync_symbols else "（同步所有币种）"
+                
+                return jsonify({
+                    'success': True,
+                    'data': {'id': record_id},
+                    'message': f'交易员已重新启用{sync_msg}'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': '该交易员已在跟单列表中',
+                    'exists': True
+                }), 409  # Conflict
 
         # 获取默认配置
         default_config = db.get_default_copy_config()
@@ -1517,3 +1535,447 @@ def _build_coin_stats(positions: list) -> dict:
         'long': len(long_positions),
         'short': len(short_positions),
     }
+
+
+# ==================== 仓位级别跟单 API（第二种跟单模式） ====================
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking', methods=['GET'])
+def get_position_trackings():
+    """
+    获取仓位跟单列表
+    Query Parameters:
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
+        - status: str, 状态筛选 (pending/active/closed/stopped)
+        - is_enabled: bool, 启用状态筛选
+        - target_address: str, 目标地址筛选
+        - symbol: str, 币种筛选
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        status = request.args.get('status')
+        is_enabled = request.args.get('is_enabled')
+        target_address = request.args.get('target_address')
+        symbol = request.args.get('symbol')
+
+        # 处理 is_enabled 参数
+        if is_enabled is not None:
+            is_enabled = is_enabled.lower() == 'true'
+
+        offset = (page - 1) * limit
+        trackings, total_count = db.get_position_trackings(
+            status=status,
+            is_enabled=is_enabled,
+            target_address=target_address,
+            symbol=symbol,
+            limit=limit,
+            offset=offset
+        )
+
+        total_pages = (total_count + limit - 1) // limit
+
+        return jsonify({
+            'success': True,
+            'data': trackings,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取仓位跟单列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/stats', methods=['GET'])
+def get_position_tracking_stats():
+    """获取仓位跟单统计"""
+    try:
+        stats = db.get_position_tracking_stats()
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+    except Exception as e:
+        logger.error(f"获取仓位跟单统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['GET'])
+def get_position_tracking(tracking_id: int):
+    """获取单个仓位跟单详情"""
+    try:
+        tracking = db.get_position_tracking(tracking_id)
+        if not tracking:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': tracking
+        })
+    except Exception as e:
+        logger.error(f"获取仓位跟单详情失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking', methods=['POST'])
+def create_position_tracking():
+    """
+    创建仓位跟单（跟单特定交易员的特定仓位）
+    Body:
+        - target_address: str, 目标交易员地址（必需）
+        - symbol: str, 币种（必需）
+        - target_name: str, 交易员名称（可选）
+        - copy_ratio: float, 跟单比例（可选，使用默认配置）
+        - max_position_size_usd: float, 最大仓位（可选）
+        - 其他跟单配置...
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证必需字段
+        target_address = data.get('target_address', '').strip()
+        symbol = data.get('symbol', '').strip()
+
+        if not target_address:
+            return jsonify({
+                'success': False,
+                'error': '目标地址不能为空'
+            }), 400
+
+        if not symbol:
+            return jsonify({
+                'success': False,
+                'error': '币种不能为空'
+            }), 400
+
+        # 验证地址格式
+        if not target_address.startswith('0x') or len(target_address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        # 检查是否已存在活跃的跟单
+        if db.check_position_tracking_exists(target_address, symbol):
+            return jsonify({
+                'success': False,
+                'error': f'已存在 {symbol} 的活跃跟单',
+                'exists': True
+            }), 409  # Conflict
+
+        # 获取默认配置
+        default_config = db.get_default_copy_config()
+
+        # 构建跟单数据
+        tracking_data = {
+            'target_address': target_address,
+            'target_name': data.get('target_name', ''),
+            'symbol': symbol,
+            'is_enabled': data.get('is_enabled', True),
+            'copy_ratio': data.get('copy_ratio', default_config.get('copy_ratio', 0.1)),
+            'max_position_size_usd': data.get('max_position_size_usd', default_config.get('max_position_size_usd', 500)),
+            'min_position_size_usd': data.get('min_position_size_usd', default_config.get('min_position_size_usd', 20)),
+            'copy_leverage': data.get('copy_leverage', default_config.get('copy_leverage', True)),
+            'max_leverage': data.get('max_leverage', default_config.get('max_leverage', 10)),
+            'default_leverage': data.get('default_leverage', default_config.get('default_leverage', 5)),
+            'slippage': data.get('slippage', default_config.get('slippage', 0.01)),
+            'status': 'pending',
+        }
+
+        # 保存到数据库
+        tracking_id = db.save_position_tracking(tracking_data)
+
+        return jsonify({
+            'success': True,
+            'data': {'id': tracking_id},
+            'message': f'仓位跟单创建成功: {symbol}'
+        })
+    except Exception as e:
+        logger.error(f"创建仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['PUT'])
+def update_position_tracking(tracking_id: int):
+    """更新仓位跟单配置"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 检查记录是否存在
+        existing = db.get_position_tracking(tracking_id)
+        if not existing:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+
+        # 只允许更新配置字段，不允许修改目标和币种
+        update_data = {
+            'id': tracking_id,
+            'target_address': existing['target_address'],
+            'symbol': existing['symbol'],
+            'target_name': data.get('target_name', existing.get('target_name', '')),
+            'is_enabled': data.get('is_enabled', existing.get('is_enabled', True)),
+            'copy_ratio': data.get('copy_ratio', existing.get('copy_ratio', 0.1)),
+            'max_position_size_usd': data.get('max_position_size_usd', existing.get('max_position_size_usd', 500)),
+            'min_position_size_usd': data.get('min_position_size_usd', existing.get('min_position_size_usd', 20)),
+            'copy_leverage': data.get('copy_leverage', existing.get('copy_leverage', True)),
+            'max_leverage': data.get('max_leverage', existing.get('max_leverage', 10)),
+            'default_leverage': data.get('default_leverage', existing.get('default_leverage', 5)),
+            'slippage': data.get('slippage', existing.get('slippage', 0.01)),
+            'status': existing.get('status', 'pending'),
+            # 保留现有的仓位状态
+            'target_initial_size': existing.get('target_initial_size'),
+            'target_initial_side': existing.get('target_initial_side'),
+            'target_initial_entry_price': existing.get('target_initial_entry_price'),
+            'my_size': existing.get('my_size', 0),
+            'my_side': existing.get('my_side'),
+            'my_entry_price': existing.get('my_entry_price'),
+            'closed_pnl': existing.get('closed_pnl'),
+            'close_reason': existing.get('close_reason'),
+            'started_at': existing.get('started_at'),
+            'closed_at': existing.get('closed_at'),
+        }
+
+        db.save_position_tracking(update_data)
+
+        return jsonify({
+            'success': True,
+            'message': '更新成功'
+        })
+    except Exception as e:
+        logger.error(f"更新仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['DELETE'])
+def delete_position_tracking(tracking_id: int):
+    """删除仓位跟单记录"""
+    try:
+        # 检查记录是否存在
+        existing = db.get_position_tracking(tracking_id)
+        if not existing:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+
+        # 如果状态是 active，不允许直接删除（需要先停止）
+        if existing.get('status') == 'active':
+            return jsonify({
+                'success': False,
+                'error': '请先停止跟单再删除'
+            }), 400
+
+        success = db.delete_position_tracking(tracking_id)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '删除成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '删除失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"删除仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/toggle', methods=['POST'])
+def toggle_position_tracking(tracking_id: int):
+    """启用/禁用仓位跟单"""
+    try:
+        data = request.get_json()
+        if data is None or 'is_enabled' not in data:
+            return jsonify({
+                'success': False,
+                'error': '缺少 is_enabled 参数'
+            }), 400
+
+        is_enabled = bool(data['is_enabled'])
+        success = db.toggle_position_tracking(tracking_id, is_enabled)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '已启用' if is_enabled else '已禁用'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+    except Exception as e:
+        logger.error(f"切换仓位跟单状态失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/stop', methods=['POST'])
+def stop_position_tracking(tracking_id: int):
+    """
+    停止仓位跟单
+    Query Parameters:
+        - close_position: bool, 是否同时平仓（默认 false）
+    """
+    try:
+        # 检查记录是否存在
+        existing = db.get_position_tracking(tracking_id)
+        if not existing:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+
+        if existing.get('status') not in ('pending', 'active'):
+            return jsonify({
+                'success': False,
+                'error': f"状态为 {existing.get('status')}，无法停止"
+            }), 400
+
+        # 更新状态为 stopped
+        success = db.update_tracking_status(tracking_id, 'stopped', '手动停止')
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '已停止跟单'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '停止失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"停止仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/position-tracking/quick-add', methods=['POST'])
+def quick_add_position_tracking():
+    """
+    快速添加仓位跟单（从持仓页面一键添加）
+    使用默认配置
+    Body:
+        - target_address: str, 目标交易员地址（必需）
+        - symbol: str, 币种（必需）
+        - target_name: str, 交易员名称（可选）
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证必需字段
+        target_address = data.get('target_address', '').strip()
+        symbol = data.get('symbol', '').strip()
+
+        if not target_address:
+            return jsonify({
+                'success': False,
+                'error': '目标地址不能为空'
+            }), 400
+
+        if not symbol:
+            return jsonify({
+                'success': False,
+                'error': '币种不能为空'
+            }), 400
+
+        # 验证地址格式
+        if not target_address.startswith('0x') or len(target_address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        # 检查是否已存在活跃的跟单
+        if db.check_position_tracking_exists(target_address, symbol):
+            return jsonify({
+                'success': False,
+                'error': f'已存在 {symbol} 的活跃跟单',
+                'exists': True
+            }), 409  # Conflict
+
+        # 获取默认配置
+        default_config = db.get_default_copy_config()
+
+        # 构建跟单数据
+        tracking_data = {
+            'target_address': target_address,
+            'target_name': data.get('target_name', ''),
+            'symbol': symbol,
+            'is_enabled': True,
+            'copy_ratio': default_config.get('copy_ratio', 0.1),
+            'max_position_size_usd': default_config.get('max_position_size_usd', 500),
+            'min_position_size_usd': default_config.get('min_position_size_usd', 20),
+            'copy_leverage': default_config.get('copy_leverage', True),
+            'max_leverage': default_config.get('max_leverage', 10),
+            'default_leverage': default_config.get('default_leverage', 5),
+            'slippage': default_config.get('slippage', 0.01),
+            'status': 'pending',
+        }
+
+        # 保存到数据库
+        tracking_id = db.save_position_tracking(tracking_data)
+
+        trader_display = data.get('target_name') or f"{target_address[:10]}..."
+
+        return jsonify({
+            'success': True,
+            'data': {'id': tracking_id},
+            'message': f'已添加 {trader_display} 的 {symbol} 仓位跟单'
+        })
+    except Exception as e:
+        logger.error(f"快速添加仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

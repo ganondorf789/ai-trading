@@ -14,7 +14,7 @@ import {
 } from "@heroui/react";
 import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { TraderPosition, copyTradingApi } from "@/services/api";
+import { TraderPosition, copyTradingApi, positionTrackingApi } from "@/services/api";
 import { getRatingColor } from "@/utils";
 import { traderPositionColumns, TraderPositionColumnKey } from "./PositionFilters";
 import { TablePagination } from "@/components/TablePagination";
@@ -38,6 +38,8 @@ interface PositionsTableProps {
 export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set(), onAIAnalyze, visibleColumns, sortDescriptor, onSortChange }: PositionsTableProps) {
   const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
   const [copyTradingAddresses, setCopyTradingAddresses] = useState<Set<string>>(new Set());
+  // 仓位级别跟单的加载状态 (address-coin)
+  const [positionTrackingKeys, setPositionTrackingKeys] = useState<Set<string>>(new Set());
   
   // 分页状态
   const [page, setPage] = useState(1);
@@ -211,6 +213,59 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
     }
   };
 
+  // 处理仓位级别跟单（第二种跟单模式：跟单特定仓位）
+  const handlePositionTracking = async (position: TraderPosition) => {
+    const { address, coin, trader_name } = position;
+    const trackingKey = `${address}-${coin}`;
+    
+    if (positionTrackingKeys.has(trackingKey)) return;
+    
+    setPositionTrackingKeys(prev => new Set(prev).add(trackingKey));
+    try {
+      const response = await positionTrackingApi.quickAdd({
+        target_address: address,
+        symbol: coin,
+        target_name: trader_name || "",
+      });
+      
+      if (response.success) {
+        addToast({
+          title: "跟单仓位成功",
+          description: response.message || `已添加 ${coin} 仓位跟单`,
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: response.exists ? "已在跟单中" : "添加失败",
+          description: response.error || "未知错误",
+          color: response.exists ? "warning" : "danger",
+        });
+      }
+    } catch (error: any) {
+      // 处理 409 Conflict（已存在）
+      if (error?.response?.status === 409) {
+        addToast({
+          title: "已在跟单中",
+          description: `${coin} 仓位已在跟单列表中`,
+          color: "warning",
+        });
+      } else {
+        console.error("Position tracking failed:", error);
+        addToast({
+          title: "添加失败",
+          description: error?.response?.data?.error || "操作失败",
+          color: "danger",
+        });
+      }
+    } finally {
+      setPositionTrackingKeys(prev => {
+        const next = new Set(prev);
+        next.delete(trackingKey);
+        return next;
+      });
+    }
+  };
+
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return "-";
     const date = new Date(timeStr);
@@ -333,9 +388,22 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
       case 'updated_at':
         return <span className="text-sm text-default-500">{formatTime(position.updated_at)}</span>;
       case 'actions':
+        const trackingKey = `${position.address}-${position.coin}`;
         return (
           <div className="flex gap-1">
-            <Tooltip content={`跟单 ${position.coin}`}>
+            <Tooltip content={`跟单此仓位 (${position.coin})`}>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                color="secondary"
+                isLoading={positionTrackingKeys.has(trackingKey)}
+                onPress={() => handlePositionTracking(position)}
+              >
+                <Icon icon="solar:target-bold-duotone" width={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip content={`跟单交易员 (${position.coin})`}>
               <Button
                 isIconOnly
                 size="sm"
@@ -365,7 +433,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
       default:
         return null;
     }
-  }, [starLoadingAddresses, onToggleStar, refreshingAddresses, onRefreshTrader, handleRefreshTrader, copyTradingAddresses, handleCopyTrading]);
+  }, [starLoadingAddresses, onToggleStar, refreshingAddresses, onRefreshTrader, handleRefreshTrader, copyTradingAddresses, handleCopyTrading, positionTrackingKeys, handlePositionTracking]);
 
   // 底部分页内容
   const bottomContent = useMemo(() => {
@@ -401,7 +469,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
           <TableColumn
             key={column.uid}
             allowsSorting={column.sortable}
-            width={column.uid === 'star' ? 50 : column.uid === 'actions' ? 90 : undefined}
+            width={column.uid === 'star' ? 50 : column.uid === 'actions' ? 120 : undefined}
           >
             {column.name}
           </TableColumn>

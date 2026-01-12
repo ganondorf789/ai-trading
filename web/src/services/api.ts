@@ -510,6 +510,104 @@ export const traderPositionsApi = {
     ),
 };
 
+// ==================== 仓位级别跟单 API（第二种跟单模式） ====================
+
+export interface PositionTracking {
+  id: number;
+  target_address: string;
+  target_name: string;
+  symbol: string;
+  is_enabled: boolean;
+  copy_ratio: number;
+  max_position_size_usd: number;
+  min_position_size_usd: number;
+  copy_leverage: boolean;
+  max_leverage: number;
+  default_leverage: number;
+  slippage: number;
+  target_initial_size: number | null;
+  target_initial_side: string | null;
+  target_initial_entry_price: number | null;
+  my_size: number;
+  my_side: string | null;
+  my_entry_price: number | null;
+  status: 'pending' | 'active' | 'closed' | 'stopped';
+  closed_pnl: number | null;
+  close_reason: string | null;
+  created_at: string;
+  started_at: string | null;
+  closed_at: string | null;
+  updated_at: string;
+}
+
+export interface PositionTrackingStats {
+  total_count: number;
+  pending_count: number;
+  active_count: number;
+  closed_count: number;
+  stopped_count: number;
+  enabled_count: number;
+  unique_traders: number;
+  unique_symbols: number;
+  total_closed_pnl: number;
+}
+
+export const positionTrackingApi = {
+  // 获取仓位跟单列表
+  getTrackings: (params?: {
+    page?: number;
+    limit?: number;
+    status?: 'pending' | 'active' | 'closed' | 'stopped';
+    is_enabled?: boolean;
+    target_address?: string;
+    symbol?: string;
+  }) =>
+    api.get<any, ApiResponse<PositionTracking[]>>('/copy-trading/position-tracking', { params }),
+
+  // 获取统计信息
+  getStats: () =>
+    api.get<any, ApiResponse<PositionTrackingStats>>('/copy-trading/position-tracking/stats'),
+
+  // 获取单个跟单详情
+  getTracking: (trackingId: number) =>
+    api.get<any, ApiResponse<PositionTracking>>(`/copy-trading/position-tracking/${trackingId}`),
+
+  // 创建仓位跟单
+  createTracking: (data: {
+    target_address: string;
+    symbol: string;
+    target_name?: string;
+    copy_ratio?: number;
+    max_position_size_usd?: number;
+    min_position_size_usd?: number;
+    copy_leverage?: boolean;
+    max_leverage?: number;
+    default_leverage?: number;
+    slippage?: number;
+  }) =>
+    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/position-tracking', data),
+
+  // 快速添加仓位跟单（使用默认配置）
+  quickAdd: (data: { target_address: string; symbol: string; target_name?: string }) =>
+    api.post<any, ApiResponse<{ id: number }> & { message?: string; exists?: boolean }>('/copy-trading/position-tracking/quick-add', data),
+
+  // 更新仓位跟单配置
+  updateTracking: (trackingId: number, data: Partial<PositionTracking>) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}`, data),
+
+  // 删除仓位跟单
+  deleteTracking: (trackingId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}`),
+
+  // 启用/禁用仓位跟单
+  toggleTracking: (trackingId: number, isEnabled: boolean) =>
+    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/toggle`, { is_enabled: isEnabled }),
+
+  // 停止仓位跟单
+  stopTracking: (trackingId: number) =>
+    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
+};
+
 // ==================== 分组对比分析 API ====================
 
 export const groupComparisonApi = {

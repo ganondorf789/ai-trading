@@ -44,11 +44,33 @@ def handle_quick_copy_trade(event: CardActionEvent):
         existing = db.get_copy_trading_address(address)
         
         if existing:
-            # 已存在
-            return _build_warning_card(
-                f"该交易员已在跟单列表中",
-                f"地址: {address[:16]}..."
-            )
+            # 如果已存在但是禁用状态，则重新启用
+            if not existing.get('is_enabled', True):
+                existing['is_enabled'] = True
+                # 更新同步仓位币种
+                if coin:
+                    existing['sync_position_symbols'] = [coin]
+                existing['sync_position'] = True
+                record_id = db.save_copy_trading_address(existing)
+                
+                if record_id:
+                    trader_display = trader_name if trader_name else f"{address[:10]}..."
+                    sync_msg = f"同步币种: {coin}" if coin else "同步所有币种"
+                    
+                    print(f"[跟单回调] 重新启用: {trader_display}, {sync_msg}")
+                    
+                    return _build_success_card(
+                        f"已重新启用 {trader_display}",
+                        f"**地址**: `{address[:16]}...`\n**{sync_msg}**"
+                    )
+                else:
+                    return _build_error_card("更新跟单配置失败")
+            else:
+                # 已存在且已启用
+                return _build_warning_card(
+                    f"该交易员已在跟单列表中",
+                    f"地址: {address[:16]}..."
+                )
         
         # 获取默认跟单配置
         default_config = db.get_default_copy_config()

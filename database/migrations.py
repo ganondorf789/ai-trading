@@ -484,6 +484,69 @@ class DatabaseMigrations:
                 ON copy_position_states(target_address)
             """)
 
+            # 创建仓位级别跟单表（第二种跟单模式：跟单特定仓位）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS copy_position_tracking (
+                    id SERIAL PRIMARY KEY,
+                    target_address TEXT NOT NULL,         -- 目标交易员地址
+                    target_name TEXT DEFAULT '',          -- 交易员名称
+                    symbol TEXT NOT NULL,                 -- 跟单币种
+                    
+                    -- 跟单配置
+                    is_enabled BOOLEAN DEFAULT TRUE,
+                    copy_ratio REAL DEFAULT 0.1,
+                    max_position_size_usd REAL DEFAULT 500.0,
+                    min_position_size_usd REAL DEFAULT 20.0,
+                    copy_leverage BOOLEAN DEFAULT TRUE,
+                    max_leverage INTEGER DEFAULT 10,
+                    default_leverage INTEGER DEFAULT 5,
+                    slippage REAL DEFAULT 0.01,
+                    
+                    -- 目标仓位快照（开始跟单时的状态）
+                    target_initial_size REAL,
+                    target_initial_side TEXT,
+                    target_initial_entry_price REAL,
+                    
+                    -- 我方跟单状态
+                    my_size REAL DEFAULT 0.0,
+                    my_side TEXT,
+                    my_entry_price REAL,
+                    
+                    -- 状态: pending/active/closed/stopped
+                    status TEXT DEFAULT 'pending',
+                    closed_pnl REAL,
+                    close_reason TEXT,
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP,
+                    closed_at TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_tracking_target
+                ON copy_position_tracking(target_address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_tracking_symbol
+                ON copy_position_tracking(symbol)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_tracking_status
+                ON copy_position_tracking(status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_tracking_enabled
+                ON copy_position_tracking(is_enabled)
+            """)
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_position_tracking_active_unique
+                ON copy_position_tracking(target_address, symbol)
+                WHERE status IN ('pending', 'active')
+            """)
+
             # 创建系统配置表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_config (
