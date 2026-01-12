@@ -42,6 +42,14 @@ from .exceptions import (
     InvalidAddressError,
 )
 
+# 飞书通知相关
+try:
+    from clients.feishu_client import FeishuClient
+    from config.settings import settings
+    FEISHU_AVAILABLE = True
+except ImportError:
+    FEISHU_AVAILABLE = False
+
 
 class TraderScreener:
     """
@@ -104,6 +112,24 @@ class TraderScreener:
             logger.debug("数据库连接已建立，将自动保存持仓数据")
         except Exception as e:
             logger.warning(f"无法连接数据库，持仓数据将不会保存: {e}")
+        
+        # 飞书客户端（用于新仓位通知）
+        self._feishu = None
+        if FEISHU_AVAILABLE:
+            try:
+                self._feishu = FeishuClient(
+                    app_id=settings.feishu.app_id,
+                    app_secret=settings.feishu.app_secret,
+                    webhook_url=settings.feishu.webhook_url,
+                    default_user_id=settings.feishu.default_user_id
+                )
+                if self._feishu.webhook_url or self._feishu.app_id:
+                    logger.debug("飞书客户端已初始化，新仓位将发送通知")
+                else:
+                    self._feishu = None
+                    logger.debug("飞书未配置，新仓位通知功能已禁用")
+            except Exception as e:
+                logger.warning(f"飞书客户端初始化失败: {e}")
         
         api_url = (
             constants.TESTNET_API_URL 
@@ -185,11 +211,32 @@ class TraderScreener:
             # 计算评分
             metrics = self._scorer.calculate_scores(metrics)
             
-            # 保存持仓到数据库
+            # 保存持仓到数据库，并检测新仓位
             if self._db and metrics.asset_positions:
                 try:
+                    # 先获取旧持仓（用于检测新仓位）
+                    old_positions = self._db.get_positions(address)
+                    old_coins = {pos['coin'] for pos in old_positions}
+                    is_existing_trader = len(old_positions) > 0
+                    
+                    # 保存新持仓
                     saved_count = self._db.save_positions(address, metrics.asset_positions)
                     logger.debug(f"已保存 {saved_count} 个持仓记录到数据库: {short_address(address)}")
+                    
+                    # 如果是已存在的交易员（非新交易员），检测新仓位并发送通知
+                    if is_existing_trader and self._feishu:
+                        # 获取新保存的持仓
+                        new_positions = self._db.get_positions(address)
+                        new_coins = {pos['coin'] for pos in new_positions}
+                        
+                        # 检测新仓位
+                        new_coin_set = new_coins - old_coins
+                        if new_coin_set:
+                            logger.info(f"检测到 {len(new_coin_set)} 个新仓位: {short_address(address)}")
+                            # 发送飞书通知
+                            for pos in new_positions:
+                                if pos['coin'] in new_coin_set:
+                                    self._send_new_position_notification(address, pos, metrics)
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
@@ -212,6 +259,74 @@ class TraderScreener:
             logger.error(f"分析交易者失败 {short_address(address)}: {e}")
             self._failed_addresses.append(address)
             return None
+    
+    def _send_new_position_notification(
+        self,
+        address: str,
+        position: Dict,
+        metrics: Optional[TraderMetrics] = None
+    ) -> bool:
+        """
+        发送新仓位飞书通知
+        
+        Args:
+            address: 交易员地址
+            position: 仓位数据
+            metrics: 交易员指标（可选，用于获取评级信息）
+        
+        Returns:
+            是否发送成功
+        """
+        if not self._feishu:
+            return False
+        
+        try:
+            coin = position.get('coin', 'Unknown')
+            szi = float(position.get('szi', 0))
+            entry_px = float(position.get('entry_px', 0))
+            position_value = abs(float(position.get('position_value', 0)))
+            leverage_value = int(position.get('leverage_value', 1))
+            open_time = position.get('open_time', '')
+            
+            # 方向判断
+            direction = "做多" if szi > 0 else "做空"
+            emoji = "🟢" if szi > 0 else "🔴"
+            
+            # 格式化开仓时间
+            open_time_str = "未知"
+            if open_time:
+                try:
+                    if isinstance(open_time, str):
+                        open_time_str = open_time[:19].replace('T', ' ')
+                except:
+                    open_time_str = str(open_time)
+            
+            # 交易员评级信息
+            rating_info = ""
+            if metrics:
+                rating_info = f"\n**评级**: {metrics.rating.value} ({metrics.overall_score:.1f}分)"
+            
+            content = f"""**交易员**: `{short_address(address)}`
+**地址**: `{address[:16]}...`{rating_info}
+**币种**: {coin}
+**方向**: {emoji} {direction}
+**数量**: {abs(szi):.4f}
+**入场价**: ${entry_px:,.4f}
+**仓位价值**: ${position_value:,.2f}
+**杠杆**: {leverage_value}x
+**开仓时间**: {open_time_str}"""
+
+            title = f"🆕 S级交易员新仓位 - {coin} {direction}"
+            color = "green" if szi > 0 else "red"
+            
+            success = self._feishu.send_card(title=title, content=content, color=color)
+            if success:
+                logger.info(f"已发送新仓位通知: {short_address(address)} - {coin} {direction}")
+            return success
+            
+        except Exception as e:
+            logger.warning(f"发送新仓位通知失败: {e}")
+            return False
     
     def analyze_traders(
         self,
