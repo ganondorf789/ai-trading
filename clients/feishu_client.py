@@ -360,21 +360,40 @@ class FeishuClient:
                     "default": "default"
                 }
                 
-                # 构建按钮的 value（包含 action_tag 以便回调识别）
-                btn_value = {
-                    "action_tag": btn.get("action_tag", ""),
-                    **(btn.get("value", {}) if isinstance(btn.get("value"), dict) else {})
-                }
-                
-                button_elements.append({
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": btn.get("text", "按钮")
-                    },
-                    "type": btn_color_map.get(btn_type, "default"),
-                    "value": btn_value
-                })
+                # 检查是否是 URL 按钮
+                if btn.get("url"):
+                    # URL 跳转按钮
+                    button_elements.append({
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": btn.get("text", "按钮")
+                        },
+                        "type": btn_color_map.get(btn_type, "default"),
+                        "multi_url": {
+                            "url": btn.get("url"),
+                            "pc_url": btn.get("url"),
+                            "android_url": btn.get("url"),
+                            "ios_url": btn.get("url")
+                        }
+                    })
+                else:
+                    # 回调按钮
+                    # 构建按钮的 value（包含 action_tag 以便回调识别）
+                    btn_value = {
+                        "action_tag": btn.get("action_tag", ""),
+                        **(btn.get("value", {}) if isinstance(btn.get("value"), dict) else {})
+                    }
+                    
+                    button_elements.append({
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": btn.get("text", "按钮")
+                        },
+                        "type": btn_color_map.get(btn_type, "default"),
+                        "value": btn_value
+                    })
             
             # 添加按钮行
             elements.append({
@@ -722,7 +741,7 @@ class CopyTradingNotifier:
         trader_name: str = None
     ) -> bool:
         """
-        通知新仓位
+        通知新仓位（带交互按钮）
 
         Args:
             address: 交易员地址
@@ -771,8 +790,11 @@ class CopyTradingNotifier:
             else:
                 rating_info = f"\n**评级**: {rating}"
 
-        if self.feishu.webhook_url:
-            content = f"""**交易员**: `{trader_display}`
+        # Hyperliquid 交易详情页 URL
+        hyperliquid_url = f"https://app.hyperliquid.xyz/trade/{coin}"
+
+        # 构建卡片内容
+        content = f"""**交易员**: `{trader_display}`
 **地址**: `{address[:16]}...`{rating_info}
 **币种**: {coin}
 **方向**: {side_emoji} {side_cn}
@@ -782,11 +804,46 @@ class CopyTradingNotifier:
 **杠杆**: {leverage_value}x
 **开仓时间**: {open_time_str}"""
 
-            title = f"🆕 新仓位 - {coin} {side_cn}"
-            color = "green" if szi > 0 else "red"
+        title = f"🆕 新仓位 - {coin} {side_cn}"
+        color = "green" if szi > 0 else "red"
 
-            return self.feishu.send_card(title=title, content=content, color=color)
+        # 交互按钮
+        buttons = [
+            {
+                "text": "✅ 立即跟单",
+                "action_tag": "quick_copy_trade",
+                "value": {
+                    "address": address,
+                    "coin": coin,
+                    "trader_name": trader_name or ""
+                },
+                "type": "primary"
+            },
+            {
+                "text": "📊 查看详情",
+                "url": hyperliquid_url,
+                "type": "default"
+            }
+        ]
+
+        # 优先使用应用 API 发送（支持回调）
+        if self.feishu.app_id and self.feishu.app_secret:
+            return self.feishu.send_interactive_card(
+                title=title,
+                content=content,
+                buttons=buttons,
+                color=color
+            )
+        # 否则通过 Webhook 发送（也支持按钮，但回调需要配置）
+        elif self.feishu.webhook_url:
+            return self.feishu.send_interactive_card(
+                title=title,
+                content=content,
+                buttons=buttons,
+                color=color
+            )
         else:
+            # 降级为纯文本消息
             msg = f"🆕 新仓位\n"
             msg += f"交易员: {trader_display}\n"
             msg += f"地址: {address[:16]}...\n"
@@ -801,7 +858,8 @@ class CopyTradingNotifier:
             msg += f"入场价: ${entry_px:,.4f}\n"
             msg += f"仓位价值: ${position_value:,.2f}\n"
             msg += f"杠杆: {leverage_value}x\n"
-            msg += f"开仓时间: {open_time_str}"
+            msg += f"开仓时间: {open_time_str}\n"
+            msg += f"详情: {hyperliquid_url}"
 
             return self.feishu.send(msg)
 
