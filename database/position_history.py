@@ -325,6 +325,7 @@ class PositionHistoryOps:
                 'max_size': 'max_size',
                 'entry_price': 'avg_entry_price',
                 'close_price': 'avg_close_price',
+                'position_value': '(max_size * avg_entry_price)',
                 'holding': 'holding_hours',
                 'pnl': 'realized_pnl',
                 'status': 'status',

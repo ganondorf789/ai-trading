@@ -27,7 +27,7 @@ import { Icon } from '@iconify/react';
 import { traderApi, PositionHistoryRecord, PositionHistoryStats, PositionHistoryByCoin } from '@/services/api';
 
 // 表格列配置
-type ColumnKey = 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'entry_price' | 'close_price' | 'holding' | 'pnl' | 'status';
+type ColumnKey = 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'entry_price' | 'close_price' | 'position_value' | 'holding' | 'pnl' | 'status';
 
 interface Column {
   uid: ColumnKey;
@@ -43,12 +43,13 @@ const columns: Column[] = [
   { uid: 'max_size', name: '最大仓位', sortable: true },
   { uid: 'entry_price', name: '开仓均价', sortable: true },
   { uid: 'close_price', name: '平仓均价', sortable: true },
+  { uid: 'position_value', name: '仓位价值', sortable: true },
   { uid: 'holding', name: '持仓时长', sortable: true },
   { uid: 'pnl', name: '盈亏', sortable: true },
   { uid: 'status', name: '状态', sortable: true },
 ];
 
-const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['coin', 'direction', 'open_time', 'close_time', 'max_size', 'entry_price', 'close_price', 'holding', 'pnl', 'status'];
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['coin', 'direction', 'open_time', 'close_time', 'max_size', 'entry_price', 'close_price', 'position_value', 'holding', 'pnl', 'status'];
 
 interface PositionHistoryProps {
   address: string;
@@ -202,6 +203,8 @@ export function PositionHistory({ address }: PositionHistoryProps) {
         return `$${formatNumber(item.avg_entry_price, 4)}`;
       case 'close_price':
         return item.avg_close_price ? `$${formatNumber(item.avg_close_price, 4)}` : '-';
+      case 'position_value':
+        return <span className="font-mono font-medium">${formatNumber(item.position_value, 2)}</span>;
       case 'holding':
         return formatHours(item.holding_hours);
       case 'pnl':
