@@ -1,7 +1,8 @@
 import { Input, Select, SelectItem, Button, Autocomplete, AutocompleteItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
-import type { Selection, SortDescriptor } from "@heroui/react";
+import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { PositionHistoryByCoin } from "@/services/api";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 
 // 表格列配置
 export type PositionHistoryColumnKey = 'trader' | 'rating' | 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'avg_entry_price' | 'avg_close_price' | 'position_value' | 'holding_hours' | 'realized_pnl' | 'status';
@@ -43,6 +44,11 @@ interface PositionFiltersProps {
   onCoinFilterChange: (value: string) => void;
   pnlFilter: string;
   onPnlFilterChange: (value: string) => void;
+  // 开仓时间筛选
+  openTimeFilter: string;
+  onOpenTimeFilterChange: (value: string) => void;
+  openTimeDateRange: RangeValue<DateValue> | null;
+  onOpenTimeDateRangeChange: (range: RangeValue<DateValue> | null) => void;
   byCoin: PositionHistoryByCoin[];
   onReset: () => void;
   // 排序相关
@@ -64,6 +70,10 @@ export function PositionFilters({
   onCoinFilterChange,
   pnlFilter,
   onPnlFilterChange,
+  openTimeFilter,
+  onOpenTimeFilterChange,
+  openTimeDateRange,
+  onOpenTimeDateRangeChange,
   byCoin,
   onReset,
   sortDescriptor,
@@ -156,6 +166,15 @@ export function PositionFilters({
               <SelectItem key="loss" textValue="亏损">亏损</SelectItem>
             </Select>
           </div>
+
+          {/* 开仓时间筛选 */}
+          <TimeRangeFilter
+            label="开仓时间"
+            value={openTimeFilter}
+            dateRange={openTimeDateRange}
+            onValueChange={onOpenTimeFilterChange}
+            onDateRangeChange={onOpenTimeDateRangeChange}
+          />
 
           {/* 重置按钮 */}
           <Button

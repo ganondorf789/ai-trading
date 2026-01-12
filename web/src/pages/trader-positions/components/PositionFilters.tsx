@@ -1,9 +1,10 @@
 import { Select, SelectItem, Button, Autocomplete, AutocompleteItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
-import type { Selection, SortDescriptor } from "@heroui/react";
+import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { TraderPositionsStats, CopyTradingGroup } from "@/services/api";
 import { RangeFilter, MetricFilterConfig } from "@/components/filters";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 
 // 表格列配置
 export type TraderPositionColumnKey = 'star' | 'trader' | 'rating' | 'coin' | 'direction' | 'size' | 'entry_px' | 'position_value' | 'unrealized_pnl' | 'roe' | 'leverage' | 'open_time' | 'updated_at' | 'actions';
@@ -52,6 +53,11 @@ interface PositionFiltersProps {
   onPnlFilterChange: (value: string) => void;
   scoreFilter: string;
   onScoreFilterChange: (value: string) => void;
+  // 开仓时间筛选
+  openTimeFilter: string;
+  onOpenTimeFilterChange: (value: string) => void;
+  openTimeDateRange: RangeValue<DateValue> | null;
+  onOpenTimeDateRangeChange: (range: RangeValue<DateValue> | null) => void;
   stats: TraderPositionsStats | null;
   groups: CopyTradingGroup[];
   // 指标筛选
@@ -83,6 +89,10 @@ export function PositionFilters({
   onPnlFilterChange,
   scoreFilter,
   onScoreFilterChange,
+  openTimeFilter,
+  onOpenTimeFilterChange,
+  openTimeDateRange,
+  onOpenTimeDateRangeChange,
   stats,
   groups,
   metricFilters,
@@ -229,6 +239,14 @@ export function PositionFilters({
           </Select>
         </div>
 
+        <TimeRangeFilter
+          label="开仓时间"
+          value={openTimeFilter}
+          dateRange={openTimeDateRange}
+          onValueChange={onOpenTimeFilterChange}
+          onDateRangeChange={onOpenTimeDateRangeChange}
+        />
+
         <Button
           variant="flat"
           startContent={<Icon icon={showAdvanced ? "solar:alt-arrow-up-linear" : "solar:alt-arrow-down-linear"} width={16} />}
@@ -243,7 +261,7 @@ export function PositionFilters({
           )}
         </Button>
 
-        {(hasActiveMetricFilters || _search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all" || pnlFilter !== "all" || scoreFilter !== "all") && (
+        {(hasActiveMetricFilters || _search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all" || pnlFilter !== "all" || scoreFilter !== "all" || openTimeFilter !== "all") && (
           <Button
             variant="flat"
             color="warning"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, addToast, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
-import type { Selection, SortDescriptor } from "@heroui/react";
+import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
@@ -14,6 +14,7 @@ import {
   PositionsAIAnalysis,
 } from "@/services/api";
 import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
+import { useTimeRange } from "@/components/TimeRangeFilter";
 
 import { StatsCards, PositionFilters, PositionsTable, CoinSummary, PositionsAIAnalysisModal } from "./components";
 import { INITIAL_VISIBLE_COLUMNS } from "./components/PositionFilters";
@@ -41,6 +42,10 @@ export default function TraderPositionsPage() {
   const [pnlFilter, setPnlFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
+  // 开仓时间筛选状态
+  const [openTimeFilter, setOpenTimeFilter] = useState<string>("all");
+  const [openTimeDateRange, setOpenTimeDateRange] = useState<RangeValue<DateValue> | null>(null);
+  const openTimeRange = useTimeRange(openTimeFilter, openTimeDateRange);
 
   // 排序和列可见性状态
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
@@ -218,6 +223,8 @@ export default function TraderPositionsPage() {
     setPnlFilter("all");
     setScoreFilter("all");
     setMetricFilters(emptyMetricFilters);
+    setOpenTimeFilter("all");
+    setOpenTimeDateRange(null);
   };
 
   // ==================== AI 分析状态 ====================
@@ -280,8 +287,23 @@ export default function TraderPositionsPage() {
       filtered = filtered.filter((p) => p.rating === scoreFilter);
     }
 
+    // 开仓时间筛选
+    if (openTimeRange.startTime || openTimeRange.endTime) {
+      filtered = filtered.filter((p) => {
+        if (!p.open_time) return false;
+        const openTime = new Date(p.open_time).getTime();
+        if (openTimeRange.startTime && openTime < new Date(openTimeRange.startTime).getTime()) {
+          return false;
+        }
+        if (openTimeRange.endTime && openTime > new Date(openTimeRange.endTime).getTime()) {
+          return false;
+        }
+        return true;
+      });
+    }
+
     return filtered;
-  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, pnlFilter, scoreFilter]);
+  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, pnlFilter, scoreFilter, openTimeRange]);
 
   // 根据筛选后的数据计算统计信息
   const filteredStats = useMemo((): TraderPositionsStats | null => {
@@ -640,6 +662,10 @@ export default function TraderPositionsPage() {
           onPnlFilterChange={setPnlFilter}
           scoreFilter={scoreFilter}
           onScoreFilterChange={setScoreFilter}
+          openTimeFilter={openTimeFilter}
+          onOpenTimeFilterChange={setOpenTimeFilter}
+          openTimeDateRange={openTimeDateRange}
+          onOpenTimeDateRangeChange={setOpenTimeDateRange}
           stats={stats}
           groups={groups}
           metricFilters={metricFilters}
