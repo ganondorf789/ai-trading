@@ -1,8 +1,39 @@
-import { Input, Select, SelectItem, Button, Autocomplete, AutocompleteItem } from "@heroui/react";
+import { Select, SelectItem, Button, Autocomplete, AutocompleteItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { TraderPositionsStats, CopyTradingGroup } from "@/services/api";
 import { RangeFilter, MetricFilterConfig } from "@/components/filters";
+
+// 表格列配置
+export type TraderPositionColumnKey = 'star' | 'trader' | 'rating' | 'coin' | 'direction' | 'size' | 'entry_px' | 'position_value' | 'unrealized_pnl' | 'roe' | 'leverage' | 'open_time' | 'updated_at' | 'actions';
+
+export interface TraderPositionColumn {
+  uid: TraderPositionColumnKey;
+  name: string;
+  sortable?: boolean;
+}
+
+export const traderPositionColumns: TraderPositionColumn[] = [
+  { uid: 'star', name: '收藏', sortable: true },
+  { uid: 'trader', name: '交易员', sortable: true },
+  { uid: 'rating', name: '评级', sortable: true },
+  { uid: 'coin', name: '币种', sortable: true },
+  { uid: 'direction', name: '方向', sortable: true },
+  { uid: 'size', name: '数量', sortable: true },
+  { uid: 'entry_px', name: '开仓均价', sortable: true },
+  { uid: 'position_value', name: '仓位价值', sortable: true },
+  { uid: 'unrealized_pnl', name: '未实现盈亏', sortable: true },
+  { uid: 'roe', name: 'ROE', sortable: true },
+  { uid: 'leverage', name: '杠杆', sortable: true },
+  { uid: 'open_time', name: '开仓时间', sortable: true },
+  { uid: 'updated_at', name: '更新时间', sortable: true },
+  { uid: 'actions', name: '操作', sortable: false },
+];
+
+export const INITIAL_VISIBLE_COLUMNS: TraderPositionColumnKey[] = [
+  'star', 'trader', 'rating', 'coin', 'direction', 'size', 'entry_px', 'position_value', 'unrealized_pnl', 'roe', 'leverage', 'open_time', 'updated_at', 'actions'
+];
 
 interface PositionFiltersProps {
   search: string;
@@ -27,11 +58,17 @@ interface PositionFiltersProps {
   metricFilters: MetricFilterConfig;
   onMetricFiltersChange: (filters: MetricFilterConfig) => void;
   onReset: () => void;
+  // 排序相关
+  sortDescriptor: SortDescriptor;
+  onSortChange: (descriptor: SortDescriptor) => void;
+  // 列可见性相关
+  visibleColumns: Selection;
+  onVisibleColumnsChange: (columns: Selection) => void;
 }
 
 export function PositionFilters({
-  search,
-  onSearchChange,
+  search: _search,
+  onSearchChange: _onSearchChange,
   sideFilter,
   onSideFilterChange,
   traderFilter,
@@ -51,6 +88,10 @@ export function PositionFilters({
   metricFilters,
   onMetricFiltersChange,
   onReset,
+  sortDescriptor,
+  onSortChange,
+  visibleColumns,
+  onVisibleColumnsChange,
 }: PositionFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -202,7 +243,7 @@ export function PositionFilters({
           )}
         </Button>
 
-        {(hasActiveMetricFilters || search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all" || pnlFilter !== "all" || scoreFilter !== "all") && (
+        {(hasActiveMetricFilters || _search || sideFilter !== "all" || groupFilter !== "all" || traderFilter !== "all" || coinFilter !== "all" || starFilter !== "all" || pnlFilter !== "all" || scoreFilter !== "all") && (
           <Button
             variant="flat"
             color="warning"
@@ -212,6 +253,79 @@ export function PositionFilters({
             重置
           </Button>
         )}
+
+        {/* 右侧：排序和列 */}
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
+          {/* Sort 下拉 */}
+          <Dropdown>
+            <DropdownTrigger>
+              <Button
+                className="bg-default-100 text-default-800"
+                startContent={
+                  <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                }
+              >
+                排序
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              aria-label="Sort"
+              items={traderPositionColumns.filter((c) => c.sortable)}
+            >
+              {(item) => (
+                <DropdownItem
+                  key={item.uid}
+                  onPress={() => {
+                    onSortChange({
+                      column: item.uid,
+                      direction:
+                        sortDescriptor.column === item.uid && sortDescriptor.direction === 'ascending' 
+                          ? 'descending' 
+                          : 'ascending',
+                    });
+                  }}
+                >
+                  {item.name}
+                  {sortDescriptor.column === item.uid && (
+                    <Icon
+                      icon={sortDescriptor.direction === 'ascending' ? 'solar:alt-arrow-up-linear' : 'solar:alt-arrow-down-linear'}
+                      className="ml-1 inline"
+                      width={14}
+                    />
+                  )}
+                </DropdownItem>
+              )}
+            </DropdownMenu>
+          </Dropdown>
+
+          {/* Columns 下拉 */}
+          <Dropdown closeOnSelect={false}>
+            <DropdownTrigger>
+              <Button
+                className="bg-default-100 text-default-800"
+                startContent={
+                  <Icon
+                    className="text-default-400"
+                    icon="solar:sort-horizontal-linear"
+                    width={16}
+                  />
+                }
+              >
+                列
+              </Button>
+            </DropdownTrigger>
+            <DropdownMenu
+              disallowEmptySelection
+              aria-label="Columns"
+              items={traderPositionColumns}
+              selectedKeys={visibleColumns}
+              selectionMode="multiple"
+              onSelectionChange={onVisibleColumnsChange}
+            >
+              {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+            </DropdownMenu>
+          </Dropdown>
+        </div>
       </div>
 
       {/* 第二行：高级指标筛选（可折叠） */}

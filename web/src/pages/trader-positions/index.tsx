@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, addToast, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
@@ -15,6 +16,7 @@ import {
 import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
 
 import { StatsCards, PositionFilters, PositionsTable, CoinSummary, PositionsAIAnalysisModal } from "./components";
+import { INITIAL_VISIBLE_COLUMNS } from "./components/PositionFilters";
 
 // 扩展 TraderPosition 类型，包含交易员指标
 interface TraderPositionWithMetrics extends TraderPosition {
@@ -39,6 +41,13 @@ export default function TraderPositionsPage() {
   const [pnlFilter, setPnlFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
+
+  // 排序和列可见性状态
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'unrealized_pnl',
+    direction: 'descending',
+  });
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
   // 加载分组数据
   const fetchGroups = useCallback(async () => {
@@ -636,6 +645,10 @@ export default function TraderPositionsPage() {
           metricFilters={metricFilters}
           onMetricFiltersChange={setMetricFilters}
           onReset={handleReset}
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
+          visibleColumns={visibleColumns}
+          onVisibleColumnsChange={setVisibleColumns}
         />
 
         {/* Positions Table */}
@@ -646,6 +659,9 @@ export default function TraderPositionsPage() {
           onToggleStar={handleToggleStar}
           starLoadingAddresses={starLoadingAddresses}
           onAIAnalyze={handleAIAnalyzeSingleWrapper}
+          visibleColumns={visibleColumns}
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
         />
       </div>
 

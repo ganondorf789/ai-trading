@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, Spinner } from "@heroui/react";
+import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
@@ -11,6 +12,7 @@ import {
 } from "@/services/api";
 
 import { StatsCards, PositionFilters, PositionsTable, CoinSummary } from "./components";
+import { INITIAL_VISIBLE_COLUMNS } from "./components/PositionFilters";
 
 export default function PositionHistoryPage() {
   // 数据状态
@@ -25,6 +27,13 @@ export default function PositionHistoryPage() {
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [coinFilter, setCoinFilter] = useState<string>("all");
   const [pnlFilter, setPnlFilter] = useState<string>("all");
+
+  // 排序和列可见性状态
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'open_time',
+    direction: 'descending',
+  });
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
   // 加载数据
   const fetchData = useCallback(async () => {
@@ -177,10 +186,20 @@ export default function PositionHistoryPage() {
           onPnlFilterChange={setPnlFilter}
           byCoin={byCoin}
           onReset={handleReset}
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
+          visibleColumns={visibleColumns}
+          onVisibleColumnsChange={setVisibleColumns}
         />
 
         {/* Positions Table */}
-        <PositionsTable positions={filteredPositions} loading={loading} />
+        <PositionsTable
+          positions={filteredPositions}
+          loading={loading}
+          visibleColumns={visibleColumns}
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
+        />
       </div>
     </DefaultLayout>
   );

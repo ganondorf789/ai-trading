@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Table,
   TableHeader,
@@ -13,9 +13,11 @@ import {
   Select,
   SelectItem,
 } from "@heroui/react";
+import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { GlobalPositionHistoryRecord } from "@/services/api";
 import { getRatingColor } from "@/utils";
+import { positionHistoryColumns, PositionHistoryColumnKey } from "./PositionFilters";
 
 // 每页显示条数选项
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
@@ -24,9 +26,12 @@ const DEFAULT_ROWS_PER_PAGE = 20;
 interface PositionsTableProps {
   positions: GlobalPositionHistoryRecord[];
   loading: boolean;
+  visibleColumns: Selection;
+  sortDescriptor: SortDescriptor;
+  onSortChange: (descriptor: SortDescriptor) => void;
 }
 
-export function PositionsTable({ positions, loading }: PositionsTableProps) {
+export function PositionsTable({ positions, loading, visibleColumns, sortDescriptor, onSortChange }: PositionsTableProps) {
   // 分页状态
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE);
@@ -43,12 +48,85 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
     }
   }, [positions.length, rowsPerPage, page, totalPages]);
 
+  // 可见列
+  const headerColumns = useMemo(() => {
+    if (visibleColumns === 'all') return positionHistoryColumns;
+    return positionHistoryColumns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
+
+  // 排序后的数据
+  const sortedPositions = useMemo(() => {
+    if (!sortDescriptor.column) return positions;
+
+    return [...positions].sort((a, b) => {
+      const column = sortDescriptor.column as PositionHistoryColumnKey;
+      let first: any;
+      let second: any;
+
+      switch (column) {
+        case 'trader':
+          first = a.trader_name || a.address;
+          second = b.trader_name || b.address;
+          break;
+        case 'rating':
+          first = a.rating || '';
+          second = b.rating || '';
+          break;
+        case 'coin':
+          first = a.coin;
+          second = b.coin;
+          break;
+        case 'direction':
+          first = a.direction;
+          second = b.direction;
+          break;
+        case 'open_time':
+          first = a.open_time ? new Date(a.open_time).getTime() : 0;
+          second = b.open_time ? new Date(b.open_time).getTime() : 0;
+          break;
+        case 'close_time':
+          first = a.close_time ? new Date(a.close_time).getTime() : 0;
+          second = b.close_time ? new Date(b.close_time).getTime() : 0;
+          break;
+        case 'max_size':
+          first = a.max_size || 0;
+          second = b.max_size || 0;
+          break;
+        case 'avg_entry_price':
+          first = a.avg_entry_price || 0;
+          second = b.avg_entry_price || 0;
+          break;
+        case 'avg_close_price':
+          first = a.avg_close_price || 0;
+          second = b.avg_close_price || 0;
+          break;
+        case 'holding_hours':
+          first = a.holding_hours || 0;
+          second = b.holding_hours || 0;
+          break;
+        case 'realized_pnl':
+          first = a.realized_pnl || 0;
+          second = b.realized_pnl || 0;
+          break;
+        case 'status':
+          first = a.status;
+          second = b.status;
+          break;
+        default:
+          return 0;
+      }
+
+      const cmp = first < second ? -1 : first > second ? 1 : 0;
+      return sortDescriptor.direction === 'descending' ? -cmp : cmp;
+    });
+  }, [positions, sortDescriptor]);
+
   // 获取当前页的数据
   const paginatedPositions = useMemo(() => {
     const start = (page - 1) * rowsPerPage;
     const end = start + rowsPerPage;
-    return positions.slice(start, end);
-  }, [positions, page, rowsPerPage]);
+    return sortedPositions.slice(start, end);
+  }, [sortedPositions, page, rowsPerPage]);
 
   // 处理每页条数变化
   const handleRowsPerPageChange = (value: string) => {
@@ -94,6 +172,91 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
     if (hours < 24) return `${hours.toFixed(1)}时`;
     return `${(hours / 24).toFixed(1)}天`;
   };
+
+  // 单元格渲染
+  const renderCell = useCallback((position: GlobalPositionHistoryRecord, columnKey: PositionHistoryColumnKey) => {
+    const isLong = position.direction === 'long';
+    const pnl = position.realized_pnl || 0;
+
+    switch (columnKey) {
+      case 'trader':
+        return (
+          <div className="flex items-center gap-2">
+            {position.is_starred && (
+              <Icon icon="solar:star-bold" className="text-warning" width={14} />
+            )}
+            <a
+              href={`/traders/${position.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-sm text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {position.trader_name || formatAddress(position.address)}
+            </a>
+          </div>
+        );
+      case 'rating':
+        return (
+          <span className={`font-bold text-lg ${getRatingColor(position.rating)}`}>
+            {position.rating || '-'}
+          </span>
+        );
+      case 'coin':
+        return <span className="font-semibold">{position.coin}</span>;
+      case 'direction':
+        return (
+          <Chip
+            color={isLong ? "success" : "danger"}
+            size="sm"
+            variant="flat"
+            startContent={
+              isLong ? (
+                <span className="text-xs">▲</span>
+              ) : (
+                <span className="text-xs">▼</span>
+              )
+            }
+          >
+            {isLong ? "LONG" : "SHORT"}
+          </Chip>
+        );
+      case 'open_time':
+        return <span className="text-sm">{formatTime(position.open_time)}</span>;
+      case 'close_time':
+        return <span className="text-sm">{formatTime(position.close_time)}</span>;
+      case 'max_size':
+        return <span className="font-mono">{formatNumber(position.max_size, 4)}</span>;
+      case 'avg_entry_price':
+        return <span className="font-mono">${formatNumber(position.avg_entry_price, 4)}</span>;
+      case 'avg_close_price':
+        return (
+          <span className="font-mono">
+            {position.avg_close_price ? `$${formatNumber(position.avg_close_price, 4)}` : '-'}
+          </span>
+        );
+      case 'holding_hours':
+        return <span className="text-sm">{formatHours(position.holding_hours)}</span>;
+      case 'realized_pnl':
+        return (
+          <span className={`font-mono font-medium ${pnl >= 0 ? "text-success" : "text-danger"}`}>
+            {pnl >= 0 ? "+" : ""}${formatNumber(pnl, 2)}
+          </span>
+        );
+      case 'status':
+        return (
+          <Chip
+            size="sm"
+            color={position.status === 'open' ? 'warning' : 'default'}
+            variant="flat"
+          >
+            {position.status === 'open' ? '持仓中' : '已平仓'}
+          </Chip>
+        );
+      default:
+        return null;
+    }
+  }, []);
 
   // 底部分页内容
   const bottomContent = useMemo(() => {
@@ -164,105 +327,24 @@ export function PositionsTable({ positions, loading }: PositionsTableProps) {
       }}
       bottomContent={bottomContent}
       bottomContentPlacement="outside"
+      sortDescriptor={sortDescriptor}
+      onSortChange={onSortChange}
     >
-      <TableHeader>
-        <TableColumn>交易员</TableColumn>
-        <TableColumn>评级</TableColumn>
-        <TableColumn>币种</TableColumn>
-        <TableColumn>方向</TableColumn>
-        <TableColumn>开仓时间</TableColumn>
-        <TableColumn>平仓时间</TableColumn>
-        <TableColumn>最大仓位</TableColumn>
-        <TableColumn>开仓均价</TableColumn>
-        <TableColumn>平仓均价</TableColumn>
-        <TableColumn>持仓时长</TableColumn>
-        <TableColumn>盈亏</TableColumn>
-        <TableColumn>状态</TableColumn>
+      <TableHeader columns={headerColumns}>
+        {(column) => (
+          <TableColumn key={column.uid} allowsSorting={column.sortable}>
+            {column.name}
+          </TableColumn>
+        )}
       </TableHeader>
       <TableBody emptyContent="暂无仓位历史数据" isLoading={loading} loadingContent={<Spinner />}>
-        {paginatedPositions.map((position) => {
-          const isLong = position.direction === 'long';
-          const pnl = position.realized_pnl || 0;
-
-          return (
-            <TableRow key={position.id}>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  {position.is_starred && (
-                    <Icon icon="solar:star-bold" className="text-warning" width={14} />
-                  )}
-                    <a
-                      href={`/traders/${position.address}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-sm text-primary hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {position.trader_name || formatAddress(position.address)}
-                    </a>
-                </div>
-              </TableCell>
-              <TableCell>
-                <span className={`font-bold text-lg ${getRatingColor(position.rating)}`}>
-                  {position.rating || '-'}
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className="font-semibold">{position.coin}</span>
-              </TableCell>
-              <TableCell>
-                <Chip
-                  color={isLong ? "success" : "danger"}
-                  size="sm"
-                  variant="flat"
-                  startContent={
-                    isLong ? (
-                      <span className="text-xs">▲</span>
-                    ) : (
-                      <span className="text-xs">▼</span>
-                    )
-                  }
-                >
-                  {isLong ? "LONG" : "SHORT"}
-                </Chip>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">{formatTime(position.open_time)}</span>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">{formatTime(position.close_time)}</span>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono">{formatNumber(position.max_size, 4)}</span>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono">${formatNumber(position.avg_entry_price, 4)}</span>
-              </TableCell>
-              <TableCell>
-                <span className="font-mono">
-                  {position.avg_close_price ? `$${formatNumber(position.avg_close_price, 4)}` : '-'}
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">{formatHours(position.holding_hours)}</span>
-              </TableCell>
-              <TableCell>
-                <span className={`font-mono font-medium ${pnl >= 0 ? "text-success" : "text-danger"}`}>
-                  {pnl >= 0 ? "+" : ""}${formatNumber(pnl, 2)}
-                </span>
-              </TableCell>
-              <TableCell>
-                <Chip
-                  size="sm"
-                  color={position.status === 'open' ? 'warning' : 'default'}
-                  variant="flat"
-                >
-                  {position.status === 'open' ? '持仓中' : '已平仓'}
-                </Chip>
-              </TableCell>
-            </TableRow>
-          );
-        })}
+        {paginatedPositions.map((position) => (
+          <TableRow key={position.id}>
+            {(columnKey) => (
+              <TableCell>{renderCell(position, columnKey as PositionHistoryColumnKey)}</TableCell>
+            )}
+          </TableRow>
+        ))}
       </TableBody>
     </Table>
   );
