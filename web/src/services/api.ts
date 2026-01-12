@@ -24,6 +24,7 @@ import type {
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
+  DefaultCopyTradingConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -58,6 +59,7 @@ export type {
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
+  DefaultCopyTradingConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -538,6 +540,14 @@ export const riskControlApi = {
   // 更新风控配置
   updateConfig: (data: Partial<RiskControlConfig>) =>
     api.put<any, ApiResponse<RiskControlConfig> & { message?: string }>('/copy-trading/risk-control', data),
+
+  // 获取默认跟单配置
+  getDefaultCopyConfig: () =>
+    api.get<any, ApiResponse<DefaultCopyTradingConfig>>('/copy-trading/default-config'),
+
+  // 更新默认跟单配置
+  updateDefaultCopyConfig: (data: Partial<DefaultCopyTradingConfig>) =>
+    api.put<any, ApiResponse<DefaultCopyTradingConfig> & { message?: string }>('/copy-trading/default-config', data),
 };
 
 // ==================== S级优选筛选 API ====================

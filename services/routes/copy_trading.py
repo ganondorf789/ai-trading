@@ -861,6 +861,93 @@ def update_risk_control_config():
         }), 500
 
 
+@copy_trading_bp.route('/api/copy-trading/default-config', methods=['GET'])
+def get_default_copy_config():
+    """
+    获取默认跟单配置
+    """
+    try:
+        config = db.get_default_copy_config()
+        return jsonify({
+            'success': True,
+            'data': config
+        })
+    except Exception as e:
+        logger.error(f"获取默认跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_bp.route('/api/copy-trading/default-config', methods=['PUT'])
+def update_default_copy_config():
+    """
+    更新默认跟单配置
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证配置字段
+        valid_fields = {
+            'copy_ratio': (float, 0.01, 10.0),
+            'max_position_size_usd': (float, 1, 1000000),
+            'min_position_size_usd': (float, 1, 100000),
+            'max_leverage': (int, 1, 100),
+            'default_leverage': (int, 1, 100),
+            'slippage': (float, 0.0001, 0.1),
+            'copy_leverage': (bool, None, None),
+            'sync_position': (bool, None, None),
+            'dry_run': (bool, None, None),
+        }
+
+        config = {}
+        for field, (field_type, min_val, max_val) in valid_fields.items():
+            if field in data:
+                value = data[field]
+                if field_type == int:
+                    value = int(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == float:
+                    value = float(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == bool:
+                    value = bool(value)
+                config[field] = value
+
+        # 处理数组字段
+        if 'symbols_whitelist' in data:
+            config['symbols_whitelist'] = data['symbols_whitelist'] if isinstance(data['symbols_whitelist'], list) else []
+        if 'symbols_blacklist' in data:
+            config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
+
+        success = db.save_default_copy_config(config)
+        if success:
+            return jsonify({
+                'success': True,
+                'data': config,
+                'message': '默认跟单配置更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '保存配置失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新默认跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @copy_trading_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
 def refresh_all_trader_positions():
     """

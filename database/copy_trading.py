@@ -566,3 +566,69 @@ class CopyTradingOps:
         except Exception as e:
             logger.error(f"保存风控配置失败: {e}")
             return False
+
+    # ==================== 默认跟单配置管理 ====================
+
+    def get_default_copy_config(self) -> Dict:
+        """
+        获取默认跟单配置
+        
+        Returns:
+            默认跟单配置字典，如果不存在则返回默认值
+        """
+        default_config = {
+            'copy_ratio': 0.1,
+            'max_position_size_usd': 500.0,
+            'min_position_size_usd': 20.0,
+            'max_leverage': 10,
+            'default_leverage': 3,
+            'slippage': 0.001,
+            'copy_leverage': False,
+            'sync_position': False,
+            'dry_run': False,
+            'symbols_whitelist': [],
+            'symbols_blacklist': [],
+        }
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT config_value FROM system_config WHERE config_key = 'default_copy_config'
+                """)
+                row = cursor.fetchone()
+                
+                if row:
+                    config = json.loads(row[0])
+                    # 合并默认值，确保所有字段都存在
+                    return {**default_config, **config}
+                else:
+                    return default_config
+        except Exception as e:
+            logger.warning(f"获取默认跟单配置失败，使用默认值: {e}")
+            return default_config
+
+    def save_default_copy_config(self, config: Dict) -> bool:
+        """
+        保存默认跟单配置
+        
+        Args:
+            config: 默认跟单配置字典
+            
+        Returns:
+            是否保存成功
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO system_config (config_key, config_value, description, updated_at)
+                    VALUES ('default_copy_config', %s, '默认跟单配置', CURRENT_TIMESTAMP)
+                    ON CONFLICT (config_key)
+                    DO UPDATE SET config_value = %s, updated_at = CURRENT_TIMESTAMP
+                """, (json.dumps(config), json.dumps(config)))
+            logger.info(f"默认跟单配置已保存: {config}")
+            return True
+        except Exception as e:
+            logger.error(f"保存默认跟单配置失败: {e}")
+            return False

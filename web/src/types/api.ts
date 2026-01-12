@@ -593,3 +593,24 @@ export interface RiskControlConfig {
   max_order_retries: number;
   retry_base_delay: number;
 }
+
+// ==================== 默认跟单配置类型 ====================
+
+export interface DefaultCopyTradingConfig {
+  // 跟单参数
+  copy_ratio: number;
+  max_position_size_usd: number;
+  min_position_size_usd: number;
+  max_leverage: number;
+  default_leverage: number;
+  slippage: number;
+  
+  // 币种限制
+  symbols_whitelist: string[];
+  symbols_blacklist: string[];
+  
+  // 功能开关
+  copy_leverage: boolean;
+  sync_position: boolean;
+  dry_run: boolean;
+}
