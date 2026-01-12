@@ -218,6 +218,10 @@ export const traderApi = {
   getPositionHistory: (address: string, params?: {
     coin?: string;
     status?: 'open' | 'closed';
+    direction?: 'long' | 'short';
+    start_time?: string;
+    end_time?: string;
+    pnl_filter?: 'profit' | 'loss';
     page?: number;
     limit?: number;
   }) =>

@@ -604,12 +604,20 @@ def get_trader_position_history(address: str):
     Query Parameters:
         - coin: str, 筛选特定币种（可选）
         - status: str, 筛选状态 'open'/'closed'（可选）
+        - direction: str, 筛选方向 'long'/'short'（可选）
+        - start_time: str, 开始时间ISO格式（可选）
+        - end_time: str, 结束时间ISO格式（可选）
+        - pnl_filter: str, 盈亏筛选 'profit'/'loss'（可选）
         - page: int, 页码，默认1
         - limit: int, 每页数量，默认50
     """
     try:
         coin = request.args.get('coin')
         status = request.args.get('status')
+        direction = request.args.get('direction')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        pnl_filter = request.args.get('pnl_filter')
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 50))
         offset = (page - 1) * limit
@@ -619,6 +627,10 @@ def get_trader_position_history(address: str):
             address,
             coin=coin,
             status=status,
+            direction=direction,
+            start_time=start_time,
+            end_time=end_time,
+            pnl_filter=pnl_filter,
             limit=limit,
             offset=offset
         )
@@ -627,7 +639,11 @@ def get_trader_position_history(address: str):
         total_count = db.get_position_history_count(
             address,
             coin=coin,
-            status=status
+            status=status,
+            direction=direction,
+            start_time=start_time,
+            end_time=end_time,
+            pnl_filter=pnl_filter
         )
 
         return jsonify({

@@ -254,6 +254,10 @@ class PositionHistoryOps:
         address: str,
         coin: str = None,
         status: str = None,
+        direction: str = None,
+        start_time: str = None,
+        end_time: str = None,
+        pnl_filter: str = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -264,6 +268,10 @@ class PositionHistoryOps:
             address: 交易者地址
             coin: 可选，筛选特定币种
             status: 可选，筛选状态（'open', 'closed'）
+            direction: 可选，筛选方向（'long', 'short'）
+            start_time: 可选，开始时间（ISO格式）
+            end_time: 可选，结束时间（ISO格式）
+            pnl_filter: 可选，盈亏筛选（'profit', 'loss'）
             limit: 返回数量
             offset: 偏移量
 
@@ -284,11 +292,30 @@ class PositionHistoryOps:
                 conditions.append("status = %s")
                 params.append(status)
 
+            if direction:
+                conditions.append("direction = %s")
+                params.append(direction)
+
+            if start_time:
+                conditions.append("open_time >= %s")
+                params.append(start_time)
+
+            if end_time:
+                conditions.append("open_time <= %s")
+                params.append(end_time)
+
+            if pnl_filter == 'profit':
+                conditions.append("realized_pnl > 0")
+            elif pnl_filter == 'loss':
+                conditions.append("realized_pnl < 0")
+
             where_clause = " AND ".join(conditions)
             params.extend([limit, offset])
 
             cursor.execute(f"""
-                SELECT * FROM position_history
+                SELECT *,
+                    (max_size * avg_entry_price) as position_value
+                FROM position_history
                 WHERE {where_clause}
                 ORDER BY open_time DESC
                 LIMIT %s OFFSET %s
@@ -300,7 +327,11 @@ class PositionHistoryOps:
         self,
         address: str,
         coin: str = None,
-        status: str = None
+        status: str = None,
+        direction: str = None,
+        start_time: str = None,
+        end_time: str = None,
+        pnl_filter: str = None
     ) -> int:
         """
         获取仓位历史记录总数
@@ -309,6 +340,10 @@ class PositionHistoryOps:
             address: 交易者地址
             coin: 可选，筛选特定币种
             status: 可选，筛选状态
+            direction: 可选，筛选方向（'long', 'short'）
+            start_time: 可选，开始时间（ISO格式）
+            end_time: 可选，结束时间（ISO格式）
+            pnl_filter: 可选，盈亏筛选（'profit', 'loss'）
 
         Returns:
             记录总数
@@ -326,6 +361,23 @@ class PositionHistoryOps:
             if status:
                 conditions.append("status = %s")
                 params.append(status)
+
+            if direction:
+                conditions.append("direction = %s")
+                params.append(direction)
+
+            if start_time:
+                conditions.append("open_time >= %s")
+                params.append(start_time)
+
+            if end_time:
+                conditions.append("open_time <= %s")
+                params.append(end_time)
+
+            if pnl_filter == 'profit':
+                conditions.append("realized_pnl > 0")
+            elif pnl_filter == 'loss':
+                conditions.append("realized_pnl < 0")
 
             where_clause = " AND ".join(conditions)
 
@@ -513,6 +565,7 @@ class PositionHistoryOps:
             cursor.execute(f"""
                 SELECT 
                     ph.*,
+                    (ph.max_size * ph.avg_entry_price) as position_value,
                     tm.rating,
                     tm.overall_score,
                     tm.win_rate as trader_win_rate,

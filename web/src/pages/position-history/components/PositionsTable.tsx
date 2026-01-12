@@ -100,6 +100,10 @@ export function PositionsTable({ positions, loading, visibleColumns, sortDescrip
           first = a.avg_close_price || 0;
           second = b.avg_close_price || 0;
           break;
+        case 'position_value':
+          first = a.position_value || 0;
+          second = b.position_value || 0;
+          break;
         case 'holding_hours':
           first = a.holding_hours || 0;
           second = b.holding_hours || 0;
@@ -235,6 +239,8 @@ export function PositionsTable({ positions, loading, visibleColumns, sortDescrip
             {position.avg_close_price ? `$${formatNumber(position.avg_close_price, 4)}` : '-'}
           </span>
         );
+      case 'position_value':
+        return <span className="font-mono font-medium">${formatNumber(position.position_value, 2)}</span>;
       case 'holding_hours':
         return <span className="text-sm">{formatHours(position.holding_hours)}</span>;
       case 'realized_pnl':

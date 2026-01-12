@@ -4,7 +4,7 @@ import { Icon } from "@iconify/react";
 import { PositionHistoryByCoin } from "@/services/api";
 
 // 表格列配置
-export type PositionHistoryColumnKey = 'trader' | 'rating' | 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'avg_entry_price' | 'avg_close_price' | 'holding_hours' | 'realized_pnl' | 'status';
+export type PositionHistoryColumnKey = 'trader' | 'rating' | 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'avg_entry_price' | 'avg_close_price' | 'position_value' | 'holding_hours' | 'realized_pnl' | 'status';
 
 export interface PositionHistoryColumn {
   uid: PositionHistoryColumnKey;
@@ -22,13 +22,14 @@ export const positionHistoryColumns: PositionHistoryColumn[] = [
   { uid: 'max_size', name: '最大仓位', sortable: true },
   { uid: 'avg_entry_price', name: '开仓均价', sortable: true },
   { uid: 'avg_close_price', name: '平仓均价', sortable: true },
+  { uid: 'position_value', name: '仓位价值', sortable: true },
   { uid: 'holding_hours', name: '持仓时长', sortable: true },
   { uid: 'realized_pnl', name: '盈亏', sortable: true },
   { uid: 'status', name: '状态', sortable: true },
 ];
 
 export const INITIAL_VISIBLE_COLUMNS: PositionHistoryColumnKey[] = [
-  'trader', 'rating', 'coin', 'direction', 'open_time', 'close_time', 'max_size', 'avg_entry_price', 'avg_close_price', 'holding_hours', 'realized_pnl', 'status'
+  'trader', 'rating', 'coin', 'direction', 'open_time', 'close_time', 'max_size', 'avg_entry_price', 'avg_close_price', 'position_value', 'holding_hours', 'realized_pnl', 'status'
 ];
 
 interface PositionFiltersProps {

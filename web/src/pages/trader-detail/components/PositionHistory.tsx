@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { Button } from '@heroui/button';
@@ -7,7 +7,7 @@ import { Select, SelectItem } from '@heroui/select';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
 import { Tabs, Tab } from '@heroui/tabs';
-import { addToast } from '@heroui/react';
+import { addToast, Autocomplete, AutocompleteItem } from '@heroui/react';
 import {
   Table,
   TableHeader,
@@ -23,6 +23,16 @@ interface PositionHistoryProps {
   address: string;
 }
 
+// 时间范围预设选项
+const TIME_RANGE_OPTIONS = [
+  { key: 'all', label: '全部时间' },
+  { key: '1d', label: '最近1天' },
+  { key: '7d', label: '最近7天' },
+  { key: '30d', label: '最近30天' },
+  { key: '90d', label: '最近90天' },
+  { key: 'custom', label: '自定义' },
+];
+
 export function PositionHistory({ address }: PositionHistoryProps) {
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
@@ -32,10 +42,59 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [selectedTab, setSelectedTab] = useState<string>('list');
   const [jumpPage, setJumpPage] = useState('');
   const rowsPerPage = 20;
+
+  // 筛选状态
+  const [coinFilter, setCoinFilter] = useState<string>('all');
+  const [directionFilter, setDirectionFilter] = useState<'all' | 'long' | 'short'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
+  const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // 计算实际的时间范围
+  const { startTime, endTime } = useMemo(() => {
+    if (timeRangeFilter === 'all') {
+      return { startTime: undefined, endTime: undefined };
+    }
+    if (timeRangeFilter === 'custom') {
+      return {
+        startTime: customStartDate || undefined,
+        endTime: customEndDate ? `${customEndDate}T23:59:59` : undefined,
+      };
+    }
+    // 预设时间范围
+    const now = new Date();
+    const days = parseInt(timeRangeFilter.replace('d', ''));
+    const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    return {
+      startTime: start.toISOString(),
+      endTime: undefined,
+    };
+  }, [timeRangeFilter, customStartDate, customEndDate]);
+
+  // 获取币种选项
+  const coinOptions = useMemo(() => {
+    return ['all', ...byCoin.map(c => c.coin)];
+  }, [byCoin]);
+
+  // 重置筛选
+  const handleResetFilters = () => {
+    setCoinFilter('all');
+    setDirectionFilter('all');
+    setStatusFilter('all');
+    setPnlFilter('all');
+    setTimeRangeFilter('all');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setPage(1);
+  };
+
+  // 检查是否有活跃的筛选
+  const hasActiveFilters = coinFilter !== 'all' || directionFilter !== 'all' || statusFilter !== 'all' || pnlFilter !== 'all' || timeRangeFilter !== 'all';
 
   // 页码跳转
   const handleJumpPage = () => {
@@ -79,7 +138,12 @@ export function PositionHistory({ address }: PositionHistoryProps) {
     try {
       setLoading(true);
       const res = await traderApi.getPositionHistory(address, {
+        coin: coinFilter !== 'all' ? coinFilter : undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
+        direction: directionFilter !== 'all' ? directionFilter : undefined,
+        start_time: startTime,
+        end_time: endTime,
+        pnl_filter: pnlFilter !== 'all' ? pnlFilter : undefined,
         page,
         limit: rowsPerPage,
       });
@@ -96,7 +160,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
     } finally {
       setLoading(false);
     }
-  }, [address, statusFilter, page]);
+  }, [address, coinFilter, statusFilter, directionFilter, startTime, endTime, pnlFilter, page]);
 
   // 加载统计信息
   const loadStats = useCallback(async () => {
@@ -160,7 +224,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   // 筛选改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [statusFilter]);
+  }, [coinFilter, statusFilter, directionFilter, pnlFilter, startTime, endTime]);
 
   return (
     <Card className="mt-6">
@@ -229,7 +293,131 @@ export function PositionHistory({ address }: PositionHistoryProps) {
 
         {selectedTab === 'list' && (
           <>
+            {/* 筛选条件 */}
+            <div className="flex flex-wrap gap-3 items-center mb-4">
+              {/* 币种筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap text-gray-500">币种</span>
+                <Autocomplete
+                  className="min-w-[140px]"
+                  aria-label="币种筛选"
+                  size="sm"
+                  selectedKey={coinFilter}
+                  onSelectionChange={(key) => setCoinFilter((key as string) || 'all')}
+                  allowsCustomValue={false}
+                  defaultItems={coinOptions.map((coin) => ({
+                    key: coin,
+                    label: coin === 'all' ? '全部' : coin,
+                  }))}
+                >
+                  {(item) => (
+                    <AutocompleteItem key={item.key} textValue={item.label}>
+                      {item.label}
+                    </AutocompleteItem>
+                  )}
+                </Autocomplete>
+              </div>
 
+              {/* 方向筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap text-gray-500">方向</span>
+                <Select
+                  className="min-w-[100px]"
+                  aria-label="方向筛选"
+                  size="sm"
+                  selectedKeys={[directionFilter]}
+                  onSelectionChange={(keys) => setDirectionFilter(Array.from(keys)[0] as 'all' | 'long' | 'short')}
+                >
+                  <SelectItem key="all" textValue="全部">全部</SelectItem>
+                  <SelectItem key="long" textValue="多头">多头</SelectItem>
+                  <SelectItem key="short" textValue="空头">空头</SelectItem>
+                </Select>
+              </div>
+
+              {/* 状态筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap text-gray-500">状态</span>
+                <Select
+                  className="min-w-[100px]"
+                  aria-label="状态筛选"
+                  size="sm"
+                  selectedKeys={[statusFilter]}
+                  onSelectionChange={(keys) => setStatusFilter(Array.from(keys)[0] as 'all' | 'open' | 'closed')}
+                >
+                  <SelectItem key="all" textValue="全部">全部</SelectItem>
+                  <SelectItem key="closed" textValue="已平仓">已平仓</SelectItem>
+                  <SelectItem key="open" textValue="持仓中">持仓中</SelectItem>
+                </Select>
+              </div>
+
+              {/* 盈亏筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap text-gray-500">盈亏</span>
+                <Select
+                  className="min-w-[100px]"
+                  aria-label="盈亏筛选"
+                  size="sm"
+                  selectedKeys={[pnlFilter]}
+                  onSelectionChange={(keys) => setPnlFilter(Array.from(keys)[0] as 'all' | 'profit' | 'loss')}
+                >
+                  <SelectItem key="all" textValue="全部">全部</SelectItem>
+                  <SelectItem key="profit" textValue="盈利">盈利</SelectItem>
+                  <SelectItem key="loss" textValue="亏损">亏损</SelectItem>
+                </Select>
+              </div>
+
+              {/* 时间范围筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap text-gray-500">时间</span>
+                <Select
+                  className="min-w-[120px]"
+                  aria-label="时间范围筛选"
+                  size="sm"
+                  selectedKeys={[timeRangeFilter]}
+                  onSelectionChange={(keys) => setTimeRangeFilter(Array.from(keys)[0] as string)}
+                >
+                  {TIME_RANGE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.key} textValue={opt.label}>{opt.label}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+
+              {/* 自定义时间范围 */}
+              {timeRangeFilter === 'custom' && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <Input
+                    type="date"
+                    size="sm"
+                    className="w-36"
+                    aria-label="开始日期"
+                    value={customStartDate}
+                    onValueChange={setCustomStartDate}
+                  />
+                  <span className="text-gray-400">-</span>
+                  <Input
+                    type="date"
+                    size="sm"
+                    className="w-36"
+                    aria-label="结束日期"
+                    value={customEndDate}
+                    onValueChange={setCustomEndDate}
+                  />
+                </div>
+              )}
+
+              {/* 重置按钮 */}
+              {hasActiveFilters && (
+                <Button
+                  variant="flat"
+                  color="warning"
+                  size="sm"
+                  startContent={<Icon icon="solar:restart-linear" width={16} />}
+                  onPress={handleResetFilters}
+                >
+                  重置
+                </Button>
+              )}
+            </div>
 
             {/* 仓位列表表格 */}
             {loading ? (

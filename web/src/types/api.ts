@@ -131,6 +131,7 @@ export interface PositionHistoryRecord {
   max_size: number;
   avg_entry_price: number;
   avg_close_price: number | null;
+  position_value: number;
   total_volume: number;
   realized_pnl: number;
   total_fee: number;
