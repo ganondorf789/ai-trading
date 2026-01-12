@@ -608,6 +608,8 @@ def get_trader_position_history(address: str):
         - start_time: str, 开始时间ISO格式（可选）
         - end_time: str, 结束时间ISO格式（可选）
         - pnl_filter: str, 盈亏筛选 'profit'/'loss'（可选）
+        - sort_by: str, 排序字段（可选，默认open_time）
+        - sort_order: str, 排序方向 'asc'/'desc'（可选，默认desc）
         - page: int, 页码，默认1
         - limit: int, 每页数量，默认50
     """
@@ -618,6 +620,8 @@ def get_trader_position_history(address: str):
         start_time = request.args.get('start_time')
         end_time = request.args.get('end_time')
         pnl_filter = request.args.get('pnl_filter')
+        sort_by = request.args.get('sort_by', 'open_time')
+        sort_order = request.args.get('sort_order', 'desc')
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 50))
         offset = (page - 1) * limit
@@ -631,6 +635,8 @@ def get_trader_position_history(address: str):
             start_time=start_time,
             end_time=end_time,
             pnl_filter=pnl_filter,
+            sort_by=sort_by,
+            sort_order=sort_order,
             limit=limit,
             offset=offset
         )

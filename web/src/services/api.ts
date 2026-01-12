@@ -222,6 +222,8 @@ export const traderApi = {
     start_time?: string;
     end_time?: string;
     pnl_filter?: 'profit' | 'loss';
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
     page?: number;
     limit?: number;
   }) =>

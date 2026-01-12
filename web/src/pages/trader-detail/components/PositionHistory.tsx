@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import type { Selection, SortDescriptor } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { Button } from '@heroui/button';
@@ -9,6 +10,12 @@ import { Input } from '@heroui/input';
 import { Tabs, Tab } from '@heroui/tabs';
 import { addToast, Autocomplete, AutocompleteItem } from '@heroui/react';
 import {
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
+} from '@heroui/dropdown';
+import {
   Table,
   TableHeader,
   TableColumn,
@@ -18,6 +25,30 @@ import {
 } from '@heroui/table';
 import { Icon } from '@iconify/react';
 import { traderApi, PositionHistoryRecord, PositionHistoryStats, PositionHistoryByCoin } from '@/services/api';
+
+// 表格列配置
+type ColumnKey = 'coin' | 'direction' | 'open_time' | 'close_time' | 'max_size' | 'entry_price' | 'close_price' | 'holding' | 'pnl' | 'status';
+
+interface Column {
+  uid: ColumnKey;
+  name: string;
+  sortable?: boolean;
+}
+
+const columns: Column[] = [
+  { uid: 'coin', name: '币种', sortable: true },
+  { uid: 'direction', name: '方向', sortable: true },
+  { uid: 'open_time', name: '开仓时间', sortable: true },
+  { uid: 'close_time', name: '平仓时间', sortable: true },
+  { uid: 'max_size', name: '最大仓位', sortable: true },
+  { uid: 'entry_price', name: '开仓均价', sortable: true },
+  { uid: 'close_price', name: '平仓均价', sortable: true },
+  { uid: 'holding', name: '持仓时长', sortable: true },
+  { uid: 'pnl', name: '盈亏', sortable: true },
+  { uid: 'status', name: '状态', sortable: true },
+];
+
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = ['coin', 'direction', 'open_time', 'close_time', 'max_size', 'entry_price', 'close_price', 'holding', 'pnl', 'status'];
 
 interface PositionHistoryProps {
   address: string;
@@ -54,6 +85,19 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  // 排序和列可见性
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: 'open_time',
+    direction: 'descending',
+  });
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
+
+  // 获取可见列的头部配置
+  const headerColumns = useMemo(() => {
+    if (visibleColumns === 'all') return columns;
+    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
 
   // 计算实际的时间范围
   const { startTime, endTime } = useMemo(() => {
@@ -133,6 +177,54 @@ export function PositionHistory({ address }: PositionHistoryProps) {
     });
   };
 
+  // 渲染单元格内容
+  const renderCell = useCallback((item: PositionHistoryRecord, columnKey: ColumnKey) => {
+    switch (columnKey) {
+      case 'coin':
+        return <span className="font-bold">{item.coin}</span>;
+      case 'direction':
+        return (
+          <Chip
+            size="sm"
+            color={item.direction === 'long' ? 'success' : 'danger'}
+            variant="flat"
+          >
+            {item.direction === 'long' ? 'LONG' : 'SHORT'}
+          </Chip>
+        );
+      case 'open_time':
+        return formatTime(item.open_time);
+      case 'close_time':
+        return formatTime(item.close_time);
+      case 'max_size':
+        return formatNumber(item.max_size, 4);
+      case 'entry_price':
+        return `$${formatNumber(item.avg_entry_price, 4)}`;
+      case 'close_price':
+        return item.avg_close_price ? `$${formatNumber(item.avg_close_price, 4)}` : '-';
+      case 'holding':
+        return formatHours(item.holding_hours);
+      case 'pnl':
+        return (
+          <span className={item.realized_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+            ${formatNumber(item.realized_pnl)}
+          </span>
+        );
+      case 'status':
+        return (
+          <Chip
+            size="sm"
+            color={item.status === 'open' ? 'warning' : 'default'}
+            variant="flat"
+          >
+            {item.status === 'open' ? '持仓中' : '已平仓'}
+          </Chip>
+        );
+      default:
+        return null;
+    }
+  }, []);
+
   // 加载仓位历史列表
   const loadPositions = useCallback(async () => {
     try {
@@ -144,6 +236,8 @@ export function PositionHistory({ address }: PositionHistoryProps) {
         start_time: startTime,
         end_time: endTime,
         pnl_filter: pnlFilter !== 'all' ? pnlFilter : undefined,
+        sort_by: sortDescriptor.column as string,
+        sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
         page,
         limit: rowsPerPage,
       });
@@ -160,7 +254,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
     } finally {
       setLoading(false);
     }
-  }, [address, coinFilter, statusFilter, directionFilter, startTime, endTime, pnlFilter, page]);
+  }, [address, coinFilter, statusFilter, directionFilter, startTime, endTime, pnlFilter, sortDescriptor, page]);
 
   // 加载统计信息
   const loadStats = useCallback(async () => {
@@ -417,6 +511,81 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                   重置
                 </Button>
               )}
+
+              {/* 右侧：排序和列 */}
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                {/* Sort 下拉 */}
+                <Dropdown>
+                  <DropdownTrigger>
+                    <Button
+                      size="sm"
+                      className="bg-default-100 text-default-800"
+                      startContent={
+                        <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                      }
+                    >
+                      排序
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    aria-label="Sort"
+                    items={columns.filter((c) => c.sortable)}
+                  >
+                    {(item) => (
+                      <DropdownItem
+                        key={item.uid}
+                        onPress={() => {
+                          setSortDescriptor({
+                            column: item.uid,
+                            direction:
+                              sortDescriptor.column === item.uid && sortDescriptor.direction === 'ascending'
+                                ? 'descending'
+                                : 'ascending',
+                          });
+                        }}
+                      >
+                        {item.name}
+                        {sortDescriptor.column === item.uid && (
+                          <Icon
+                            icon={sortDescriptor.direction === 'ascending' ? 'solar:alt-arrow-up-linear' : 'solar:alt-arrow-down-linear'}
+                            className="ml-1 inline"
+                            width={14}
+                          />
+                        )}
+                      </DropdownItem>
+                    )}
+                  </DropdownMenu>
+                </Dropdown>
+
+                {/* Columns 下拉 */}
+                <Dropdown closeOnSelect={false}>
+                  <DropdownTrigger>
+                    <Button
+                      size="sm"
+                      className="bg-default-100 text-default-800"
+                      startContent={
+                        <Icon
+                          className="text-default-400"
+                          icon="solar:sort-horizontal-linear"
+                          width={16}
+                        />
+                      }
+                    >
+                      列
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu
+                    disallowEmptySelection
+                    aria-label="Columns"
+                    items={columns}
+                    selectedKeys={visibleColumns}
+                    selectionMode="multiple"
+                    onSelectionChange={setVisibleColumns}
+                  >
+                    {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+                  </DropdownMenu>
+                </Dropdown>
+              </div>
             </div>
 
             {/* 仓位列表表格 */}
@@ -432,56 +601,25 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                   classNames={{
                     wrapper: 'max-h-[500px]',
                   }}
+                  sortDescriptor={sortDescriptor}
+                  onSortChange={setSortDescriptor}
                 >
-                  <TableHeader>
-                    <TableColumn key="coin">币种</TableColumn>
-                    <TableColumn key="direction">方向</TableColumn>
-                    <TableColumn key="open_time">开仓时间</TableColumn>
-                    <TableColumn key="close_time">平仓时间</TableColumn>
-                    <TableColumn key="max_size">最大仓位</TableColumn>
-                    <TableColumn key="entry_price">开仓均价</TableColumn>
-                    <TableColumn key="close_price">平仓均价</TableColumn>
-                    <TableColumn key="holding">持仓时长</TableColumn>
-                    <TableColumn key="pnl">盈亏</TableColumn>
-                    <TableColumn key="status">状态</TableColumn>
+                  <TableHeader columns={headerColumns}>
+                    {(column) => (
+                      <TableColumn
+                        key={column.uid}
+                        allowsSorting={column.sortable}
+                      >
+                        {column.name}
+                      </TableColumn>
+                    )}
                   </TableHeader>
                   <TableBody items={positions}>
                     {(item) => (
                       <TableRow key={item.id}>
-                        <TableCell>
-                          <span className="font-bold">{item.coin}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="sm"
-                            color={item.direction === 'long' ? 'success' : 'danger'}
-                            variant="flat"
-                          >
-                            {item.direction === 'long' ? 'LONG' : 'SHORT'}
-                          </Chip>
-                        </TableCell>
-                        <TableCell>{formatTime(item.open_time)}</TableCell>
-                        <TableCell>{formatTime(item.close_time)}</TableCell>
-                        <TableCell>{formatNumber(item.max_size, 4)}</TableCell>
-                        <TableCell>${formatNumber(item.avg_entry_price, 4)}</TableCell>
-                        <TableCell>
-                          {item.avg_close_price ? `$${formatNumber(item.avg_close_price, 4)}` : '-'}
-                        </TableCell>
-                        <TableCell>{formatHours(item.holding_hours)}</TableCell>
-                        <TableCell>
-                          <span className={item.realized_pnl >= 0 ? 'text-green-500' : 'text-red-500'}>
-                            ${formatNumber(item.realized_pnl)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            size="sm"
-                            color={item.status === 'open' ? 'warning' : 'default'}
-                            variant="flat"
-                          >
-                            {item.status === 'open' ? '持仓中' : '已平仓'}
-                          </Chip>
-                        </TableCell>
+                        {(columnKey) => (
+                          <TableCell>{renderCell(item, columnKey as ColumnKey)}</TableCell>
+                        )}
                       </TableRow>
                     )}
                   </TableBody>

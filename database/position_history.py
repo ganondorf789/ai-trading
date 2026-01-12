@@ -258,6 +258,8 @@ class PositionHistoryOps:
         start_time: str = None,
         end_time: str = None,
         pnl_filter: str = None,
+        sort_by: str = 'open_time',
+        sort_order: str = 'desc',
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -272,6 +274,8 @@ class PositionHistoryOps:
             start_time: 可选，开始时间（ISO格式）
             end_time: 可选，结束时间（ISO格式）
             pnl_filter: 可选，盈亏筛选（'profit', 'loss'）
+            sort_by: 排序字段，默认 open_time
+            sort_order: 排序方向，默认 desc
             limit: 返回数量
             offset: 偏移量
 
@@ -312,12 +316,28 @@ class PositionHistoryOps:
             where_clause = " AND ".join(conditions)
             params.extend([limit, offset])
 
+            # 映射前端字段名到数据库字段名
+            sort_field_map = {
+                'coin': 'coin',
+                'direction': 'direction',
+                'open_time': 'open_time',
+                'close_time': 'close_time',
+                'max_size': 'max_size',
+                'entry_price': 'avg_entry_price',
+                'close_price': 'avg_close_price',
+                'holding': 'holding_hours',
+                'pnl': 'realized_pnl',
+                'status': 'status',
+            }
+            db_sort_field = sort_field_map.get(sort_by, 'open_time')
+            order_direction = 'ASC' if sort_order == 'asc' else 'DESC'
+
             cursor.execute(f"""
                 SELECT *,
                     (max_size * avg_entry_price) as position_value
                 FROM position_history
                 WHERE {where_clause}
-                ORDER BY open_time DESC
+                ORDER BY {db_sort_field} {order_direction}
                 LIMIT %s OFFSET %s
             """, params)
 
