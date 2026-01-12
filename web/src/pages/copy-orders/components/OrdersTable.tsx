@@ -9,9 +9,9 @@ import {
   Chip,
   Spinner,
   Tooltip,
-  Pagination,
 } from "@heroui/react";
 import { CopyTradingOrder, PaginationInfo } from "@/services/api";
+import { TablePagination } from "@/components/TablePagination";
 
 interface OrdersTableProps {
   orders: CopyTradingOrder[];
@@ -164,15 +164,16 @@ export function OrdersTable({
       </Table>
 
       {/* Pagination */}
-      {pagination && pagination.total_pages > 1 && (
-        <div className="flex justify-center mt-4">
-          <Pagination
-            color="primary"
-            page={pagination.page}
-            total={pagination.total_pages}
-            onChange={onPageChange}
-          />
-        </div>
+      {pagination && pagination.total_pages > 0 && (
+        <TablePagination
+          page={pagination.page}
+          totalPages={pagination.total_pages}
+          onPageChange={onPageChange}
+          totalCount={pagination.total_count}
+          rowsPerPage={pagination.limit}
+          showJumpInput={pagination.total_pages > 1}
+          className="mt-4"
+        />
       )}
     </div>
   );

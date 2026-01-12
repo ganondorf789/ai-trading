@@ -8,16 +8,13 @@ import {
   TableCell,
   Chip,
   Spinner,
-  Pagination,
-  Input,
-  Select,
-  SelectItem,
 } from "@heroui/react";
 import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { GlobalPositionHistoryRecord } from "@/services/api";
 import { getRatingColor } from "@/utils";
 import { positionHistoryColumns, PositionHistoryColumnKey } from "./PositionFilters";
+import { TablePagination } from "@/components/TablePagination";
 
 // 每页显示条数选项
 const ROWS_PER_PAGE_OPTIONS = [10, 20, 50, 100];
@@ -35,7 +32,6 @@ export function PositionsTable({ positions, loading, visibleColumns, sortDescrip
   // 分页状态
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE);
-  const [jumpPage, setJumpPage] = useState('');
 
   // 计算分页数据
   const totalCount = positions.length;
@@ -132,20 +128,12 @@ export function PositionsTable({ positions, loading, visibleColumns, sortDescrip
     return sortedPositions.slice(start, end);
   }, [sortedPositions, page, rowsPerPage]);
 
-  // 处理每页条数变化
-  const handleRowsPerPageChange = (value: string) => {
-    setRowsPerPage(Number(value));
-    setPage(1);
-  };
 
-  // 处理跳转页码
-  const handleJumpPage = () => {
-    const pageNum = parseInt(jumpPage);
-    if (pageNum >= 1 && pageNum <= totalPages) {
-      setPage(pageNum);
-      setJumpPage('');
-    }
-  };
+  // 处理每页条数变化
+  const handleRowsPerPageChange = useCallback((value: number) => {
+    setRowsPerPage(value);
+    setPage(1);
+  }, []);
 
   const formatTime = (timeStr: string | null) => {
     if (!timeStr) return "-";
@@ -269,60 +257,17 @@ export function PositionsTable({ positions, loading, visibleColumns, sortDescrip
     if (totalCount === 0) return null;
     
     return (
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-3 px-2">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-default-500">
-            显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-default-500">每页</span>
-            <Select
-              size="sm"
-              className="w-20"
-              selectedKeys={[String(rowsPerPage)]}
-              onChange={(e) => handleRowsPerPageChange(e.target.value)}
-              aria-label="每页显示条数"
-            >
-              {ROWS_PER_PAGE_OPTIONS.map((option) => (
-                <SelectItem key={String(option)} textValue={String(option)}>
-                  {option}
-                </SelectItem>
-              ))}
-            </Select>
-            <span className="text-sm text-default-500">条</span>
-          </div>
-        </div>
-        
-        {totalPages > 1 && (
-          <div className="flex items-center gap-3">
-            <Pagination
-              isCompact
-              showControls
-              showShadow
-              color="primary"
-              page={page}
-              total={totalPages}
-              onChange={setPage}
-            />
-            <div className="flex items-center gap-1">
-              <span className="text-sm text-default-500">跳转</span>
-              <Input
-                type="number"
-                size="sm"
-                className="w-16"
-                min={1}
-                max={totalPages}
-                value={jumpPage}
-                onValueChange={setJumpPage}
-                onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
-              />
-              <span className="text-sm text-default-500">页</span>
-            </div>
-          </div>
-        )}
-      </div>
+      <TablePagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        totalCount={totalCount}
+        rowsPerPage={rowsPerPage}
+        rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
+        onRowsPerPageChange={handleRowsPerPageChange}
+      />
     );
-  }, [page, totalPages, totalCount, rowsPerPage, jumpPage]);
+  }, [page, totalPages, totalCount, rowsPerPage, handleRowsPerPageChange]);
 
   return (
     <Table

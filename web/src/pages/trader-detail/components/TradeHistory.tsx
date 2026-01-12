@@ -4,8 +4,6 @@ import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { Button } from '@heroui/button';
 import { Spinner } from '@heroui/spinner';
-import { Pagination } from '@heroui/pagination';
-import { Input } from '@heroui/input';
 import {
   Dropdown,
   DropdownTrigger,
@@ -14,6 +12,7 @@ import {
 } from '@heroui/dropdown';
 import { Select, SelectItem } from '@heroui/select';
 import { TimeRangeFilter } from '@/components/TimeRangeFilter';
+import { TablePagination } from '@/components/TablePagination';
 import {
   Table,
   TableHeader,
@@ -101,7 +100,6 @@ export function TradeHistory({
 }: TradeHistoryProps) {
   const [searchValue, setSearchValue] = useState('');
   const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
-  const [jumpPage, setJumpPage] = useState('');
 
   const formatNumber = (num: number, decimals = 2) => {
     return num.toLocaleString('en-US', {
@@ -218,15 +216,6 @@ export function TradeHistory({
     if (timeRangeFilter !== 'all') count++;
     return count;
   }, [selectedCoin, pnlFilter, tradeTypeFilter, searchValue, timeRangeFilter]);
-
-  // 页码跳转
-  const handleJumpPage = () => {
-    const pageNum = parseInt(jumpPage);
-    if (pageNum >= 1 && pageNum <= totalPages) {
-      onPageChange(pageNum);
-      setJumpPage('');
-    }
-  };
 
   // 表格顶部内容
   const topContent = useMemo(() => {
@@ -425,38 +414,15 @@ export function TradeHistory({
   // 表格底部内容
   const bottomContent = useMemo(() => {
     return (
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 py-2">
-        <span className="text-sm text-gray-500">
-          显示 {Math.min((page - 1) * rowsPerPage + 1, totalCount)} - {Math.min(page * rowsPerPage, totalCount)} 条，共 {totalCount} 条记录
-        </span>
-        <div className="flex items-center gap-3">
-          <Pagination
-            isCompact
-            showControls
-            showShadow
-            color="primary"
-            page={page}
-            total={totalPages}
-            onChange={onPageChange}
-          />
-          <div className="flex items-center gap-1">
-            <span className="text-sm text-gray-500">跳转</span>
-            <Input
-              type="number"
-              size="sm"
-              className="w-16"
-              min={1}
-              max={totalPages}
-              value={jumpPage}
-              onValueChange={setJumpPage}
-              onKeyDown={(e) => e.key === 'Enter' && handleJumpPage()}
-            />
-            <span className="text-sm text-gray-500">页</span>
-          </div>
-        </div>
-      </div>
+      <TablePagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={onPageChange}
+        totalCount={totalCount}
+        rowsPerPage={rowsPerPage}
+      />
     );
-  }, [page, totalPages, totalCount, rowsPerPage, jumpPage, onPageChange]);
+  }, [page, totalPages, totalCount, rowsPerPage, onPageChange]);
 
   return (
     <Card className="mt-6">
