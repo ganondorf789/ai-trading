@@ -11,6 +11,7 @@ import PositionHistoryPage from "@/pages/position-history";
 import GroupComparisonPage from "@/pages/group-comparison";
 import RiskControlPage from "@/pages/risk-control";
 import BestSTradersPage from "@/pages/best-s-traders";
+import PositionTrackingPage from "@/pages/position-tracking";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
       <Route element={<PositionHistoryPage />} path="/position-history" />
       <Route element={<GroupComparisonPage />} path="/group-comparison" />
       <Route element={<RiskControlPage />} path="/risk-control" />
+      <Route element={<PositionTrackingPage />} path="/position-tracking" />
     </Routes>
   );
 }

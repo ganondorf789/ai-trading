@@ -1,5 +1,5 @@
 export type SiteConfig = typeof siteConfig;
-
+ 
 export const siteConfig = {
   name: "Vite + HeroUI",
   description: "Make beautiful websites regardless of your design experience.",
@@ -35,6 +35,10 @@ export const siteConfig = {
     {
       label: "Position States",
       href: "/positions",
+    },
+    {
+      label: "Position Tracking",
+      href: "/position-tracking",
     },
     {
       label: "Risk Control",
