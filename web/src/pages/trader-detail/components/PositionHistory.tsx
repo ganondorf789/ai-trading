@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { Selection, SortDescriptor } from '@heroui/react';
+import type { Selection, SortDescriptor, DateValue, RangeValue } from '@heroui/react';
 import { Card, CardHeader, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
 import { Button } from '@heroui/button';
@@ -8,7 +8,7 @@ import { Select, SelectItem } from '@heroui/select';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
 import { Tabs, Tab } from '@heroui/tabs';
-import { addToast, Autocomplete, AutocompleteItem } from '@heroui/react';
+import { addToast, Autocomplete, AutocompleteItem, DateRangePicker } from '@heroui/react';
 import {
   Dropdown,
   DropdownTrigger,
@@ -84,8 +84,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
-  const [customStartDate, setCustomStartDate] = useState<string>('');
-  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
 
   // 排序和列可见性
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
@@ -106,9 +105,16 @@ export function PositionHistory({ address }: PositionHistoryProps) {
       return { startTime: undefined, endTime: undefined };
     }
     if (timeRangeFilter === 'custom') {
+      if (!dateRange) {
+        return { startTime: undefined, endTime: undefined };
+      }
+      // 格式化为 YYYY-MM-DD 字符串
+      const formatDateValue = (d: DateValue) =>
+        `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+
       return {
-        startTime: customStartDate || undefined,
-        endTime: customEndDate ? `${customEndDate}T23:59:59` : undefined,
+        startTime: dateRange.start ? formatDateValue(dateRange.start) : undefined,
+        endTime: dateRange.end ? `${formatDateValue(dateRange.end)}T23:59:59` : undefined,
       };
     }
     // 预设时间范围
@@ -119,7 +125,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
       startTime: start.toISOString(),
       endTime: undefined,
     };
-  }, [timeRangeFilter, customStartDate, customEndDate]);
+  }, [timeRangeFilter, dateRange]);
 
   // 获取币种选项
   const coinOptions = useMemo(() => {
@@ -133,8 +139,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
     setStatusFilter('all');
     setPnlFilter('all');
     setTimeRangeFilter('all');
-    setCustomStartDate('');
-    setCustomEndDate('');
+    setDateRange(null);
     setPage(1);
   };
 
@@ -482,22 +487,12 @@ export function PositionHistory({ address }: PositionHistoryProps) {
               {/* 自定义时间范围 */}
               {timeRangeFilter === 'custom' && (
                 <div className="flex items-center gap-2 shrink-0">
-                  <Input
-                    type="date"
-                    size="sm"
-                    className="w-36"
-                    aria-label="开始日期"
-                    value={customStartDate}
-                    onValueChange={setCustomStartDate}
-                  />
-                  <span className="text-gray-400">-</span>
-                  <Input
-                    type="date"
-                    size="sm"
-                    className="w-36"
-                    aria-label="结束日期"
-                    value={customEndDate}
-                    onValueChange={setCustomEndDate}
+                  <DateRangePicker
+                    className="w-auto"
+                    aria-label="自定义日期范围"
+                    value={dateRange}
+                    onChange={setDateRange}
+                    visibleMonths={2}
                   />
                 </div>
               )}
@@ -507,7 +502,6 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                 <Button
                   variant="flat"
                   color="warning"
-                  size="sm"
                   startContent={<Icon icon="solar:restart-linear" width={16} />}
                   onPress={handleResetFilters}
                 >
