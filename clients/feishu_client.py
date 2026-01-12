@@ -19,12 +19,10 @@ import requests
 # 尝试导入飞书 SDK（用于长连接回调）
 try:
     import lark_oapi as lark
-    from lark_oapi.api.im.v1 import P2CardActionTriggerData
     LARK_SDK_AVAILABLE = True
 except ImportError:
     LARK_SDK_AVAILABLE = False
     lark = None
-    P2CardActionTriggerData = None
 
 
 class CardActionType(Enum):

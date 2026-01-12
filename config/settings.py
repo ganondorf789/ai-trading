@@ -84,7 +84,7 @@ class FeishuSettings(BaseSettings):
     default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
     
     # 长连接回调配置
-    callback_enabled: bool = Field(default=False, description="是否启用长连接回调")
+    callback_enabled: bool = Field(default=True, description="是否启用长连接回调")
     callback_push_url: str = Field(default="", description="回调事件推送的目标 URL")
     callback_log_level: str = Field(default="INFO", description="长连接日志级别")
 

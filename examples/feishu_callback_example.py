@@ -6,13 +6,20 @@
 2. 发送带交互按钮的卡片
 3. 注册自定义处理器处理特定按钮点击
 """
+import sys
+import os
 import time
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from clients.feishu_client import (
     FeishuClient,
     FeishuCallbackClient,
     CardActionEvent,
     create_callback_client_from_settings
 )
+from config.settings import settings
 
 
 # ============================================================
@@ -22,9 +29,9 @@ from clients.feishu_client import (
 def send_trading_card_example():
     """发送跟单确认卡片示例"""
     client = FeishuClient(
-        app_id="your_app_id",
-        app_secret="your_app_secret",
-        default_user_id="ou_xxxxx"  # 用户的 open_id
+        app_id=settings.feishu.app_id,
+        app_secret=settings.feishu.app_secret,
+        default_user_id=settings.feishu.default_user_id
     )
     
     # 发送带按钮的交互卡片
@@ -111,12 +118,12 @@ def handle_ignore_position(event: CardActionEvent):
 
 def start_callback_server():
     """启动长连接回调服务"""
-    # 方式 1: 直接创建客户端
+    # 从配置创建客户端
     callback_client = FeishuCallbackClient(
-        app_id="your_app_id",
-        app_secret="your_app_secret",
-        push_url="http://localhost:8080/feishu/callback",  # 推送到本地服务
-        log_level="DEBUG"
+        app_id=settings.feishu.app_id,
+        app_secret=settings.feishu.app_secret,
+        push_url=settings.feishu.callback_push_url,
+        log_level=settings.feishu.callback_log_level
     )
     
     # 注册处理器
