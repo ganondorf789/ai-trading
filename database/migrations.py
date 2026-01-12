@@ -651,3 +651,8 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
         )
+
+        # 添加 sync_position_symbols 字段到 copy_trading_addresses 表（同步仓位的币种列表）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'sync_position_symbols', "TEXT DEFAULT '[]'"
+        )

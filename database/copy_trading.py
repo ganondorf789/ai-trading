@@ -205,6 +205,10 @@ class CopyTradingOps:
                     item['symbols_blacklist'] = json.loads(item.get('symbols_blacklist') or '[]')
                 except:
                     item['symbols_blacklist'] = []
+                try:
+                    item['sync_position_symbols'] = json.loads(item.get('sync_position_symbols') or '[]')
+                except:
+                    item['sync_position_symbols'] = []
                 results.append(item)
 
             return results, total_count
@@ -253,6 +257,10 @@ class CopyTradingOps:
                 item['symbols_blacklist'] = json.loads(item.get('symbols_blacklist') or '[]')
             except:
                 item['symbols_blacklist'] = []
+            try:
+                item['sync_position_symbols'] = json.loads(item.get('sync_position_symbols') or '[]')
+            except:
+                item['sync_position_symbols'] = []
             return item
 
     def save_copy_trading_address(self, data: Dict) -> int:
@@ -271,10 +279,13 @@ class CopyTradingOps:
             # 处理 JSON 字段
             whitelist = data.get('symbols_whitelist', [])
             blacklist = data.get('symbols_blacklist', [])
+            sync_position_symbols = data.get('sync_position_symbols', [])
             if isinstance(whitelist, list):
                 whitelist = json.dumps(whitelist)
             if isinstance(blacklist, list):
                 blacklist = json.dumps(blacklist)
+            if isinstance(sync_position_symbols, list):
+                sync_position_symbols = json.dumps(sync_position_symbols)
 
             cursor.execute("""
                 INSERT INTO copy_trading_addresses (
@@ -283,8 +294,8 @@ class CopyTradingOps:
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
-                    check_interval, dry_run, sync_position, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    check_interval, dry_run, sync_position, sync_position_symbols, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
                     name = EXCLUDED.name,
                     group_id = EXCLUDED.group_id,
@@ -303,6 +314,7 @@ class CopyTradingOps:
                     check_interval = EXCLUDED.check_interval,
                     dry_run = EXCLUDED.dry_run,
                     sync_position = EXCLUDED.sync_position,
+                    sync_position_symbols = EXCLUDED.sync_position_symbols,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
@@ -324,6 +336,7 @@ class CopyTradingOps:
                 data.get('check_interval', 10.0),
                 data.get('dry_run', True),
                 data.get('sync_position', True),
+                sync_position_symbols,
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 

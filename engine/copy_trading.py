@@ -108,6 +108,7 @@ class CopyTradingConfig:
     max_position_size_usd: float = 1000.0  # 单个仓位最大价值
     min_position_size_usd: float = 10.0  # 最小仓位价值（过滤小仓位）
     sync_position: bool = True  # 是否同步现有仓位
+    sync_position_symbols: List[str] = field(default_factory=list)  # 同步仓位的币种（空表示全部）
 
     # 白名单/黑名单
     symbols_whitelist: List[str] = field(default_factory=list)  # 只跟单这些币
@@ -533,6 +534,7 @@ class MultiTargetCopyTradingBot:
             max_position_size_usd=data.get('max_position_size_usd', 100.0),
             min_position_size_usd=data.get('min_position_size_usd', 20.0),
             sync_position=data.get('sync_position', True),
+            sync_position_symbols=data.get('sync_position_symbols', []),
             symbols_whitelist=data.get('symbols_whitelist', []),
             symbols_blacklist=data.get('symbols_blacklist', []),
             copy_leverage=data.get('copy_leverage', True),
@@ -975,6 +977,10 @@ class MultiTargetCopyTradingBot:
             logger.info(f"[{address[:8]}] 开始同步现有仓位...")
             for symbol, target_pos in target_positions.items():
                 if not self._should_copy_symbol(config, symbol):
+                    continue
+                # 检查是否在同步仓位币种列表中（空列表表示同步全部）
+                if config.sync_position_symbols and symbol not in config.sync_position_symbols:
+                    logger.debug(f"[{address[:8]}] 跳过同步（不在同步币种列表中）: {symbol}")
                     continue
                 if target_pos['notional'] < config.min_position_size_usd:
                     continue

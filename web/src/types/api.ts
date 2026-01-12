@@ -319,6 +319,7 @@ export interface CopyTradingAddress {
   check_interval: number;
   dry_run: boolean;
   sync_position: boolean;
+  sync_position_symbols: string[];
   // 时间戳
   created_at: string;
   updated_at: string;
@@ -612,5 +613,6 @@ export interface DefaultCopyTradingConfig {
   // 功能开关
   copy_leverage: boolean;
   sync_position: boolean;
+  sync_position_symbols: string[];
   dry_run: boolean;
 }

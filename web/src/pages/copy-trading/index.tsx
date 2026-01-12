@@ -88,6 +88,7 @@ export default function CopyTradingPage() {
     check_interval: 10,
     dry_run: true,
     sync_position: true,
+    sync_position_symbols: [],
   });
 
   // 分组表单
@@ -212,6 +213,7 @@ export default function CopyTradingPage() {
         check_interval: address.check_interval,
         dry_run: address.dry_run,
         sync_position: address.sync_position ?? true,
+        sync_position_symbols: address.sync_position_symbols || [],
       });
     } else {
       setEditingAddress(null);
@@ -234,6 +236,7 @@ export default function CopyTradingPage() {
         check_interval: 10,
         dry_run: true,
         sync_position: true,
+        sync_position_symbols: [],
       });
     }
     setIsAddModalOpen(true);

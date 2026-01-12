@@ -927,6 +927,8 @@ def update_default_copy_config():
             config['symbols_whitelist'] = data['symbols_whitelist'] if isinstance(data['symbols_whitelist'], list) else []
         if 'symbols_blacklist' in data:
             config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
+        if 'sync_position_symbols' in data:
+            config['sync_position_symbols'] = data['sync_position_symbols'] if isinstance(data['sync_position_symbols'], list) else []
 
         success = db.save_default_copy_config(config)
         if success:
