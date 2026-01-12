@@ -233,16 +233,21 @@ class TraderScreener:
                         new_coin_set = new_coins - old_coins
                         if new_coin_set:
                             logger.info(f"检测到 {len(new_coin_set)} 个新仓位: {short_address(address)}")
-                            # 发送飞书通知
-                            for pos in new_positions:
-                                if pos['coin'] in new_coin_set:
-                                    rating = metrics.rating.value if metrics else None
-                                    score = metrics.overall_score if metrics else None
-                                    success = self._notifier.notify_new_position(
-                                        address, pos, rating=rating, score=score
-                                    )
-                                    if success:
-                                        logger.info(f"已发送新仓位通知: {short_address(address)} - {pos['coin']}")
+                            # 检查交易员是否在跟单列表中，只有不在跟单列表中才发送通知
+                            is_in_copy_list = self._db.get_copy_trading_address(address) is not None
+                            if is_in_copy_list:
+                                logger.info(f"跳过通知（交易员在跟单列表中）: {short_address(address)}")
+                            else:
+                                # 发送飞书通知
+                                for pos in new_positions:
+                                    if pos['coin'] in new_coin_set:
+                                        rating = metrics.rating.value if metrics else None
+                                        score = metrics.overall_score if metrics else None
+                                        success = self._notifier.notify_new_position(
+                                            address, pos, rating=rating, score=score
+                                        )
+                                        if success:
+                                            logger.info(f"已发送新仓位通知: {short_address(address)} - {pos['coin']}")
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
