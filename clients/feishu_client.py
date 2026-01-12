@@ -1,11 +1,77 @@
 """
 飞书机器人客户端
 用于发送交易通知到飞书
+
+支持功能：
+1. 企业自建应用消息发送
+2. 自定义机器人 Webhook
+3. 长连接接收用户交互回调（卡片按钮点击等）
 """
 import json
 import time
-from typing import Optional
+import logging
+import threading
+from typing import Optional, Callable, Dict, Any, List
+from dataclasses import dataclass, field
+from enum import Enum
 import requests
+
+# 尝试导入飞书 SDK（用于长连接回调）
+try:
+    import lark_oapi as lark
+    from lark_oapi.api.im.v1 import P2CardActionTriggerData
+    LARK_SDK_AVAILABLE = True
+except ImportError:
+    LARK_SDK_AVAILABLE = False
+    lark = None
+    P2CardActionTriggerData = None
+
+
+class CardActionType(Enum):
+    """卡片交互动作类型"""
+    BUTTON_CLICK = "button"          # 按钮点击
+    SELECT_CHANGE = "select"         # 下拉选择变更
+    DATE_PICKER = "date_picker"      # 日期选择
+    INPUT = "input"                  # 输入框
+    OVERFLOW = "overflow"            # 折叠按钮组
+    UNKNOWN = "unknown"              # 未知类型
+
+
+@dataclass
+class CardActionEvent:
+    """卡片交互事件数据"""
+    action_type: CardActionType           # 动作类型
+    action_tag: str                       # 动作标识（按钮的 action_tag）
+    action_value: Dict[str, Any]          # 动作携带的值
+    user_id: str                          # 用户 open_id
+    user_name: str = ""                   # 用户名称
+    message_id: str = ""                  # 消息 ID
+    chat_id: str = ""                     # 会话 ID
+    chat_type: str = ""                   # 会话类型 (p2p/group)
+    tenant_key: str = ""                  # 租户 key
+    token: str = ""                       # 用于响应的 token
+    timestamp: int = 0                    # 事件时间戳
+    raw_event: Dict[str, Any] = field(default_factory=dict)  # 原始事件数据
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "action_type": self.action_type.value,
+            "action_tag": self.action_tag,
+            "action_value": self.action_value,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "message_id": self.message_id,
+            "chat_id": self.chat_id,
+            "chat_type": self.chat_type,
+            "tenant_key": self.tenant_key,
+            "token": self.token,
+            "timestamp": self.timestamp,
+        }
+
+
+# 回调处理函数类型
+CardActionHandler = Callable[[CardActionEvent], Optional[Dict[str, Any]]]
 
 
 class FeishuClient:
@@ -230,6 +296,172 @@ class FeishuClient:
 
         except Exception as e:
             print(f"Feishu Card: Error - {e}")
+            return False
+
+    def send_interactive_card(
+        self,
+        title: str,
+        content: str,
+        buttons: List[Dict[str, Any]] = None,
+        color: str = "blue",
+        user_id: str = None
+    ) -> bool:
+        """
+        发送带交互按钮的卡片消息（通过应用 API 发送，支持回调）
+
+        Args:
+            title: 卡片标题
+            content: 卡片内容（支持 Markdown）
+            buttons: 按钮列表，每个按钮为字典：
+                - text: 按钮文本
+                - action_tag: 动作标识（回调时会返回）
+                - value: 附加数据（回调时会返回）
+                - type: 按钮类型 (default/primary/danger)
+            color: 标题颜色（blue/green/red/orange）
+            user_id: 接收者 open_id（通过应用发送时必需）
+
+        Returns:
+            是否发送成功
+            
+        Example:
+            ```python
+            client.send_interactive_card(
+                title="确认跟单",
+                content="**币种**: BTC\\n**方向**: 做多",
+                buttons=[
+                    {"text": "确认", "action_tag": "confirm_copy", "value": {"coin": "BTC"}, "type": "primary"},
+                    {"text": "取消", "action_tag": "cancel_copy", "type": "danger"}
+                ]
+            )
+            ```
+        """
+        color_map = {
+            "blue": "blue",
+            "green": "green", 
+            "red": "red",
+            "orange": "orange"
+        }
+        header_color = color_map.get(color, "blue")
+
+        # 构建卡片元素
+        elements = [
+            {
+                "tag": "markdown",
+                "content": content
+            }
+        ]
+
+        # 添加按钮
+        if buttons:
+            button_elements = []
+            for btn in buttons:
+                btn_type = btn.get("type", "default")
+                btn_color_map = {
+                    "primary": "primary",
+                    "danger": "danger",
+                    "default": "default"
+                }
+                
+                # 构建按钮的 value（包含 action_tag 以便回调识别）
+                btn_value = {
+                    "action_tag": btn.get("action_tag", ""),
+                    **(btn.get("value", {}) if isinstance(btn.get("value"), dict) else {})
+                }
+                
+                button_elements.append({
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": btn.get("text", "按钮")
+                    },
+                    "type": btn_color_map.get(btn_type, "default"),
+                    "value": btn_value
+                })
+            
+            # 添加按钮行
+            elements.append({
+                "tag": "action",
+                "actions": button_elements
+            })
+
+        card = {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": title
+                },
+                "template": header_color
+            },
+            "elements": elements
+        }
+
+        # 如果通过应用 API 发送
+        recipient = user_id or self.default_user_id
+        if recipient and self.app_id and self.app_secret:
+            return self._send_card_via_api(card, recipient)
+        
+        # 否则通过 Webhook 发送
+        if self.webhook_url:
+            return self._send_card_via_webhook(card)
+        
+        print("Feishu: No send method available")
+        return False
+
+    def _send_card_via_api(self, card: Dict[str, Any], user_id: str) -> bool:
+        """通过应用 API 发送卡片"""
+        headers = self._get_headers()
+        if not headers:
+            return False
+
+        try:
+            url = f"{self.base_url}/im/v1/messages"
+            params = {"receive_id_type": "open_id"}
+
+            payload = {
+                "receive_id": user_id,
+                "msg_type": "interactive",
+                "content": json.dumps(card)
+            }
+
+            response = self.session.post(
+                url, headers=headers, params=params,
+                data=json.dumps(payload), timeout=10
+            )
+            result = response.json()
+
+            if result.get("code") == 0:
+                return True
+            else:
+                print(f"Feishu API Card: Failed - {result.get('msg')}")
+                return False
+
+        except Exception as e:
+            print(f"Feishu API Card: Error - {e}")
+            return False
+
+    def _send_card_via_webhook(self, card: Dict[str, Any]) -> bool:
+        """通过 Webhook 发送卡片"""
+        try:
+            payload = {
+                "msg_type": "interactive",
+                "card": card
+            }
+
+            response = self.session.post(
+                self.webhook_url,
+                json=payload,
+                timeout=10
+            )
+            result = response.json()
+
+            if result.get("code") == 0 or result.get("StatusCode") == 0:
+                return True
+            else:
+                print(f"Feishu Webhook Card: Failed - {result}")
+                return False
+
+        except Exception as e:
+            print(f"Feishu Webhook Card: Error - {e}")
             return False
 
     def send(self, text: str, user_id: str = None) -> bool:
@@ -574,3 +806,435 @@ class CopyTradingNotifier:
             msg += f"开仓时间: {open_time_str}"
 
             return self.feishu.send(msg)
+
+
+class FeishuCallbackClient:
+    """
+    飞书长连接回调客户端
+    
+    通过 WebSocket 长连接接收用户交互事件（如卡片按钮点击），
+    并将事件推送到配置的目标 URL。
+    
+    使用方式：
+    ```python
+    callback_client = FeishuCallbackClient(
+        app_id="your_app_id",
+        app_secret="your_app_secret",
+        push_url="http://your-server/callback"
+    )
+    
+    # 注册自定义处理器（可选）
+    callback_client.register_handler("copy_trade", handle_copy_trade)
+    
+    # 启动长连接（阻塞模式）
+    callback_client.start()
+    
+    # 或者后台启动（非阻塞）
+    callback_client.start_background()
+    ```
+    """
+    
+    def __init__(
+        self,
+        app_id: str,
+        app_secret: str,
+        push_url: str = "",
+        log_level: str = "INFO"
+    ):
+        """
+        初始化长连接回调客户端
+        
+        Args:
+            app_id: 飞书应用 App ID
+            app_secret: 飞书应用 App Secret
+            push_url: 回调事件推送的目标 URL
+            log_level: 日志级别
+        """
+        if not LARK_SDK_AVAILABLE:
+            raise ImportError(
+                "lark-oapi SDK 未安装。请运行: pip install lark-oapi"
+            )
+        
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.push_url = push_url
+        self.log_level = log_level
+        
+        # 配置日志
+        self.logger = logging.getLogger("FeishuCallback")
+        self.logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(
+                logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            )
+            self.logger.addHandler(handler)
+        
+        # 自定义处理器 {action_tag: handler}
+        self._handlers: Dict[str, CardActionHandler] = {}
+        
+        # 全局处理器列表（对所有事件触发）
+        self._global_handlers: List[CardActionHandler] = []
+        
+        # WebSocket 客户端
+        self._ws_client = None
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        
+        # HTTP Session for pushing events
+        self._session = requests.Session()
+    
+    def register_handler(
+        self, 
+        action_tag: str, 
+        handler: CardActionHandler
+    ) -> "FeishuCallbackClient":
+        """
+        注册特定 action_tag 的处理器
+        
+        Args:
+            action_tag: 卡片按钮的 action_tag 标识
+            handler: 处理函数，接收 CardActionEvent，返回可选的响应卡片
+            
+        Returns:
+            self，支持链式调用
+        """
+        self._handlers[action_tag] = handler
+        self.logger.info(f"已注册处理器: {action_tag}")
+        return self
+    
+    def register_global_handler(
+        self, 
+        handler: CardActionHandler
+    ) -> "FeishuCallbackClient":
+        """
+        注册全局处理器（对所有事件触发）
+        
+        Args:
+            handler: 处理函数
+            
+        Returns:
+            self，支持链式调用
+        """
+        self._global_handlers.append(handler)
+        self.logger.info("已注册全局处理器")
+        return self
+    
+    def _parse_card_action(self, event_data: Any) -> CardActionEvent:
+        """
+        解析卡片交互事件
+        
+        Args:
+            event_data: 飞书 SDK 的事件数据
+            
+        Returns:
+            CardActionEvent 对象
+        """
+        try:
+            # 获取事件数据
+            if hasattr(event_data, 'event'):
+                event = event_data.event
+            else:
+                event = event_data
+            
+            # 解析 action
+            action = {}
+            action_tag = ""
+            action_value = {}
+            action_type = CardActionType.UNKNOWN
+            
+            if hasattr(event, 'action'):
+                action = event.action
+                if hasattr(action, 'tag'):
+                    tag = action.tag
+                    if tag == "button":
+                        action_type = CardActionType.BUTTON_CLICK
+                    elif tag == "select_static" or tag == "select_person":
+                        action_type = CardActionType.SELECT_CHANGE
+                    elif tag == "date_picker":
+                        action_type = CardActionType.DATE_PICKER
+                    elif tag == "input":
+                        action_type = CardActionType.INPUT
+                    elif tag == "overflow":
+                        action_type = CardActionType.OVERFLOW
+                
+                if hasattr(action, 'value'):
+                    # value 可能是字典或字符串
+                    raw_value = action.value
+                    if isinstance(raw_value, str):
+                        try:
+                            action_value = json.loads(raw_value)
+                        except json.JSONDecodeError:
+                            action_value = {"value": raw_value}
+                    elif isinstance(raw_value, dict):
+                        action_value = raw_value
+                    else:
+                        action_value = {"value": str(raw_value)}
+                    
+                    # 提取 action_tag
+                    action_tag = action_value.get("action_tag", "")
+            
+            # 解析用户信息
+            user_id = ""
+            user_name = ""
+            if hasattr(event, 'operator'):
+                operator = event.operator
+                if hasattr(operator, 'open_id'):
+                    user_id = operator.open_id
+                if hasattr(operator, 'user_id'):
+                    user_id = user_id or operator.user_id
+            
+            # 解析会话信息
+            message_id = ""
+            chat_id = ""
+            chat_type = ""
+            if hasattr(event, 'context'):
+                context = event.context
+                if hasattr(context, 'open_message_id'):
+                    message_id = context.open_message_id
+                if hasattr(context, 'open_chat_id'):
+                    chat_id = context.open_chat_id
+            
+            # token
+            token = ""
+            if hasattr(event, 'token'):
+                token = event.token
+            
+            # tenant_key
+            tenant_key = ""
+            if hasattr(event_data, 'header') and hasattr(event_data.header, 'tenant_key'):
+                tenant_key = event_data.header.tenant_key
+            
+            return CardActionEvent(
+                action_type=action_type,
+                action_tag=action_tag,
+                action_value=action_value,
+                user_id=user_id,
+                user_name=user_name,
+                message_id=message_id,
+                chat_id=chat_id,
+                chat_type=chat_type,
+                tenant_key=tenant_key,
+                token=token,
+                timestamp=int(time.time() * 1000),
+                raw_event=self._event_to_dict(event_data)
+            )
+            
+        except Exception as e:
+            self.logger.error(f"解析卡片事件失败: {e}")
+            return CardActionEvent(
+                action_type=CardActionType.UNKNOWN,
+                action_tag="",
+                action_value={},
+                user_id="",
+                timestamp=int(time.time() * 1000),
+                raw_event={}
+            )
+    
+    def _event_to_dict(self, event_data: Any) -> Dict[str, Any]:
+        """将事件对象转换为字典"""
+        try:
+            if hasattr(event_data, '__dict__'):
+                return {k: str(v) for k, v in event_data.__dict__.items() 
+                        if not k.startswith('_')}
+            return {"raw": str(event_data)}
+        except:
+            return {}
+    
+    def _push_event(self, event: CardActionEvent) -> bool:
+        """
+        推送事件到配置的 URL
+        
+        Args:
+            event: 卡片交互事件
+            
+        Returns:
+            是否推送成功
+        """
+        if not self.push_url:
+            self.logger.debug("未配置推送 URL，跳过推送")
+            return False
+        
+        try:
+            payload = {
+                "event_type": "card_action",
+                "timestamp": event.timestamp,
+                "data": event.to_dict()
+            }
+            
+            response = self._session.post(
+                self.push_url,
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                self.logger.info(
+                    f"事件推送成功: action_tag={event.action_tag}, "
+                    f"user_id={event.user_id}"
+                )
+                return True
+            else:
+                self.logger.warning(
+                    f"事件推送失败: status={response.status_code}, "
+                    f"response={response.text[:200]}"
+                )
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"事件推送异常: {e}")
+            return False
+    
+    def _handle_card_action(self, data: Any) -> Optional[Any]:
+        """
+        处理卡片交互回调
+        
+        Args:
+            data: 飞书推送的事件数据
+            
+        Returns:
+            响应数据（可选，用于更新卡片）
+        """
+        self.logger.debug(f"收到卡片交互事件")
+        
+        # 解析事件
+        event = self._parse_card_action(data)
+        
+        self.logger.info(
+            f"卡片交互: type={event.action_type.value}, "
+            f"tag={event.action_tag}, user={event.user_id}"
+        )
+        
+        # 推送事件到配置的 URL
+        self._push_event(event)
+        
+        # 调用全局处理器
+        response_card = None
+        for handler in self._global_handlers:
+            try:
+                result = handler(event)
+                if result:
+                    response_card = result
+            except Exception as e:
+                self.logger.error(f"全局处理器执行失败: {e}")
+        
+        # 调用特定 action_tag 的处理器
+        if event.action_tag and event.action_tag in self._handlers:
+            try:
+                result = self._handlers[event.action_tag](event)
+                if result:
+                    response_card = result
+            except Exception as e:
+                self.logger.error(
+                    f"处理器 '{event.action_tag}' 执行失败: {e}"
+                )
+        
+        # 返回响应卡片（如果有）
+        if response_card:
+            return self._build_card_response(response_card)
+        
+        return None
+    
+    def _build_card_response(self, card: Dict[str, Any]) -> Any:
+        """构建卡片响应"""
+        # 返回卡片 JSON 作为响应
+        return card
+    
+    def _build_ws_client(self):
+        """构建 WebSocket 客户端"""
+        # 构建事件处理器
+        event_handler = (
+            lark.EventDispatcherHandler.builder("", "")
+            .register_p2_card_action_trigger(self._handle_card_action)
+            .build()
+        )
+        
+        # 构建 WebSocket 客户端
+        self._ws_client = (
+            lark.ws.Client(self.app_id, self.app_secret, 
+                          event_handler=event_handler,
+                          log_level=lark.LogLevel.DEBUG if self.log_level.upper() == "DEBUG" 
+                                    else lark.LogLevel.INFO)
+        )
+    
+    def start(self):
+        """
+        启动长连接（阻塞模式）
+        
+        注意：此方法会阻塞当前线程
+        """
+        if self._running:
+            self.logger.warning("长连接已在运行中")
+            return
+        
+        self.logger.info("正在启动飞书长连接...")
+        self._running = True
+        
+        try:
+            self._build_ws_client()
+            self._ws_client.start()
+        except KeyboardInterrupt:
+            self.logger.info("收到中断信号，正在停止...")
+        except Exception as e:
+            self.logger.error(f"长连接异常: {e}")
+        finally:
+            self._running = False
+    
+    def start_background(self) -> threading.Thread:
+        """
+        在后台线程启动长连接（非阻塞模式）
+        
+        Returns:
+            运行中的线程对象
+        """
+        if self._running:
+            self.logger.warning("长连接已在运行中")
+            return self._thread
+        
+        self._thread = threading.Thread(
+            target=self.start,
+            name="FeishuCallbackThread",
+            daemon=True
+        )
+        self._thread.start()
+        self.logger.info("飞书长连接已在后台启动")
+        return self._thread
+    
+    def stop(self):
+        """停止长连接"""
+        self._running = False
+        self.logger.info("飞书长连接已停止")
+    
+    @property
+    def is_running(self) -> bool:
+        """是否正在运行"""
+        return self._running
+
+
+def create_callback_client_from_settings() -> Optional[FeishuCallbackClient]:
+    """
+    从配置创建回调客户端
+    
+    Returns:
+        FeishuCallbackClient 实例，如果配置未启用则返回 None
+    """
+    try:
+        from config.settings import settings
+        
+        if not settings.feishu.callback_enabled:
+            return None
+        
+        if not settings.feishu.app_id or not settings.feishu.app_secret:
+            print("Feishu Callback: app_id 或 app_secret 未配置")
+            return None
+        
+        return FeishuCallbackClient(
+            app_id=settings.feishu.app_id,
+            app_secret=settings.feishu.app_secret,
+            push_url=settings.feishu.callback_push_url,
+            log_level=settings.feishu.callback_log_level
+        )
+    except Exception as e:
+        print(f"Feishu Callback: 创建客户端失败 - {e}")
+        return None
