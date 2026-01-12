@@ -10,10 +10,11 @@ import {
   Spinner,
   Tooltip,
   Button,
+  addToast,
 } from "@heroui/react";
 import type { Selection, SortDescriptor } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { TraderPosition } from "@/services/api";
+import { TraderPosition, copyTradingApi } from "@/services/api";
 import { getRatingColor } from "@/utils";
 import { traderPositionColumns, TraderPositionColumnKey } from "./PositionFilters";
 import { TablePagination } from "@/components/TablePagination";
@@ -36,6 +37,7 @@ interface PositionsTableProps {
 
 export function PositionsTable({ positions, loading, onRefreshTrader, onToggleStar, starLoadingAddresses = new Set(), onAIAnalyze, visibleColumns, sortDescriptor, onSortChange }: PositionsTableProps) {
   const [refreshingAddresses, setRefreshingAddresses] = useState<Set<string>>(new Set());
+  const [copyTradingAddresses, setCopyTradingAddresses] = useState<Set<string>>(new Set());
   
   // 分页状态
   const [page, setPage] = useState(1);
@@ -150,6 +152,58 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
       await onRefreshTrader(address);
     } finally {
       setRefreshingAddresses(prev => {
+        const next = new Set(prev);
+        next.delete(address);
+        return next;
+      });
+    }
+  };
+
+  // 处理跟单按钮点击
+  const handleCopyTrading = async (position: TraderPosition) => {
+    const { address, coin, trader_name } = position;
+    
+    if (copyTradingAddresses.has(address)) return;
+    
+    setCopyTradingAddresses(prev => new Set(prev).add(address));
+    try {
+      const response = await copyTradingApi.quickAddAddress({
+        address,
+        name: trader_name || "",
+        sync_position_symbols: [coin],
+      });
+      
+      if (response.success) {
+        addToast({
+          title: "添加成功",
+          description: response.message || `已添加到跟单列表`,
+          color: "success",
+        });
+      } else {
+        addToast({
+          title: response.exists ? "已在跟单列表" : "添加失败",
+          description: response.error || "未知错误",
+          color: response.exists ? "warning" : "danger",
+        });
+      }
+    } catch (error: any) {
+      // 处理 409 Conflict（已存在）
+      if (error?.response?.status === 409) {
+        addToast({
+          title: "已在跟单列表",
+          description: `${trader_name || address.slice(0, 8)} 已在跟单列表中`,
+          color: "warning",
+        });
+      } else {
+        console.error("Quick add copy trading failed:", error);
+        addToast({
+          title: "添加失败",
+          description: error?.response?.data?.error || "操作失败",
+          color: "danger",
+        });
+      }
+    } finally {
+      setCopyTradingAddresses(prev => {
         const next = new Set(prev);
         next.delete(address);
         return next;
@@ -280,24 +334,38 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
         return <span className="text-sm text-default-500">{formatTime(position.updated_at)}</span>;
       case 'actions':
         return (
-          <Tooltip content="刷新持仓">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="light"
-              color="primary"
-              isLoading={refreshingAddresses.has(position.address)}
-              onPress={() => handleRefreshTrader(position.address)}
-              isDisabled={!onRefreshTrader}
-            >
-              <Icon icon="solar:refresh-bold-duotone" width={16} />
-            </Button>
-          </Tooltip>
+          <div className="flex gap-1">
+            <Tooltip content={`跟单 ${position.coin}`}>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                color="success"
+                isLoading={copyTradingAddresses.has(position.address)}
+                onPress={() => handleCopyTrading(position)}
+              >
+                <Icon icon="solar:copy-bold-duotone" width={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="刷新持仓">
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                color="primary"
+                isLoading={refreshingAddresses.has(position.address)}
+                onPress={() => handleRefreshTrader(position.address)}
+                isDisabled={!onRefreshTrader}
+              >
+                <Icon icon="solar:refresh-bold-duotone" width={16} />
+              </Button>
+            </Tooltip>
+          </div>
         );
       default:
         return null;
     }
-  }, [starLoadingAddresses, onToggleStar, refreshingAddresses, onRefreshTrader, handleRefreshTrader]);
+  }, [starLoadingAddresses, onToggleStar, refreshingAddresses, onRefreshTrader, handleRefreshTrader, copyTradingAddresses, handleCopyTrading]);
 
   // 底部分页内容
   const bottomContent = useMemo(() => {
@@ -333,7 +401,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
           <TableColumn
             key={column.uid}
             allowsSorting={column.sortable}
-            width={column.uid === 'star' || column.uid === 'actions' ? 50 : undefined}
+            width={column.uid === 'star' ? 50 : column.uid === 'actions' ? 90 : undefined}
           >
             {column.name}
           </TableColumn>

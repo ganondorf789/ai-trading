@@ -315,6 +315,10 @@ export const copyTradingApi = {
   createAddress: (data: Partial<CopyTradingAddress>) =>
     api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/addresses', data),
 
+  // 快速添加跟单地址（使用默认配置）
+  quickAddAddress: (data: { address: string; name?: string; sync_position_symbols?: string[] }) =>
+    api.post<any, ApiResponse<{ id: number }> & { message?: string; exists?: boolean }>('/copy-trading/addresses/quick-add', data),
+
   // 更新跟单地址
   updateAddress: (address: string, data: Partial<CopyTradingAddress>) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}`, data),

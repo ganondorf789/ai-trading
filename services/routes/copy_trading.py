@@ -228,6 +228,82 @@ def create_copy_trading_address():
         }), 500
 
 
+@copy_trading_bp.route('/api/copy-trading/addresses/quick-add', methods=['POST'])
+def quick_add_copy_trading_address():
+    """
+    快速添加跟单地址（使用默认配置）
+    用于从持仓页面一键添加跟单
+    
+    Request Body:
+        - address: 交易员地址（必需）
+        - name: 名称（可选）
+        - sync_position_symbols: 同步仓位的币种列表（可选，默认空列表表示同步所有）
+    """
+    try:
+        data = request.get_json()
+        if not data or not data.get('address'):
+            return jsonify({
+                'success': False,
+                'error': '地址不能为空'
+            }), 400
+
+        # 验证地址格式
+        address = data['address'].strip()
+        if not address.startswith('0x') or len(address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        # 检查地址是否已存在
+        existing = db.get_copy_trading_address(address)
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': '该交易员已在跟单列表中',
+                'exists': True
+            }), 409  # Conflict
+
+        # 获取默认配置
+        default_config = db.get_default_copy_config()
+        
+        # 构建新地址配置
+        new_address_data = {
+            'address': address,
+            'name': data.get('name', ''),
+            'is_enabled': True,
+            'copy_ratio': default_config.get('copy_ratio', 0.1),
+            'max_position_size_usd': default_config.get('max_position_size_usd', 500),
+            'min_position_size_usd': default_config.get('min_position_size_usd', 20),
+            'copy_leverage': default_config.get('copy_leverage', False),
+            'max_leverage': default_config.get('max_leverage', 10),
+            'default_leverage': default_config.get('default_leverage', 3),
+            'slippage': default_config.get('slippage', 0.001),
+            'symbols_whitelist': default_config.get('symbols_whitelist', []),
+            'symbols_blacklist': default_config.get('symbols_blacklist', []),
+            'sync_position': True,  # 启用同步仓位
+            'sync_position_symbols': data.get('sync_position_symbols', []),  # 同步指定币种
+            'dry_run': default_config.get('dry_run', False),
+        }
+        
+        record_id = db.save_copy_trading_address(new_address_data)
+        
+        sync_symbols = data.get('sync_position_symbols', [])
+        sync_msg = f"，同步币种: {', '.join(sync_symbols)}" if sync_symbols else "（同步所有币种）"
+
+        return jsonify({
+            'success': True,
+            'data': {'id': record_id},
+            'message': f'跟单地址添加成功{sync_msg}'
+        })
+    except Exception as e:
+        logger.error(f"快速添加跟单地址失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @copy_trading_bp.route('/api/copy-trading/addresses/<address>', methods=['PUT'])
 def update_copy_trading_address(address: str):
     """更新跟单地址配置"""
