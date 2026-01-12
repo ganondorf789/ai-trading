@@ -27,7 +27,7 @@ from hyperliquid.utils import constants
 
 from database import TraderDatabase
 from screener.api_client import SyncAPIClient, APIConfig
-from clients.feishu_client import FeishuClient
+from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
 
 
@@ -145,67 +145,11 @@ def format_position_direction(szi: float) -> tuple[str, str]:
         return "做空", "🔴"
 
 
-def send_new_position_notification(
-    feishu: FeishuClient,
-    address: str,
-    position: Dict,
-    trader_name: str = None
-) -> bool:
-    """
-    发送新仓位通知
-    
-    Args:
-        feishu: 飞书客户端
-        address: 交易员地址
-        position: 仓位数据
-        trader_name: 交易员名称（可选）
-    
-    Returns:
-        是否发送成功
-    """
-    coin = position.get('coin', 'Unknown')
-    szi = float(position.get('szi', 0))
-    entry_px = float(position.get('entry_px', 0))
-    position_value = abs(float(position.get('position_value', 0)))
-    leverage_value = int(position.get('leverage_value', 1))
-    open_time = position.get('open_time', '')
-    
-    direction, emoji = format_position_direction(szi)
-    
-    # 格式化开仓时间
-    open_time_str = "未知"
-    if open_time:
-        try:
-            # 尝试解析ISO格式时间
-            if isinstance(open_time, str):
-                open_time_str = open_time[:19].replace('T', ' ')
-        except:
-            open_time_str = str(open_time)
-    
-    # 构建通知内容
-    trader_display = trader_name if trader_name else f"{address[:10]}..."
-    
-    content = f"""**交易员**: `{trader_display}`
-**地址**: `{address[:16]}...`
-**币种**: {coin}
-**方向**: {emoji} {direction}
-**数量**: {abs(szi):.4f}
-**入场价**: ${entry_px:,.4f}
-**仓位价值**: ${position_value:,.2f}
-**杠杆**: {leverage_value}x
-**开仓时间**: {open_time_str}"""
-
-    title = f"🆕 新仓位 - {coin} {direction}"
-    color = "green" if szi > 0 else "red"
-    
-    return feishu.send_card(title=title, content=content, color=color)
-
-
 def process_trader(
     db: TraderDatabase,
     api_client: SyncAPIClient,
     info: Info,
-    feishu: FeishuClient,
+    notifier: CopyTradingNotifier,
     trader: Dict,
     dry_run: bool = False
 ) -> int:
@@ -216,7 +160,7 @@ def process_trader(
         db: 数据库实例
         api_client: API客户端
         info: Hyperliquid Info实例
-        feishu: 飞书客户端
+        notifier: 飞书通知器
         trader: 交易员信息
         dry_run: 是否仅预览不发送通知
     
@@ -225,6 +169,8 @@ def process_trader(
     """
     address = trader['address']
     trader_name = trader.get('trader_name')  # 可能有别名
+    rating = trader.get('rating')  # S/A/B/C/D/F
+    score = trader.get('overall_score')  # 评分
     
     logger.info(f"处理交易员: {address[:16]}...")
     
@@ -277,8 +223,8 @@ def process_trader(
         if dry_run:
             logger.info(f"    [DRY-RUN] 新仓位: {coin} {direction} {abs(szi):.4f}")
         else:
-            success = send_new_position_notification(
-                feishu, address, pos, trader_name
+            success = notifier.notify_new_position(
+                address, pos, rating=rating, score=score, trader_name=trader_name
             )
             if success:
                 logger.success(f"    ✓ 已通知: {coin} {direction}")
@@ -292,7 +238,7 @@ def run_monitoring_cycle(
     db: TraderDatabase,
     api_client: SyncAPIClient,
     info: Info,
-    feishu: FeishuClient,
+    notifier: CopyTradingNotifier,
     dry_run: bool = False
 ) -> Dict:
     """
@@ -302,7 +248,7 @@ def run_monitoring_cycle(
         db: 数据库实例
         api_client: API客户端
         info: Hyperliquid Info实例
-        feishu: 飞书客户端
+        notifier: 飞书通知器
         dry_run: 是否仅预览
     
     Returns:
@@ -328,7 +274,7 @@ def run_monitoring_cycle(
         try:
             logger.info(f"[{i}/{len(traders)}]", end=" ")
             new_count = process_trader(
-                db, api_client, info, feishu, trader, dry_run
+                db, api_client, info, notifier, trader, dry_run
             )
             stats['traders_processed'] += 1
             stats['new_positions_total'] += new_count
@@ -404,19 +350,20 @@ def main():
     info = Info(constants.MAINNET_API_URL, skip_ws=True)
     logger.success("✓ Hyperliquid Info 初始化成功")
     
-    # 初始化飞书客户端
-    logger.info("初始化飞书客户端...")
+    # 初始化飞书通知器
+    logger.info("初始化飞书通知器...")
     feishu = FeishuClient(
         app_id=settings.feishu.app_id,
         app_secret=settings.feishu.app_secret,
         webhook_url=settings.feishu.webhook_url,
         default_user_id=settings.feishu.default_user_id
     )
+    notifier = CopyTradingNotifier(feishu)
     
     if not feishu.webhook_url and not feishu.app_id:
         logger.warning("⚠ 飞书未配置，通知功能将不可用")
     else:
-        logger.success("✓ 飞书客户端初始化成功")
+        logger.success("✓ 飞书通知器初始化成功")
     
     logger.info("")
     
@@ -429,7 +376,7 @@ def main():
             logger.info(f"第 {cycle_count} 轮监控 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info(f"{'='*60}")
             
-            run_monitoring_cycle(db, api_client, info, feishu, args.dry_run)
+            run_monitoring_cycle(db, api_client, info, notifier, args.dry_run)
             
             if args.once:
                 logger.info("一次性执行完成，退出")

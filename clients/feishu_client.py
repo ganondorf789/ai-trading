@@ -482,3 +482,95 @@ class CopyTradingNotifier:
             msg += f"当日盈亏: {pnl_emoji} ${daily_pnl:+,.2f}"
 
             return self.feishu.send(msg)
+
+    def notify_new_position(
+        self,
+        address: str,
+        position: dict,
+        rating: str = None,
+        score: float = None,
+        trader_name: str = None
+    ) -> bool:
+        """
+        通知新仓位
+
+        Args:
+            address: 交易员地址
+            position: 仓位数据字典，包含以下字段：
+                - coin: 币种
+                - szi: 仓位数量（正=多，负=空）
+                - entry_px: 入场价格
+                - position_value: 仓位价值
+                - leverage_value: 杠杆倍数
+                - open_time: 开仓时间（可选）
+            rating: 交易员评级（如 'S', 'A' 等）
+            score: 交易员评分
+            trader_name: 交易员名称（可选）
+
+        Returns:
+            是否发送成功
+        """
+        coin = position.get('coin', 'Unknown')
+        szi = float(position.get('szi', 0))
+        entry_px = float(position.get('entry_px', 0))
+        position_value = abs(float(position.get('position_value', 0)))
+        leverage_value = int(position.get('leverage_value', 1))
+        open_time = position.get('open_time', '')
+
+        # 方向判断
+        side_emoji = "🟢" if szi > 0 else "🔴"
+        side_cn = "做多" if szi > 0 else "做空"
+
+        # 格式化开仓时间
+        open_time_str = "未知"
+        if open_time:
+            try:
+                if isinstance(open_time, str):
+                    open_time_str = open_time[:19].replace('T', ' ')
+            except:
+                open_time_str = str(open_time)
+
+        # 交易员显示名称
+        trader_display = trader_name if trader_name else f"{address[:10]}..."
+
+        # 评级信息
+        rating_info = ""
+        if rating:
+            if score is not None:
+                rating_info = f"\n**评级**: {rating} ({score:.1f}分)"
+            else:
+                rating_info = f"\n**评级**: {rating}"
+
+        if self.feishu.webhook_url:
+            content = f"""**交易员**: `{trader_display}`
+**地址**: `{address[:16]}...`{rating_info}
+**币种**: {coin}
+**方向**: {side_emoji} {side_cn}
+**数量**: {abs(szi):.4f}
+**入场价**: ${entry_px:,.4f}
+**仓位价值**: ${position_value:,.2f}
+**杠杆**: {leverage_value}x
+**开仓时间**: {open_time_str}"""
+
+            title = f"🆕 新仓位 - {coin} {side_cn}"
+            color = "green" if szi > 0 else "red"
+
+            return self.feishu.send_card(title=title, content=content, color=color)
+        else:
+            msg = f"🆕 新仓位\n"
+            msg += f"交易员: {trader_display}\n"
+            msg += f"地址: {address[:16]}...\n"
+            if rating:
+                msg += f"评级: {rating}"
+                if score is not None:
+                    msg += f" ({score:.1f}分)"
+                msg += "\n"
+            msg += f"币种: {coin}\n"
+            msg += f"方向: {side_emoji} {side_cn}\n"
+            msg += f"数量: {abs(szi):.4f}\n"
+            msg += f"入场价: ${entry_px:,.4f}\n"
+            msg += f"仓位价值: ${position_value:,.2f}\n"
+            msg += f"杠杆: {leverage_value}x\n"
+            msg += f"开仓时间: {open_time_str}"
+
+            return self.feishu.send(msg)
