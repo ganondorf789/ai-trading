@@ -6,7 +6,6 @@ import { Button } from '@heroui/button';
 import { Spinner } from '@heroui/spinner';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
-import { DateRangePicker } from '@heroui/react';
 import {
   Dropdown,
   DropdownTrigger,
@@ -14,6 +13,7 @@ import {
   DropdownItem,
 } from '@heroui/dropdown';
 import { Select, SelectItem } from '@heroui/select';
+import { TimeRangeFilter } from '@/components/TimeRangeFilter';
 import {
   Table,
   TableHeader,
@@ -62,12 +62,14 @@ interface TradeHistoryProps {
   selectedCoin: string;
   pnlFilter: 'all' | 'profit' | 'loss';
   tradeTypeFilter: string;
+  timeRangeFilter: string;
   dateRange: RangeValue<DateValue> | null;
   sortDescriptor: SortDescriptor;
   onPageChange: (page: number) => void;
   onCoinChange: (coin: string) => void;
   onPnlFilterChange: (filter: 'all' | 'profit' | 'loss') => void;
   onTradeTypeFilterChange: (type: string) => void;
+  onTimeRangeFilterChange: (filter: string) => void;
   onDateRangeChange: (range: RangeValue<DateValue> | null) => void;
   onSortChange: (descriptor: SortDescriptor) => void;
   onReset: () => void;
@@ -85,12 +87,14 @@ export function TradeHistory({
   selectedCoin,
   pnlFilter,
   tradeTypeFilter,
+  timeRangeFilter,
   dateRange,
   sortDescriptor,
   onPageChange,
   onCoinChange,
   onPnlFilterChange,
   onTradeTypeFilterChange,
+  onTimeRangeFilterChange,
   onDateRangeChange,
   onSortChange,
   onReset,
@@ -211,9 +215,9 @@ export function TradeHistory({
     if (pnlFilter !== 'all') count++;
     if (tradeTypeFilter !== 'all') count++;
     if (searchValue) count++;
-    if (dateRange) count++;
+    if (timeRangeFilter !== 'all') count++;
     return count;
-  }, [selectedCoin, pnlFilter, tradeTypeFilter, searchValue, dateRange]);
+  }, [selectedCoin, pnlFilter, tradeTypeFilter, searchValue, timeRangeFilter]);
 
   // 页码跳转
   const handleJumpPage = () => {
@@ -327,16 +331,14 @@ export function TradeHistory({
               </Select>
             </div>
 
-            {/* Date Range Picker */}
-            <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
-              <span className="text-sm">日期范围</span>
-              <DateRangePicker
-                className="w-auto"
-                value={dateRange}
-                onChange={onDateRangeChange}
-                visibleMonths={2}
-              />
-            </div>
+            {/* 时间范围筛选 */}
+            <TimeRangeFilter
+              label="日期范围"
+              value={timeRangeFilter}
+              dateRange={dateRange}
+              onValueChange={onTimeRangeFilterChange}
+              onDateRangeChange={onDateRangeChange}
+            />
 
             {activeFilters > 0 && (
               <Button
@@ -418,7 +420,7 @@ export function TradeHistory({
         </div>
       </div>
     );
-  }, [fillsStats, selectedCoin, pnlFilter, tradeTypeFilter, dateRange, coins, sortDescriptor, visibleColumns, onCoinChange, onPnlFilterChange, onTradeTypeFilterChange, onDateRangeChange, onSortChange, onReset, getActiveFiltersCount]);
+  }, [fillsStats, selectedCoin, pnlFilter, tradeTypeFilter, timeRangeFilter, dateRange, coins, sortDescriptor, visibleColumns, onCoinChange, onPnlFilterChange, onTradeTypeFilterChange, onTimeRangeFilterChange, onDateRangeChange, onSortChange, onReset, getActiveFiltersCount]);
 
   // 表格底部内容
   const bottomContent = useMemo(() => {

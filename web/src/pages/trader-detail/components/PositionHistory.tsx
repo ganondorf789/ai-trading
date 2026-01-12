@@ -8,7 +8,8 @@ import { Select, SelectItem } from '@heroui/select';
 import { Pagination } from '@heroui/pagination';
 import { Input } from '@heroui/input';
 import { Tabs, Tab } from '@heroui/tabs';
-import { addToast, Autocomplete, AutocompleteItem, DateRangePicker } from '@heroui/react';
+import { addToast, Autocomplete, AutocompleteItem } from '@heroui/react';
+import { TimeRangeFilter, useTimeRange } from '@/components/TimeRangeFilter';
 import {
   Dropdown,
   DropdownTrigger,
@@ -55,16 +56,6 @@ interface PositionHistoryProps {
   address: string;
 }
 
-// 时间范围预设选项
-const TIME_RANGE_OPTIONS = [
-  { key: 'all', label: '全部时间' },
-  { key: '1d', label: '最近1天' },
-  { key: '7d', label: '最近7天' },
-  { key: '30d', label: '最近30天' },
-  { key: '90d', label: '最近90天' },
-  { key: 'custom', label: '自定义' },
-];
-
 export function PositionHistory({ address }: PositionHistoryProps) {
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
@@ -100,32 +91,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   }, [visibleColumns]);
 
   // 计算实际的时间范围
-  const { startTime, endTime } = useMemo(() => {
-    if (timeRangeFilter === 'all') {
-      return { startTime: undefined, endTime: undefined };
-    }
-    if (timeRangeFilter === 'custom') {
-      if (!dateRange) {
-        return { startTime: undefined, endTime: undefined };
-      }
-      // 格式化为 YYYY-MM-DD 字符串
-      const formatDateValue = (d: DateValue) =>
-        `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
-
-      return {
-        startTime: dateRange.start ? formatDateValue(dateRange.start) : undefined,
-        endTime: dateRange.end ? `${formatDateValue(dateRange.end)}T23:59:59` : undefined,
-      };
-    }
-    // 预设时间范围
-    const now = new Date();
-    const days = parseInt(timeRangeFilter.replace('d', ''));
-    const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    return {
-      startTime: start.toISOString(),
-      endTime: undefined,
-    };
-  }, [timeRangeFilter, dateRange]);
+  const { startTime, endTime } = useTimeRange(timeRangeFilter, dateRange);
 
   // 获取币种选项
   const coinOptions = useMemo(() => {
@@ -469,33 +435,12 @@ export function PositionHistory({ address }: PositionHistoryProps) {
               </div>
 
               {/* 时间范围筛选 */}
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-sm whitespace-nowrap text-gray-500">时间</span>
-                <Select
-                  className="min-w-[120px]"
-                  aria-label="时间范围筛选"
-                  size="sm"
-                  selectedKeys={[timeRangeFilter]}
-                  onSelectionChange={(keys) => setTimeRangeFilter(Array.from(keys)[0] as string)}
-                >
-                  {TIME_RANGE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.key} textValue={opt.label}>{opt.label}</SelectItem>
-                  ))}
-                </Select>
-              </div>
-
-              {/* 自定义时间范围 */}
-              {timeRangeFilter === 'custom' && (
-                <div className="flex items-center gap-2 shrink-0">
-                  <DateRangePicker
-                    className="w-auto"
-                    aria-label="自定义日期范围"
-                    value={dateRange}
-                    onChange={setDateRange}
-                    visibleMonths={2}
-                  />
-                </div>
-              )}
+              <TimeRangeFilter
+                value={timeRangeFilter}
+                dateRange={dateRange}
+                onValueChange={setTimeRangeFilter}
+                onDateRangeChange={setDateRange}
+              />
 
               {/* 重置按钮 */}
               {hasActiveFilters && (

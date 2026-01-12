@@ -5,6 +5,7 @@ import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { addToast } from "@heroui/react";
 import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
+import { useTimeRange } from '@/components/TimeRangeFilter';
 import { TraderOverviewCard } from './components/TraderOverviewCard';
 import { PerformanceCharts } from './components/PerformanceCharts';
 import { CurrentPositions } from './components/CurrentPositions';
@@ -26,6 +27,7 @@ export default function TraderDetailPage() {
   const [allCoins, setAllCoins] = useState<string[]>([]);
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [tradeTypeFilter, setTradeTypeFilter] = useState<string>('all');
+  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
   const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
   const [timeRange, setTimeRange] = useState<number>(30);
   const [chartLoading, setChartLoading] = useState(false);
@@ -49,6 +51,9 @@ export default function TraderDetailPage() {
   const [assetPositionsLoading, setAssetPositionsLoading] = useState(false);
   const [positionsRefreshing, setPositionsRefreshing] = useState(false);
   const [isStarLoading, setIsStarLoading] = useState(false);
+
+  // 计算交易记录的时间范围
+  const { startTime: fillsStartTime, endTime: fillsEndTime } = useTimeRange(timeRangeFilter, dateRange);
 
   // 切换收藏状态
   const handleToggleStar = useCallback(async (address: string, isStarred: boolean) => {
@@ -293,9 +298,6 @@ export default function TraderDetailPage() {
       try {
         setFillsLoading(true);
 
-        const start_date = dateRange?.start ? `${dateRange.start.year}-${String(dateRange.start.month).padStart(2, '0')}-${String(dateRange.start.day).padStart(2, '0')}` : undefined;
-        const end_date = dateRange?.end ? `${dateRange.end.year}-${String(dateRange.end.month).padStart(2, '0')}-${String(dateRange.end.day).padStart(2, '0')}` : undefined;
-
         const fillsRes = await traderApi.getTraderFills(address, {
           page,
           limit: rowsPerPage,
@@ -304,8 +306,8 @@ export default function TraderDetailPage() {
           trade_type: tradeTypeFilter !== 'all' ? tradeTypeFilter : undefined,
           sort_by: sortDescriptor.column as string,
           sort_order: sortDescriptor.direction === 'ascending' ? 'asc' : 'desc',
-          start_date,
-          end_date,
+          start_date: fillsStartTime,
+          end_date: fillsEndTime,
         });
 
         if (fillsRes.success && fillsRes.data) {
@@ -326,18 +328,19 @@ export default function TraderDetailPage() {
     };
 
     loadFills();
-  }, [address, page, selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, loading, dateRange]);
+  }, [address, page, selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, loading, fillsStartTime, fillsEndTime]);
 
   // 筛选条件或排序改变时重置页码
   useEffect(() => {
     setPage(1);
-  }, [selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, dateRange]);
+  }, [selectedCoin, pnlFilter, tradeTypeFilter, sortDescriptor, timeRangeFilter, dateRange]);
 
   // 重置筛选
   const handleReset = () => {
     setSelectedCoin('all');
     setPnlFilter('all');
     setTradeTypeFilter('all');
+    setTimeRangeFilter('all');
     setDateRange(null);
     setPage(1);
   };
@@ -417,12 +420,14 @@ export default function TraderDetailPage() {
           selectedCoin={selectedCoin}
           pnlFilter={pnlFilter}
           tradeTypeFilter={tradeTypeFilter}
+          timeRangeFilter={timeRangeFilter}
           dateRange={dateRange}
           sortDescriptor={sortDescriptor}
           onPageChange={setPage}
           onCoinChange={setSelectedCoin}
           onPnlFilterChange={setPnlFilter}
           onTradeTypeFilterChange={setTradeTypeFilter}
+          onTimeRangeFilterChange={setTimeRangeFilter}
           onDateRangeChange={setDateRange}
           onSortChange={setSortDescriptor}
           onReset={handleReset}
