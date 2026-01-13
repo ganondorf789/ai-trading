@@ -33,6 +33,8 @@ interface TimeRangeFilterProps {
   showLabel?: boolean;
   /** Select 的最小宽度 */
   selectClassName?: string;
+  /** 布局方向 */
+  layout?: 'horizontal' | 'vertical';
 }
 
 /**
@@ -47,12 +49,17 @@ export function TimeRangeFilter({
   onDateRangeChange,
   showLabel = true,
   selectClassName = 'min-w-[120px]',
+  layout = 'horizontal',
 }: TimeRangeFilterProps) {
+  const isVertical = layout === 'vertical';
+  
   return (
     <>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className={`flex shrink-0 ${isVertical ? 'flex-col gap-1.5' : 'items-center gap-2'}`}>
         {showLabel && (
-          <span className="text-sm whitespace-nowrap text-gray-500">{label}</span>
+          <span className={`whitespace-nowrap ${isVertical ? 'text-xs text-default-500 font-medium' : 'text-sm text-gray-500'}`}>
+            {label}
+          </span>
         )}
         <Select
           className={selectClassName}
@@ -74,6 +81,7 @@ export function TimeRangeFilter({
           <DateRangePicker
             className="w-auto"
             aria-label="自定义日期范围"
+            size="sm"
             value={dateRange}
             onChange={onDateRangeChange}
             visibleMonths={2}
