@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, Spinner } from "@heroui/react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
-import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
 import {
@@ -28,6 +26,8 @@ export default function PositionHistoryPage() {
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [coinFilter, setCoinFilter] = useState<string>("all");
   const [pnlFilter, setPnlFilter] = useState<string>("all");
+  const [scoreFilter, setScoreFilter] = useState<string>("all");
+  const [starFilter, setStarFilter] = useState<string>("all");
   // 开仓时间筛选状态
   const [openTimeFilter, setOpenTimeFilter] = useState<string>("all");
   const [openTimeDateRange, setOpenTimeDateRange] = useState<RangeValue<DateValue> | null>(null);
@@ -78,6 +78,8 @@ export default function PositionHistoryPage() {
     setDirectionFilter("all");
     setCoinFilter("all");
     setPnlFilter("all");
+    setScoreFilter("all");
+    setStarFilter("all");
     setOpenTimeFilter("all");
     setOpenTimeDateRange(null);
   };
@@ -103,6 +105,18 @@ export default function PositionHistoryPage() {
       filtered = filtered.filter((p) => (p.realized_pnl || 0) < 0);
     }
 
+    // 评级筛选
+    if (scoreFilter !== "all") {
+      filtered = filtered.filter((p) => p.rating === scoreFilter);
+    }
+
+    // 收藏筛选
+    if (starFilter === "starred") {
+      filtered = filtered.filter((p) => p.is_starred);
+    } else if (starFilter === "unstarred") {
+      filtered = filtered.filter((p) => !p.is_starred);
+    }
+
     // 开仓时间筛选
     if (openTimeRange.startTime || openTimeRange.endTime) {
       filtered = filtered.filter((p) => {
@@ -119,7 +133,7 @@ export default function PositionHistoryPage() {
     }
 
     return filtered;
-  }, [positions, search, pnlFilter, openTimeRange]);
+  }, [positions, search, pnlFilter, scoreFilter, starFilter, openTimeRange]);
 
   // 根据筛选后的数据计算统计信息
   const filteredStats = useMemo((): GlobalPositionHistoryStats | null => {
@@ -206,6 +220,10 @@ export default function PositionHistoryPage() {
           onCoinFilterChange={setCoinFilter}
           pnlFilter={pnlFilter}
           onPnlFilterChange={setPnlFilter}
+          scoreFilter={scoreFilter}
+          onScoreFilterChange={setScoreFilter}
+          starFilter={starFilter}
+          onStarFilterChange={setStarFilter}
           openTimeFilter={openTimeFilter}
           onOpenTimeFilterChange={setOpenTimeFilter}
           openTimeDateRange={openTimeDateRange}
