@@ -1,7 +1,7 @@
 """
 交易记录管理模块 (PostgreSQL)
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pendulum
 import re
 from psycopg2 import extras
@@ -268,6 +268,27 @@ class TraderFillsOps:
                 'total_pnl': total_pnl,
                 'by_coin': by_coin
             }
+
+    def get_latest_fill(self, address: str) -> Optional[Dict]:
+        """
+        获取交易者最新的一条交易记录
+        
+        Args:
+            address: 交易者地址
+        
+        Returns:
+            最新的交易记录字典，如果没有记录则返回 None
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM trader_fills
+                WHERE address = %s
+                ORDER BY time DESC
+                LIMIT 1
+            """, (address,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def delete_trader_fills(self, address: str) -> int:
         """

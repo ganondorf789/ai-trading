@@ -130,6 +130,17 @@ from screener.metrics_calculator import (
     calculate_metrics,
 )
 
+# 增量获取
+from screener.incremental_fetcher import (
+    fetch_incremental_fills,
+    fetch_all_history_fills,
+    fetch_fills_for_period,
+    fetch_fills_by_weeks,
+    fetch_fills_by_days,
+    fetch_fills_by_hours,
+    fetch_fills_by_minutes,
+)
+
 # 评分系统
 from screener.scorer import (
     TraderScorer,
@@ -223,6 +234,15 @@ __all__ = [
     # 指标计算
     "MetricsCalculator",
     "calculate_metrics",
+    
+    # 增量获取
+    "fetch_incremental_fills",
+    "fetch_all_history_fills",
+    "fetch_fills_for_period",
+    "fetch_fills_by_weeks",
+    "fetch_fills_by_days",
+    "fetch_fills_by_hours",
+    "fetch_fills_by_minutes",
     
     # 评分系统
     "TraderScorer",
