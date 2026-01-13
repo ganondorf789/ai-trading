@@ -52,7 +52,8 @@ class MetricsCalculator:
         address: str,
         fills: List[Dict],
         user_state: Optional[Dict] = None,
-        store_fills: bool = True
+        store_fills: bool = True,
+        db_total_trades: Optional[int] = None
     ) -> TraderMetrics:
         """
         计算交易者指标
@@ -62,6 +63,7 @@ class MetricsCalculator:
             fills: 成交记录列表
             user_state: 用户状态
             store_fills: 是否存储原始交易记录
+            db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
         
         Returns:
             TraderMetrics 对象
@@ -75,10 +77,10 @@ class MetricsCalculator:
         processed_fills = self._preprocess_fills(fills)
         
         # 计算各类指标
-        self._calculate_pnl_metrics(metrics, processed_fills)
-        self._calculate_trade_metrics(metrics, processed_fills)
+        self._calculate_pnl_metrics(metrics, processed_fills, db_total_trades)
+        self._calculate_trade_metrics(metrics, processed_fills, db_total_trades)
         self._calculate_risk_metrics(metrics, processed_fills)
-        self._calculate_activity_metrics(metrics, processed_fills)
+        self._calculate_activity_metrics(metrics, processed_fills, db_total_trades)
         
         # 从用户状态计算
         if user_state:
@@ -128,7 +130,8 @@ class MetricsCalculator:
     def _calculate_pnl_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict]
+        fills: List[Dict],
+        db_total_trades: Optional[int] = None
     ) -> None:
         """
         计算盈亏指标
@@ -136,6 +139,7 @@ class MetricsCalculator:
         Args:
             metrics: 指标对象
             fills: 成交记录
+            db_total_trades: 从数据库获取的总交易数
         """
         pnl = metrics.pnl
         
@@ -200,8 +204,9 @@ class MetricsCalculator:
         if loss_amounts:
             pnl.avg_loss_amount = sum(loss_amounts) / len(loss_amounts)
         
-        if len(fills) > 0:
-            pnl.avg_profit_per_trade = pnl.realized_pnl / len(fills)
+        total_trades = db_total_trades if db_total_trades is not None else len(fills)
+        if total_trades > 0:
+            pnl.avg_profit_per_trade = pnl.realized_pnl / total_trades
         
         # 存储临时数据供其他计算使用
         metrics._pnl_list = pnl_list
@@ -212,7 +217,8 @@ class MetricsCalculator:
     def _calculate_trade_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict]
+        fills: List[Dict],
+        db_total_trades: Optional[int] = None
     ) -> None:
         """
         计算交易统计指标
@@ -220,10 +226,12 @@ class MetricsCalculator:
         Args:
             metrics: 指标对象
             fills: 成交记录
+            db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
         """
         trade = metrics.trade
         
-        trade.total_trades = len(fills)
+        # 优先使用数据库中的总交易数，否则使用 fills 数量
+        trade.total_trades = db_total_trades if db_total_trades is not None else len(fills)
         
         total_price = 0.0
         total_size_usd = 0.0
@@ -366,7 +374,8 @@ class MetricsCalculator:
     def _calculate_activity_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict]
+        fills: List[Dict],
+        db_total_trades: Optional[int] = None
     ) -> None:
         """
         计算活跃度指标
@@ -374,6 +383,7 @@ class MetricsCalculator:
         Args:
             metrics: 指标对象
             fills: 成交记录
+            db_total_trades: 从数据库获取的总交易数
         """
         activity = metrics.activity
         
@@ -392,7 +402,8 @@ class MetricsCalculator:
         if activity.first_trade_time and activity.last_trade_time:
             days_active = (activity.last_trade_time - activity.first_trade_time).days + 1
             if days_active > 0:
-                activity.trade_frequency_per_day = len(fills) / days_active
+                total_trades = db_total_trades if db_total_trades is not None else len(fills)
+                activity.trade_frequency_per_day = total_trades / days_active
         
         # 平均持仓时间
         activity.avg_holding_time_hours = calculate_holding_time(fills)
@@ -477,7 +488,8 @@ def calculate_metrics(
     address: str,
     fills: List[Dict],
     user_state: Optional[Dict] = None,
-    store_fills: bool = True
+    store_fills: bool = True,
+    db_total_trades: Optional[int] = None
 ) -> TraderMetrics:
     """
     计算交易者指标（便捷函数）
@@ -487,9 +499,10 @@ def calculate_metrics(
         fills: 成交记录列表
         user_state: 用户状态
         store_fills: 是否存储原始交易记录
+        db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
     
     Returns:
         TraderMetrics 对象
     """
     calculator = MetricsCalculator()
-    return calculator.calculate(address, fills, user_state, store_fills)
+    return calculator.calculate(address, fills, user_state, store_fills, db_total_trades)

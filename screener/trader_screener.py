@@ -203,9 +203,19 @@ class TraderScreener:
                 logger.debug(f"交易者 {short_address(address)} 无成交记录")
                 return None
             
+            # 从数据库获取总交易数
+            db_total_trades = None
+            if self._db:
+                try:
+                    existing_trader = self._db.get_trader_by_address(address)
+                    if existing_trader:
+                        db_total_trades = existing_trader.get('total_trades')
+                except Exception as e:
+                    logger.debug(f"获取数据库总交易数失败: {e}")
+            
             # 计算指标
             metrics = self._metrics_calculator.calculate(
-                address, fills, user_state, store_fills
+                address, fills, user_state, store_fills, db_total_trades
             )
             
             # 计算评分
