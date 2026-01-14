@@ -167,7 +167,7 @@ def fetch_fills_by_hours(
         
         if hour_fills:
             if len(hour_fills) >= 2000:
-                logger.debug(f"        小时 [{current.format('HH:00')}] 达到 2000 条，按分钟细分...")
+                logger.debug(f"        小时 [{current.format('HH:00')}] 达到 2000 条，按10分钟细分...")
                 minute_fills = fetch_fills_by_minutes(client, address, current, next_hour, delay)
                 all_fills.extend(minute_fills)
             else:
@@ -186,37 +186,37 @@ def fetch_fills_by_minutes(
     end_dt: pendulum.DateTime,
     delay: float = 2.0
 ) -> List[Dict]:
-    """按分钟获取交易记录（用于极度活跃的交易小时）"""
+    """按10分钟获取交易记录（用于极度活跃的交易小时）"""
     all_fills = []
     current = start_dt
-    total_minutes = int((end_dt - start_dt).total_seconds() / 60)
-    minute_num = 0
+    total_chunks = int((end_dt - start_dt).total_seconds() / 600) + 1  # 每10分钟一个块
+    chunk_num = 0
     
     while current < end_dt:
-        next_minute = min(current.add(minutes=1), end_dt)
+        next_chunk = min(current.add(minutes=10), end_dt)
         start_ms = int(current.timestamp() * 1000)
-        end_ms = int(next_minute.timestamp() * 1000)
-        minute_num += 1
+        end_ms = int(next_chunk.timestamp() * 1000)
+        chunk_num += 1
         
         try:
-            minute_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+            chunk_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
         except Exception as e:
-            logger.error(f"          获取分钟数据失败 [{current.format('HH:mm')}]: {repr(e)}")
-            current = next_minute
+            logger.error(f"          获取10分钟数据失败 [{current.format('HH:mm')}]: {repr(e)}")
+            current = next_chunk
             time.sleep(delay)
             continue
         
-        if minute_fills:
-            all_fills.extend(minute_fills)
-            if len(minute_fills) >= 2000:
-                logger.warning(f"          分钟 [{current.format('HH:mm')}]: {len(minute_fills)} 条（达到上限，无法进一步细分）")
+        if chunk_fills:
+            all_fills.extend(chunk_fills)
+            if len(chunk_fills) >= 2000:
+                logger.warning(f"          10分钟 [{current.format('HH:mm')}-{next_chunk.format('HH:mm')}]: {len(chunk_fills)} 条（达到上限，无法进一步细分）")
             else:
-                logger.debug(f"          分钟 [{minute_num}/{total_minutes}] {current.format('HH:mm')}: {len(minute_fills)} 条，累计 {len(all_fills)} 条")
+                logger.debug(f"          10分钟 [{chunk_num}/{total_chunks}] {current.format('HH:mm')}-{next_chunk.format('HH:mm')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
         
-        current = next_minute
+        current = next_chunk
         time.sleep(delay)
     
-    logger.debug(f"          分钟细分完成: 共 {len(all_fills)} 条")
+    logger.debug(f"          10分钟细分完成: 共 {len(all_fills)} 条")
     return all_fills
 
 
