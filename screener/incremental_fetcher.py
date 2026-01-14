@@ -20,7 +20,7 @@ def fetch_fills_for_period(
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
     auto_split: bool = True,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """
     获取指定时间段的交易记录
@@ -69,7 +69,7 @@ def fetch_fills_by_weeks(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """按周获取交易记录"""
     all_fills = []
@@ -108,7 +108,7 @@ def fetch_fills_by_days(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """按天获取交易记录"""
     all_fills = []
@@ -146,7 +146,7 @@ def fetch_fills_by_hours(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """按小时获取交易记录"""
     all_fills = []
@@ -184,7 +184,7 @@ def fetch_fills_by_minutes(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """按分钟获取交易记录（用于极度活跃的交易小时）"""
     all_fills = []
@@ -308,7 +308,7 @@ def fetch_incremental_fills(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """
     增量获取成交记录（自适应5层细分）
