@@ -189,11 +189,14 @@ def fetch_fills_by_minutes(
     """按分钟获取交易记录（用于极度活跃的交易小时）"""
     all_fills = []
     current = start_dt
+    total_minutes = int((end_dt - start_dt).total_seconds() / 60)
+    minute_num = 0
     
     while current < end_dt:
         next_minute = min(current.add(minutes=1), end_dt)
         start_ms = int(current.timestamp() * 1000)
         end_ms = int(next_minute.timestamp() * 1000)
+        minute_num += 1
         
         try:
             minute_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
@@ -207,10 +210,13 @@ def fetch_fills_by_minutes(
             all_fills.extend(minute_fills)
             if len(minute_fills) >= 2000:
                 logger.warning(f"          分钟 [{current.format('HH:mm')}]: {len(minute_fills)} 条（达到上限，无法进一步细分）")
+            else:
+                logger.debug(f"          分钟 [{minute_num}/{total_minutes}] {current.format('HH:mm')}: {len(minute_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_minute
         time.sleep(delay)
     
+    logger.debug(f"          分钟细分完成: 共 {len(all_fills)} 条")
     return all_fills
 
 
