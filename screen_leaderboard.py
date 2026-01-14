@@ -82,7 +82,7 @@ def screen_leaderboard_traders(
     config = ScreenerConfig()
     config.data.lookback_days = lookback_days
     config.data.max_fills_per_trader = max_fills
-    config.api.api_call_delay = 0.5  # 避免请求过快
+    config.api.api_call_delay = 2.0  # 避免请求过快
     config.api.max_retries = 3
     # 批量处理时禁用 fills 缓存，避免内存溢出
     screener = TraderScreener(config, cache_fills=False)

@@ -281,7 +281,7 @@ def add_trader():
         config = ScreenerConfig()
         config.data.lookback_days = lookback_days
         config.data.max_fills_per_trader = max_fills
-        config.api.api_call_delay = 0.5
+        config.api.api_call_delay = 2.0
         config.api.max_retries = 3
         screener = TraderScreener(config)
 
@@ -371,7 +371,7 @@ def refresh_trader(address: str):
         config = ScreenerConfig()
         config.data.lookback_days = lookback_days
         config.data.max_fills_per_trader = max_fills
-        config.api.api_call_delay = 0.5
+        config.api.api_call_delay = 2.0
         config.api.max_retries = 3
         screener = TraderScreener(config)
 

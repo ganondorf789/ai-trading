@@ -339,7 +339,7 @@ def main():
     # 初始化 API 客户端
     logger.info("初始化 API 客户端...")
     config = APIConfig()
-    config.api_call_delay = 0.5
+    config.api_call_delay = 2.0
     config.max_retries = 3
     
     try:
