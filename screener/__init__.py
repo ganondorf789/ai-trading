@@ -139,6 +139,8 @@ from screener.incremental_fetcher import (
     fetch_fills_by_days,
     fetch_fills_by_hours,
     fetch_fills_by_minutes,
+    probe_trader_fills,
+    find_first_fill_half_year,
 )
 
 # 评分系统
@@ -243,6 +245,8 @@ __all__ = [
     "fetch_fills_by_days",
     "fetch_fills_by_hours",
     "fetch_fills_by_minutes",
+    "probe_trader_fills",
+    "find_first_fill_half_year",
     
     # 评分系统
     "TraderScorer",

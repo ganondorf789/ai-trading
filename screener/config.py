@@ -82,7 +82,7 @@ class APIConfig:
     read_timeout: float = 30.0  # 读取超时
     
     # 频率限制
-    api_call_delay: float = 0.3  # API 调用间隔（秒）
+    api_call_delay: float = 2.0  # API 调用间隔（秒）
 
 
 @dataclass

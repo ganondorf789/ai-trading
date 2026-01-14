@@ -4,7 +4,7 @@
 使用自适应5层细分策略（月→周→天→小时→分钟）获取新的成交记录
 """
 import time
-from typing import List, Dict, Optional, TYPE_CHECKING
+from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 import pendulum
 from loguru import logger
 
@@ -214,6 +214,95 @@ def fetch_fills_by_minutes(
     return all_fills
 
 
+def probe_trader_fills(
+    client: 'SyncAPIClient',
+    address: str,
+    start_dt: pendulum.DateTime,
+    end_dt: pendulum.DateTime,
+) -> Tuple[List[Dict], bool]:
+    """
+    快速探测交易者是否有交易记录
+    
+    用一次 API 调用查询全量时间范围，快速判断：
+    - 0 条记录：该交易员无交易历史
+    - 1-1999 条：已获取全部记录
+    - 2000 条：记录可能不完整，需要进一步获取
+    
+    Args:
+        client: API 客户端
+        address: 交易者地址
+        start_dt: 开始时间
+        end_dt: 结束时间
+    
+    Returns:
+        (fills, is_complete): fills 是记录列表，is_complete 表示是否已获取全部
+    """
+    start_ms = int(start_dt.timestamp() * 1000)
+    end_ms = int(end_dt.timestamp() * 1000)
+    
+    fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+    
+    if not fills:
+        return [], True
+    
+    is_complete = len(fills) < 2000
+    return fills, is_complete
+
+
+def find_first_fill_half_year(
+    client: 'SyncAPIClient',
+    address: str,
+    start_dt: pendulum.DateTime,
+    end_dt: pendulum.DateTime,
+    delay: float = 2.0
+) -> Optional[pendulum.DateTime]:
+    """
+    使用半年分块快速定位第一笔交易所在的半年
+    
+    按半年为单位向前探测，找到第一个有交易记录的半年。
+    比逐月探测快 6 倍。
+    
+    Args:
+        client: API 客户端
+        address: 交易者地址
+        start_dt: 开始时间
+        end_dt: 结束时间
+        delay: API 调用延迟（秒）
+    
+    Returns:
+        第一笔交易所在半年的起始时间，如果无记录返回 None
+    """
+    current = start_dt.start_of('month')
+    
+    while current < end_dt:
+        # 计算半年的结束时间
+        next_half_year = current.add(months=6)
+        actual_end = min(next_half_year, end_dt)
+        
+        start_ms = int(current.timestamp() * 1000)
+        end_ms = int(actual_end.timestamp() * 1000)
+        
+        logger.debug(f"    半年探测: {current.format('YYYY-MM')} 至 {actual_end.format('YYYY-MM')}...")
+        
+        try:
+            fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+        except Exception as e:
+            logger.error(f"    半年探测失败 [{current.format('YYYY-MM')}]: {repr(e)}")
+            current = next_half_year
+            time.sleep(delay)
+            continue
+        
+        if fills:
+            # 找到有记录的半年，返回该半年的起始时间
+            logger.debug(f"    找到记录于 {current.format('YYYY-MM')} 半年，共 {len(fills)} 条")
+            return current
+        
+        current = next_half_year
+        time.sleep(delay)
+    
+    return None
+
+
 def fetch_incremental_fills(
     client: 'SyncAPIClient',
     address: str,
@@ -284,20 +373,23 @@ def fetch_all_history_fills(
     address: str,
     start_dt: Optional[pendulum.DateTime] = None,
     max_retries: int = 3,
-    delay: float = 0.5
+    delay: float = 2.0
 ) -> List[Dict]:
     """
-    从前往后获取交易者的历史交易记录
+    从前往后获取交易者的历史交易记录（优化版）
     
     策略：
-    1. 从起始时间（默认 2024-01-01）开始
-    2. 按月向前获取，直到当前时间
-    3. 每月数据获取后立即返回，失败3次则终止
+    1. 如果有 start_dt（增量更新），从该时间开始按月获取
+    2. 如果无 start_dt（首次获取），先探测全量范围：
+       - 0 条记录 → 直接返回空
+       - < 2000 条 → 直接返回（已获取全部）
+       - = 2000 条 → 用半年分块定位起始时间，再按月获取
     
     优势：
+    - 对于无记录或少量记录的交易员，只需 1 次 API 调用
+    - 对于近期才开始交易的交易员，快速跳过空白期
     - 按时间顺序获取，早期数据先保存
     - 如果中途失败，已获取的数据不会丢失
-    - 下次运行从数据库最新记录继续
     
     Args:
         client: API 客户端
@@ -310,8 +402,7 @@ def fetch_all_history_fills(
         成交记录列表（已去重）
     """
     # 默认起始时间：2024-01-01
-    DEFAULT_START = pendulum.DateTime(2024, 1, 1, tz=SHANGHAI_TZ)
-    start = start_dt or DEFAULT_START
+    DEFAULT_START = pendulum.datetime(2024, 1, 1, tz=SHANGHAI_TZ)
     end = now_shanghai()
     
     all_fills = []
@@ -328,9 +419,58 @@ def fetch_all_history_fills(
                 added += 1
         return added
     
-    logger.debug(f"  从前往后获取: {start.format('YYYY-MM-DD')} → {end.format('YYYY-MM-DD')}")
+    # ========== 优化：首次获取时先探测 ==========
+    if start_dt is None:
+        logger.debug(f"  首次获取，探测全量范围: {DEFAULT_START.format('YYYY-MM-DD')} → {end.format('YYYY-MM-DD')}")
+        
+        # 带重试的探测
+        probe_fills = None
+        is_complete = False
+        for retry in range(max_retries):
+            try:
+                probe_fills, is_complete = probe_trader_fills(client, address, DEFAULT_START, end)
+                break
+            except Exception as e:
+                retry_num = retry + 1
+                if retry_num < max_retries:
+                    logger.warning(f"    探测失败（重试 {retry_num}/{max_retries}）: {repr(e)}")
+                    time.sleep(delay * 2)
+                else:
+                    logger.error(f"    探测失败（已重试 {max_retries} 次），终止获取: {repr(e)}")
+                    return []
+        
+        # 情况1：无记录
+        if not probe_fills:
+            logger.debug(f"  无交易记录，跳过")
+            return []
+        
+        # 情况2：< 2000 条，已获取全部
+        if is_complete:
+            logger.debug(f"  获取完成: 共 {len(probe_fills)} 条记录（< 2000，已全部获取）")
+            return probe_fills
+        
+        # 情况3：= 2000 条，需要进一步获取
+        logger.debug(f"  探测返回 2000 条，使用半年分块定位起始时间...")
+        time.sleep(delay)
+        
+        # 用半年分块找到第一笔交易所在的半年
+        first_half_year = find_first_fill_half_year(client, address, DEFAULT_START, end, delay)
+        
+        if first_half_year is None:
+            # 理论上不应该发生（因为探测已返回数据），但做个保护
+            logger.warning(f"  半年探测未找到记录，使用探测结果")
+            return probe_fills
+        
+        # 从找到的半年开始按月获取
+        start = first_half_year
+        logger.debug(f"  从 {start.format('YYYY-MM')} 开始按月获取...")
+        time.sleep(delay)
+    else:
+        # 增量更新：从指定时间开始
+        start = start_dt
+        logger.debug(f"  增量获取: {start.format('YYYY-MM-DD')} → {end.format('YYYY-MM-DD')}")
     
-    # 按月向前遍历
+    # ========== 按月获取 ==========
     current = start.start_of('month')
     month_num = 0
     
@@ -349,6 +489,7 @@ def fetch_all_history_fills(
         
         # 带重试的获取
         success = False
+        month_fills = None
         for retry in range(max_retries):
             try:
                 month_fills = fetch_fills_for_period(
