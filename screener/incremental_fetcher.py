@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, TYPE_CHECKING
 import pendulum
 from loguru import logger
 
-from .utils import SHANGHAI_TZ, timestamp_to_pendulum
+from .utils import SHANGHAI_TZ, timestamp_to_pendulum, now_shanghai
 
 if TYPE_CHECKING:
     from .api_client import SyncAPIClient
@@ -282,30 +282,42 @@ def fetch_incremental_fills(
 def fetch_all_history_fills(
     client: 'SyncAPIClient',
     address: str,
-    empty_months_threshold: int = 3,
+    start_dt: Optional[pendulum.DateTime] = None,
+    max_retries: int = 3,
     delay: float = 0.5
 ) -> List[Dict]:
     """
-    获取交易者的完整历史交易记录
+    从前往后获取交易者的历史交易记录
     
     策略：
-    1. 先获取最近的 2000 条记录
-    2. 找到最早的交易时间，从这个时间往前按月查找
-    3. 连续 N 个月没有订单则停止
+    1. 从起始时间（默认 2024-01-01）开始
+    2. 按月向前获取，直到当前时间
+    3. 每月数据获取后立即返回，失败3次则终止
+    
+    优势：
+    - 按时间顺序获取，早期数据先保存
+    - 如果中途失败，已获取的数据不会丢失
+    - 下次运行从数据库最新记录继续
     
     Args:
         client: API 客户端
         address: 交易者地址
-        empty_months_threshold: 连续多少个空月份后停止（默认 3）
+        start_dt: 起始时间（默认 2024-01-01），如果数据库有记录则从最新记录开始
+        max_retries: 单次请求最大重试次数，超过则终止整个获取过程
         delay: API 调用之间的延迟（秒）
     
     Returns:
-        所有成交记录列表（已去重）
+        成交记录列表（已去重）
     """
+    # 默认起始时间：2024-01-01
+    DEFAULT_START = pendulum.DateTime(2024, 1, 1, tz=SHANGHAI_TZ)
+    start = start_dt or DEFAULT_START
+    end = now_shanghai()
+    
     all_fills = []
     seen_keys = set()  # 用于去重
     
-    def add_fills(fills: List[Dict]):
+    def add_fills(fills: List[Dict]) -> int:
         """添加记录并去重"""
         added = 0
         for fill in fills:
@@ -316,57 +328,56 @@ def fetch_all_history_fills(
                 added += 1
         return added
     
-    # 步骤1：获取最近的 2000 条记录
-    logger.debug(f"  获取最近的交易记录...")
-    try:
-        recent_fills = client.get_user_fills(address, limit=0)
-    except Exception as e:
-        logger.error(f"  获取最近记录失败: {repr(e)}")
-        return []
+    logger.debug(f"  从前往后获取: {start.format('YYYY-MM-DD')} → {end.format('YYYY-MM-DD')}")
     
-    if not recent_fills:
-        logger.debug(f"  该地址没有任何交易记录")
-        return []
-    
-    logger.debug(f"  获取到 {len(recent_fills)} 条最近记录")
-    
-    # 分析时间范围
-    times = [fill.get('time', 0) for fill in recent_fills]
-    earliest_recent_ms = min(times)
-    earliest_recent_dt = timestamp_to_pendulum(earliest_recent_ms)
-    
-    logger.debug(f"  最早记录: {earliest_recent_dt.to_datetime_string()}")
-    
-    # 添加最近的记录
-    add_fills(recent_fills)
-    
-    # 步骤2：往前按月查找历史记录
-    current_end = earliest_recent_dt.start_of('month')
-    empty_months_count = 0
+    # 按月向前遍历
+    current = start.start_of('month')
     month_num = 0
     
-    while empty_months_count < empty_months_threshold:
-        current_start = current_end.subtract(months=1)
+    while current < end:
+        next_month = current.add(months=1)
+        # 确保不超过结束时间
+        actual_end = min(next_month, end)
+        # 确保起始时间不早于指定的 start_dt
+        actual_start = max(current, start)
+        
         month_num += 1
-        
         logger.debug(
-            f"  [月份 {month_num}] {current_start.format('YYYY-MM-DD')} 至 "
-            f"{current_end.format('YYYY-MM-DD')}..."
+            f"  [月份 {month_num}] {actual_start.format('YYYY-MM-DD')} 至 "
+            f"{actual_end.format('YYYY-MM-DD')}..."
         )
         
-        month_fills = fetch_fills_for_period(
-            client, address, current_start, current_end, auto_split=True, delay=delay
-        )
+        # 带重试的获取
+        success = False
+        for retry in range(max_retries):
+            try:
+                month_fills = fetch_fills_for_period(
+                    client, address, actual_start, actual_end, 
+                    auto_split=True, delay=delay
+                )
+                success = True
+                break
+            except Exception as e:
+                retry_num = retry + 1
+                if retry_num < max_retries:
+                    logger.warning(f"    获取失败（重试 {retry_num}/{max_retries}）: {repr(e)}")
+                    time.sleep(delay * 2)  # 失败后等待更长时间
+                else:
+                    logger.error(f"    获取失败（已重试 {max_retries} 次），终止获取: {repr(e)}")
         
+        # 如果3次重试都失败，终止整个获取过程
+        if not success:
+            logger.warning(f"  因连续失败终止，已获取 {len(all_fills)} 条记录")
+            return all_fills
+        
+        # 添加获取到的记录
         if month_fills:
             new_count = add_fills(month_fills)
             logger.debug(f"    获取 {len(month_fills)} 条，新增 {new_count} 条，累计 {len(all_fills)} 条")
-            empty_months_count = 0
         else:
-            empty_months_count += 1
-            logger.debug(f"    无记录（连续 {empty_months_count}/{empty_months_threshold} 个空月份）")
+            logger.debug(f"    无记录")
         
-        current_end = current_start
+        current = next_month
         time.sleep(delay)
     
     logger.debug(f"  总计获取 {len(all_fills)} 条记录（去重后）")

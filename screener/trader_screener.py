@@ -29,7 +29,7 @@ from .cache import CacheManager, get_cache_manager
 from .api_client import SyncAPIClient, AsyncAPIClient, create_api_client
 from .metrics_calculator import MetricsCalculator, calculate_metrics
 from .scorer import TraderScorer, calculate_scores, get_rating_description
-from .incremental_fetcher import fetch_incremental_fills, fetch_all_history_fills
+from .incremental_fetcher import fetch_all_history_fills
 from .utils import (
     SHANGHAI_TZ,
     now_shanghai,
@@ -199,22 +199,27 @@ class TraderScreener:
                 except Exception as e:
                     logger.debug(f"获取数据库记录失败: {e}")
             
-            if latest_fill and self._db:
-                # 增量获取：从最新记录时间到现在
-                start_dt = timestamp_to_pendulum(latest_fill['time'])
-                end_dt = now_shanghai()
+            if self._db:
+                # 使用从前往后的获取策略
+                # 如果有历史记录，从最新记录开始；否则从 2024-01-01 开始
+                start_dt = None
+                if latest_fill:
+                    start_dt = timestamp_to_pendulum(latest_fill['time'])
+                    logger.debug(f"增量获取: 从 {start_dt.format('YYYY-MM-DD HH:mm')} 开始")
+                else:
+                    logger.debug(f"首次获取: 从 2024-01-01 开始")
                 
-                logger.debug(f"增量获取: {start_dt.format('YYYY-MM-DD HH:mm')} 至 {end_dt.format('YYYY-MM-DD HH:mm')}")
-                
-                new_fills = fetch_incremental_fills(
-                    self._api_client, address, start_dt, end_dt,
+                new_fills = fetch_all_history_fills(
+                    self._api_client, address,
+                    start_dt=start_dt,
+                    max_retries=3,
                     delay=self.config.api.api_call_delay
                 )
                 
                 # 保存新记录到数据库
                 if new_fills:
                     saved_count = self._db.save_fills(address, new_fills)
-                    logger.debug(f"增量保存 {saved_count} 条新交易记录")
+                    logger.debug(f"保存 {saved_count} 条交易记录到数据库")
                     # 更新 db_total_trades
                     db_total_trades = (db_total_trades or 0) + saved_count
                 
@@ -224,35 +229,20 @@ class TraderScreener:
                 else:
                     fills = self._db.get_fills_for_metrics(address, lookback_days=self.config.lookback_days)
             else:
-                # 无历史记录，获取完整历史（往前按月查找，连续3个月无记录则停止）
-                if self._db:
-                    logger.debug(f"首次获取，执行完整历史回溯...")
-                    fills = fetch_all_history_fills(
-                        self._api_client, address,
-                        empty_months_threshold=3,
-                        delay=self.config.api.api_call_delay
+                # 无数据库连接，使用原有逻辑
+                if self.config.lookback_days == 0:
+                    fills = self._api_client.get_user_fills(
+                        address,
+                        self.config.max_fills_per_trader
                     )
-                    
-                    # 保存到数据库
-                    if fills:
-                        saved_count = self._db.save_fills(address, fills)
-                        logger.debug(f"保存 {saved_count} 条历史交易记录到数据库")
-                        db_total_trades = saved_count
                 else:
-                    # 无数据库连接，使用原有逻辑
-                    if self.config.lookback_days == 0:
-                        fills = self._api_client.get_user_fills(
-                            address,
-                            self.config.max_fills_per_trader
-                        )
-                    else:
-                        start_time = now_shanghai().subtract(days=self.config.lookback_days)
-                        end_time = now_shanghai()
-                        fills = self._api_client.get_user_fills_by_time(
-                            address,
-                            int(start_time.timestamp() * 1000),
-                            int(end_time.timestamp() * 1000)
-                        )
+                    start_time = now_shanghai().subtract(days=self.config.lookback_days)
+                    end_time = now_shanghai()
+                    fills = self._api_client.get_user_fills_by_time(
+                        address,
+                        int(start_time.timestamp() * 1000),
+                        int(end_time.timestamp() * 1000)
+                    )
             
             if not fills:
                 logger.debug(f"交易者 {short_address(address)} 无成交记录")
