@@ -90,7 +90,7 @@ def analyze_single_trader_sync(
     config = ScreenerConfig()
     config.data.lookback_days = lookback_days
     config.data.max_fills_per_trader = max_fills
-    config.api.api_call_delay = 0 if use_proxy else 0.5  # 代理模式下可以设为0，否则需要延迟避免限流
+    config.api.api_call_delay = 0 if use_proxy else 1.0  # 代理模式下可以设为0，否则需要延迟避免限流
     config.api.max_retries = 3
     config.api.proxy.enabled = use_proxy  # 设置代理开关
     

@@ -101,7 +101,7 @@ class APIConfig:
     read_timeout: float = 30.0  # 读取超时
     
     # 频率限制
-    api_call_delay: float = 0.0  # API 调用间隔（秒），使用代理时可设为 0
+    api_call_delay: float = 1.0  # API 调用间隔（秒），使用代理时可设为 0
     
     # 代理配置
     proxy: ProxyConfig = field(default_factory=ProxyConfig)

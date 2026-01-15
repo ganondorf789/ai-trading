@@ -465,7 +465,7 @@ def fetch_all_history_fills(
     address: str,
     start_dt: Optional[pendulum.DateTime] = None,
     max_retries: int = 3,
-    delay: float = 0.0
+    delay: float = 1.0
 ) -> List[Dict]:
     """
     从前往后获取交易者的历史交易记录（优化版）
