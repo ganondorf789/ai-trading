@@ -8,6 +8,7 @@ from psycopg2 import extras
 from loguru import logger
 
 from screener.trader_screener import SHANGHAI_TZ
+from screener.utils import calculate_trade_type
 from utils import sanitize_float
 
 
@@ -40,7 +41,7 @@ class TraderFillsOps:
                     # 计算交易类型
                     dir_val = fill.get('dir', '')
                     start_pos = float(fill.get('startPosition', 0)) if fill.get('startPosition') else 0
-                    trade_type = self.calculate_trade_type(dir_val, start_pos)
+                    trade_type = calculate_trade_type(dir_val, start_pos)
 
                     cursor.execute("""
                         INSERT INTO trader_fills (
