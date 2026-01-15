@@ -78,7 +78,8 @@ def analyze_single_trader_sync(
     max_fills: int,
     index: int,
     total: int,
-    resume_from: int
+    resume_from: int,
+    use_proxy: bool = False
 ) -> AnalysisResult:
     """
     同步分析单个交易者（在独立线程中运行）
@@ -89,8 +90,9 @@ def analyze_single_trader_sync(
     config = ScreenerConfig()
     config.data.lookback_days = lookback_days
     config.data.max_fills_per_trader = max_fills
-    config.api.api_call_delay = 0  # 代理模式下可以设为0，因为不同IP不会触发限流
+    config.api.api_call_delay = 0 if use_proxy else 0.5  # 代理模式下可以设为0，否则需要延迟避免限流
     config.api.max_retries = 3
+    config.api.proxy.enabled = use_proxy  # 设置代理开关
     
     screener = None
     db = None
@@ -155,7 +157,8 @@ async def analyze_traders_concurrent(
     lookback_days: int,
     max_fills: int,
     resume_from: int,
-    max_workers: int = 10
+    max_workers: int = 10,
+    use_proxy: bool = False
 ) -> Tuple[AnalysisStats, bool]:
     """
     并发分析多个交易者
@@ -166,6 +169,7 @@ async def analyze_traders_concurrent(
         max_fills: 最大交易记录数
         resume_from: 断点续传起始位置
         max_workers: 最大并发数（默认10）
+        use_proxy: 是否启用代理
     
     Returns:
         (统计结果, 是否被中断)
@@ -199,7 +203,8 @@ async def analyze_traders_concurrent(
                 max_fills,
                 index,
                 total,
-                resume_from
+                resume_from,
+                use_proxy
             )
             
             # 更新统计和进度
@@ -260,7 +265,8 @@ def screen_leaderboard_traders(
     lookback_days: int = 0,
     max_fills: int = 0,
     resume_from: int = 0,
-    max_workers: int = 10
+    max_workers: int = 10,
+    use_proxy: bool = False
 ):
     """
     获取排行榜前N名交易者并分析保存到数据库（并发版本）
@@ -271,10 +277,11 @@ def screen_leaderboard_traders(
         max_fills: 每个交易者最大获取的交易记录数 (0=不限制)
         resume_from: 从第N个地址开始（用于断点续传）
         max_workers: 最大并发数（默认10）
+        use_proxy: 是否启用代理
     """
     logger.info("=" * 70)
     logger.info("Hyperliquid 排行榜交易者批量分析（并发版本）")
-    logger.info(f"并发数: {max_workers}")
+    logger.info(f"并发数: {max_workers}, 代理: {'启用' if use_proxy else '禁用'}")
     logger.info("=" * 70)
 
     # 1. 获取排行榜数据（按 month PnL 排序）
@@ -313,7 +320,8 @@ def screen_leaderboard_traders(
                 lookback_days=lookback_days,
                 max_fills=max_fills,
                 resume_from=resume_from,
-                max_workers=max_workers
+                max_workers=max_workers,
+                use_proxy=use_proxy
             )
         )
     except KeyboardInterrupt:
@@ -374,18 +382,34 @@ def main():
     parser.add_argument(
         "--workers", "-w",
         type=int,
-        default=10,
-        help="并发数/线程数 (默认: 10)"
+        default=1,
+        help="并发数/线程数 (默认: 1)"
+    )
+    parser.add_argument(
+        "--proxy",
+        action="store_true",
+        default=False,
+        help="启用代理 (默认: 不启用)"
+    )
+    parser.add_argument(
+        "--no-proxy",
+        action="store_true",
+        default=False,
+        help="禁用代理 (默认行为)"
     )
 
     args = parser.parse_args()
 
+    # 确定代理设置：--proxy 优先，否则检查 --no-proxy
+    use_proxy = args.proxy and not args.no_proxy
+    
     screen_leaderboard_traders(
         limit=args.limit,
         lookback_days=args.days,
         max_fills=args.max_fills,
         resume_from=args.resume,
-        max_workers=args.workers
+        max_workers=args.workers,
+        use_proxy=use_proxy
     )
 
 

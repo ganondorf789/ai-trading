@@ -78,7 +78,8 @@ class PositionHistoryOps:
                 continue
 
             # 开仓（从零仓位）
-            if trade_type in ('open_long', 'open_short'):
+            # trade_type: 1=OPEN_LONG, 4=OPEN_SHORT
+            if trade_type in (1, 4):
                 # 如果有旧的未平仓仓位，先关闭它（异常情况）
                 if fill_coin in positions_by_coin:
                     old_pos = positions_by_coin[fill_coin]
@@ -89,7 +90,8 @@ class PositionHistoryOps:
                     position_history.append(old_pos)
 
                 # 创建新仓位
-                direction = 'long' if 'long' in trade_type else 'short'
+                # trade_type 1, 2, 3 是多头相关，4, 5, 6 是空头相关
+                direction = 'long' if trade_type in (1, 2, 3) else 'short'
                 positions_by_coin[fill_coin] = {
                     'address': address,
                     'coin': fill_coin,
@@ -115,10 +117,11 @@ class PositionHistoryOps:
                 }
 
             # 加仓
-            elif trade_type in ('add_long', 'add_short'):
+            # trade_type: 2=ADD_LONG, 5=ADD_SHORT
+            elif trade_type in (2, 5):
                 if fill_coin not in positions_by_coin:
                     # 没有开仓记录，创建一个（可能是历史数据不完整）
-                    direction = 'long' if 'long' in trade_type else 'short'
+                    direction = 'long' if trade_type in (1, 2, 3) else 'short'
                     positions_by_coin[fill_coin] = {
                         'address': address,
                         'coin': fill_coin,
@@ -155,7 +158,8 @@ class PositionHistoryOps:
                     pos['open_trades'] += 1
 
             # 平仓
-            elif trade_type in ('close_long', 'close_short'):
+            # trade_type: 3=CLOSE_LONG, 6=CLOSE_SHORT
+            elif trade_type in (3, 6):
                 if fill_coin not in positions_by_coin:
                     # 没有开仓记录，跳过（可能是历史数据不完整）
                     continue

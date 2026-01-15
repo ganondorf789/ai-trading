@@ -152,9 +152,17 @@ class TraderFillsOps:
                 params.append(coin)
 
             # 交易类型筛选
+            # trade_type: 1=OPEN_LONG, 2=ADD_LONG, 3=CLOSE_LONG, 4=OPEN_SHORT, 5=ADD_SHORT, 6=CLOSE_SHORT
             if trade_type:
-                valid_trade_types = {'open_long', 'add_long', 'close_long', 'open_short', 'add_short', 'close_short'}
-                if trade_type in valid_trade_types:
+                # 支持整数或字符串格式
+                trade_type_map = {
+                    'open_long': 1, 'add_long': 2, 'close_long': 3,
+                    'open_short': 4, 'add_short': 5, 'close_short': 6
+                }
+                if isinstance(trade_type, str) and trade_type in trade_type_map:
+                    conditions.append("trade_type = %s")
+                    params.append(trade_type_map[trade_type])
+                elif isinstance(trade_type, int) and 1 <= trade_type <= 6:
                     conditions.append("trade_type = %s")
                     params.append(trade_type)
 

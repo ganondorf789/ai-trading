@@ -100,7 +100,7 @@ class DatabaseBase:
         return result
 
     @staticmethod
-    def calculate_trade_type(dir_val: str, start_position: float) -> str:
+    def calculate_trade_type(dir_val: str, start_position: float) -> int:
         """
         根据 dir 和 start_position 计算交易类型
 
@@ -109,7 +109,13 @@ class DatabaseBase:
             start_position: 开始仓位
 
         Returns:
-            交易类型: open_long/add_long/close_long/open_short/add_short/close_short
+            交易类型（整数）:
+                1=OPEN_LONG（开多）
+                2=ADD_LONG（加多）
+                3=CLOSE_LONG（平多）
+                4=OPEN_SHORT（开空）
+                5=ADD_SHORT（加空）
+                6=CLOSE_SHORT（平空）
         """
         if not dir_val:
             return None
@@ -118,13 +124,13 @@ class DatabaseBase:
 
         if 'Open' in dir_val:
             if 'Long' in dir_val:
-                return 'open_long' if start_pos == 0 else 'add_long'
+                return 1 if start_pos == 0 else 2  # OPEN_LONG or ADD_LONG
             elif 'Short' in dir_val:
-                return 'open_short' if start_pos == 0 else 'add_short'
+                return 4 if start_pos == 0 else 5  # OPEN_SHORT or ADD_SHORT
         elif 'Close' in dir_val:
             if 'Long' in dir_val:
-                return 'close_long'
+                return 3  # CLOSE_LONG
             elif 'Short' in dir_val:
-                return 'close_short'
+                return 6  # CLOSE_SHORT
 
         return None

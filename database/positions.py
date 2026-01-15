@@ -34,12 +34,13 @@ class PositionsOps:
 
             # 找到最近一次从零仓位开始的开仓记录
             # start_position = 0 表示这是一个全新的仓位
+            # trade_type: 1=OPEN_LONG, 4=OPEN_SHORT
             cursor.execute("""
                 SELECT trade_time, time
                 FROM trader_fills
                 WHERE address = %s
                   AND coin = %s
-                  AND trade_type IN ('open_long', 'open_short')
+                  AND trade_type IN (1, 4)
                 ORDER BY time DESC
                 LIMIT 1
             """, (address, coin))
@@ -70,6 +71,7 @@ class PositionsOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 使用窗口函数一次性获取所有币种最近的开仓时间
+            # trade_type: 1=OPEN_LONG, 4=OPEN_SHORT
             cursor.execute("""
                 WITH ranked_fills AS (
                     SELECT
@@ -79,7 +81,7 @@ class PositionsOps:
                     FROM trader_fills
                     WHERE address = %s
                       AND coin = ANY(%s)
-                      AND trade_type IN ('open_long', 'open_short')
+                      AND trade_type IN (1, 4)
                 )
                 SELECT coin, trade_time
                 FROM ranked_fills
