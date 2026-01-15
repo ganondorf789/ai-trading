@@ -8,10 +8,32 @@ from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 import pendulum
 from loguru import logger
 
-from .utils import SHANGHAI_TZ, timestamp_to_pendulum, now_shanghai
+from .utils import SHANGHAI_TZ, timestamp_to_pendulum, now_shanghai, calculate_trade_type
 
 if TYPE_CHECKING:
     from .api_client import SyncAPIClient
+
+
+def _enrich_fills(fills: List[Dict]) -> List[Dict]:
+    """
+    为成交记录添加 trade_type 字段
+    
+    Args:
+        fills: 原始成交记录列表
+    
+    Returns:
+        添加了 trade_type 的成交记录列表
+    """
+    if not fills:
+        return fills
+    
+    for fill in fills:
+        if 'trade_type' not in fill or fill['trade_type'] is None:
+            dir_val = fill.get('dir', '')
+            start_pos = float(fill.get('startPosition', 0)) if fill.get('startPosition') else 0
+            fill['trade_type'] = calculate_trade_type(dir_val, start_pos)
+    
+    return fills
 
 
 def fetch_fills_for_period(
@@ -34,7 +56,7 @@ def fetch_fills_for_period(
         delay: API 调用延迟（秒）
     
     Returns:
-        交易记录列表
+        交易记录列表（已添加 trade_type）
     """
     start_ms = int(start_dt.timestamp() * 1000)
     end_ms = int(end_dt.timestamp() * 1000)
@@ -61,7 +83,8 @@ def fetch_fills_for_period(
             logger.debug(f"  达到 2000 条上限，按小时细分...")
             return fetch_fills_by_hours(client, address, start_dt, end_dt, delay)
     
-    return fills
+    # 添加 trade_type 字段
+    return _enrich_fills(fills)
 
 
 def fetch_fills_by_weeks(
@@ -96,7 +119,7 @@ def fetch_fills_by_weeks(
                 day_fills = fetch_fills_by_days(client, address, current, next_week, delay)
                 all_fills.extend(day_fills)
             else:
-                all_fills.extend(week_fills)
+                all_fills.extend(_enrich_fills(week_fills))
         
         current = next_week
         if delay > 0:
@@ -136,7 +159,7 @@ def fetch_fills_by_days(
                 hour_fills = fetch_fills_by_hours(client, address, current, next_day, delay)
                 all_fills.extend(hour_fills)
             else:
-                all_fills.extend(day_fills)
+                all_fills.extend(_enrich_fills(day_fills))
         
         current = next_day
         if delay > 0:
@@ -179,7 +202,7 @@ def fetch_fills_by_hours(
                 minute_fills = fetch_fills_by_minutes(client, address, current, next_hour, delay)
                 all_fills.extend(minute_fills)
             else:
-                all_fills.extend(hour_fills)
+                all_fills.extend(_enrich_fills(hour_fills))
                 logger.debug(f"        小时 [{hour_num}/{total_hours}] {current.format('HH:00')}: {len(hour_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_hour
@@ -225,7 +248,7 @@ def fetch_fills_by_minutes(
                 fine_fills = fetch_fills_by_2minutes(client, address, current, next_chunk, delay)
                 all_fills.extend(fine_fills)
             else:
-                all_fills.extend(chunk_fills)
+                all_fills.extend(_enrich_fills(chunk_fills))
                 logger.debug(f"          10分钟 [{chunk_num}/{total_chunks}] {current.format('HH:mm')}-{next_chunk.format('HH:mm')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_chunk
@@ -265,7 +288,7 @@ def fetch_fills_by_2minutes(
             continue
         
         if chunk_fills:
-            all_fills.extend(chunk_fills)
+            all_fills.extend(_enrich_fills(chunk_fills))
             if len(chunk_fills) >= 2000:
                 logger.warning(f"            2分钟 [{current.format('HH:mm')}-{next_chunk.format('HH:mm')}]: {len(chunk_fills)} 条（达到上限，无法进一步细分）")
             else:
@@ -300,7 +323,7 @@ def probe_trader_fills(
         end_dt: 结束时间
     
     Returns:
-        (fills, is_complete): fills 是记录列表，is_complete 表示是否已获取全部
+        (fills, is_complete): fills 是记录列表（已添加 trade_type），is_complete 表示是否已获取全部
     """
     start_ms = int(start_dt.timestamp() * 1000)
     end_ms = int(end_dt.timestamp() * 1000)
@@ -311,7 +334,8 @@ def probe_trader_fills(
         return [], True
     
     is_complete = len(fills) < 2000
-    return fills, is_complete
+    # 添加 trade_type 字段
+    return _enrich_fills(fills), is_complete
 
 
 def find_first_fill_half_year(
