@@ -51,8 +51,8 @@ def calculate_trade_type(dir_val: str, start_position: float) -> Optional[int]:
     根据 dir 和 start_position 计算交易类型
     
     Args:
-        dir_val: 方向字符串，如 'Open Long', 'Close Short', 'Short > Long' 等
-        start_position: 开始仓位
+        dir_val: 方向字符串，如 'Open Long', 'Close Short', 'Short > Long', 'Buy', 'Sell' 等
+        start_position: 开始仓位（正数=多头，负数=空头）
     
     Returns:
         交易类型（整数）:
@@ -81,6 +81,18 @@ def calculate_trade_type(dir_val: str, start_position: float) -> Optional[int]:
     # 翻仓情况：从多头翻成空头
     elif dir_val == 'Long > Short':
         return 4  # OPEN_SHORT（建立空头仓位）
+    # Buy: 买入
+    elif dir_val == 'Buy':
+        if start_pos < 0:
+            return 6  # CLOSE_SHORT（平空）
+        else:
+            return 1 if start_pos == 0 else 2  # OPEN_LONG or ADD_LONG
+    # Sell: 卖出
+    elif dir_val == 'Sell':
+        if start_pos > 0:
+            return 3  # CLOSE_LONG（平多）
+        else:
+            return 4 if start_pos == 0 else 5  # OPEN_SHORT or ADD_SHORT
     
     return None
 
