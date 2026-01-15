@@ -164,7 +164,7 @@ class DatabaseMigrations:
 
                     -- 交易信息
                     coin TEXT,
-                    side TEXT,
+                    side CHAR(1),                   -- 'A' 或 'B'（1字节）
                     px REAL,
                     sz REAL,
                     time BIGINT,
@@ -181,7 +181,7 @@ class DatabaseMigrations:
                     fee REAL DEFAULT 0.0,
                     oid BIGINT,
                     tid BIGINT,
-                    trade_type TEXT,
+                    trade_type SMALLINT,            -- 1-6（2字节）
 
                     -- 唯一约束：使用 tid 作为唯一标识（tid 是交易的真正唯一ID）
                     UNIQUE(address, tid)
