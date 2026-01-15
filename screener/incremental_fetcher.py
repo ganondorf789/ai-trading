@@ -20,7 +20,7 @@ def fetch_fills_for_period(
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
     auto_split: bool = True,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """
     获取指定时间段的交易记录
@@ -69,7 +69,7 @@ def fetch_fills_by_weeks(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """按周获取交易记录"""
     all_fills = []
@@ -85,7 +85,8 @@ def fetch_fills_by_weeks(
         except Exception as e:
             logger.error(f"    获取周数据失败 [{current.format('MM-DD')}]: {repr(e)}")
             current = next_week
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if week_fills:
@@ -98,7 +99,8 @@ def fetch_fills_by_weeks(
                 all_fills.extend(week_fills)
         
         current = next_week
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     return all_fills
 
@@ -108,7 +110,7 @@ def fetch_fills_by_days(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """按天获取交易记录"""
     all_fills = []
@@ -124,7 +126,8 @@ def fetch_fills_by_days(
         except Exception as e:
             logger.error(f"      获取日数据失败 [{current.format('MM-DD')}]: {repr(e)}")
             current = next_day
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if day_fills:
@@ -136,7 +139,8 @@ def fetch_fills_by_days(
                 all_fills.extend(day_fills)
         
         current = next_day
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     return all_fills
 
@@ -146,7 +150,7 @@ def fetch_fills_by_hours(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """按小时获取交易记录"""
     all_fills = []
@@ -165,7 +169,8 @@ def fetch_fills_by_hours(
         except Exception as e:
             logger.error(f"        获取小时数据失败 [{current.format('MM-DD HH:00')}]: {repr(e)}")
             current = next_hour
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if hour_fills:
@@ -178,7 +183,8 @@ def fetch_fills_by_hours(
                 logger.debug(f"        小时 [{hour_num}/{total_hours}] {current.format('HH:00')}: {len(hour_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_hour
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     logger.debug(f"        小时细分完成: 共 {len(all_fills)} 条")
     return all_fills
@@ -189,7 +195,7 @@ def fetch_fills_by_minutes(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """按10分钟获取交易记录（用于极度活跃的交易小时）"""
     all_fills = []
@@ -208,7 +214,8 @@ def fetch_fills_by_minutes(
         except Exception as e:
             logger.error(f"          获取10分钟数据失败 [{current.format('HH:mm')}]: {repr(e)}")
             current = next_chunk
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if chunk_fills:
@@ -222,7 +229,8 @@ def fetch_fills_by_minutes(
                 logger.debug(f"          10分钟 [{chunk_num}/{total_chunks}] {current.format('HH:mm')}-{next_chunk.format('HH:mm')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_chunk
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     logger.debug(f"          10分钟细分完成: 共 {len(all_fills)} 条")
     return all_fills
@@ -233,7 +241,7 @@ def fetch_fills_by_2minutes(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """按2分钟获取交易记录（用于极度活跃的10分钟段）"""
     all_fills = []
@@ -252,7 +260,8 @@ def fetch_fills_by_2minutes(
         except Exception as e:
             logger.error(f"            获取2分钟数据失败 [{current.format('HH:mm')}]: {repr(e)}")
             current = next_chunk
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if chunk_fills:
@@ -263,7 +272,8 @@ def fetch_fills_by_2minutes(
                 logger.debug(f"            2分钟 [{chunk_num}/{total_chunks}] {current.format('HH:mm')}-{next_chunk.format('HH:mm')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
         
         current = next_chunk
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     logger.debug(f"            2分钟细分完成: 共 {len(all_fills)} 条")
     return all_fills
@@ -309,7 +319,7 @@ def find_first_fill_half_year(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> Optional[pendulum.DateTime]:
     """
     使用半年分块快速定位第一笔交易所在的半年
@@ -344,7 +354,8 @@ def find_first_fill_half_year(
         except Exception as e:
             logger.error(f"    半年探测失败 [{current.format('YYYY-MM')}]: {repr(e)}")
             current = next_half_year
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
             continue
         
         if fills:
@@ -353,7 +364,8 @@ def find_first_fill_half_year(
             return current
         
         current = next_half_year
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     return None
 
@@ -363,7 +375,7 @@ def fetch_incremental_fills(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """
     增量获取成交记录（自适应5层细分）
@@ -414,7 +426,8 @@ def fetch_incremental_fills(
                 logger.debug(f"    获取 {len(month_fills)} 条，累计 {len(all_fills)} 条")
             
             current = next_month
-            time.sleep(delay)
+            if delay > 0:
+                time.sleep(delay)
     else:
         # 时间范围较短，直接获取
         fills = fetch_fills_for_period(client, address, start_dt, end_dt, auto_split=True, delay=delay)
@@ -428,7 +441,7 @@ def fetch_all_history_fills(
     address: str,
     start_dt: Optional[pendulum.DateTime] = None,
     max_retries: int = 3,
-    delay: float = 2.0
+    delay: float = 0.0
 ) -> List[Dict]:
     """
     从前往后获取交易者的历史交易记录（优化版）
@@ -489,7 +502,8 @@ def fetch_all_history_fills(
                 retry_num = retry + 1
                 if retry_num < max_retries:
                     logger.warning(f"    探测失败（重试 {retry_num}/{max_retries}）: {repr(e)}")
-                    time.sleep(delay * 2)
+                    if delay > 0:
+                        time.sleep(delay * 2)
                 else:
                     logger.error(f"    探测失败（已重试 {max_retries} 次），终止获取: {repr(e)}")
                     return []
@@ -506,7 +520,8 @@ def fetch_all_history_fills(
         
         # 情况3：= 2000 条，需要进一步获取
         logger.debug(f"  探测返回 2000 条，使用半年分块定位起始时间...")
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
         
         # 用半年分块找到第一笔交易所在的半年
         first_half_year = find_first_fill_half_year(client, address, DEFAULT_START, end, delay)
@@ -519,7 +534,8 @@ def fetch_all_history_fills(
         # 从找到的半年开始按月获取
         start = first_half_year
         logger.debug(f"  从 {start.format('YYYY-MM')} 开始按月获取...")
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     else:
         # 增量更新：从指定时间开始
         start = start_dt
@@ -557,7 +573,8 @@ def fetch_all_history_fills(
                 retry_num = retry + 1
                 if retry_num < max_retries:
                     logger.warning(f"    获取失败（重试 {retry_num}/{max_retries}）: {repr(e)}")
-                    time.sleep(delay * 2)  # 失败后等待更长时间
+                    if delay > 0:
+                        time.sleep(delay * 2)  # 失败后等待更长时间
                 else:
                     logger.error(f"    获取失败（已重试 {max_retries} 次），终止获取: {repr(e)}")
         
@@ -574,7 +591,8 @@ def fetch_all_history_fills(
             logger.debug(f"    无记录")
         
         current = next_month
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     
     logger.debug(f"  总计获取 {len(all_fills)} 条记录（去重后）")
     

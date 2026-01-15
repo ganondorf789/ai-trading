@@ -70,7 +70,7 @@ class ScoringConfig:
 @dataclass
 class ProxyConfig:
     """代理配置"""
-    enabled: bool = False  # 是否启用代理
+    enabled: bool = True  # 是否启用代理
     host: str = "proxy.smartproxy.net"  # 代理主机
     port: int = 3120  # 代理端口
     username: str = "smart-cbbncrcrkj60_area-SG"  # 代理用户名
