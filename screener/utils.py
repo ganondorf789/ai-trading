@@ -46,7 +46,7 @@ def now_shanghai() -> pendulum.DateTime:
     return pendulum.now(SHANGHAI_TZ)
 
 
-def calculate_trade_type(dir_val: str, start_position: float) -> Optional[str]:
+def calculate_trade_type(dir_val: str, start_position: float) -> Optional[int]:
     """
     根据 dir 和 start_position 计算交易类型
     
@@ -55,7 +55,10 @@ def calculate_trade_type(dir_val: str, start_position: float) -> Optional[str]:
         start_position: 开始仓位
     
     Returns:
-        交易类型: open_long/add_long/close_long/open_short/add_short/close_short
+        交易类型（整数）:
+            1=open_long, 2=add_long, 3=close_long,
+            4=open_short, 5=add_short, 6=close_short
+        参见 models.TradeType
     """
     if not dir_val:
         return None
@@ -64,14 +67,14 @@ def calculate_trade_type(dir_val: str, start_position: float) -> Optional[str]:
     
     if 'Open' in dir_val:
         if 'Long' in dir_val:
-            return 'open_long' if start_pos == 0 else 'add_long'
+            return 1 if start_pos == 0 else 2  # OPEN_LONG or ADD_LONG
         elif 'Short' in dir_val:
-            return 'open_short' if start_pos == 0 else 'add_short'
+            return 4 if start_pos == 0 else 5  # OPEN_SHORT or ADD_SHORT
     elif 'Close' in dir_val:
         if 'Long' in dir_val:
-            return 'close_long'
+            return 3  # CLOSE_LONG
         elif 'Short' in dir_val:
-            return 'close_short'
+            return 6  # CLOSE_SHORT
     
     return None
 
@@ -337,6 +340,11 @@ def calculate_holding_time(fills: List[Dict[str, Any]]) -> float:
     Returns:
         平均持仓时间（小时）
     """
+    # 开仓类型: 1=open_long, 2=add_long, 4=open_short, 5=add_short
+    # 平仓类型: 3=close_long, 6=close_short
+    OPEN_TYPES = {1, 2, 4, 5}
+    CLOSE_TYPES = {3, 6}
+    
     positions: Dict[str, Dict] = {}  # symbol -> {open_time, side}
     holding_times = []
     
@@ -344,15 +352,15 @@ def calculate_holding_time(fills: List[Dict[str, Any]]) -> float:
     
     for fill in sorted_fills:
         symbol = fill.get('coin')
-        trade_type = fill.get('trade_type', '')
+        trade_type = fill.get('trade_type')
         trade_time = fill.get('time', 0)
         
-        if not symbol or not trade_type:
+        if not symbol or trade_type is None:
             continue
         
-        if 'open' in trade_type:
+        if trade_type in OPEN_TYPES:
             positions[symbol] = {'open_time': trade_time, 'side': trade_type}
-        elif 'close' in trade_type and symbol in positions:
+        elif trade_type in CLOSE_TYPES and symbol in positions:
             open_time = positions[symbol]['open_time']
             holding_hours = (trade_time - open_time) / (1000 * 3600)
             if holding_hours > 0:

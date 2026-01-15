@@ -85,6 +85,7 @@ from screener.trader_screener import (
 from screener.models import (
     TraderMetrics,
     QualityRating,
+    TradeType,
     PnLMetrics,
     RiskMetrics,
     TradeMetrics,
@@ -201,6 +202,7 @@ __all__ = [
     # 数据模型
     "TraderMetrics",
     "QualityRating",
+    "TradeType",
     "PnLMetrics",
     "RiskMetrics",
     "TradeMetrics",

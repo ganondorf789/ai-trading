@@ -19,6 +19,64 @@ class QualityRating(Enum):
     F_TIER = "F"  # 不推荐
 
 
+class TradeType:
+    """
+    交易类型常量（使用整数节省空间）
+    
+    开仓类型 (1-2): 做多方向
+    平仓类型 (3): 平多
+    开仓类型 (4-5): 做空方向
+    平仓类型 (6): 平空
+    """
+    OPEN_LONG = 1    # 开多（新开仓）
+    ADD_LONG = 2     # 加多（加仓）
+    CLOSE_LONG = 3   # 平多
+    OPEN_SHORT = 4   # 开空（新开仓）
+    ADD_SHORT = 5    # 加空（加仓）
+    CLOSE_SHORT = 6  # 平空
+    
+    # 类型分组（用于快速判断）
+    OPEN_TYPES = {1, 2, 4, 5}   # 所有开仓类型
+    CLOSE_TYPES = {3, 6}        # 所有平仓类型
+    LONG_TYPES = {1, 2, 3}      # 多头相关类型
+    SHORT_TYPES = {4, 5, 6}     # 空头相关类型
+    
+    # 名称映射（用于显示）
+    NAMES = {
+        1: 'open_long',
+        2: 'add_long',
+        3: 'close_long',
+        4: 'open_short',
+        5: 'add_short',
+        6: 'close_short',
+    }
+    
+    @classmethod
+    def is_open(cls, trade_type: Optional[int]) -> bool:
+        """判断是否为开仓类型"""
+        return trade_type in cls.OPEN_TYPES if trade_type else False
+    
+    @classmethod
+    def is_close(cls, trade_type: Optional[int]) -> bool:
+        """判断是否为平仓类型"""
+        return trade_type in cls.CLOSE_TYPES if trade_type else False
+    
+    @classmethod
+    def is_long(cls, trade_type: Optional[int]) -> bool:
+        """判断是否为多头相关"""
+        return trade_type in cls.LONG_TYPES if trade_type else False
+    
+    @classmethod
+    def is_short(cls, trade_type: Optional[int]) -> bool:
+        """判断是否为空头相关"""
+        return trade_type in cls.SHORT_TYPES if trade_type else False
+    
+    @classmethod
+    def to_name(cls, trade_type: Optional[int]) -> Optional[str]:
+        """将整数类型转换为名称字符串"""
+        return cls.NAMES.get(trade_type) if trade_type else None
+
+
 @dataclass
 class PnLMetrics:
     """盈亏相关指标"""
@@ -530,11 +588,28 @@ class FillData:
     closed_pnl: float = 0.0  # 已平仓盈亏
     dir: Optional[str] = None  # 方向描述
     start_position: Optional[float] = None  # 开始仓位
-    trade_type: Optional[str] = None  # 交易类型
+    trade_type: Optional[int] = None  # 交易类型（整数，参见 TradeType）
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'FillData':
         """从字典创建"""
+        # 处理 trade_type，支持整数或字符串
+        trade_type_raw = data.get('trade_type')
+        if isinstance(trade_type_raw, int):
+            trade_type = trade_type_raw
+        elif isinstance(trade_type_raw, str):
+            # 兼容旧的字符串格式
+            trade_type = {
+                'open_long': TradeType.OPEN_LONG,
+                'add_long': TradeType.ADD_LONG,
+                'close_long': TradeType.CLOSE_LONG,
+                'open_short': TradeType.OPEN_SHORT,
+                'add_short': TradeType.ADD_SHORT,
+                'close_short': TradeType.CLOSE_SHORT,
+            }.get(trade_type_raw)
+        else:
+            trade_type = None
+        
         return cls(
             time=int(data.get('time', 0)),
             coin=str(data.get('coin', '')),
@@ -544,7 +619,7 @@ class FillData:
             closed_pnl=float(data.get('closedPnl', 0)),
             dir=data.get('dir'),
             start_position=float(data['startPosition']) if data.get('startPosition') else None,
-            trade_type=data.get('trade_type'),
+            trade_type=trade_type,
         )
     
     def to_dict(self) -> Dict[str, Any]:
