@@ -2,7 +2,7 @@
 配置模块
 """
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Optional
 
 from hyperliquid.utils import constants
 
@@ -68,6 +68,25 @@ class ScoringConfig:
 
 
 @dataclass
+class ProxyConfig:
+    """代理配置"""
+    enabled: bool = False  # 是否启用代理
+    host: str = "proxy.smartproxy.net"  # 代理主机
+    port: int = 3120  # 代理端口
+    username: str = "smart-cbbncrcrkj60_area-SG"  # 代理用户名
+    password: str = "NYBYuI6rARSnQJwg"  # 代理密码
+    
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """获取代理 URL"""
+        if not self.enabled or not self.host:
+            return None
+        if self.username and self.password:
+            return f"http://{self.username}:{self.password}@{self.host}:{self.port}"
+        return f"http://{self.host}:{self.port}"
+
+
+@dataclass
 class APIConfig:
     """API 配置"""
     api_url: str = constants.MAINNET_API_URL
@@ -82,7 +101,10 @@ class APIConfig:
     read_timeout: float = 30.0  # 读取超时
     
     # 频率限制
-    api_call_delay: float = 2.0  # API 调用间隔（秒）
+    api_call_delay: float = 0.0  # API 调用间隔（秒），使用代理时可设为 0
+    
+    # 代理配置
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
 
 
 @dataclass
@@ -220,6 +242,14 @@ class ScreenerConfig:
     def retry_delay(self) -> float:
         return self.api.retry_delay
     
+    @property
+    def proxy_url(self) -> Optional[str]:
+        return self.api.proxy.proxy_url
+    
+    @property
+    def proxy_enabled(self) -> bool:
+        return self.api.proxy.enabled
+    
     @classmethod
     def from_dict(cls, data: dict) -> 'ScreenerConfig':
         """从字典创建配置"""
@@ -231,7 +261,14 @@ class ScreenerConfig:
         if 'scoring' in data:
             config.scoring = ScoringConfig(**data['scoring'])
         if 'api' in data:
-            config.api = APIConfig(**data['api'])
+            api_data = data['api'].copy()
+            # 单独处理嵌套的 proxy 配置
+            if 'proxy' in api_data:
+                api_data['proxy'] = ProxyConfig(**api_data['proxy'])
+            config.api = APIConfig(**api_data)
+        if 'proxy' in data:
+            # 支持顶层 proxy 配置
+            config.api.proxy = ProxyConfig(**data['proxy'])
         if 'concurrency' in data:
             config.concurrency = ConcurrencyConfig(**data['concurrency'])
         if 'cache' in data:
@@ -240,37 +277,6 @@ class ScreenerConfig:
             config.data = DataConfig(**data['data'])
         if 'output' in data:
             config.output = OutputConfig(**data['output'])
-        
-        # 支持旧版扁平配置格式
-        flat_mappings = {
-            'min_total_trades': ('filter', 'min_total_trades'),
-            'min_win_rate': ('filter', 'min_win_rate'),
-            'min_profit_factor': ('filter', 'min_profit_factor'),
-            'min_total_pnl': ('filter', 'min_total_pnl'),
-            'max_drawdown': ('filter', 'max_drawdown'),
-            'min_active_days': ('filter', 'min_active_days'),
-            'min_sharpe_ratio': ('filter', 'min_sharpe_ratio'),
-            'profitability_weight': ('scoring', 'profitability_weight'),
-            'risk_weight': ('scoring', 'risk_weight'),
-            'consistency_weight': ('scoring', 'consistency_weight'),
-            'activity_weight': ('scoring', 'activity_weight'),
-            'api_url': ('api', 'api_url'),
-            'testnet': ('api', 'testnet'),
-            'max_retries': ('api', 'max_retries'),
-            'retry_delay': ('api', 'retry_delay'),
-            'api_call_delay': ('api', 'api_call_delay'),
-            'max_concurrent_requests': ('concurrency', 'max_concurrent_requests'),
-            'request_delay': ('concurrency', 'request_delay'),
-            'max_fills_per_trader': ('data', 'max_fills_per_trader'),
-            'lookback_days': ('data', 'lookback_days'),
-            'top_n': ('output', 'top_n'),
-            'output_file': ('output', 'output_file'),
-        }
-        
-        for key, (sub_config, attr) in flat_mappings.items():
-            if key in data:
-                sub = getattr(config, sub_config)
-                setattr(sub, attr, data[key])
         
         return config
 

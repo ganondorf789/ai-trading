@@ -51,7 +51,7 @@ class SyncAPIClient(BaseAPIClient):
     """
     同步 API 客户端
     
-    基于 hyperliquid-python 库的同步实现
+    基于 hyperliquid-python 库或 httpx 的同步实现，支持代理轮换
     """
     
     def __init__(
@@ -73,14 +73,101 @@ class SyncAPIClient(BaseAPIClient):
         self._cache_fills = cache_fills
         
         # 确定 API URL
-        api_url = (
+        self._api_url = (
             constants.TESTNET_API_URL 
             if self.config.testnet 
             else self.config.api_url
         )
-        self._info = Info(api_url, skip_ws=True)
         
-        logger.debug(f"同步 API 客户端初始化完成: {api_url}, 缓存fills: {cache_fills}")
+        # 代理配置
+        self._proxy_url = self.config.proxy.proxy_url if self.config.proxy.enabled else None
+        self._use_proxy = self._proxy_url is not None
+        
+        if self._use_proxy:
+            # 使用 httpx 同步客户端（支持代理）
+            self._info = None
+            self._http_client: Optional[httpx.Client] = None
+            proxy_status = f"代理: {self.config.proxy.host}:{self.config.proxy.port}"
+        else:
+            # 使用 hyperliquid-python 库（无代理时）
+            self._info = Info(self._api_url, skip_ws=True)
+            self._http_client = None
+            proxy_status = "无代理"
+        
+        logger.debug(f"同步 API 客户端初始化完成: {self._api_url}, {proxy_status}, 缓存fills: {cache_fills}")
+    
+    def _get_http_client(self) -> httpx.Client:
+        """获取或创建 HTTP 同步客户端（代理模式）"""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.Client(
+                base_url=self._api_url,
+                proxy=self._proxy_url,
+                timeout=httpx.Timeout(
+                    connect=self.config.connect_timeout,
+                    read=self.config.read_timeout,
+                    write=self.config.read_timeout,
+                    pool=self.config.connect_timeout
+                )
+            )
+        return self._http_client
+    
+    def _post_with_proxy(self, data: Dict[str, Any]) -> Any:
+        """使用代理发送 POST 请求"""
+        client = self._get_http_client()
+        last_error = None
+        
+        for attempt in range(self.config.max_retries):
+            try:
+                response = client.post("/info", json=data)
+                
+                if response.status_code == 429:
+                    wait_time = self.config.retry_delay * (attempt + 1)
+                    logger.warning(
+                        f"请求频率过高，等待 {wait_time}s 后重试 "
+                        f"(尝试 {attempt + 1}/{self.config.max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                
+                response.raise_for_status()
+                return response.json()
+                
+            except httpx.TimeoutException as e:
+                last_error = e
+                logger.debug(f"请求超时: {e}")
+                if attempt < self.config.max_retries - 1:
+                    time.sleep(self.config.retry_delay)
+                    
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code == 429:
+                    wait_time = self.config.retry_delay * (attempt + 1)
+                    time.sleep(wait_time)
+                else:
+                    logger.debug(f"HTTP 错误: {e}")
+                    if attempt < self.config.max_retries - 1:
+                        time.sleep(self.config.retry_delay)
+                    else:
+                        raise APIError(str(e), e.response.status_code)
+                        
+            except Exception as e:
+                last_error = e
+                logger.debug(f"请求失败: {e}")
+                if attempt < self.config.max_retries - 1:
+                    time.sleep(self.config.retry_delay)
+        
+        if last_error:
+            if isinstance(last_error, httpx.TimeoutException):
+                raise APITimeoutError(self.config.read_timeout)
+            raise APIError(str(last_error))
+        
+        return None
+    
+    def close(self) -> None:
+        """关闭 HTTP 客户端"""
+        if self._http_client and not self._http_client.is_closed:
+            self._http_client.close()
+            self._http_client = None
     
     def _call_with_retry(self, func, *args, **kwargs) -> Any:
         """
@@ -148,7 +235,13 @@ class SyncAPIClient(BaseAPIClient):
             return cached
         
         try:
-            result = self._call_with_retry(self._info.user_state, address)
+            if self._use_proxy:
+                result = self._post_with_proxy({
+                    "type": "clearinghouseState",
+                    "user": address
+                })
+            else:
+                result = self._call_with_retry(self._info.user_state, address)
             if result:
                 self._cache.set('user_state', address, result)
             return result
@@ -175,7 +268,14 @@ class SyncAPIClient(BaseAPIClient):
                 return cached
         
         try:
-            fills = self._call_with_retry(self._info.user_fills, address)
+            if self._use_proxy:
+                fills = self._post_with_proxy({
+                    "type": "userFills",
+                    "user": address
+                })
+            else:
+                fills = self._call_with_retry(self._info.user_fills, address)
+            
             if fills is None:
                 return []
             
@@ -217,12 +317,20 @@ class SyncAPIClient(BaseAPIClient):
                 return cached
         
         try:
-            fills = self._call_with_retry(
-                self._info.user_fills_by_time,
-                address,
-                start_time_ms,
-                end_time_ms
-            )
+            if self._use_proxy:
+                fills = self._post_with_proxy({
+                    "type": "userFillsByTime",
+                    "user": address,
+                    "startTime": start_time_ms,
+                    "endTime": end_time_ms
+                })
+            else:
+                fills = self._call_with_retry(
+                    self._info.user_fills_by_time,
+                    address,
+                    start_time_ms,
+                    end_time_ms
+                )
             
             if fills:
                 # 仅在启用缓存时缓存数据
@@ -234,7 +342,8 @@ class SyncAPIClient(BaseAPIClient):
         except APIError as e:
             logger.debug(f"按时间获取成交记录失败 {address[:10]}...: {e}")
             # 回退到普通方法
-            time.sleep(self.config.api_call_delay)
+            if self.config.api_call_delay > 0:
+                time.sleep(self.config.api_call_delay)
             return self.get_user_fills(address)
     
     def get_recent_trades(self, symbol: str, limit: int = 50) -> List[Dict]:
@@ -261,14 +370,15 @@ class SyncAPIClient(BaseAPIClient):
     
     def delay(self) -> None:
         """执行 API 调用延迟"""
-        time.sleep(self.config.api_call_delay)
+        if self.config.api_call_delay > 0:
+            time.sleep(self.config.api_call_delay)
 
 
 class AsyncAPIClient(BaseAPIClient):
     """
     异步 API 客户端
     
-    基于 httpx 的异步实现
+    基于 httpx 的异步实现，支持代理轮换
     """
     
     def __init__(
@@ -295,13 +405,18 @@ class AsyncAPIClient(BaseAPIClient):
         
         self._client: Optional[httpx.AsyncClient] = None
         
-        logger.debug(f"异步 API 客户端初始化完成: {self._base_url}")
+        # 代理配置
+        self._proxy_url = self.config.proxy.proxy_url if self.config.proxy.enabled else None
+        
+        proxy_status = f"代理: {self.config.proxy.host}:{self.config.proxy.port}" if self._proxy_url else "无代理"
+        logger.debug(f"异步 API 客户端初始化完成: {self._base_url}, {proxy_status}")
     
     async def _get_client(self) -> httpx.AsyncClient:
         """获取或创建 HTTP 客户端"""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self._base_url,
+                proxy=self._proxy_url,
                 timeout=httpx.Timeout(
                     connect=self.config.connect_timeout,
                     read=self.config.read_timeout,
@@ -482,12 +597,14 @@ class AsyncAPIClient(BaseAPIClient):
         except APIError as e:
             logger.debug(f"按时间获取成交记录失败 {address[:10]}...: {e}")
             # 回退到普通方法
-            await asyncio.sleep(self.config.api_call_delay)
+            if self.config.api_call_delay > 0:
+                await asyncio.sleep(self.config.api_call_delay)
             return await self.get_user_fills(address)
     
     async def delay(self) -> None:
         """执行 API 调用延迟"""
-        await asyncio.sleep(self.config.api_call_delay)
+        if self.config.api_call_delay > 0:
+            await asyncio.sleep(self.config.api_call_delay)
     
     # 同步方法的包装（用于兼容 BaseAPIClient）
     def get_user_state_sync(self, address: str) -> Optional[Dict[str, Any]]:
