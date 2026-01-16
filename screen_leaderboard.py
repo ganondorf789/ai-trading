@@ -429,8 +429,8 @@ def main():
     parser.add_argument(
         "--delay",
         type=float,
-        default=None,
-        help="API调用间隔秒数 (默认: 代理模式0秒, 非代理模式1秒)"
+        default=1.5,
+        help="API调用间隔秒数 (默认: 代理模式1.5秒)"
     )
 
     args = parser.parse_args()
