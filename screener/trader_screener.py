@@ -86,19 +86,27 @@ class TraderScreener:
         ```
     """
     
-    def __init__(self, config: Optional[ScreenerConfig] = None, cache_fills: bool = True):
+    def __init__(
+        self,
+        config: Optional[ScreenerConfig] = None,
+        cache_fills: bool = True,
+        worker_index: Optional[int] = None
+    ):
         """
         初始化筛选器
         
         Args:
             config: 筛选器配置
             cache_fills: 是否缓存 fills 数据（批量处理时建议设为 False 以节省内存）
+            worker_index: worker 索引，用于分配固定代理（None 则随机选择）
         """
         self.config = config or ScreenerConfig()
         
         # 初始化组件
         self._cache = get_cache_manager(self.config.cache)
-        self._api_client = SyncAPIClient(self.config.api, self._cache, cache_fills=cache_fills)
+        self._api_client = SyncAPIClient(
+            self.config.api, self._cache, cache_fills=cache_fills, worker_index=worker_index
+        )
         self._metrics_calculator = MetricsCalculator()
         self._scorer = TraderScorer(self.config.scoring)
         

@@ -80,12 +80,16 @@ def analyze_single_trader_sync(
     total: int,
     resume_from: int,
     use_proxy: bool = False,
-    api_delay: Optional[float] = None
+    api_delay: Optional[float] = None,
+    worker_index: Optional[int] = None
 ) -> AnalysisResult:
     """
     同步分析单个交易者（在独立线程中运行）
     
     每个调用创建独立的 screener 和 db 实例，确保线程安全
+    
+    Args:
+        worker_index: worker 索引，用于分配固定代理
     """
     # 每个线程创建独立的配置和实例
     config = ScreenerConfig()
@@ -96,14 +100,14 @@ def analyze_single_trader_sync(
         config.api.api_call_delay = api_delay
 
     config.api.max_retries = 3
-    config.api.proxy.enabled = use_proxy  # 设置代理开关
+    config.api.proxy_enabled = use_proxy  # 设置代理开关
     
     screener = None
     db = None
     
     try:
-        # 创建独立的 screener 和数据库连接
-        screener = TraderScreener(config, cache_fills=False)
+        # 创建独立的 screener 和数据库连接，传入 worker_index 以分配固定代理
+        screener = TraderScreener(config, cache_fills=False, worker_index=worker_index)
         db = TraderDatabase()
         
         # 分析交易者
@@ -189,6 +193,10 @@ async def analyze_traders_concurrent(
     # 用于控制并发的信号量
     semaphore = asyncio.Semaphore(max_workers)
     
+    # Worker 索引分配器（循环使用 0 到 max_workers-1）
+    worker_index_lock = threading.Lock()
+    available_worker_indices = list(range(max_workers))
+    
     async def analyze_with_semaphore(address: str, index: int):
         nonlocal completed, interrupted
         
@@ -199,20 +207,31 @@ async def analyze_traders_concurrent(
             if interrupted:
                 return
             
-            # 在线程池中运行同步分析函数
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,  # 使用默认线程池
-                analyze_single_trader_sync,
-                address,
-                lookback_days,
-                max_fills,
-                index,
-                total,
-                resume_from,
-                use_proxy,
-                api_delay
-            )
+            # 分配 worker 索引
+            with worker_index_lock:
+                worker_index = available_worker_indices.pop(0) if available_worker_indices else index % max_workers
+            
+            try:
+                # 在线程池中运行同步分析函数
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,  # 使用默认线程池
+                    analyze_single_trader_sync,
+                    address,
+                    lookback_days,
+                    max_fills,
+                    index,
+                    total,
+                    resume_from,
+                    use_proxy,
+                    api_delay,
+                    worker_index
+                )
+            finally:
+                # 归还 worker 索引
+                with worker_index_lock:
+                    if worker_index not in available_worker_indices:
+                        available_worker_indices.append(worker_index)
             
             # 更新统计和进度
             current_index = resume_from + index + 1 if resume_from > 0 else index + 1

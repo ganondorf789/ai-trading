@@ -68,25 +68,6 @@ class ScoringConfig:
 
 
 @dataclass
-class ProxyConfig:
-    """代理配置"""
-    enabled: bool = True  # 是否启用代理
-    host: str = "proxy.smartproxy.net"  # 代理主机
-    port: int = 3120  # 代理端口
-    username: str = "smart-cbbncrcrkj60_area-SG"  # 代理用户名
-    password: str = "NYBYuI6rARSnQJwg"  # 代理密码
-    
-    @property
-    def proxy_url(self) -> Optional[str]:
-        """获取代理 URL"""
-        if not self.enabled or not self.host:
-            return None
-        if self.username and self.password:
-            return f"http://{self.username}:{self.password}@{self.host}:{self.port}"
-        return f"http://{self.host}:{self.port}"
-
-
-@dataclass
 class APIConfig:
     """API 配置"""
     api_url: str = constants.MAINNET_API_URL
@@ -103,8 +84,8 @@ class APIConfig:
     # 频率限制
     api_call_delay: float = 1.0  # API 调用间隔（秒），使用代理时可设为 0
     
-    # 代理配置
-    proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    # 代理配置（代理列表从 screener/iproyal-proxies.csv 加载）
+    proxy_enabled: bool = True  # 是否启用代理
 
 
 @dataclass
@@ -243,12 +224,8 @@ class ScreenerConfig:
         return self.api.retry_delay
     
     @property
-    def proxy_url(self) -> Optional[str]:
-        return self.api.proxy.proxy_url
-    
-    @property
     def proxy_enabled(self) -> bool:
-        return self.api.proxy.enabled
+        return self.api.proxy_enabled
     
     @classmethod
     def from_dict(cls, data: dict) -> 'ScreenerConfig':
@@ -262,13 +239,18 @@ class ScreenerConfig:
             config.scoring = ScoringConfig(**data['scoring'])
         if 'api' in data:
             api_data = data['api'].copy()
-            # 单独处理嵌套的 proxy 配置
-            if 'proxy' in api_data:
-                api_data['proxy'] = ProxyConfig(**api_data['proxy'])
+            # 移除旧的 proxy 嵌套配置（如果存在）
+            if 'proxy' in api_data and isinstance(api_data['proxy'], dict):
+                # 兼容旧配置：从嵌套 proxy 中提取 enabled
+                api_data['proxy_enabled'] = api_data['proxy'].get('enabled', True)
+                del api_data['proxy']
             config.api = APIConfig(**api_data)
         if 'proxy' in data:
-            # 支持顶层 proxy 配置
-            config.api.proxy = ProxyConfig(**data['proxy'])
+            # 支持顶层 proxy 配置（兼容旧配置）
+            if isinstance(data['proxy'], dict):
+                config.api.proxy_enabled = data['proxy'].get('enabled', True)
+            elif isinstance(data['proxy'], bool):
+                config.api.proxy_enabled = data['proxy']
         if 'concurrency' in data:
             config.concurrency = ConcurrencyConfig(**data['concurrency'])
         if 'cache' in data:

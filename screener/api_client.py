@@ -3,8 +3,13 @@ API 客户端模块
 
 提供同步和异步的 Hyperliquid API 调用
 """
+import csv
+import os
+import random
 import time
 import asyncio
+from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 
@@ -21,6 +26,134 @@ from .exceptions import (
     APITimeoutError,
     TraderDataError,
 )
+
+
+@dataclass
+class ProxyInfo:
+    """代理信息"""
+    host: str
+    port: int
+    username: str
+    password: str
+    
+    @property
+    def url(self) -> str:
+        """获取代理 URL"""
+        return f"http://{self.username}:{self.password}@{self.host}:{self.port}"
+
+
+class ProxyManager:
+    """
+    代理管理器
+    
+    从 CSV 文件加载代理列表，支持随机轮换
+    """
+    
+    # 默认 CSV 文件路径（相对于当前模块）
+    DEFAULT_CSV_PATH = Path(__file__).parent / "iproyal-proxies.csv"
+    
+    def __init__(self, csv_path: Optional[str] = None, enabled: bool = True):
+        """
+        初始化代理管理器
+        
+        Args:
+            csv_path: CSV 文件路径，默认使用 screener/iproyal-proxies.csv
+            enabled: 是否启用代理
+        """
+        self.enabled = enabled
+        self._proxies: List[ProxyInfo] = []
+        self._current_index = 0
+        
+        if enabled:
+            path = Path(csv_path) if csv_path else self.DEFAULT_CSV_PATH
+            self._load_proxies(path)
+            
+            if self._proxies:
+                logger.info(f"代理管理器初始化完成，加载了 {len(self._proxies)} 个代理")
+            else:
+                logger.warning("未加载任何代理，将不使用代理")
+                self.enabled = False
+    
+    def _load_proxies(self, csv_path: Path) -> None:
+        """从 CSV 文件加载代理列表"""
+        if not csv_path.exists():
+            logger.warning(f"代理配置文件不存在: {csv_path}")
+            return
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        proxy = ProxyInfo(
+                            host=row['Host'].strip(),
+                            port=int(row['Port'].strip()),
+                            username=row['User'].strip(),
+                            password=row['Pass'].strip()
+                        )
+                        self._proxies.append(proxy)
+                    except (KeyError, ValueError) as e:
+                        logger.warning(f"解析代理行失败: {row}, 错误: {e}")
+        except Exception as e:
+            logger.error(f"加载代理配置文件失败: {e}")
+    
+    def get_proxy_by_index(self, index: int) -> Optional[str]:
+        """
+        根据索引获取代理 URL（用于为每个 worker 分配固定代理）
+        
+        Args:
+            index: worker 索引，会自动取模以循环分配
+        
+        Returns:
+            代理 URL 或 None
+        """
+        if not self.enabled or not self._proxies:
+            return None
+        proxy = self._proxies[index % len(self._proxies)]
+        return proxy.url
+    
+    def get_random_proxy(self) -> Optional[str]:
+        """获取随机代理 URL"""
+        if not self.enabled or not self._proxies:
+            return None
+        proxy = random.choice(self._proxies)
+        return proxy.url
+    
+    def get_proxy_count(self) -> int:
+        """获取代理数量"""
+        return len(self._proxies)
+    
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """获取代理 URL（兼容旧接口，使用随机选择）"""
+        return self.get_random_proxy()
+
+
+# 全局代理管理器实例
+_proxy_manager: Optional[ProxyManager] = None
+
+
+def get_proxy_manager(csv_path: Optional[str] = None, enabled: bool = True) -> ProxyManager:
+    """
+    获取或创建全局代理管理器
+    
+    Args:
+        csv_path: CSV 文件路径
+        enabled: 是否启用代理
+    
+    Returns:
+        ProxyManager 实例
+    """
+    global _proxy_manager
+    if _proxy_manager is None:
+        _proxy_manager = ProxyManager(csv_path, enabled)
+    return _proxy_manager
+
+
+def reset_proxy_manager() -> None:
+    """重置全局代理管理器"""
+    global _proxy_manager
+    _proxy_manager = None
 
 
 class BaseAPIClient(ABC):
@@ -51,14 +184,16 @@ class SyncAPIClient(BaseAPIClient):
     """
     同步 API 客户端
     
-    基于 hyperliquid-python 库或 httpx 的同步实现，支持代理轮换
+    基于 hyperliquid-python 库或 httpx 的同步实现，支持为每个 worker 分配固定代理
     """
     
     def __init__(
         self,
         config: Optional[APIConfig] = None,
         cache_manager: Optional[CacheManager] = None,
-        cache_fills: bool = True
+        cache_fills: bool = True,
+        proxy_manager: Optional[ProxyManager] = None,
+        worker_index: Optional[int] = None
     ):
         """
         初始化同步客户端
@@ -67,10 +202,13 @@ class SyncAPIClient(BaseAPIClient):
             config: API 配置
             cache_manager: 缓存管理器
             cache_fills: 是否缓存 fills 数据（批量处理时建议关闭以节省内存）
+            proxy_manager: 代理管理器（可选，默认使用全局实例）
+            worker_index: worker 索引，用于分配固定代理（None 则随机选择）
         """
         self.config = config or APIConfig()
         self._cache = cache_manager or get_cache_manager()
         self._cache_fills = cache_fills
+        self._worker_index = worker_index
         
         # 确定 API URL
         self._api_url = (
@@ -79,16 +217,22 @@ class SyncAPIClient(BaseAPIClient):
             else self.config.api_url
         )
         
-        # 代理配置
-        self._proxy_url = self.config.proxy.proxy_url if self.config.proxy.enabled else None
-        self._use_proxy = self._proxy_url is not None
+        # 代理管理器
+        self._proxy_manager = proxy_manager or get_proxy_manager(enabled=self.config.proxy_enabled)
+        self._use_proxy = self._proxy_manager.enabled and self._proxy_manager.get_proxy_count() > 0
         
+        # 根据 worker_index 获取固定代理
         if self._use_proxy:
+            if worker_index is not None:
+                self._proxy_url = self._proxy_manager.get_proxy_by_index(worker_index)
+            else:
+                self._proxy_url = self._proxy_manager.get_random_proxy()
             # 使用 httpx 同步客户端（支持代理）
             self._info = None
             self._http_client: Optional[httpx.Client] = None
-            proxy_status = f"代理: {self.config.proxy.host}:{self.config.proxy.port}"
+            proxy_status = f"代理: {self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'}"
         else:
+            self._proxy_url = None
             # 使用 hyperliquid-python 库（无代理时）
             self._info = Info(self._api_url, skip_ws=True)
             self._http_client = None
@@ -378,13 +522,15 @@ class AsyncAPIClient(BaseAPIClient):
     """
     异步 API 客户端
     
-    基于 httpx 的异步实现，支持代理轮换
+    基于 httpx 的异步实现，支持为每个 worker 分配固定代理
     """
     
     def __init__(
         self,
         config: Optional[APIConfig] = None,
-        cache_manager: Optional[CacheManager] = None
+        cache_manager: Optional[CacheManager] = None,
+        proxy_manager: Optional[ProxyManager] = None,
+        worker_index: Optional[int] = None
     ):
         """
         初始化异步客户端
@@ -392,9 +538,12 @@ class AsyncAPIClient(BaseAPIClient):
         Args:
             config: API 配置
             cache_manager: 缓存管理器
+            proxy_manager: 代理管理器（可选，默认使用全局实例）
+            worker_index: worker 索引，用于分配固定代理（None 则随机选择）
         """
         self.config = config or APIConfig()
         self._cache = cache_manager or get_cache_manager()
+        self._worker_index = worker_index
         
         # 确定 API URL
         self._base_url = (
@@ -405,10 +554,21 @@ class AsyncAPIClient(BaseAPIClient):
         
         self._client: Optional[httpx.AsyncClient] = None
         
-        # 代理配置
-        self._proxy_url = self.config.proxy.proxy_url if self.config.proxy.enabled else None
+        # 代理管理器
+        self._proxy_manager = proxy_manager or get_proxy_manager(enabled=self.config.proxy_enabled)
+        self._use_proxy = self._proxy_manager.enabled and self._proxy_manager.get_proxy_count() > 0
         
-        proxy_status = f"代理: {self.config.proxy.host}:{self.config.proxy.port}" if self._proxy_url else "无代理"
+        # 根据 worker_index 获取固定代理
+        if self._use_proxy:
+            if worker_index is not None:
+                self._proxy_url = self._proxy_manager.get_proxy_by_index(worker_index)
+            else:
+                self._proxy_url = self._proxy_manager.get_random_proxy()
+            proxy_status = f"代理: {self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'}"
+        else:
+            self._proxy_url = None
+            proxy_status = "无代理"
+        
         logger.debug(f"异步 API 客户端初始化完成: {self._base_url}, {proxy_status}")
     
     async def _get_client(self) -> httpx.AsyncClient:
