@@ -79,7 +79,8 @@ def analyze_single_trader_sync(
     index: int,
     total: int,
     resume_from: int,
-    use_proxy: bool = False
+    use_proxy: bool = False,
+    api_delay: Optional[float] = None
 ) -> AnalysisResult:
     """
     同步分析单个交易者（在独立线程中运行）
@@ -90,7 +91,10 @@ def analyze_single_trader_sync(
     config = ScreenerConfig()
     config.data.lookback_days = lookback_days
     config.data.max_fills_per_trader = max_fills
-    config.api.api_call_delay = 0 if use_proxy else 1.0  # 代理模式下可以设为0，否则需要延迟避免限流
+    # 使用传入的延迟参数，如果未指定则根据代理模式决定默认值
+    if api_delay is not None:
+        config.api.api_call_delay = api_delay
+
     config.api.max_retries = 3
     config.api.proxy.enabled = use_proxy  # 设置代理开关
     
@@ -158,7 +162,8 @@ async def analyze_traders_concurrent(
     max_fills: int,
     resume_from: int,
     max_workers: int = 10,
-    use_proxy: bool = False
+    use_proxy: bool = False,
+    api_delay: Optional[float] = None
 ) -> Tuple[AnalysisStats, bool]:
     """
     并发分析多个交易者
@@ -170,6 +175,7 @@ async def analyze_traders_concurrent(
         resume_from: 断点续传起始位置
         max_workers: 最大并发数（默认10）
         use_proxy: 是否启用代理
+        api_delay: API调用间隔（秒），None则使用默认值
     
     Returns:
         (统计结果, 是否被中断)
@@ -204,7 +210,8 @@ async def analyze_traders_concurrent(
                 index,
                 total,
                 resume_from,
-                use_proxy
+                use_proxy,
+                api_delay
             )
             
             # 更新统计和进度
@@ -266,7 +273,8 @@ def screen_leaderboard_traders(
     max_fills: int = 0,
     resume_from: int = 0,
     max_workers: int = 10,
-    use_proxy: bool = False
+    use_proxy: bool = False,
+    api_delay: Optional[float] = None
 ):
     """
     获取排行榜前N名交易者并分析保存到数据库（并发版本）
@@ -278,6 +286,7 @@ def screen_leaderboard_traders(
         resume_from: 从第N个地址开始（用于断点续传）
         max_workers: 最大并发数（默认10）
         use_proxy: 是否启用代理
+        api_delay: API调用间隔（秒），None则使用默认值
     """
     logger.info("=" * 70)
     logger.info("Hyperliquid 排行榜交易者批量分析（并发版本）")
@@ -321,7 +330,8 @@ def screen_leaderboard_traders(
                 max_fills=max_fills,
                 resume_from=resume_from,
                 max_workers=max_workers,
-                use_proxy=use_proxy
+                use_proxy=use_proxy,
+                api_delay=api_delay
             )
         )
     except KeyboardInterrupt:
@@ -397,6 +407,12 @@ def main():
         default=False,
         help="禁用代理 (默认行为)"
     )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=None,
+        help="API调用间隔秒数 (默认: 代理模式0秒, 非代理模式1秒)"
+    )
 
     args = parser.parse_args()
 
@@ -409,7 +425,8 @@ def main():
         max_fills=args.max_fills,
         resume_from=args.resume,
         max_workers=args.workers,
-        use_proxy=use_proxy
+        use_proxy=use_proxy,
+        api_delay=args.delay
     )
 
 
