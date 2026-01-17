@@ -456,17 +456,7 @@ def main():
         "--interval", "-i",
         type=int,
         default=0,
-        help="循环间隔（分钟），默认: 5"
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="仅运行一次后退出"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="仅预览，不发送通知"
+        help="循环间隔（分钟）"
     )
     
     args = parser.parse_args()
