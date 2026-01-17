@@ -2,6 +2,10 @@
 指标计算模块
 
 负责从成交记录计算各种交易指标
+
+注意：盈利笔数、亏损笔数、胜率、总盈亏、已实现盈亏、7天盈亏、最大回撤、Sharpe Ratio
+这些指标是基于完整的仓位历史（开仓→平仓周期）计算的，而不是单笔成交记录。
+这样更能准确反映交易者的真实表现。
 """
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
@@ -33,6 +37,9 @@ from .utils import (
     calculate_expected_shortfall,
     calculate_consecutive_streaks,
     calculate_holding_time,
+    rebuild_positions_from_fills,
+    calculate_position_based_metrics,
+    calculate_position_pnl_by_time,
 )
 
 
@@ -58,6 +65,10 @@ class MetricsCalculator:
         """
         计算交易者指标
         
+        注意：盈利笔数、亏损笔数、胜率、总盈亏、已实现盈亏、7天盈亏、
+        最大回撤、Sharpe Ratio 等指标是基于完整的仓位历史计算的，
+        而不是单笔成交记录。
+        
         Args:
             address: 交易者地址
             fills: 成交记录列表
@@ -76,11 +87,16 @@ class MetricsCalculator:
         # 预处理成交记录
         processed_fills = self._preprocess_fills(fills)
         
-        # 计算各类指标
-        self._calculate_pnl_metrics(metrics, processed_fills, db_total_trades)
-        self._calculate_trade_metrics(metrics, processed_fills, db_total_trades)
-        self._calculate_risk_metrics(metrics, processed_fills)
-        self._calculate_activity_metrics(metrics, processed_fills, db_total_trades)
+        # 从 fills 重建仓位历史
+        # 这样可以更准确地计算胜率、盈亏笔数等指标
+        positions = rebuild_positions_from_fills(processed_fills)
+        position_metrics = calculate_position_based_metrics(positions)
+        
+        # 计算各类指标（使用仓位历史）
+        self._calculate_pnl_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
+        self._calculate_trade_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
+        self._calculate_risk_metrics(metrics, processed_fills, positions, position_metrics)
+        self._calculate_activity_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
         
         # 从用户状态计算
         if user_state:
@@ -131,60 +147,55 @@ class MetricsCalculator:
         self,
         metrics: TraderMetrics,
         fills: List[Dict],
+        positions: List[Dict],
+        position_metrics: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
         计算盈亏指标
         
+        注意：总盈亏、已实现盈亏、7天盈亏等指标基于完整仓位历史计算
+        
         Args:
             metrics: 指标对象
             fills: 成交记录
+            positions: 仓位历史
+            position_metrics: 基于仓位计算的指标
             db_total_trades: 从数据库获取的总交易数
         """
         pnl = metrics.pnl
         
-        total_profit = 0.0
-        total_loss = 0.0
-        pnl_list = []
-        win_amounts = []
-        loss_amounts = []
+        # ===== 基于仓位历史计算的核心指标 =====
+        # 使用仓位历史计算总盈亏、已实现盈亏
+        pnl.total_pnl = position_metrics.get('total_pnl', 0.0)
+        pnl.realized_pnl = position_metrics.get('total_pnl', 0.0)
         
+        # 7天盈亏：基于7天内平仓的仓位
+        pnl.recent_7d_pnl = calculate_position_pnl_by_time(positions, days=7)
+        
+        # 平均每笔盈亏（基于已平仓位数）
+        total_closed = position_metrics.get('total_closed_positions', 0)
+        if total_closed > 0:
+            pnl.avg_profit_per_trade = pnl.total_pnl / total_closed
+        
+        # 平均盈利/亏损金额（基于仓位）
+        pnl.avg_win_amount = position_metrics.get('avg_win', 0.0)
+        pnl.avg_loss_amount = position_metrics.get('avg_loss', 0.0)
+        
+        # ===== 基于 fills 计算的辅助指标（按时间段统计）=====
         daily_pnl: Dict[str, float] = {}
         weekly_pnl: Dict[str, float] = {}
         monthly_pnl: Dict[str, float] = {}
         
-        recent_7d_start = now_shanghai().subtract(days=7)
-        recent_7d_pnl = 0.0
-        
+        # 仍然使用 fills 来计算时间段统计（因为需要精确的时间信息）
         for fill in fills:
             closed_pnl = float(fill.get('closedPnl', 0))
-            
-            pnl.realized_pnl += closed_pnl
-            pnl_list.append(closed_pnl)
-            
-            # 盈亏分类
-            if closed_pnl > 0:
-                total_profit += closed_pnl
-                win_amounts.append(closed_pnl)
-            elif closed_pnl < 0:
-                total_loss += abs(closed_pnl)
-                loss_amounts.append(abs(closed_pnl))
-            
-            # 按时间段统计
             trade_time = timestamp_to_pendulum(fill.get('time', 0))
             day_key, week_key, month_key = get_time_keys(trade_time)
             
             daily_pnl[day_key] = daily_pnl.get(day_key, 0) + closed_pnl
             weekly_pnl[week_key] = weekly_pnl.get(week_key, 0) + closed_pnl
             monthly_pnl[month_key] = monthly_pnl.get(month_key, 0) + closed_pnl
-            
-            # 最近 7 天统计
-            if trade_time >= recent_7d_start:
-                recent_7d_pnl += closed_pnl
-        
-        # 计算汇总指标
-        pnl.total_pnl = pnl.realized_pnl
-        pnl.recent_7d_pnl = recent_7d_pnl
         
         # 时间段均值
         if daily_pnl:
@@ -194,45 +205,58 @@ class MetricsCalculator:
         if monthly_pnl:
             pnl.monthly_pnl = sum(monthly_pnl.values()) / len(monthly_pnl)
         
-        # 单笔统计
-        if pnl_list:
-            pnl.max_single_win = max(pnl_list) if max(pnl_list) > 0 else 0
-            pnl.max_single_loss = abs(min(pnl_list)) if min(pnl_list) < 0 else 0
-        
-        if win_amounts:
-            pnl.avg_win_amount = sum(win_amounts) / len(win_amounts)
-        if loss_amounts:
-            pnl.avg_loss_amount = sum(loss_amounts) / len(loss_amounts)
-        
-        total_trades = db_total_trades if db_total_trades is not None else len(fills)
-        if total_trades > 0:
-            pnl.avg_profit_per_trade = pnl.realized_pnl / total_trades
+        # 单仓最大盈亏（基于仓位）
+        position_pnl_list = position_metrics.get('pnl_list', [])
+        if position_pnl_list:
+            pnl.max_single_win = max(position_pnl_list) if max(position_pnl_list) > 0 else 0
+            pnl.max_single_loss = abs(min(position_pnl_list)) if min(position_pnl_list) < 0 else 0
         
         # 存储临时数据供其他计算使用
-        metrics._pnl_list = pnl_list
-        metrics._total_profit = total_profit
-        metrics._total_loss = total_loss
+        metrics._pnl_list = position_pnl_list  # 使用仓位盈亏列表
+        metrics._total_profit = position_metrics.get('total_profit', 0.0)
+        metrics._total_loss = position_metrics.get('total_loss', 0.0)
         metrics._daily_pnl = daily_pnl
     
     def _calculate_trade_metrics(
         self,
         metrics: TraderMetrics,
         fills: List[Dict],
+        positions: List[Dict],
+        position_metrics: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
         计算交易统计指标
         
+        注意：盈利笔数、亏损笔数、胜率等指标基于完整仓位历史计算
+        
         Args:
             metrics: 指标对象
             fills: 成交记录
+            positions: 仓位历史
+            position_metrics: 基于仓位计算的指标
             db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
         """
         trade = metrics.trade
         
-        # 优先使用数据库中的总交易数，否则使用 fills 数量
-        trade.total_trades = db_total_trades if db_total_trades is not None else len(fills)
+        # ===== 基于仓位历史计算的核心指标 =====
+        # 盈利/亏损笔数（基于已平仓位）
+        trade.winning_trades = position_metrics.get('winning_positions', 0)
+        trade.losing_trades = position_metrics.get('losing_positions', 0)
         
+        # 总交易数：已平仓位数 + 未平仓位数
+        total_closed = position_metrics.get('total_closed_positions', 0)
+        total_open = position_metrics.get('total_open_positions', 0)
+        trade.total_trades = db_total_trades if db_total_trades is not None else (total_closed + total_open)
+        
+        # 胜率（基于已平仓位）
+        trade.win_rate = position_metrics.get('win_rate', 0.0)
+        
+        # 盈亏比（基于仓位历史）
+        pf = position_metrics.get('profit_factor', 0.0)
+        trade.profit_factor = pf if pf != float('inf') else float('inf')
+        
+        # ===== 基于 fills 计算的辅助指标 =====
         total_price = 0.0
         total_size_usd = 0.0
         symbol_counts: Dict[str, int] = {}
@@ -243,15 +267,10 @@ class MetricsCalculator:
         weekly_volume: Dict[str, float] = {}
         monthly_volume: Dict[str, float] = {}
         
-        recent_7d_start = now_shanghai().subtract(days=7)
-        recent_7d_wins = 0
-        recent_7d_trades = 0
-        
         for fill in fills:
             price = float(fill.get('px', 0))
             size = float(fill.get('sz', 0))
             volume = price * size
-            closed_pnl = float(fill.get('closedPnl', 0))
             
             trade.total_volume += volume
             total_price += price
@@ -268,12 +287,6 @@ class MetricsCalculator:
             elif side in ('A', 'SELL'):
                 short_count += 1
             
-            # 盈亏统计
-            if closed_pnl > 0:
-                trade.winning_trades += 1
-            elif closed_pnl < 0:
-                trade.losing_trades += 1
-            
             # 按时间段统计交易量
             trade_time = timestamp_to_pendulum(fill.get('time', 0))
             day_key, week_key, month_key = get_time_keys(trade_time)
@@ -281,26 +294,12 @@ class MetricsCalculator:
             daily_volume[day_key] = daily_volume.get(day_key, 0) + volume
             weekly_volume[week_key] = weekly_volume.get(week_key, 0) + volume
             monthly_volume[month_key] = monthly_volume.get(month_key, 0) + volume
-            
-            # 最近 7 天统计
-            if trade_time >= recent_7d_start:
-                recent_7d_trades += 1
-                if closed_pnl > 0:
-                    recent_7d_wins += 1
         
-        # 计算汇总指标
-        if trade.total_trades > 0:
-            trade.win_rate = trade.winning_trades / trade.total_trades
-            trade.avg_trade_price = total_price / trade.total_trades
-            trade.avg_trade_size = total_size_usd / trade.total_trades
-        
-        # 盈亏比
-        total_loss = getattr(metrics, '_total_loss', 0)
-        total_profit = getattr(metrics, '_total_profit', 0)
-        if total_loss > 0:
-            trade.profit_factor = total_profit / total_loss
-        elif total_profit > 0:
-            trade.profit_factor = float('inf')
+        # 计算平均值
+        num_fills = len(fills)
+        if num_fills > 0:
+            trade.avg_trade_price = total_price / num_fills
+            trade.avg_trade_size = total_size_usd / num_fills
         
         # 时间段均值
         if daily_volume:
@@ -320,36 +319,59 @@ class MetricsCalculator:
         if total_sides > 0:
             trade.long_short_ratio = long_count / total_sides
         
-        # 最近 7 天胜率
-        if recent_7d_trades > 0:
-            trade.recent_7d_win_rate = recent_7d_wins / recent_7d_trades
+        # 最近 7 天胜率（基于仓位历史）
+        recent_7d_positions = [
+            p for p in positions 
+            if p.get('status') == 'closed' and 
+               (p.get('close_time', 0) or 0) >= (now_shanghai().subtract(days=7).timestamp() * 1000)
+        ]
+        if recent_7d_positions:
+            recent_7d_wins = sum(1 for p in recent_7d_positions if (p.get('realized_pnl', 0) or 0) > 0)
+            trade.recent_7d_win_rate = recent_7d_wins / len(recent_7d_positions)
     
     def _calculate_risk_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict]
+        fills: List[Dict],
+        positions: List[Dict],
+        position_metrics: Dict[str, Any]
     ) -> None:
         """
         计算风险指标
         
+        注意：最大回撤、Sharpe Ratio 等指标基于仓位盈亏序列计算，
+        而不是单笔成交记录的盈亏。这样更能反映真实的风险特征。
+        
         Args:
             metrics: 指标对象
             fills: 成交记录
+            positions: 仓位历史
+            position_metrics: 基于仓位计算的指标
         """
         risk = metrics.risk
-        pnl_list = getattr(metrics, '_pnl_list', [])
+        
+        # 使用仓位盈亏列表（已平仓位的盈亏序列）
+        pnl_list = position_metrics.get('pnl_list', [])
         
         if len(pnl_list) < 2:
             return
         
-        # 最大回撤
-        risk.max_drawdown, risk.max_drawdown_abs = calculate_max_drawdown(pnl_list)
+        # 按仓位平仓时间排序盈亏列表
+        closed_positions = [p for p in positions if p.get('status') == 'closed']
+        closed_positions.sort(key=lambda x: x.get('close_time', 0) or 0)
+        sorted_pnl_list = [p.get('realized_pnl', 0) or 0 for p in closed_positions]
         
-        # 夏普比率
-        risk.sharpe_ratio = calculate_sharpe_ratio(pnl_list)
+        if len(sorted_pnl_list) < 2:
+            sorted_pnl_list = pnl_list
+        
+        # 最大回撤（基于仓位累计盈亏）
+        risk.max_drawdown, risk.max_drawdown_abs = calculate_max_drawdown(sorted_pnl_list)
+        
+        # 夏普比率（基于仓位盈亏）
+        risk.sharpe_ratio = calculate_sharpe_ratio(sorted_pnl_list)
         
         # 索提诺比率
-        risk.sortino_ratio = calculate_sortino_ratio(pnl_list)
+        risk.sortino_ratio = calculate_sortino_ratio(sorted_pnl_list)
         
         # 卡玛比率
         activity = metrics.activity
@@ -362,19 +384,21 @@ class MetricsCalculator:
                     days
                 )
         
-        # VaR 指标
-        risk.var_95 = calculate_var(pnl_list, 0.95)
-        risk.var_99 = calculate_var(pnl_list, 0.99)
-        risk.cvar_95 = calculate_expected_shortfall(pnl_list, 0.95)
+        # VaR 指标（基于仓位盈亏）
+        risk.var_95 = calculate_var(sorted_pnl_list, 0.95)
+        risk.var_99 = calculate_var(sorted_pnl_list, 0.99)
+        risk.cvar_95 = calculate_expected_shortfall(sorted_pnl_list, 0.95)
         
-        # 连续盈亏
+        # 连续盈亏（基于仓位盈亏序列）
         risk.max_consecutive_wins, risk.max_consecutive_losses = \
-            calculate_consecutive_streaks(pnl_list)
+            calculate_consecutive_streaks(sorted_pnl_list)
     
     def _calculate_activity_metrics(
         self,
         metrics: TraderMetrics,
         fills: List[Dict],
+        positions: List[Dict],
+        position_metrics: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
@@ -383,6 +407,8 @@ class MetricsCalculator:
         Args:
             metrics: 指标对象
             fills: 成交记录
+            positions: 仓位历史
+            position_metrics: 基于仓位计算的指标
             db_total_trades: 从数据库获取的总交易数
         """
         activity = metrics.activity
@@ -398,15 +424,20 @@ class MetricsCalculator:
         daily_pnl = getattr(metrics, '_daily_pnl', {})
         activity.active_days = len(daily_pnl)
         
-        # 交易频率
+        # 交易频率（基于仓位数）
         if activity.first_trade_time and activity.last_trade_time:
             days_active = (activity.last_trade_time - activity.first_trade_time).days + 1
             if days_active > 0:
-                total_trades = db_total_trades if db_total_trades is not None else len(fills)
+                # 使用仓位数而不是 fills 数
+                total_positions = (
+                    position_metrics.get('total_closed_positions', 0) + 
+                    position_metrics.get('total_open_positions', 0)
+                )
+                total_trades = db_total_trades if db_total_trades is not None else total_positions
                 activity.trade_frequency_per_day = total_trades / days_active
         
-        # 平均持仓时间
-        activity.avg_holding_time_hours = calculate_holding_time(fills)
+        # 平均持仓时间（基于仓位历史）
+        activity.avg_holding_time_hours = position_metrics.get('avg_holding_hours', 0.0)
     
     def _calculate_position_metrics(
         self,
