@@ -377,20 +377,20 @@ async def main_async(args):
     config.api_call_delay = 0  # 异步模式下不需要单个调用延迟
     logger.success("✓ API 配置完成")
     
-    # 初始化飞书通知器
-    logger.info("初始化飞书通知器...")
+    # 初始化飞书通知器（使用新仓位推送专用配置）
+    logger.info("初始化飞书通知器（新仓位推送）...")
     feishu = FeishuClient(
-        app_id=settings.feishu.app_id,
-        app_secret=settings.feishu.app_secret,
-        webhook_url=settings.feishu.webhook_url,
-        default_user_id=settings.feishu.default_user_id
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret,
+        webhook_url=settings.feishu_position.webhook_url,
+        default_user_id=settings.feishu_position.default_user_id
     )
     notifier = CopyTradingNotifier(feishu)
     
     if not feishu.webhook_url and not feishu.app_id:
-        logger.warning("⚠ 飞书未配置，通知功能将不可用")
+        logger.warning("⚠ 飞书新仓位推送未配置，通知功能将不可用")
     else:
-        logger.success("✓ 飞书通知器初始化成功")
+        logger.success("✓ 飞书通知器初始化成功（新仓位推送）")
     
     logger.info("")
     
