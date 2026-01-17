@@ -123,23 +123,23 @@ class TraderScreener:
         except Exception as e:
             logger.warning(f"无法连接数据库，持仓数据将不会保存: {e}")
         
-        # 飞书通知器（用于新仓位通知）
+        # 飞书通知器（用于新仓位通知，使用 FeishuPositionNotifySettings 配置）
         self._notifier = None
         if FEISHU_AVAILABLE:
             try:
                 feishu = FeishuClient(
-                    app_id=settings.feishu.app_id,
-                    app_secret=settings.feishu.app_secret,
-                    webhook_url=settings.feishu.webhook_url,
-                    default_user_id=settings.feishu.default_user_id
+                    app_id=settings.feishu_position.app_id,
+                    app_secret=settings.feishu_position.app_secret,
+                    webhook_url=settings.feishu_position.webhook_url,
+                    default_user_id=settings.feishu_position.default_user_id
                 )
                 if feishu.webhook_url or feishu.app_id:
                     self._notifier = CopyTradingNotifier(feishu)
-                    logger.debug("飞书通知器已初始化，新仓位将发送通知")
+                    logger.debug("飞书仓位通知器已初始化（使用 FEISHU_POSITION_ 配置）")
                 else:
-                    logger.debug("飞书未配置，新仓位通知功能已禁用")
+                    logger.debug("飞书仓位通知未配置，新仓位通知功能已禁用")
             except Exception as e:
-                logger.warning(f"飞书通知器初始化失败: {e}")
+                logger.warning(f"飞书仓位通知器初始化失败: {e}")
         
         api_url = (
             constants.TESTNET_API_URL 

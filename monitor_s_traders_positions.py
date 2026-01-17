@@ -460,7 +460,7 @@ def main():
     parser.add_argument(
         "--interval", "-i",
         type=int,
-        default=5,
+        default=0,
         help="循环间隔（分钟），默认: 5"
     )
     parser.add_argument(
