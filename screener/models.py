@@ -41,16 +41,6 @@ class TradeType:
     LONG_TYPES = {1, 2, 3}      # 多头相关类型
     SHORT_TYPES = {4, 5, 6}     # 空头相关类型
     
-    # 名称映射（用于显示）
-    NAMES = {
-        1: 'open_long',
-        2: 'add_long',
-        3: 'close_long',
-        4: 'open_short',
-        5: 'add_short',
-        6: 'close_short',
-    }
-    
     @classmethod
     def is_open(cls, trade_type: Optional[int]) -> bool:
         """判断是否为开仓类型"""

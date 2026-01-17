@@ -153,13 +153,14 @@ export function TradeHistory({
           </Chip>
         );
       case 'trade_type':
-        const tradeTypeMap: Record<string, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
-          'open_long': { label: '开多', color: 'success' },
-          'add_long': { label: '加多', color: 'success' },
-          'close_long': { label: '平多', color: 'warning' },
-          'open_short': { label: '开空', color: 'danger' },
-          'add_short': { label: '加空', color: 'danger' },
-          'close_short': { label: '平空', color: 'warning' },
+        // trade_type: 1=开多, 2=加多, 3=平多, 4=开空, 5=加空, 6=平空
+        const tradeTypeMap: Record<number, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
+          1: { label: '开多', color: 'success' },
+          2: { label: '加多', color: 'success' },
+          3: { label: '平多', color: 'warning' },
+          4: { label: '开空', color: 'danger' },
+          5: { label: '加空', color: 'danger' },
+          6: { label: '平空', color: 'warning' },
         };
         const typeInfo = fill.trade_type ? tradeTypeMap[fill.trade_type] : null;
 
