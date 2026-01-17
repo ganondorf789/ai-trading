@@ -182,9 +182,6 @@ def process_trader_result(
     
     logger.success(f"  {address[:16]}... 检测到 {len(new_position_list)} 个新仓位!")
     
-    # 检查交易员是否在跟单列表中
-    is_in_copy_list = db.get_copy_trading_address(address) is not None
-    
     for pos in new_position_list:
         coin = pos.get('coin', 'Unknown')
         szi = float(pos.get('szi', 0))
@@ -192,8 +189,6 @@ def process_trader_result(
         
         if dry_run:
             logger.info(f"    [DRY-RUN] 新仓位: {coin} {direction} {abs(szi):.4f}")
-        elif is_in_copy_list:
-            logger.info(f"    [跟单中] 跳过通知: {coin} {direction} (交易员在跟单列表中)")
         else:
             success = notifier.notify_new_position(
                 address, pos, rating=rating, score=score, trader_name=trader_name
