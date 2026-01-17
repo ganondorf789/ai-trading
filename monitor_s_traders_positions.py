@@ -6,9 +6,7 @@ S级交易员仓位监控脚本
 2. 异步更新交易员的当前仓位并保存到数据库
 3. 如果发现有新仓位，通过飞书通知
 
-运行模式：
-- 定时循环执行：每隔N分钟运行一次
-- 一次性执行：运行一次后退出（使用 --once 参数）
+运行模式：无限循环执行
 
 示例：
   python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
@@ -135,8 +133,7 @@ def process_trader_result(
     notifier: CopyTradingNotifier,
     trader: Dict,
     asset_positions: Optional[List[Dict]],
-    old_positions: Dict[str, Dict],
-    dry_run: bool = False
+    old_positions: Dict[str, Dict]
 ) -> int:
     """
     处理单个交易员的持仓结果
@@ -147,7 +144,6 @@ def process_trader_result(
         trader: 交易员信息
         asset_positions: 从API获取的持仓数据
         old_positions: 更新前的持仓
-        dry_run: 是否仅预览不发送通知
     
     Returns:
         新仓位数量
@@ -187,16 +183,13 @@ def process_trader_result(
         szi = float(pos.get('szi', 0))
         direction, _ = format_position_direction(szi)
         
-        if dry_run:
-            logger.info(f"    [DRY-RUN] 新仓位: {coin} {direction} {abs(szi):.4f}")
+        success = notifier.notify_new_position(
+            address, pos, rating=rating, score=score, trader_name=trader_name
+        )
+        if success:
+            logger.success(f"    ✓ 已通知: {coin} {direction}")
         else:
-            success = notifier.notify_new_position(
-                address, pos, rating=rating, score=score, trader_name=trader_name
-            )
-            if success:
-                logger.success(f"    ✓ 已通知: {coin} {direction}")
-            else:
-                logger.error(f"    ✗ 通知失败: {coin}")
+            logger.error(f"    ✗ 通知失败: {coin}")
     
     return len(new_position_list)
 
@@ -205,8 +198,7 @@ async def process_batch(
     db: TraderDatabase,
     notifier: CopyTradingNotifier,
     traders: List[Dict],
-    config: APIConfig,
-    dry_run: bool = False
+    config: APIConfig
 ) -> Dict:
     """
     异步处理一批交易员
@@ -216,7 +208,6 @@ async def process_batch(
         notifier: 飞书通知器
         traders: 交易员列表
         config: API配置
-        dry_run: 是否仅预览
     
     Returns:
         统计信息
@@ -265,7 +256,7 @@ async def process_batch(
         
         try:
             new_count = process_trader_result(
-                db, notifier, trader, result, old_positions, dry_run
+                db, notifier, trader, result, old_positions
             )
             stats['traders_processed'] += 1
             stats['new_positions_total'] += new_count
@@ -281,8 +272,7 @@ async def run_monitoring_cycle_async(
     notifier: CopyTradingNotifier,
     config: APIConfig,
     workers: int = 10,
-    delay: float = 1.0,
-    dry_run: bool = False
+    delay: float = 1.0
 ) -> Dict:
     """
     异步运行一次监控周期
@@ -293,7 +283,6 @@ async def run_monitoring_cycle_async(
         config: API配置
         workers: 并发worker数量
         delay: 批次间延迟（秒）
-        dry_run: 是否仅预览
     
     Returns:
         统计信息
@@ -323,7 +312,7 @@ async def run_monitoring_cycle_async(
         
         logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个交易员)")
         
-        batch_stats = await process_batch(db, notifier, batch, config, dry_run)
+        batch_stats = await process_batch(db, notifier, batch, config)
         
         total_stats['traders_processed'] += batch_stats['traders_processed']
         total_stats['new_positions_total'] += batch_stats['new_positions_total']
@@ -346,10 +335,8 @@ async def main_async(args):
     logger.info("=" * 60)
     logger.info("S级交易员仓位监控脚本 (异步版)")
     logger.info("=" * 60)
-    logger.info(f"运行模式: {'一次性执行' if args.once else f'循环执行（间隔 {args.interval} 分钟）'}")
+    logger.info(f"运行模式: 无限循环")
     logger.info(f"并发数: {args.workers}, 批次延迟: {args.delay}s, 代理: {'启用' if args.proxy else '禁用'}")
-    if args.dry_run:
-        logger.info("预览模式: 不发送飞书通知")
     logger.info("")
     
     # 重置代理管理器（确保使用新配置）
@@ -401,16 +388,8 @@ async def main_async(args):
             await run_monitoring_cycle_async(
                 db, notifier, config,
                 workers=args.workers,
-                delay=args.delay,
-                dry_run=args.dry_run
+                delay=args.delay
             )
-            
-            if args.once:
-                logger.info("一次性执行完成，退出")
-                break
-            
-            logger.info(f"等待 {args.interval} 分钟后进行下一轮...")
-            await asyncio.sleep(args.interval * 60)
             
     except KeyboardInterrupt:
         logger.warning("\n用户中断")
@@ -421,18 +400,18 @@ async def main_async(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="S级交易员仓位监控脚本",
+        description="S级交易员仓位监控脚本（无限循环）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
   python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
-    每隔1秒钟并发更新10个交易员的当前仓位，使用代理
+    每批10个交易员并发更新，批次间隔1秒，使用代理
   
-  python monitor_s_traders_positions.py --workers 5 --delay 2 --once
-    一次性执行，每批5个交易员，批次间隔2秒，不使用代理
+  python monitor_s_traders_positions.py --workers 5 --delay 2
+    每批5个交易员，批次间隔2秒，不使用代理
   
-  python monitor_s_traders_positions.py -w 20 -p -d 0.5 -i 3
-    每0.5秒并发更新20个交易员，每3分钟循环一次，使用代理
+  python monitor_s_traders_positions.py -w 20 -p -d 0.5
+    每批20个交易员并发更新，批次间隔0.5秒，使用代理
 """
     )
     parser.add_argument(
@@ -451,12 +430,6 @@ def main():
         type=float,
         default=1.0,
         help="批次间延迟（秒），默认: 1.0"
-    )
-    parser.add_argument(
-        "--interval", "-i",
-        type=int,
-        default=0,
-        help="循环间隔（分钟）"
     )
     
     args = parser.parse_args()
