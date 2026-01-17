@@ -21,8 +21,13 @@ class QualityRating(Enum):
 
 @dataclass
 class PnLMetrics:
-    """盈亏相关指标"""
-    total_pnl: float = 0.0  # 总盈亏
+    """
+    盈亏相关指标
+    
+    注意：total_pnl、realized_pnl、recent_7d_pnl、max_single_win、max_single_loss、
+    avg_win_amount、avg_loss_amount 这些指标是基于完整的仓位历史计算的。
+    """
+    total_pnl: float = 0.0  # 总盈亏（所有仓位的已实现盈亏之和）
     realized_pnl: float = 0.0  # 已实现盈亏
     unrealized_pnl: float = 0.0  # 未实现盈亏
     
@@ -30,14 +35,14 @@ class PnLMetrics:
     daily_pnl: float = 0.0  # 日均 PnL
     weekly_pnl: float = 0.0  # 周均 PnL
     monthly_pnl: float = 0.0  # 月均 PnL
-    recent_7d_pnl: float = 0.0  # 最近 7 天 PnL
+    recent_7d_pnl: float = 0.0  # 最近 7 天 PnL（基于7天内平仓的仓位）
     
-    # 单笔统计
-    max_single_win: float = 0.0  # 最大单笔盈利
-    max_single_loss: float = 0.0  # 最大单笔亏损
-    avg_win_amount: float = 0.0  # 盈利交易平均收益
-    avg_loss_amount: float = 0.0  # 亏损交易平均损失
-    avg_profit_per_trade: float = 0.0  # 平均每笔收益
+    # 单笔统计（基于仓位）
+    max_single_win: float = 0.0  # 最大单仓盈利
+    max_single_loss: float = 0.0  # 最大单仓亏损
+    avg_win_amount: float = 0.0  # 盈利仓位平均收益
+    avg_loss_amount: float = 0.0  # 亏损仓位平均损失
+    avg_profit_per_trade: float = 0.0  # 平均每仓收益（基于已平仓位数）
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -45,21 +50,27 @@ class PnLMetrics:
 
 @dataclass
 class RiskMetrics:
-    """风险指标"""
-    max_drawdown: float = 0.0  # 最大回撤（比例）
+    """
+    风险指标
+    
+    注意：max_drawdown、sharpe_ratio、sortino_ratio、var_*、cvar_*、
+    max_consecutive_wins、max_consecutive_losses 这些指标是基于仓位盈亏序列计算的，
+    而不是单笔成交记录。这样更能准确反映真实的风险特征。
+    """
+    max_drawdown: float = 0.0  # 最大回撤（比例，基于仓位累计盈亏）
     max_drawdown_abs: float = 0.0  # 最大回撤（绝对值）
-    sharpe_ratio: float = 0.0  # 夏普比率
+    sharpe_ratio: float = 0.0  # 夏普比率（基于仓位盈亏序列）
     sortino_ratio: float = 0.0  # 索提诺比率
     calmar_ratio: float = 0.0  # 卡玛比率
     
-    # VaR 指标
+    # VaR 指标（基于仓位盈亏）
     var_95: float = 0.0  # 95% VaR
     var_99: float = 0.0  # 99% VaR
     cvar_95: float = 0.0  # 95% CVaR (Expected Shortfall)
     
-    # 连续统计
-    max_consecutive_wins: int = 0  # 最大连续盈利次数
-    max_consecutive_losses: int = 0  # 最大连续亏损次数
+    # 连续统计（基于仓位盈亏序列）
+    max_consecutive_wins: int = 0  # 最大连续盈利仓位数
+    max_consecutive_losses: int = 0  # 最大连续亏损仓位数
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -67,17 +78,23 @@ class RiskMetrics:
 
 @dataclass
 class TradeMetrics:
-    """交易统计指标"""
-    total_trades: int = 0  # 总交易次数
-    winning_trades: int = 0  # 盈利交易次数
-    losing_trades: int = 0  # 亏损交易次数
+    """
+    交易统计指标
     
-    # 胜率和盈亏比
-    win_rate: float = 0.0  # 胜率
-    profit_factor: float = 0.0  # 盈亏比
-    recent_7d_win_rate: float = 0.0  # 最近 7 天胜率
+    注意：winning_trades、losing_trades、win_rate、profit_factor、recent_7d_win_rate
+    这些指标是基于完整的仓位历史（开仓→平仓周期）计算的，而不是单笔成交记录。
+    这样更能准确反映交易者的真实表现。
+    """
+    total_trades: int = 0  # 总仓位数（已平仓 + 未平仓）
+    winning_trades: int = 0  # 盈利仓位数（已平仓且盈利）
+    losing_trades: int = 0  # 亏损仓位数（已平仓且亏损）
     
-    # 交易规模
+    # 胜率和盈亏比（基于已平仓位计算）
+    win_rate: float = 0.0  # 胜率 = 盈利仓位数 / 已平仓位数
+    profit_factor: float = 0.0  # 盈亏比 = 总盈利 / 总亏损
+    recent_7d_win_rate: float = 0.0  # 最近 7 天胜率（基于7天内平仓的仓位）
+    
+    # 交易规模（基于成交记录）
     total_volume: float = 0.0  # 总交易量
     avg_trade_price: float = 0.0  # 平均交易价格
     avg_trade_size: float = 0.0  # 平均交易规模（USD）
