@@ -41,7 +41,7 @@ chown -R $USER:$USER "$PROJECT_DIR/data"
 echo -e "${YELLOW}[4/5] 配置 Supervisor...${NC}"
 
 # Conda 路径配置
-CONDA_PYTHON="/root/miniconda3/bin/python"
+CONDA_PYTHON="/root/miniconda3/envs/ai-trading/bin/python"
 
 # 生成配置文件
 cat > /tmp/copy_trading.conf << EOF
