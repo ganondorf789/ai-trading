@@ -256,18 +256,18 @@ def _build_error_card(message: str):
 
 
 def start_callback_server():
-    """启动飞书长连接回调服务"""
-    # 检查配置
-    if not settings.feishu.app_id or not settings.feishu.app_secret:
-        logger.error("错误: 请配置飞书 APP_ID 和 APP_SECRET")
+    """启动飞书长连接回调服务（使用新仓位推送专用配置）"""
+    # 检查配置（使用 feishu_position 配置）
+    if not settings.feishu_position.app_id or not settings.feishu_position.app_secret:
+        logger.error("错误: 请配置飞书新仓位推送 FEISHU_POSITION_APP_ID 和 FEISHU_POSITION_APP_SECRET")
         return
     
-    # 创建回调客户端
+    # 创建回调客户端（使用 feishu_position 配置）
     callback_client = FeishuCallbackClient(
-        app_id=settings.feishu.app_id,
-        app_secret=settings.feishu.app_secret,
-        push_url=settings.feishu.callback_push_url,
-        log_level=settings.feishu.callback_log_level
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret,
+        push_url=settings.feishu_position.callback_push_url,
+        log_level=settings.feishu_position.callback_log_level
     )
     
     # 注册仓位跟单处理器
@@ -282,9 +282,9 @@ def start_callback_server():
     
     # 启动长连接（阻塞模式）
     logger.info("=" * 50)
-    logger.info("飞书长连接回调服务")
+    logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
-    logger.info(f"APP_ID: {settings.feishu.app_id[:8]}...")
+    logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
     logger.info("已注册处理器: quick_position_tracking")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
@@ -325,15 +325,15 @@ async def run(with_callback: bool = False):
     # 初始化飞书通知器
     notifier = setup_feishu_notifier()
 
-    # 如果需要，在后台线程启动飞书回调服务
+    # 如果需要，在后台线程启动飞书回调服务（使用 feishu_position 配置）
     callback_thread = None
     if with_callback:
-        if settings.feishu.app_id and settings.feishu.app_secret:
-            logger.info("同时启动飞书回调服务...")
+        if settings.feishu_position.app_id and settings.feishu_position.app_secret:
+            logger.info("同时启动飞书回调服务（新仓位推送配置）...")
             callback_thread = threading.Thread(target=start_callback_server, daemon=True)
             callback_thread.start()
         else:
-            logger.warning("飞书未配置，跳过回调服务")
+            logger.warning("飞书新仓位推送未配置，跳过回调服务")
 
     # 初始化客户端
     if not settings.hyperliquid.private_key:

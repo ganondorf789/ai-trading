@@ -17,6 +17,8 @@ from hyperliquid.info import Info
 
 from core.models import Position, PositionSide
 from clients.hyperliquid_client import HyperliquidClient
+from clients.feishu_client import FeishuClient, CopyTradingNotifier
+from config.settings import settings
 
 
 # 最小订单价值（USD）
@@ -70,7 +72,8 @@ class PositionCopyTradingBot:
         self,
         client: HyperliquidClient,
         check_interval: float = 10.0,
-        reload_interval: float = 60.0
+        reload_interval: float = 60.0,
+        enable_feishu_notify: bool = True
     ):
         """
         初始化仓位跟单机器人
@@ -79,6 +82,7 @@ class PositionCopyTradingBot:
             client: Hyperliquid 客户端（需要已初始化钱包）
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
+            enable_feishu_notify: 是否启用飞书通知
         """
         self.client = client
         self.check_interval = check_interval
@@ -112,6 +116,11 @@ class PositionCopyTradingBot:
         
         # 延迟加载数据库
         self._db = None
+        
+        # 飞书通知器（使用 FeishuSettings 配置）
+        self._notifier: Optional[CopyTradingNotifier] = None
+        if enable_feishu_notify:
+            self._init_feishu_notifier()
 
     @property
     def db(self):
@@ -120,6 +129,72 @@ class PositionCopyTradingBot:
             from database import TraderDatabase
             self._db = TraderDatabase()
         return self._db
+
+    def _init_feishu_notifier(self):
+        """初始化飞书通知器（使用 FeishuSettings 配置）"""
+        try:
+            if not settings.feishu.webhook_url and not settings.feishu.app_id:
+                logger.warning("飞书未配置，通知功能将不可用")
+                return
+            
+            feishu_client = FeishuClient(
+                app_id=settings.feishu.app_id,
+                app_secret=settings.feishu.app_secret,
+                webhook_url=settings.feishu.webhook_url,
+                default_user_id=settings.feishu.default_user_id
+            )
+            self._notifier = CopyTradingNotifier(feishu_client)
+            logger.info("飞书通知器初始化成功")
+        except Exception as e:
+            logger.warning(f"飞书通知器初始化失败: {e}")
+            self._notifier = None
+
+    def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
+        """发送开仓通知"""
+        if self._notifier:
+            try:
+                self._notifier.notify_copy_open(
+                    target_address=target_address,
+                    symbol=symbol,
+                    side=side,
+                    size=size
+                )
+            except Exception as e:
+                logger.warning(f"飞书通知失败: {e}")
+
+    def _notify_copy_close(self, target_address: str, symbol: str, pnl: float):
+        """发送平仓通知"""
+        if self._notifier:
+            try:
+                self._notifier.notify_copy_close(
+                    target_address=target_address,
+                    symbol=symbol,
+                    pnl=pnl
+                )
+            except Exception as e:
+                logger.warning(f"飞书通知失败: {e}")
+
+    def _notify_copy_adjust(self, target_address: str, symbol: str, side: str, size: float, is_increase: bool):
+        """发送调整仓位通知"""
+        if self._notifier:
+            try:
+                self._notifier.notify_copy_adjust(
+                    target_address=target_address,
+                    symbol=symbol,
+                    side=side,
+                    size=size,
+                    is_increase=is_increase
+                )
+            except Exception as e:
+                logger.warning(f"飞书通知失败: {e}")
+
+    def _notify_error(self, error: str):
+        """发送错误通知"""
+        if self._notifier:
+            try:
+                self._notifier.notify_error(error)
+            except Exception as e:
+                logger.warning(f"飞书通知失败: {e}")
 
     @property
     def info_client(self) -> Info:
@@ -345,6 +420,9 @@ class PositionCopyTradingBot:
                         state.tracking_id, size, side, price
                     )
                     
+                    # 发送飞书通知
+                    self._notify_copy_open(state.target_address, symbol, side, size)
+                    
                     if self._on_copy:
                         self._on_copy(
                             state.tracking_id, state.target_address,
@@ -427,8 +505,11 @@ class PositionCopyTradingBot:
                         state.tracking_id, my_target_size, state.my_side, state.my_entry_price
                     )
                     
+                    # 发送飞书通知
+                    side = 'long' if is_long else 'short'
+                    self._notify_copy_adjust(state.target_address, symbol, side, adjustment_size, is_increase)
+                    
                     if self._on_adjust:
-                        side = 'long' if is_long else 'short'
                         self._on_adjust(
                             state.tracking_id, state.target_address,
                             symbol, side, adjustment_size, is_increase
@@ -477,6 +558,9 @@ class PositionCopyTradingBot:
                     self.db.update_tracking_status(
                         state.tracking_id, 'closed', reason, pnl
                     )
+                    
+                    # 发送飞书通知
+                    self._notify_copy_close(state.target_address, symbol, pnl)
                     
                     if self._on_close:
                         self._on_close(
