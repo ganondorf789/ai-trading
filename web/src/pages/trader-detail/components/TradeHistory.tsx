@@ -11,6 +11,7 @@ import {
   DropdownItem,
 } from '@heroui/dropdown';
 import { Select, SelectItem } from '@heroui/select';
+import { Autocomplete, AutocompleteItem } from '@heroui/autocomplete';
 import { TimeRangeFilter } from '@/components/TimeRangeFilter';
 import { TablePagination } from '@/components/TablePagination';
 import {
@@ -154,13 +155,13 @@ export function TradeHistory({
         );
       case 'trade_type':
         // trade_type: 1=开多, 2=加多, 3=平多, 4=开空, 5=加空, 6=平空
-        const tradeTypeMap: Record<number, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
-          1: { label: '开多', color: 'success' },
-          2: { label: '加多', color: 'success' },
-          3: { label: '平多', color: 'warning' },
-          4: { label: '开空', color: 'danger' },
-          5: { label: '加空', color: 'danger' },
-          6: { label: '平空', color: 'warning' },
+        const tradeTypeMap: Record<string, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
+          '1': { label: '开多', color: 'success' },
+          '2': { label: '加多', color: 'success' },
+          '3': { label: '平多', color: 'warning' },
+          '4': { label: '开空', color: 'danger' },
+          '5': { label: '加空', color: 'danger' },
+          '6': { label: '平空', color: 'warning' },
         };
         const typeInfo = fill.trade_type ? tradeTypeMap[fill.trade_type] : null;
 
@@ -225,10 +226,14 @@ export function TradeHistory({
     return (
       <div className="flex flex-col gap-4">
         {/* 统计信息 */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 p-4 bg-default-100 rounded-lg">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-3 p-4 bg-default-100 rounded-lg">
           <div>
             <p className="text-xs text-default-500">总交易</p>
             <p className="text-lg font-bold text-default-800">{fillsStats?.total ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-xs text-default-500">总交易量</p>
+            <p className="text-lg font-bold text-primary">${formatNumber(fillsStats?.total_volume ?? 0)}</p>
           </div>
           <div>
             <p className="text-xs text-default-500">盈利笔数</p>
@@ -261,24 +266,25 @@ export function TradeHistory({
             {/* 币种筛选 */}
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-sm whitespace-nowrap">币种</span>
-              <Select
+              <Autocomplete
                 className="min-w-[160px]"
                 size="sm"
-                selectedKeys={[selectedCoin]}
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as string;
-                  onCoinChange(selected || 'all');
+                placeholder="搜索币种..."
+                selectedKey={selectedCoin}
+                onSelectionChange={(key) => {
+                  onCoinChange((key as string) || 'all');
                 }}
                 popoverProps={{
                   classNames: {
-                    content: "max-h-60 overflow-y-auto"
+                    content: "max-h-60"
                   }
                 }}
+                isClearable={false}
               >
                 {coins.map((coin) => (
-                  <SelectItem key={coin}>{coin === 'all' ? '全部' : coin}</SelectItem>
+                  <AutocompleteItem key={coin}>{coin === 'all' ? '全部' : coin}</AutocompleteItem>
                 ))}
-              </Select>
+              </Autocomplete>
             </div>
 
             {/* 盈亏筛选 */}

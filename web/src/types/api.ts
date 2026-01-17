@@ -272,6 +272,7 @@ export interface FillsStats {
   losing: number;
   total_pnl: number;
   total_fees: number;
+  total_volume: number;
   win_rate: number;
 }
 
