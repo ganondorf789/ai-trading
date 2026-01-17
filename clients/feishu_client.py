@@ -737,8 +737,7 @@ class CopyTradingNotifier:
         address: str,
         position: dict,
         rating: str = None,
-        score: float = None,
-        trader_name: str = None
+        score: float = None
     ) -> bool:
         """
         通知新仓位（带交互按钮）
@@ -754,7 +753,6 @@ class CopyTradingNotifier:
                 - open_time: 开仓时间（可选）
             rating: 交易员评级（如 'S', 'A' 等）
             score: 交易员评分
-            trader_name: 交易员名称（可选）
 
         Returns:
             是否发送成功
@@ -779,9 +777,6 @@ class CopyTradingNotifier:
             except:
                 open_time_str = str(open_time)
 
-        # 交易员显示名称
-        trader_display = trader_name if trader_name else f"{address[:10]}..."
-
         # 评级信息
         rating_info = ""
         if rating:
@@ -794,8 +789,7 @@ class CopyTradingNotifier:
         hyperliquid_url = f"https://app.hyperliquid.xyz/trade/{coin}"
 
         # 构建卡片内容
-        content = f"""**交易员**: `{trader_display}`
-**地址**: `{address[:16]}...`{rating_info}
+        content = f"""**地址**: `{address[:16]}...`{rating_info}
 **币种**: {coin}
 **方向**: {side_emoji} {side_cn}
 **数量**: {abs(szi):.4f}
@@ -814,8 +808,7 @@ class CopyTradingNotifier:
                 "action_tag": "quick_copy_trade",
                 "value": {
                     "address": address,
-                    "coin": coin,
-                    "trader_name": trader_name or ""
+                    "coin": coin
                 },
                 "type": "primary"
             },
@@ -845,7 +838,6 @@ class CopyTradingNotifier:
         else:
             # 降级为纯文本消息
             msg = f"🆕 新仓位\n"
-            msg += f"交易员: {trader_display}\n"
             msg += f"地址: {address[:16]}...\n"
             if rating:
                 msg += f"评级: {rating}"

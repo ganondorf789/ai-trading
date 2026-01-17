@@ -149,7 +149,6 @@ def process_trader_result(
         新仓位数量
     """
     address = trader['address']
-    trader_name = trader.get('trader_name')
     rating = trader.get('rating')
     score = trader.get('overall_score')
     
@@ -183,8 +182,11 @@ def process_trader_result(
         szi = float(pos.get('szi', 0))
         direction, _ = format_position_direction(szi)
         
+        # 设置开仓时间为当前时间
+        pos['open_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
         success = notifier.notify_new_position(
-            address, pos, rating=rating, score=score, trader_name=trader_name
+            address, pos, rating=rating, score=score
         )
         if success:
             logger.success(f"    ✓ 已通知: {coin} {direction}")
