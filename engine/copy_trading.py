@@ -760,8 +760,17 @@ class MultiTargetCopyTradingBot:
         target_position: Dict
     ) -> bool:
         """调整仓位（加仓或减仓，带锁和重试）"""
+        config = target_state.config
+        
+        # 检查目标交易员是否已经清仓（new_size == 0）
+        if new_size == 0:
+            my_pos = self.my_positions.get(symbol)
+            if my_pos:
+                logger.info(f"[{target_state.address[:8]}] 目标交易员已清仓，执行完全平仓: {symbol}")
+                return await self._close_position(target_state, symbol)
+            return True
+        
         async with self._order_lock:
-            config = target_state.config
             my_pos = self.my_positions.get(symbol)
 
             if my_pos is None:
@@ -774,7 +783,7 @@ class MultiTargetCopyTradingBot:
             is_increase = new_abs_size > prev_abs_size
             action_type = "加仓" if is_increase else "减仓"
 
-            # 使用精确计算
+            # 重新获取价格和计算（可能有变化）
             current_price = self.client.get_mid_price(symbol)
             my_target_size = self._calculate_copy_size(config, target_position, current_price)
             my_current_size = abs(my_pos.size)

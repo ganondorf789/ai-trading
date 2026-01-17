@@ -367,8 +367,18 @@ class PositionCopyTradingBot:
         target_position: Dict
     ) -> bool:
         """调整仓位（加仓或减仓）"""
+        symbol = state.symbol
+        
+        # 检查目标交易员是否已经清仓（size == 0）
+        target_size = abs(target_position.get('size', 0))
+        if target_size == 0:
+            my_pos = self.my_positions.get(symbol)
+            if my_pos:
+                logger.info(f"[{state.tracking_id}] 目标交易员已清仓，执行完全平仓: {symbol}")
+                return await self._close_position(state, "目标清仓")
+            return True
+        
         async with self._order_lock:
-            symbol = state.symbol
             my_pos = self.my_positions.get(symbol)
 
             if my_pos is None:
