@@ -391,18 +391,6 @@ def main():
         help="获取前N名交易者 (默认: 5000)"
     )
     parser.add_argument(
-        "--days", "-d",
-        type=int,
-        default=0,
-        help="分析回溯天数 (0=获取所有记录, 默认: 0)"
-    )
-    parser.add_argument(
-        "--max-fills", "-m",
-        type=int,
-        default=0,
-        help="每个交易者最大获取的交易记录数 (0=不限制, 默认: 0)"
-    )
-    parser.add_argument(
         "--resume", "-r",
         type=int,
         default=0,
@@ -421,30 +409,21 @@ def main():
         help="启用代理 (默认: 不启用)"
     )
     parser.add_argument(
-        "--no-proxy",
-        action="store_true",
-        default=False,
-        help="禁用代理 (默认行为)"
-    )
-    parser.add_argument(
         "--delay",
         type=float,
         default=1.5,
-        help="API调用间隔秒数 (默认: 代理模式1.5秒)"
+        help="API调用间隔秒数 (默认: 1.5秒)"
     )
 
     args = parser.parse_args()
-
-    # 确定代理设置：--proxy 优先，否则检查 --no-proxy
-    use_proxy = args.proxy and not args.no_proxy
     
     screen_leaderboard_traders(
         limit=args.limit,
-        lookback_days=args.days,
-        max_fills=args.max_fills,
+        lookback_days=0,
+        max_fills=0,
         resume_from=args.resume,
         max_workers=args.workers,
-        use_proxy=use_proxy,
+        use_proxy=args.proxy,
         api_delay=args.delay
     )
 
