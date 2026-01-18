@@ -584,6 +584,7 @@ class CopyTradingNotifier:
                     "content": f"{ratio}%"
                 },
                 "type": "primary",
+                "width": "fill",
                 "value": {
                     "action_tag": "quick_copy_trade",
                     "address": address,
@@ -639,6 +640,7 @@ class CopyTradingNotifier:
                             "content": "📊 查看详情"
                         },
                         "type": "default",
+                        "width": "fill",
                         "multi_url": {
                             "url": hyperliquid_url,
                             "pc_url": hyperliquid_url,
