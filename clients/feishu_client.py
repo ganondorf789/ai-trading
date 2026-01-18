@@ -561,8 +561,6 @@ class CopyTradingNotifier:
 
         # 构建卡片内容
         content = f"""**地址**: `{address[:16]}...`{rating_info}
-**币种**: {coin}
-**方向**: {side_emoji} {side_cn}
 **数量**: {abs(szi):.4f}
 **入场价**: ${entry_px:,.4f}
 **仓位价值**: ${position_value:,.2f}
@@ -620,13 +618,6 @@ class CopyTradingNotifier:
             {
                 "tag": "markdown",
                 "content": content
-            },
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "plain_text",
-                    "content": "📊 选择跟单比例："
-                }
             },
             create_column_set(row1_buttons),
             create_column_set(row2_buttons),
