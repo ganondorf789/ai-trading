@@ -52,6 +52,16 @@ try:
 except ImportError:
     FEISHU_AVAILABLE = False
 
+# Redis 本地推送相关
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
+# Redis 新仓位推送 channel（与 monitor_s_traders_positions.py 一致）
+REDIS_POSITION_CHANNEL = "new_positions"
+
 
 class TraderScreener:
     """
@@ -90,7 +100,8 @@ class TraderScreener:
         self,
         config: Optional[ScreenerConfig] = None,
         cache_fills: bool = True,
-        worker_index: Optional[int] = None
+        worker_index: Optional[int] = None,
+        redis_enabled: bool = False
     ):
         """
         初始化筛选器
@@ -99,6 +110,7 @@ class TraderScreener:
             config: 筛选器配置
             cache_fills: 是否缓存 fills 数据（批量处理时建议设为 False 以节省内存）
             worker_index: worker 索引，用于分配固定代理（None 则随机选择）
+            redis_enabled: 是否启用 Redis 本地推送（检测到新仓位时推送到 Redis channel）
         """
         self.config = config or ScreenerConfig()
         
@@ -140,6 +152,26 @@ class TraderScreener:
                     logger.debug("飞书仓位通知未配置，新仓位通知功能已禁用")
             except Exception as e:
                 logger.warning(f"飞书仓位通知器初始化失败: {e}")
+        
+        # Redis 客户端（用于本地推送）
+        self._redis_client = None
+        if redis_enabled and REDIS_AVAILABLE:
+            try:
+                self._redis_client = redis.Redis(
+                    host=settings.redis.host,
+                    port=settings.redis.port,
+                    password=settings.redis.password or None,
+                    db=settings.redis.db,
+                    decode_responses=True
+                )
+                self._redis_client.ping()
+                logger.info(f"Redis 已连接 ({settings.redis.host}:{settings.redis.port})，本地推送已启用")
+                logger.info(f"  本地监听: python local_position_listener.py")
+            except Exception as e:
+                logger.warning(f"Redis 连接失败: {e}，本地推送将不可用")
+                self._redis_client = None
+        elif redis_enabled and not REDIS_AVAILABLE:
+            logger.warning("Redis 库未安装，本地推送将不可用 (pip install redis)")
         
         api_url = (
             constants.TESTNET_API_URL 
@@ -277,7 +309,7 @@ class TraderScreener:
                     logger.debug(f"已保存 {saved_count} 个持仓记录到数据库: {short_address(address)}")
                     
                     # 如果是已存在的交易员（非新交易员），检测新仓位并发送通知
-                    if is_existing_trader and self._notifier:
+                    if is_existing_trader:
                         # 获取新保存的持仓
                         new_positions = self._db.get_positions(address)
                         new_coins = {pos['coin'] for pos in new_positions}
@@ -286,21 +318,40 @@ class TraderScreener:
                         new_coin_set = new_coins - old_coins
                         if new_coin_set:
                             logger.info(f"检测到 {len(new_coin_set)} 个新仓位: {short_address(address)}")
+                            
+                            # 只有 S 级交易员才发送通知
+                            is_s_tier = metrics and metrics.rating == QualityRating.S_TIER
+                            if not is_s_tier:
+                                logger.debug(f"跳过通知（非S级交易员，评级: {metrics.rating.value if metrics else 'N/A'}）: {short_address(address)}")
                             # 检查交易员是否在跟单列表中，只有不在跟单列表中才发送通知
-                            is_in_copy_list = self._db.get_copy_trading_address(address) is not None
-                            if is_in_copy_list:
+                            elif self._db.get_copy_trading_address(address) is not None:
                                 logger.info(f"跳过通知（交易员在跟单列表中）: {short_address(address)}")
                             else:
-                                # 发送飞书通知
+                                # 发送飞书通知和 Redis 本地推送
                                 for pos in new_positions:
                                     if pos['coin'] in new_coin_set:
-                                        rating = metrics.rating.value if metrics else None
-                                        score = metrics.overall_score if metrics else None
-                                        success = self._notifier.notify_new_position(
-                                            address, pos, rating=rating, score=score
-                                        )
-                                        if success:
-                                            logger.info(f"已发送新仓位通知: {short_address(address)} - {pos['coin']}")
+                                        coin = pos.get('coin', 'Unknown')
+                                        
+                                        # 飞书通知
+                                        if self._notifier:
+                                            rating = metrics.rating.value if metrics else None
+                                            score = metrics.overall_score if metrics else None
+                                            success = self._notifier.notify_new_position(
+                                                address, pos, rating=rating, score=score
+                                            )
+                                            if success:
+                                                logger.info(f"已发送飞书通知: {short_address(address)} - {coin}")
+                                        
+                                        # Redis 本地推送
+                                        if self._redis_client:
+                                            try:
+                                                self._redis_client.publish(
+                                                    REDIS_POSITION_CHANNEL,
+                                                    f"https://app.hyperliquid.xyz/trade/{coin}"
+                                                )
+                                                logger.info(f"已发送本地推送: {short_address(address)} - {coin}")
+                                            except Exception as e:
+                                                logger.debug(f"Redis 推送失败: {e}")
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             

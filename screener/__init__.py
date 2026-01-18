@@ -79,6 +79,7 @@ from screener.trader_screener import (
     discover_active_traders,
     quick_analyze,
     quick_screen,
+    REDIS_POSITION_CHANNEL,
 )
 
 # 数据模型
@@ -198,6 +199,7 @@ __all__ = [
     "discover_active_traders",
     "quick_analyze",
     "quick_screen",
+    "REDIS_POSITION_CHANNEL",
     
     # 数据模型
     "TraderMetrics",
