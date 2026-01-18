@@ -29,15 +29,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
-from engine.position_copy_trading import PositionCopyTradingBot
+from engine.position_copy_trading import PositionCopyTradingBot, REDIS_RELOAD_CHANNEL
 from config.settings import settings
 from database import TraderDatabase
 
+# Redis 支持（可选）
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 
 # 全局通知器
 notifier: CopyTradingNotifier = None
 # 全局数据库
 db: TraderDatabase = None
+# 全局 Redis 客户端（用于发送配置重载通知）
+redis_client = None
 
 
 def setup_logging():
@@ -70,6 +78,47 @@ def setup_feishu_notifier() -> CopyTradingNotifier:
         logger.warning("飞书未配置，将不会发送通知")
 
     return CopyTradingNotifier(feishu_client)
+
+
+def setup_redis_client():
+    """初始化 Redis 客户端（用于发送配置重载通知）"""
+    global redis_client
+    
+    if not REDIS_AVAILABLE:
+        logger.warning("Redis 库未安装，配置重载通知将不可用")
+        return None
+    
+    try:
+        redis_client = redis.Redis(
+            host=settings.redis.host,
+            port=settings.redis.port,
+            password=settings.redis.password or None,
+            db=settings.redis.db,
+            decode_responses=True
+        )
+        redis_client.ping()
+        logger.info(f"Redis 已连接，配置重载通知已启用")
+        return redis_client
+    except Exception as e:
+        logger.warning(f"Redis 连接失败: {e}")
+        redis_client = None
+        return None
+
+
+def notify_config_reload(message: str = "reload"):
+    """发送配置重载通知到 Redis"""
+    global redis_client
+    
+    if redis_client is None:
+        return False
+    
+    try:
+        redis_client.publish(REDIS_RELOAD_CHANNEL, message)
+        logger.debug(f"已发送配置重载通知: {message}")
+        return True
+    except Exception as e:
+        logger.warning(f"发送配置重载通知失败: {e}")
+        return False
 
 
 def on_copy_callback(tracking_id: int, target: str, symbol: str, side: str, size: float):
@@ -208,6 +257,9 @@ def handle_quick_position_tracking(event: CardActionEvent):
             trader_display = trader_name if trader_name else f"{address[:10]}..."
             
             logger.success(f"[仓位跟单回调] 添加成功: #{tracking_id} {coin} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
+            
+            # 发送 Redis 配置重载通知，让机器人立即加载新配置
+            notify_config_reload(f"new_tracking:{tracking_id}")
             
             return _build_success_card(
                 f"已添加 {coin} 仓位跟单",
@@ -421,6 +473,9 @@ def run_callback_only():
     # 初始化数据库
     db = TraderDatabase()
     
+    # 初始化 Redis（用于发送配置重载通知）
+    setup_redis_client()
+    
     start_callback_server()
 
 
@@ -445,6 +500,9 @@ async def run(with_callback: bool = False):
     callback_thread = None
     if with_callback:
         if settings.feishu_position.app_id and settings.feishu_position.app_secret:
+            # 初始化 Redis（用于发送配置重载通知）
+            setup_redis_client()
+            
             logger.info("同时启动飞书回调服务（新仓位推送配置）...")
             callback_thread = threading.Thread(target=start_callback_server, daemon=True)
             callback_thread.start()

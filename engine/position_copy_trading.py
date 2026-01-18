@@ -20,9 +20,18 @@ from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
 
+# Redis 支持（可选）
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
 
 # 最小订单价值（USD）
 MIN_ORDER_VALUE_USD = 11
+
+# Redis 配置重载通知 channel
+REDIS_RELOAD_CHANNEL = "position_tracking_reload"
 
 
 @dataclass
@@ -73,7 +82,8 @@ class PositionCopyTradingBot:
         client: HyperliquidClient,
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
-        enable_feishu_notify: bool = True
+        enable_feishu_notify: bool = True,
+        redis_enabled: bool = True
     ):
         """
         初始化仓位跟单机器人
@@ -83,6 +93,7 @@ class PositionCopyTradingBot:
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
             enable_feishu_notify: 是否启用飞书通知
+            redis_enabled: 是否启用 Redis 配置重载通知（收到通知后立即重载配置）
         """
         self.client = client
         self.check_interval = check_interval
@@ -121,6 +132,12 @@ class PositionCopyTradingBot:
         self._notifier: Optional[CopyTradingNotifier] = None
         if enable_feishu_notify:
             self._init_feishu_notifier()
+        
+        # Redis 配置重载通知
+        self._redis_client = None
+        self._reload_requested = False
+        if redis_enabled:
+            self._init_redis_client()
 
     @property
     def db(self):
@@ -145,6 +162,57 @@ class PositionCopyTradingBot:
             self._notifier = CopyTradingNotifier(feishu_client)
             logger.info("飞书通知器初始化成功")
         except Exception as e:
+            logger.warning(f"飞书通知器初始化失败: {e}")
+            self._notifier = None
+
+    def _init_redis_client(self):
+        """初始化 Redis 客户端（用于接收配置重载通知）"""
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis 库未安装，配置重载通知将不可用 (pip install redis)")
+            return
+        
+        try:
+            self._redis_client = redis.Redis(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                password=settings.redis.password or None,
+                db=settings.redis.db,
+                decode_responses=True
+            )
+            self._redis_client.ping()
+            logger.info(f"Redis 已连接 ({settings.redis.host}:{settings.redis.port})，配置重载通知已启用")
+        except Exception as e:
+            logger.warning(f"Redis 连接失败，配置重载通知将不可用: {e}")
+            self._redis_client = None
+
+    async def _listen_redis_reload(self):
+        """监听 Redis 配置重载通知"""
+        if not self._redis_client:
+            return
+        
+        try:
+            pubsub = self._redis_client.pubsub()
+            pubsub.subscribe(REDIS_RELOAD_CHANNEL)
+            logger.info(f"开始监听配置重载通知 (channel: {REDIS_RELOAD_CHANNEL})")
+            
+            while self.is_running:
+                try:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message['type'] == 'message':
+                        logger.info(f"收到配置重载通知: {message['data']}")
+                        self._reload_requested = True
+                except Exception as e:
+                    logger.warning(f"Redis 监听错误: {e}")
+                
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Redis 监听异常: {e}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
             logger.warning(f"飞书通知器初始化失败: {e}")
             self._notifier = None
 
@@ -703,6 +771,7 @@ class PositionCopyTradingBot:
         logger.info("仓位级别跟单机器人启动")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
+        logger.info(f"Redis 配置通知: {'已启用' if self._redis_client else '未启用'}")
         logger.info("=" * 60)
 
         # 加载初始配置
@@ -711,12 +780,25 @@ class PositionCopyTradingBot:
         if not self.trackings:
             logger.warning("没有启用的仓位跟单，等待添加...")
 
+        # 启动 Redis 监听任务（如果启用）
+        redis_task = None
+        if self._redis_client:
+            redis_task = asyncio.create_task(self._listen_redis_reload())
+
         try:
             while self.is_running:
                 try:
-                    # 检查是否需要重载配置
-                    if (self.last_config_reload is None or
-                        (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
+                    # 检查是否需要重载配置（定时重载或 Redis 通知触发）
+                    should_reload = (
+                        self._reload_requested or
+                        self.last_config_reload is None or
+                        (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval
+                    )
+                    
+                    if should_reload:
+                        if self._reload_requested:
+                            logger.info("收到 Redis 通知，立即重载配置")
+                            self._reload_requested = False
                         self.reload_configs()
 
                     if self.trackings:
@@ -735,6 +817,12 @@ class PositionCopyTradingBot:
             logger.info("仓位跟单机器人被取消")
         finally:
             self.is_running = False
+            if redis_task:
+                redis_task.cancel()
+                try:
+                    await redis_task
+                except asyncio.CancelledError:
+                    pass
             logger.info("仓位跟单机器人停止")
 
     def stop(self):
