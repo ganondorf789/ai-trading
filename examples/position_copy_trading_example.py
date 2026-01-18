@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
-from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
+from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent, BotMenuEvent
 from engine.position_copy_trading import PositionCopyTradingBot
 from config.settings import settings
 from database import TraderDatabase
@@ -260,12 +260,126 @@ def _build_error_card(message: str):
     }
 
 
+# ==================== 机器人菜单处理 ====================
+
+def handle_show_positions(event: BotMenuEvent):
+    """
+    处理"持仓"菜单点击，显示当前持仓
+    """
+    logger.info(f"[菜单回调] 用户 {event.user_id} 请求查看持仓")
+    
+    try:
+        # 创建 HyperliquidClient 获取持仓
+        if not settings.hyperliquid.private_key:
+            return {"card": _build_error_card("未配置 Hyperliquid 私钥")}
+        
+        client = HyperliquidClient(
+            private_key=settings.hyperliquid.private_key,
+            wallet_address=settings.hyperliquid.wallet_address,
+            testnet=settings.system.testnet_mode
+        )
+        
+        # 获取当前持仓
+        positions = client.get_positions()
+        
+        if not positions:
+            return {"card": _build_positions_card([], 0, 0)}
+        
+        # 获取账户信息
+        account_info = client.get_account_info()
+        
+        return {
+            "card": _build_positions_card(
+                positions, 
+                account_info.account_value,
+                account_info.unrealized_pnl
+            )
+        }
+        
+    except Exception as e:
+        logger.error(f"[菜单回调] 获取持仓失败: {e}")
+        return {"card": _build_error_card(f"获取持仓失败: {str(e)}")}
+
+
+def _build_positions_card(positions: list, account_value: float, unrealized_pnl: float):
+    """构建持仓信息卡片"""
+    if not positions:
+        return {
+            "header": {
+                "title": {"tag": "plain_text", "content": "📊 当前持仓"},
+                "template": "blue"
+            },
+            "elements": [
+                {"tag": "markdown", "content": "暂无持仓"}
+            ]
+        }
+    
+    # 构建持仓列表内容
+    position_lines = []
+    total_pnl = 0
+    
+    for pos in positions:
+        side_emoji = "🟢" if pos.side.value == "long" else "🔴"
+        side_cn = "多" if pos.side.value == "long" else "空"
+        pnl_emoji = "📈" if pos.unrealized_pnl >= 0 else "📉"
+        
+        position_lines.append(
+            f"{side_emoji} **{pos.symbol}** {side_cn} | "
+            f"数量: {abs(pos.size):.4f} | "
+            f"入场: ${pos.entry_price:,.2f} | "
+            f"{pnl_emoji} ${pos.unrealized_pnl:+,.2f}"
+        )
+        total_pnl += pos.unrealized_pnl
+    
+    content = "\n".join(position_lines)
+    
+    # 添加汇总信息
+    pnl_color = "green" if total_pnl >= 0 else "red"
+    summary = f"\n\n---\n**账户价值**: ${account_value:,.2f}\n**未实现盈亏**: ${unrealized_pnl:+,.2f}"
+    
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"📊 当前持仓 ({len(positions)}个)"},
+            "template": "blue"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content + summary}
+        ]
+    }
+
+
+def setup_bot_menu(feishu_client: FeishuClient):
+    """设置机器人菜单"""
+    menu_items = [
+        {
+            "action_type": "EVENT",
+            "text": "📊 持仓",
+        },
+    ]
+    
+    success = feishu_client.create_bot_menu(menu_items)
+    if success:
+        logger.info("机器人菜单设置成功")
+    else:
+        logger.warning("机器人菜单设置失败")
+
+
 def start_callback_server():
     """启动飞书长连接回调服务（使用新仓位推送专用配置）"""
     # 检查配置（使用 feishu_position 配置）
     if not settings.feishu_position.app_id or not settings.feishu_position.app_secret:
         logger.error("错误: 请配置飞书新仓位推送 FEISHU_POSITION_APP_ID 和 FEISHU_POSITION_APP_SECRET")
         return
+    
+    # 创建 FeishuClient（用于发送消息响应）
+    feishu_client = FeishuClient(
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret,
+        default_user_id=settings.feishu_position.default_user_id
+    )
+    
+    # 设置机器人菜单
+    setup_bot_menu(feishu_client)
     
     # 创建回调客户端（使用 feishu_position 配置）
     callback_client = FeishuCallbackClient(
@@ -275,8 +389,15 @@ def start_callback_server():
         log_level=settings.feishu_position.callback_log_level
     )
     
-    # 注册仓位跟单处理器
+    # 设置 FeishuClient（用于发送消息响应）
+    callback_client.set_feishu_client(feishu_client)
+    
+    # 注册仓位跟单处理器（卡片按钮点击）
     callback_client.register_handler("quick_position_tracking", handle_quick_position_tracking)
+    callback_client.register_handler("quick_copy_trade", handle_quick_position_tracking)
+    
+    # 注册机器人菜单处理器
+    callback_client.register_menu_handler("📊 持仓", handle_show_positions)
     
     # 注册全局日志处理器
     def log_all_events(event: CardActionEvent):
@@ -290,7 +411,9 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_position_tracking")
+    logger.info("已注册处理器:")
+    logger.info("  - 卡片按钮: quick_position_tracking, quick_copy_trade")
+    logger.info("  - 机器人菜单: 📊 持仓")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     
