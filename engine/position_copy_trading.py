@@ -679,7 +679,7 @@ class PositionCopyTradingBot:
                 if prev_size > 0:
                     size_change_pct = (new_size - prev_size) / prev_size * 100
                     
-                    if abs(size_change_pct) >= 5.0:  # 变化超过5%才调整
+                    if abs(size_change_pct) >= 1.0:  # 变化超过1%才调整
                         await self._adjust_position(state, target_pos)
         
         state.last_sync = pendulum.now()
