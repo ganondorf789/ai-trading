@@ -58,6 +58,9 @@ class TrackingState:
     # 状态
     status: str = 'pending'  # pending/active/closed/stopped
     last_sync: Optional[pendulum.DateTime] = None
+    
+    # 上次补仓失败时的目标仓位大小（用于避免重复尝试）
+    last_failed_adjust_target_size: Optional[float] = None
 
 
 class PositionCopyTradingBot:
@@ -253,6 +256,12 @@ class PositionCopyTradingBot:
                     # 添加到跟单列表
                     self.trackings[tracking_id] = state
                     logger.success(f"[立即开仓] 成功: {state.symbol} {target_pos['side']} {copy_size}")
+                else:
+                    # 开仓失败，标记为 stopped，不再重试
+                    state.status = 'stopped'
+                    self.db.update_tracking_status(state.tracking_id, 'stopped', '开仓失败')
+                    self.trackings[tracking_id] = state
+                    logger.error(f"[立即开仓] 失败: {state.symbol}，已停止")
             elif (my_pos.side == PositionSide.LONG) == is_long:
                 # 方向相同，直接标记为 active
                 state.status = 'active'
@@ -801,7 +810,18 @@ class PositionCopyTradingBot:
                     size_change_pct = (new_size - prev_size) / prev_size * 100
                     
                     if abs(size_change_pct) >= 1.0:  # 变化超过1%才调整
-                        await self._adjust_position(state, target_pos)
+                        # 检查是否和上次失败时的目标仓位一样（避免重复尝试）
+                        if (state.last_failed_adjust_target_size is not None and 
+                            abs(new_size - state.last_failed_adjust_target_size) < 0.0001):
+                            logger.debug(f"[{state.tracking_id}] 目标仓位未变化，跳过补仓重试")
+                        else:
+                            success = await self._adjust_position(state, target_pos)
+                            if success:
+                                # 补仓成功，清除失败记录
+                                state.last_failed_adjust_target_size = None
+                            else:
+                                # 补仓失败，记录当前目标仓位大小
+                                state.last_failed_adjust_target_size = new_size
         
         state.last_sync = pendulum.now()
 
