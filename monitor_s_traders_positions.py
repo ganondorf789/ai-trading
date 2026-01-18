@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
 
+import redis
 from loguru import logger
 
 # 添加项目根目录到路径
@@ -28,6 +29,9 @@ from database import TraderDatabase
 from screener.api_client import AsyncAPIClient, APIConfig, get_proxy_manager, reset_proxy_manager
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
+
+# Redis 新仓位推送 channel
+REDIS_POSITION_CHANNEL = "new_positions"
 
 
 def get_s_rated_traders(db: TraderDatabase) -> List[Dict]:
@@ -133,7 +137,8 @@ def process_trader_result(
     notifier: CopyTradingNotifier,
     trader: Dict,
     asset_positions: Optional[List[Dict]],
-    old_positions: Dict[str, Dict]
+    old_positions: Dict[str, Dict],
+    redis_client: redis.Redis = None
 ) -> int:
     """
     处理单个交易员的持仓结果
@@ -192,6 +197,13 @@ def process_trader_result(
             logger.success(f"    ✓ 已通知: {coin} {direction}")
         else:
             logger.error(f"    ✗ 通知失败: {coin}")
+        
+        # Redis Pub/Sub 推送（供本地客户端接收）
+        if redis_client:
+            try:
+                redis_client.publish(REDIS_POSITION_CHANNEL, f"https://app.hyperliquid.xyz/trade/{coin}")
+            except Exception as e:
+                logger.debug(f"    Redis 推送失败: {e}")
     
     return len(new_position_list)
 
@@ -200,7 +212,8 @@ async def process_batch(
     db: TraderDatabase,
     notifier: CopyTradingNotifier,
     traders: List[Dict],
-    config: APIConfig
+    config: APIConfig,
+    redis_client: redis.Redis = None
 ) -> Dict:
     """
     异步处理一批交易员
@@ -258,7 +271,8 @@ async def process_batch(
         
         try:
             new_count = process_trader_result(
-                db, notifier, trader, result, old_positions
+                db, notifier, trader, result, old_positions,
+                redis_client=redis_client
             )
             stats['traders_processed'] += 1
             stats['new_positions_total'] += new_count
@@ -274,7 +288,8 @@ async def run_monitoring_cycle_async(
     notifier: CopyTradingNotifier,
     config: APIConfig,
     workers: int = 10,
-    delay: float = 1.0
+    delay: float = 1.0,
+    redis_client: redis.Redis = None
 ) -> Dict:
     """
     异步运行一次监控周期
@@ -314,7 +329,7 @@ async def run_monitoring_cycle_async(
         
         logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个交易员)")
         
-        batch_stats = await process_batch(db, notifier, batch, config)
+        batch_stats = await process_batch(db, notifier, batch, config, redis_client=redis_client)
         
         total_stats['traders_processed'] += batch_stats['traders_processed']
         total_stats['new_positions_total'] += batch_stats['new_positions_total']
@@ -376,6 +391,24 @@ async def main_async(args):
     else:
         logger.success("✓ 飞书通知器初始化成功（新仓位推送）")
     
+    # 初始化 Redis（用于本地推送）
+    redis_client = None
+    if args.redis:
+        try:
+            redis_client = redis.Redis(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                password=settings.redis.password or None,
+                db=settings.redis.db,
+                decode_responses=True
+            )
+            redis_client.ping()
+            logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+            logger.info(f"  本地监听: python local_position_listener.py")
+        except Exception as e:
+            logger.warning(f"⚠ Redis 连接失败: {e}，本地推送将不可用")
+            redis_client = None
+    
     logger.info("")
     
     # 主循环
@@ -390,7 +423,8 @@ async def main_async(args):
             await run_monitoring_cycle_async(
                 db, notifier, config,
                 workers=args.workers,
-                delay=args.delay
+                delay=args.delay,
+                redis_client=redis_client
             )
             
     except KeyboardInterrupt:
@@ -409,11 +443,8 @@ def main():
   python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
     每批10个交易员并发更新，批次间隔1秒，使用代理
   
-  python monitor_s_traders_positions.py --workers 5 --delay 2
-    每批5个交易员，批次间隔2秒，不使用代理
-  
-  python monitor_s_traders_positions.py -w 20 -p -d 0.5
-    每批20个交易员并发更新，批次间隔0.5秒，使用代理
+  python monitor_s_traders_positions.py -w 10 -p --redis
+    启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
     )
     parser.add_argument(
@@ -432,6 +463,11 @@ def main():
         type=float,
         default=1.0,
         help="批次间延迟（秒），默认: 1.0"
+    )
+    parser.add_argument(
+        "--redis", "-r",
+        action="store_true",
+        help="启用 Redis 推送（本地监听脚本可接收新仓位通知）"
     )
     
     args = parser.parse_args()
