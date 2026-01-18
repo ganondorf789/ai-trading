@@ -4,8 +4,7 @@
 
 支持功能：
 1. 企业自建应用消息发送
-2. 自定义机器人 Webhook
-3. 长连接接收用户交互回调（卡片按钮点击等）
+2. 长连接接收用户交互回调（卡片按钮点击等）
 """
 import json
 import time
@@ -76,16 +75,13 @@ class FeishuClient:
     """
     飞书机器人客户端
 
-    支持两种认证方式：
-    1. 企业自建应用（App ID + App Secret）
-    2. 自定义机器人 Webhook
+    使用企业自建应用（App ID + App Secret）发送消息
     """
 
     def __init__(
         self,
         app_id: str = "",
         app_secret: str = "",
-        webhook_url: str = "",
         default_user_id: str = ""
     ):
         """
@@ -94,12 +90,10 @@ class FeishuClient:
         Args:
             app_id: 飞书应用 App ID
             app_secret: 飞书应用 App Secret
-            webhook_url: 自定义机器人 Webhook URL（二选一）
             default_user_id: 默认接收消息的用户 open_id
         """
         self.app_id = app_id
         self.app_secret = app_secret
-        self.webhook_url = webhook_url
         self.default_user_id = default_user_id
 
         self.base_url = "https://open.feishu.cn/open-apis"
@@ -196,104 +190,6 @@ class FeishuClient:
 
         except Exception as e:
             print(f"Feishu: Error sending message - {e}")
-            return False
-
-    def send_webhook(self, text: str) -> bool:
-        """
-        通过 Webhook 发送消息（自定义机器人）
-
-        Args:
-            text: 消息内容
-
-        Returns:
-            是否发送成功
-        """
-        if not self.webhook_url:
-            print("Feishu: Webhook URL not configured")
-            return False
-
-        try:
-            payload = {
-                "msg_type": "text",
-                "content": {"text": text}
-            }
-
-            response = self.session.post(
-                self.webhook_url,
-                json=payload,
-                timeout=10
-            )
-            result = response.json()
-
-            if result.get("code") == 0 or result.get("StatusCode") == 0:
-                return True
-            else:
-                print(f"Feishu Webhook: Failed - {result}")
-                return False
-
-        except Exception as e:
-            print(f"Feishu Webhook: Error - {e}")
-            return False
-
-    def send_card(self, title: str, content: str, color: str = "blue") -> bool:
-        """
-        通过 Webhook 发送卡片消息
-
-        Args:
-            title: 卡片标题
-            content: 卡片内容（支持 Markdown）
-            color: 标题颜色（blue/green/red/orange）
-
-        Returns:
-            是否发送成功
-        """
-        if not self.webhook_url:
-            print("Feishu: Webhook URL not configured")
-            return False
-
-        color_map = {
-            "blue": "blue",
-            "green": "green",
-            "red": "red",
-            "orange": "orange"
-        }
-        header_color = color_map.get(color, "blue")
-
-        try:
-            payload = {
-                "msg_type": "interactive",
-                "card": {
-                    "header": {
-                        "title": {
-                            "tag": "plain_text",
-                            "content": title
-                        },
-                        "template": header_color
-                    },
-                    "elements": [
-                        {
-                            "tag": "markdown",
-                            "content": content
-                        }
-                    ]
-                }
-            }
-
-            response = self.session.post(
-                self.webhook_url,
-                json=payload,
-                timeout=10
-            )
-            result = response.json()
-
-            if result.get("code") == 0 or result.get("StatusCode") == 0:
-                return True
-            else:
-                print(f"Feishu Card: Failed - {result}")
-                return False
-
-        except Exception as e:
-            print(f"Feishu Card: Error - {e}")
             return False
 
     def send_interactive_card(
@@ -412,17 +308,9 @@ class FeishuClient:
             "elements": elements
         }
 
-        # 如果通过应用 API 发送
+        # 通过应用 API 发送
         recipient = user_id or self.default_user_id
-        if recipient and self.app_id and self.app_secret:
-            return self._send_card_via_api(card, recipient)
-        
-        # 否则通过 Webhook 发送
-        if self.webhook_url:
-            return self._send_card_via_webhook(card)
-        
-        print("Feishu: No send method available")
-        return False
+        return self._send_card_via_api(card, recipient)
 
     def _send_card_via_api(self, card: Dict[str, Any], user_id: str) -> bool:
         """通过应用 API 发送卡片"""
@@ -456,48 +344,6 @@ class FeishuClient:
             print(f"Feishu API Card: Error - {e}")
             return False
 
-    def _send_card_via_webhook(self, card: Dict[str, Any]) -> bool:
-        """通过 Webhook 发送卡片"""
-        try:
-            payload = {
-                "msg_type": "interactive",
-                "card": card
-            }
-
-            response = self.session.post(
-                self.webhook_url,
-                json=payload,
-                timeout=10
-            )
-            result = response.json()
-
-            if result.get("code") == 0 or result.get("StatusCode") == 0:
-                return True
-            else:
-                print(f"Feishu Webhook Card: Failed - {result}")
-                return False
-
-        except Exception as e:
-            print(f"Feishu Webhook Card: Error - {e}")
-            return False
-
-    def send(self, text: str, user_id: str = None) -> bool:
-        """
-        发送消息（自动选择方式）
-
-        优先使用 Webhook，如果没有配置则使用应用发送
-
-        Args:
-            text: 消息内容
-            user_id: 接收者 open_id（仅应用方式需要）
-
-        Returns:
-            是否发送成功
-        """
-        if self.webhook_url:
-            return self.send_webhook(text)
-        else:
-            return self.send_text(text, user_id)
 
 
 class CopyTradingNotifier:
@@ -539,37 +385,18 @@ class CopyTradingNotifier:
         side_emoji = "🟢" if side.lower() == "long" else "🔴"
         side_cn = "做多" if side.lower() == "long" else "做空"
 
-        if self.feishu.webhook_url:
-            # 使用卡片消息
-            content = f"""**目标**: `{target_address[:10]}...`
-**交易对**: {symbol}
-**方向**: {side_emoji} {side_cn}
-**数量**: {size}"""
+        msg = f"{side_emoji} 复制开仓\n"
+        msg += f"目标: {target_address[:10]}...\n"
+        msg += f"交易对: {symbol}\n"
+        msg += f"方向: {side_cn}\n"
+        msg += f"数量: {size}"
 
-            if price:
-                content += f"\n**价格**: ${price:,.2f}"
-            if leverage:
-                content += f"\n**杠杆**: {leverage}x"
+        if price:
+            msg += f"\n价格: ${price:,.2f}"
+        if leverage:
+            msg += f"\n杠杆: {leverage}x"
 
-            return self.feishu.send_card(
-                title=f"复制开仓 - {symbol}",
-                content=content,
-                color="green" if side.lower() == "long" else "red"
-            )
-        else:
-            # 使用文本消息
-            msg = f"{side_emoji} 复制开仓\n"
-            msg += f"目标: {target_address[:10]}...\n"
-            msg += f"交易对: {symbol}\n"
-            msg += f"方向: {side_cn}\n"
-            msg += f"数量: {size}"
-
-            if price:
-                msg += f"\n价格: ${price:,.2f}"
-            if leverage:
-                msg += f"\n杠杆: {leverage}x"
-
-            return self.feishu.send(msg)
+        return self.feishu.send_text(msg)
 
     def notify_copy_close(
         self,
@@ -588,31 +415,16 @@ class CopyTradingNotifier:
             pnl_percent: 盈亏百分比
         """
         pnl_emoji = "💰" if pnl >= 0 else "💸"
-        pnl_color = "green" if pnl >= 0 else "red"
 
-        if self.feishu.webhook_url:
-            content = f"""**目标**: `{target_address[:10]}...`
-**交易对**: {symbol}
-**盈亏**: {pnl_emoji} ${pnl:+,.2f}"""
+        msg = f"{pnl_emoji} 平仓\n"
+        msg += f"目标: {target_address[:10]}...\n"
+        msg += f"交易对: {symbol}\n"
+        msg += f"盈亏: ${pnl:+,.2f}"
 
-            if pnl_percent is not None:
-                content += f" ({pnl_percent:+.2f}%)"
+        if pnl_percent is not None:
+            msg += f" ({pnl_percent:+.2f}%)"
 
-            return self.feishu.send_card(
-                title=f"平仓 - {symbol}",
-                content=content,
-                color=pnl_color
-            )
-        else:
-            msg = f"{pnl_emoji} 平仓\n"
-            msg += f"目标: {target_address[:10]}...\n"
-            msg += f"交易对: {symbol}\n"
-            msg += f"盈亏: ${pnl:+,.2f}"
-
-            if pnl_percent is not None:
-                msg += f" ({pnl_percent:+.2f}%)"
-
-            return self.feishu.send(msg)
+        return self.feishu.send_text(msg)
 
     def notify_copy_adjust(
         self,
@@ -636,35 +448,18 @@ class CopyTradingNotifier:
         """
         action = "加仓" if is_increase else "减仓"
         action_emoji = "📈" if is_increase else "📉"
-        side_emoji = "🟢" if side.lower() == "long" else "🔴"
         side_cn = "做多" if side.lower() == "long" else "做空"
 
-        if self.feishu.webhook_url:
-            content = f"""**目标**: `{target_address[:10]}...`
-**交易对**: {symbol}
-**操作**: {action_emoji} {action}
-**方向**: {side_emoji} {side_cn}
-**数量**: {size}"""
+        msg = f"{action_emoji} {action}\n"
+        msg += f"目标: {target_address[:10]}...\n"
+        msg += f"交易对: {symbol}\n"
+        msg += f"方向: {side_cn}\n"
+        msg += f"数量: {size}"
 
-            if price:
-                content += f"\n**价格**: ${price:,.2f}"
+        if price:
+            msg += f"\n价格: ${price:,.2f}"
 
-            return self.feishu.send_card(
-                title=f"{action} - {symbol}",
-                content=content,
-                color="blue"
-            )
-        else:
-            msg = f"{action_emoji} {action}\n"
-            msg += f"目标: {target_address[:10]}...\n"
-            msg += f"交易对: {symbol}\n"
-            msg += f"方向: {side_cn}\n"
-            msg += f"数量: {size}"
-
-            if price:
-                msg += f"\n价格: ${price:,.2f}"
-
-            return self.feishu.send(msg)
+        return self.feishu.send_text(msg)
 
     def notify_error(self, error: str, context: str = None) -> bool:
         """
@@ -674,22 +469,11 @@ class CopyTradingNotifier:
             error: 错误信息
             context: 上下文信息
         """
-        if self.feishu.webhook_url:
-            content = f"**错误**: {error}"
-            if context:
-                content += f"\n**上下文**: {context}"
+        msg = f"⚠️ 跟单错误\n错误: {error}"
+        if context:
+            msg += f"\n上下文: {context}"
 
-            return self.feishu.send_card(
-                title="跟单错误",
-                content=content,
-                color="red"
-            )
-        else:
-            msg = f"跟单错误\n错误: {error}"
-            if context:
-                msg += f"\n上下文: {context}"
-
-            return self.feishu.send(msg)
+        return self.feishu.send_text(msg)
 
     def notify_status(
         self,
@@ -711,26 +495,13 @@ class CopyTradingNotifier:
         """
         pnl_emoji = "📈" if daily_pnl >= 0 else "📉"
 
-        if self.feishu.webhook_url:
-            content = f"""**跟单目标**: {target_count}
-**总复制**: {total_copies}
-**成功**: {successful}
-**失败**: {failed}
-**当日盈亏**: {pnl_emoji} ${daily_pnl:+,.2f}"""
+        msg = f"📊 跟单状态\n"
+        msg += f"跟单目标: {target_count}\n"
+        msg += f"总复制: {total_copies}\n"
+        msg += f"成功: {successful} / 失败: {failed}\n"
+        msg += f"当日盈亏: {pnl_emoji} ${daily_pnl:+,.2f}"
 
-            return self.feishu.send_card(
-                title="跟单状态",
-                content=content,
-                color="blue"
-            )
-        else:
-            msg = f"跟单状态\n"
-            msg += f"跟单目标: {target_count}\n"
-            msg += f"总复制: {total_copies}\n"
-            msg += f"成功: {successful} / 失败: {failed}\n"
-            msg += f"当日盈亏: {pnl_emoji} ${daily_pnl:+,.2f}"
-
-            return self.feishu.send(msg)
+        return self.feishu.send_text(msg)
 
     def notify_new_position(
         self,
@@ -801,59 +572,97 @@ class CopyTradingNotifier:
         title = f"🆕 新仓位 - {coin} {side_cn}"
         color = "green" if szi > 0 else "red"
 
-        # 交互按钮
-        buttons = [
-            {
-                "text": "✅ 立即跟单",
-                "action_tag": "quick_copy_trade",
-                "value": {
-                    "address": address,
-                    "coin": coin
+        # 跟单比例按钮（6个：10%, 20%, 30%, 50%, 75%, 100%）
+        ratios = [10, 20, 30, 50, 75, 100]
+        
+        def create_ratio_button(ratio: int) -> dict:
+            """创建跟单比例按钮"""
+            return {
+                "tag": "button",
+                "text": {
+                    "tag": "plain_text",
+                    "content": f"{ratio}%"
                 },
-                "type": "primary"
+                "type": "primary",
+                "value": {
+                    "action_tag": "quick_copy_trade",
+                    "address": address,
+                    "coin": coin,
+                    "ratio": ratio
+                }
+            }
+        
+        def create_column_set(buttons: list) -> dict:
+            """创建分栏容器（一行多个按钮）"""
+            return {
+                "tag": "column_set",
+                "flex_mode": "none",
+                "background_style": "default",
+                "columns": [
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "weight": 1,
+                        "vertical_align": "top",
+                        "elements": [btn]
+                    }
+                    for btn in buttons
+                ]
+            }
+        
+        # 构建两行按钮（每行3个）
+        row1_buttons = [create_ratio_button(r) for r in ratios[:3]]  # 10%, 20%, 30%
+        row2_buttons = [create_ratio_button(r) for r in ratios[3:]]  # 50%, 75%, 100%
+        
+        # 构建卡片元素
+        elements = [
+            {
+                "tag": "markdown",
+                "content": content
             },
             {
-                "text": "📊 查看详情",
-                "url": hyperliquid_url,
-                "type": "default"
+                "tag": "div",
+                "text": {
+                    "tag": "plain_text",
+                    "content": "📊 选择跟单比例："
+                }
+            },
+            create_column_set(row1_buttons),
+            create_column_set(row2_buttons),
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "📊 查看详情"
+                        },
+                        "type": "default",
+                        "multi_url": {
+                            "url": hyperliquid_url,
+                            "pc_url": hyperliquid_url,
+                            "android_url": hyperliquid_url,
+                            "ios_url": hyperliquid_url
+                        }
+                    }
+                ]
             }
         ]
+        
+        card = {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": title
+                },
+                "template": color
+            },
+            "elements": elements
+        }
 
-        # 优先使用应用 API 发送（支持回调）
-        if self.feishu.app_id and self.feishu.app_secret:
-            return self.feishu.send_interactive_card(
-                title=title,
-                content=content,
-                buttons=buttons,
-                color=color
-            )
-        # 否则通过 Webhook 发送（也支持按钮，但回调需要配置）
-        elif self.feishu.webhook_url:
-            return self.feishu.send_interactive_card(
-                title=title,
-                content=content,
-                buttons=buttons,
-                color=color
-            )
-        else:
-            # 降级为纯文本消息
-            msg = f"🆕 新仓位\n"
-            msg += f"地址: {address[:16]}...\n"
-            if rating:
-                msg += f"评级: {rating}"
-                if score is not None:
-                    msg += f" ({score:.1f}分)"
-                msg += "\n"
-            msg += f"币种: {coin}\n"
-            msg += f"方向: {side_emoji} {side_cn}\n"
-            msg += f"数量: {abs(szi):.4f}\n"
-            msg += f"入场价: ${entry_px:,.4f}\n"
-            msg += f"仓位价值: ${position_value:,.2f}\n"
-            msg += f"杠杆: {leverage_value}x\n"
-            msg += f"开仓时间: {open_time_str}\n"
-            msg += f"详情: {hyperliquid_url}"
-
-            return self.feishu.send(msg)
+        # 通过应用 API 发送（支持回调）
+        return self.feishu._send_card_via_api(card, self.feishu.default_user_id)
 
 
 class FeishuCallbackClient:
