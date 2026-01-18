@@ -474,9 +474,6 @@ class PositionCopyTradingBot:
             adjustment_size = abs(my_target_size - my_current_size)
             adjustment_size = self._round_size(symbol, adjustment_size)
 
-            if adjustment_size < 0.0001:
-                return True  # 调整量太小，跳过
-
             is_long = my_pos.side == PositionSide.LONG
             action_type = "加仓" if is_increase else "减仓"
 
@@ -619,14 +616,6 @@ class PositionCopyTradingBot:
                 copy_size = self._calculate_copy_size(state, target_pos['notional'], current_price)
                 leverage = self._calculate_leverage(state, target_pos['leverage'])
                 is_long = target_pos['side'] == 'long'
-                
-                # 检查最小订单价值
-                order_value = copy_size * current_price
-                if order_value < MIN_ORDER_VALUE_USD:
-                    logger.warning(
-                        f"[{state.tracking_id}] 订单价值 ${order_value:.2f} 小于最小值 ${MIN_ORDER_VALUE_USD}"
-                    )
-                    return
                 
                 # 开仓
                 if my_pos is None:
