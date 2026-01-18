@@ -460,26 +460,7 @@ def start_callback_server():
     callback_client.start()
 
 
-def run_callback_only():
-    """仅运行飞书回调服务"""
-    global db
-    
-    setup_logging()
-    
-    logger.info("=" * 60)
-    logger.info(f"仓位跟单 - 飞书回调服务 v{VERSION}")
-    logger.info("=" * 60)
-    
-    # 初始化数据库
-    db = TraderDatabase()
-    
-    # 初始化 Redis（用于发送配置重载通知）
-    setup_redis_client()
-    
-    start_callback_server()
-
-
-async def run(with_callback: bool = False):
+async def run():
     """运行仓位跟单机器人"""
     global notifier, db
 
@@ -499,15 +480,13 @@ async def run(with_callback: bool = False):
     # 初始化 Redis（用于发送/接收开仓通知）
     setup_redis_client()
 
-    # 如果需要，在后台线程启动飞书回调服务（使用 feishu_position 配置）
-    callback_thread = None
-    if with_callback:
-        if settings.feishu_position.app_id and settings.feishu_position.app_secret:
-            logger.info("同时启动飞书回调服务（新仓位推送配置）...")
-            callback_thread = threading.Thread(target=start_callback_server, daemon=True)
-            callback_thread.start()
-        else:
-            logger.warning("飞书新仓位推送未配置，跳过回调服务")
+    # 在后台线程启动飞书回调服务（使用 feishu_position 配置）
+    if settings.feishu_position.app_id and settings.feishu_position.app_secret:
+        logger.info("启动飞书回调服务...")
+        callback_thread = threading.Thread(target=start_callback_server, daemon=True)
+        callback_thread.start()
+    else:
+        logger.warning("飞书新仓位推送未配置，跳过回调服务")
 
     # 初始化客户端
     if not settings.hyperliquid.private_key:
@@ -536,8 +515,7 @@ async def run(with_callback: bool = False):
 
     logger.info("启动仓位跟单机器人...")
     logger.info("在 Web 持仓页面点击'跟单此仓位'按钮添加跟单")
-    if with_callback:
-        logger.info("或通过飞书消息卡片点击'跟单此仓位'按钮")
+    logger.info("或通过飞书消息卡片点击'跟单此仓位'按钮")
     logger.info("按 Ctrl+C 停止\n")
 
     try:
@@ -565,58 +543,15 @@ async def run(with_callback: bool = False):
                 )
 
 
-def print_usage():
-    """打印使用说明"""
-    print(f"""
-仓位级别跟单机器人 v{VERSION}
-
-用法:
-    python {sys.argv[0]} [mode]
-
-模式:
-    (无参数)  仅运行跟单机器人
-    callback  仅运行飞书回调服务
-    all       同时运行跟单机器人和飞书回调服务
-
-示例:
-    python {sys.argv[0]}           # 仅跟单机器人
-    python {sys.argv[0]} callback  # 仅飞书回调
-    python {sys.argv[0]} all       # 两者同时运行
-""")
-
-
 if __name__ == "__main__":
-    import signal
-
     # Windows 上需要特殊处理
     if sys.platform == "win32":
-        # 设置事件循环策略
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # 解析命令行参数
-    mode = sys.argv[1] if len(sys.argv) > 1 else "bot"
-    
-    if mode in ["-h", "--help", "help"]:
-        print_usage()
-        sys.exit(0)
-    elif mode == "callback":
-        # 仅运行飞书回调服务
-        try:
-            run_callback_only()
-        except KeyboardInterrupt:
-            logger.info("程序已退出")
-    elif mode == "all":
-        # 同时运行跟单机器人和飞书回调
-        try:
-            asyncio.run(run(with_callback=True))
-        except KeyboardInterrupt:
-            logger.info("程序已退出")
-    else:
-        # 默认：仅运行跟单机器人
-        try:
-            asyncio.run(run(with_callback=False))
-        except KeyboardInterrupt:
-            logger.info("程序已退出")
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.info("程序已退出")
     
     # 强制退出，避免后台线程阻塞
     os._exit(0)
