@@ -225,14 +225,22 @@ def handle_current_position(event: CardActionEvent):
     """
     处理"当前仓位"菜单点击
     
-    返回当前钱包的实时仓位（从 Hyperliquid API 获取）
+    获取当前钱包的实时仓位（从 Hyperliquid API），并通过飞书消息发送给用户
     """
     logger.info(f"[当前仓位] 用户 {event.user_id} 查询当前仓位")
+    
+    # 创建飞书客户端用于发送消息
+    feishu_client = FeishuClient(
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret
+    )
     
     try:
         # 检查钱包配置
         if not settings.hyperliquid.wallet_address:
-            return _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+            card = _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
         
         # 创建 Hyperliquid 客户端（只需要读取，不需要私钥）
         client = HyperliquidClient(
@@ -244,10 +252,12 @@ def handle_current_position(event: CardActionEvent):
         positions = client.get_positions()
         
         if not positions:
-            return _build_info_card(
+            card = _build_info_card(
                 "📊 当前仓位",
                 "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
             )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
         
         # 构建仓位信息
         content_lines = []
@@ -283,11 +293,27 @@ def handle_current_position(event: CardActionEvent):
         content += f"\n\n---\n**持仓数**: {len(positions)} | **总价值**: ${total_position_value:,.2f}"
         content += f"\n{total_pnl_emoji} **总未实现盈亏**: ${total_unrealized_pnl:+,.2f}"
         
-        return _build_info_card(f"📊 当前仓位 ({len(positions)})", content)
+        card = _build_info_card(f"📊 当前仓位 ({len(positions)})", content)
+        _send_card_to_user(feishu_client, event.user_id, card)
+        
+        logger.success(f"[当前仓位] 已发送 {len(positions)} 个仓位信息给用户 {event.user_id}")
+        return None
         
     except Exception as e:
         logger.error(f"[当前仓位] 错误: {e}")
-        return _build_error_card(f"查询失败: {str(e)}")
+        card = _build_error_card(f"查询失败: {str(e)}")
+        _send_card_to_user(feishu_client, event.user_id, card)
+        return None
+
+
+def _send_card_to_user(feishu_client: FeishuClient, user_id: str, card: dict):
+    """发送卡片消息给用户"""
+    try:
+        success = feishu_client._send_card_via_api(card, user_id)
+        if not success:
+            logger.warning(f"发送卡片消息失败: user_id={user_id}")
+    except Exception as e:
+        logger.error(f"发送卡片消息异常: {e}")
 
 
 def _build_success_card(title: str, content: str):
