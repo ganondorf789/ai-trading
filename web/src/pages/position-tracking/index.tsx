@@ -366,7 +366,7 @@ export default function PositionTrackingPage() {
           <div>
             <h1 className="text-2xl font-bold">仓位跟单管理</h1>
             <p className="text-default-500 text-sm mt-1">
-              第二种跟单模式：跟单特定交易员的特定仓位
+              跟单特定交易员的特定仓位
             </p>
           </div>
           <Button
@@ -387,38 +387,42 @@ export default function PositionTrackingPage() {
 
         {/* 筛选工具栏 */}
         <div className="flex flex-wrap gap-3 items-center">
-          <Select
-            className="w-40"
-            label="状态"
-            size="sm"
-            selectedKeys={[statusFilter]}
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
-              setStatusFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectItem key="all">全部</SelectItem>
-            <SelectItem key="pending">等待开仓</SelectItem>
-            <SelectItem key="active">跟单中</SelectItem>
-            <SelectItem key="closed">已平仓</SelectItem>
-            <SelectItem key="stopped">已停止</SelectItem>
-          </Select>
-          <Select
-            className="w-40"
-            label="启用状态"
-            size="sm"
-            selectedKeys={[enabledFilter]}
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
-              setEnabledFilter(value);
-              setPage(1);
-            }}
-          >
-            <SelectItem key="all">全部</SelectItem>
-            <SelectItem key="enabled">已启用</SelectItem>
-            <SelectItem key="disabled">已禁用</SelectItem>
-          </Select>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm whitespace-nowrap">状态</span>
+            <Select
+              className="min-w-[120px]"
+              size="sm"
+              selectedKeys={[statusFilter]}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0] as string;
+                setStatusFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectItem key="all">全部</SelectItem>
+              <SelectItem key="pending">等待开仓</SelectItem>
+              <SelectItem key="active">跟单中</SelectItem>
+              <SelectItem key="closed">已平仓</SelectItem>
+              <SelectItem key="stopped">已停止</SelectItem>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-sm whitespace-nowrap">启用状态</span>
+            <Select
+              className="min-w-[100px]"
+              size="sm"
+              selectedKeys={[enabledFilter]}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0] as string;
+                setEnabledFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectItem key="all">全部</SelectItem>
+              <SelectItem key="enabled">已启用</SelectItem>
+              <SelectItem key="disabled">已禁用</SelectItem>
+            </Select>
+          </div>
         </div>
 
         {/* 数据表格 */}
