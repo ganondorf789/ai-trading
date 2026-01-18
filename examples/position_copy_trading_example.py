@@ -221,6 +221,75 @@ def handle_quick_position_tracking(event: CardActionEvent):
         return _build_error_card(f"操作失败: {str(e)}")
 
 
+def handle_current_position(event: CardActionEvent):
+    """
+    处理"当前仓位"菜单点击
+    
+    返回当前钱包的实时仓位（从 Hyperliquid API 获取）
+    """
+    logger.info(f"[当前仓位] 用户 {event.user_id} 查询当前仓位")
+    
+    try:
+        # 检查钱包配置
+        if not settings.hyperliquid.wallet_address:
+            return _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+        
+        # 创建 Hyperliquid 客户端（只需要读取，不需要私钥）
+        client = HyperliquidClient(
+            wallet_address=settings.hyperliquid.wallet_address,
+            testnet=settings.system.testnet_mode
+        )
+        
+        # 获取当前仓位
+        positions = client.get_positions()
+        
+        if not positions:
+            return _build_info_card(
+                "📊 当前仓位",
+                "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
+            )
+        
+        # 构建仓位信息
+        content_lines = []
+        total_unrealized_pnl = 0.0
+        total_position_value = 0.0
+        
+        for pos in positions:
+            # 方向 emoji
+            side_emoji = "📈" if pos.side.value == "long" else "📉"
+            side_cn = "多" if pos.side.value == "long" else "空"
+            
+            # 计算仓位价值
+            position_value = pos.size * pos.current_price if pos.current_price else pos.size * pos.entry_price
+            total_position_value += position_value
+            total_unrealized_pnl += pos.unrealized_pnl
+            
+            # PnL 显示
+            pnl_emoji = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
+            pnl_str = f"${pos.unrealized_pnl:+,.2f}"
+            
+            # 基本信息行
+            line = f"{side_emoji} **{pos.symbol}** {side_cn} | {pos.leverage}x"
+            line += f"\n  └ 数量: {pos.size:.4f} | 价值: ${position_value:,.2f}"
+            line += f"\n  └ 入场: ${pos.entry_price:,.4f} | 现价: ${pos.current_price:,.4f}"
+            line += f"\n  └ {pnl_emoji} 未实现盈亏: {pnl_str}"
+            
+            content_lines.append(line)
+        
+        content = "\n\n".join(content_lines)
+        
+        # 汇总统计
+        total_pnl_emoji = "🟢" if total_unrealized_pnl >= 0 else "🔴"
+        content += f"\n\n---\n**持仓数**: {len(positions)} | **总价值**: ${total_position_value:,.2f}"
+        content += f"\n{total_pnl_emoji} **总未实现盈亏**: ${total_unrealized_pnl:+,.2f}"
+        
+        return _build_info_card(f"📊 当前仓位 ({len(positions)})", content)
+        
+    except Exception as e:
+        logger.error(f"[当前仓位] 错误: {e}")
+        return _build_error_card(f"查询失败: {str(e)}")
+
+
 def _build_success_card(title: str, content: str):
     """构建成功响应卡片"""
     return {
@@ -260,6 +329,19 @@ def _build_error_card(message: str):
     }
 
 
+def _build_info_card(title: str, content: str):
+    """构建信息响应卡片"""
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": "blue"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
 def start_callback_server():
     """启动飞书长连接回调服务（使用新仓位推送专用配置）"""
     # 检查配置（使用 feishu_position 配置）
@@ -278,6 +360,9 @@ def start_callback_server():
     # 注册仓位跟单处理器
     callback_client.register_handler("quick_position_tracking", handle_quick_position_tracking)
     
+    # 注册"当前仓位"菜单处理器
+    callback_client.register_handler("current-position", handle_current_position)
+    
     # 注册全局日志处理器
     def log_all_events(event: CardActionEvent):
         logger.debug(f"[事件日志] action={event.action_tag}, user={event.user_id}, value={event.action_value}")
@@ -290,7 +375,7 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_position_tracking")
+    logger.info("已注册处理器: quick_position_tracking, current-position")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     

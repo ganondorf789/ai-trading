@@ -991,12 +991,84 @@ class FeishuCallbackClient:
         # 返回卡片 JSON 作为响应
         return card
     
+    def _handle_bot_menu(self, data: Any) -> Optional[Any]:
+        """
+        处理机器人菜单点击事件
+        
+        Args:
+            data: 飞书推送的菜单事件数据
+            
+        Returns:
+            响应数据（可选）
+        """
+        self.logger.debug(f"收到机器人菜单事件")
+        
+        try:
+            # 解析菜单事件
+            event = None
+            event_key = ""
+            user_id = ""
+            
+            if hasattr(data, 'event'):
+                event = data.event
+                if hasattr(event, 'event_key'):
+                    event_key = event.event_key
+                if hasattr(event, 'operator') and hasattr(event.operator, 'operator_id'):
+                    operator_id = event.operator.operator_id
+                    if hasattr(operator_id, 'open_id'):
+                        user_id = operator_id.open_id
+            
+            self.logger.info(f"机器人菜单: event_key={event_key}, user={user_id}")
+            
+            # 构建 CardActionEvent（复用现有结构）
+            menu_event = CardActionEvent(
+                action_type=CardActionType.BUTTON_CLICK,
+                action_tag=event_key,  # 使用 event_key 作为 action_tag
+                action_value={"event_key": event_key},
+                user_id=user_id,
+                timestamp=int(time.time() * 1000),
+                raw_event=self._event_to_dict(data)
+            )
+            
+            # 推送事件到配置的 URL
+            self._push_event(menu_event)
+            
+            # 调用全局处理器
+            response_card = None
+            for handler in self._global_handlers:
+                try:
+                    result = handler(menu_event)
+                    if result:
+                        response_card = result
+                except Exception as e:
+                    self.logger.error(f"全局处理器执行失败: {e}")
+            
+            # 调用特定 event_key 的处理器
+            if event_key and event_key in self._handlers:
+                try:
+                    result = self._handlers[event_key](menu_event)
+                    if result:
+                        response_card = result
+                except Exception as e:
+                    self.logger.error(f"处理器 '{event_key}' 执行失败: {e}")
+            
+            # 返回响应卡片（如果有）
+            if response_card:
+                return self._build_card_response(response_card)
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"处理菜单事件失败: {e}")
+            return None
+    
     def _build_ws_client(self):
         """构建 WebSocket 客户端"""
         # 构建事件处理器
         event_handler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_card_action_trigger(self._handle_card_action)
+            .register_p2_application_bot_menu_v6(self._handle_bot_menu)
             .build()
         )
         
