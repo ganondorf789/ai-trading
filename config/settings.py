@@ -69,7 +69,6 @@ class FeishuSettings(BaseSettings):
 
     app_id: str = Field(default="", description="飞书应用 App ID")
     app_secret: str = Field(default="", description="飞书应用 App Secret")
-    webhook_url: str = Field(default="", description="飞书自定义机器人 Webhook URL")
     default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
     
     # 长连接回调配置
@@ -84,7 +83,6 @@ class FeishuPositionNotifySettings(BaseSettings):
 
     app_id: str = Field(default="", description="飞书应用 App ID")
     app_secret: str = Field(default="", description="飞书应用 App Secret")
-    webhook_url: str = Field(default="", description="飞书自定义机器人 Webhook URL")
     default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
 
     # 长连接回调配置

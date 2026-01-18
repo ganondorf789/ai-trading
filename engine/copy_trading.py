@@ -168,8 +168,7 @@ class MultiTargetCopyTradingBot:
         client: HyperliquidClient,
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
-        risk_control: Optional[RiskControl] = None,
-        feishu_webhook: Optional[str] = None
+        risk_control: Optional[RiskControl] = None
     ):
         """
         初始化多目标跟单机器人
@@ -179,14 +178,12 @@ class MultiTargetCopyTradingBot:
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
             risk_control: 风控配置
-            feishu_webhook: 飞书 webhook 地址
         """
         self.client = client
         self.check_interval = check_interval
         self.reload_interval = reload_interval
         # 如果没有传入风控配置，则从数据库加载
         self.risk_control = risk_control or self._load_risk_control_from_db()
-        self.feishu_webhook = feishu_webhook
 
         # 目标交易者状态
         self.targets: Dict[str, TargetTraderState] = {}
@@ -290,24 +287,14 @@ class MultiTargetCopyTradingBot:
     # ==================== 通知系统 ====================
 
     async def _notify(self, message: str, level: str = 'info'):
-        """发送飞书通知"""
-        if not self.feishu_webhook:
+        """发送飞书通知（通过飞书客户端）"""
+        if not self._feishu_client:
             return
         
         try:
-            import aiohttp
-            
             emoji = {'info': 'ℹ️', 'success': '✅', 'warning': '⚠️', 'error': '❌'}.get(level, '')
-            
-            async with aiohttp.ClientSession() as session:
-                await session.post(
-                    self.feishu_webhook,
-                    json={
-                        "msg_type": "text",
-                        "content": {"text": f"{emoji} 跟单机器人\n{message}"}
-                    },
-                    timeout=aiohttp.ClientTimeout(total=5)
-                )
+            text = f"{emoji} 跟单机器人\n{message}"
+            self._feishu_client.send_text(text)
         except Exception as e:
             logger.warning(f"发送飞书通知失败: {e}")
 

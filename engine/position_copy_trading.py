@@ -133,14 +133,13 @@ class PositionCopyTradingBot:
     def _init_feishu_notifier(self):
         """初始化飞书通知器（使用 FeishuSettings 配置）"""
         try:
-            if not settings.feishu.webhook_url and not settings.feishu.app_id:
+            if not settings.feishu.app_id:
                 logger.warning("飞书未配置，通知功能将不可用")
                 return
             
             feishu_client = FeishuClient(
                 app_id=settings.feishu.app_id,
                 app_secret=settings.feishu.app_secret,
-                webhook_url=settings.feishu.webhook_url,
                 default_user_id=settings.feishu.default_user_id
             )
             self._notifier = CopyTradingNotifier(feishu_client)

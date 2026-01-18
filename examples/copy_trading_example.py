@@ -46,14 +46,11 @@ def setup_feishu_notifier() -> CopyTradingNotifier:
     feishu_client = FeishuClient(
         app_id=settings.feishu.app_id,
         app_secret=settings.feishu.app_secret,
-        webhook_url=settings.feishu.webhook_url,
         default_user_id=settings.feishu.default_user_id
     )
 
     # 检查是否配置了飞书
-    if settings.feishu.webhook_url:
-        logger.info("飞书 Webhook 已配置")
-    elif settings.feishu.app_id and settings.feishu.app_secret:
+    if settings.feishu.app_id and settings.feishu.app_secret:
         logger.info("飞书应用已配置")
     else:
         logger.warning("飞书未配置，将不会发送通知")

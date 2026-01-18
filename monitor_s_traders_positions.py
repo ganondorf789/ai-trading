@@ -381,12 +381,11 @@ async def main_async(args):
     feishu = FeishuClient(
         app_id=settings.feishu_position.app_id,
         app_secret=settings.feishu_position.app_secret,
-        webhook_url=settings.feishu_position.webhook_url,
         default_user_id=settings.feishu_position.default_user_id
     )
     notifier = CopyTradingNotifier(feishu)
     
-    if not feishu.webhook_url and not feishu.app_id:
+    if not feishu.app_id:
         logger.warning("⚠ 飞书新仓位推送未配置，通知功能将不可用")
     else:
         logger.success("✓ 飞书通知器初始化成功（新仓位推送）")

@@ -142,10 +142,9 @@ class TraderScreener:
                 feishu = FeishuClient(
                     app_id=settings.feishu_position.app_id,
                     app_secret=settings.feishu_position.app_secret,
-                    webhook_url=settings.feishu_position.webhook_url,
                     default_user_id=settings.feishu_position.default_user_id
                 )
-                if feishu.webhook_url or feishu.app_id:
+                if feishu.app_id:
                     self._notifier = CopyTradingNotifier(feishu)
                     logger.debug("飞书仓位通知器已初始化（使用 FEISHU_POSITION_ 配置）")
                 else:
