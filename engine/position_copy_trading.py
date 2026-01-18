@@ -20,18 +20,11 @@ from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
 
-# Redis 支持（可选）
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-
 # 最小订单价值（USD）
 MIN_ORDER_VALUE_USD = 11
 
-# Redis 配置重载通知 channel
-REDIS_RELOAD_CHANNEL = "position_tracking_reload"
+# Redis 开仓通知 channel
+REDIS_OPEN_CHANNEL = "position_tracking_open"
 
 
 @dataclass
@@ -83,7 +76,7 @@ class PositionCopyTradingBot:
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
         enable_feishu_notify: bool = True,
-        redis_enabled: bool = True
+        redis_client = None
     ):
         """
         初始化仓位跟单机器人
@@ -93,7 +86,7 @@ class PositionCopyTradingBot:
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
             enable_feishu_notify: 是否启用飞书通知
-            redis_enabled: 是否启用 Redis 配置重载通知（收到通知后立即重载配置）
+            redis_client: Redis 客户端（用于接收开仓通知，立即执行开仓）
         """
         self.client = client
         self.check_interval = check_interval
@@ -133,11 +126,10 @@ class PositionCopyTradingBot:
         if enable_feishu_notify:
             self._init_feishu_notifier()
         
-        # Redis 配置重载通知
-        self._redis_client = None
-        self._reload_requested = False
-        if redis_enabled:
-            self._init_redis_client()
+        # Redis 开仓通知（外部传入）
+        self._redis_client = redis_client
+        # 待处理的开仓通知队列
+        self._pending_open_tracking_ids: List[int] = []
 
     @property
     def db(self):
@@ -165,42 +157,27 @@ class PositionCopyTradingBot:
             logger.warning(f"飞书通知器初始化失败: {e}")
             self._notifier = None
 
-    def _init_redis_client(self):
-        """初始化 Redis 客户端（用于接收配置重载通知）"""
-        if not REDIS_AVAILABLE:
-            logger.warning("Redis 库未安装，配置重载通知将不可用 (pip install redis)")
-            return
-        
-        try:
-            self._redis_client = redis.Redis(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                password=settings.redis.password or None,
-                db=settings.redis.db,
-                decode_responses=True
-            )
-            self._redis_client.ping()
-            logger.info(f"Redis 已连接 ({settings.redis.host}:{settings.redis.port})，配置重载通知已启用")
-        except Exception as e:
-            logger.warning(f"Redis 连接失败，配置重载通知将不可用: {e}")
-            self._redis_client = None
-
-    async def _listen_redis_reload(self):
-        """监听 Redis 配置重载通知"""
+    async def _listen_redis_open(self):
+        """监听 Redis 开仓通知，收到后立即执行开仓"""
         if not self._redis_client:
             return
         
         try:
             pubsub = self._redis_client.pubsub()
-            pubsub.subscribe(REDIS_RELOAD_CHANNEL)
-            logger.info(f"开始监听配置重载通知 (channel: {REDIS_RELOAD_CHANNEL})")
+            pubsub.subscribe(REDIS_OPEN_CHANNEL)
+            logger.info(f"开始监听开仓通知 (channel: {REDIS_OPEN_CHANNEL})")
             
             while self.is_running:
                 try:
                     message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message['type'] == 'message':
-                        logger.info(f"收到配置重载通知: {message['data']}")
-                        self._reload_requested = True
+                        # 消息格式: "tracking_id" 如 "123"
+                        try:
+                            tracking_id = int(message['data'])
+                            logger.info(f"收到开仓通知: tracking_id={tracking_id}")
+                            self._pending_open_tracking_ids.append(tracking_id)
+                        except ValueError:
+                            logger.warning(f"无效的开仓通知格式: {message['data']}")
                 except Exception as e:
                     logger.warning(f"Redis 监听错误: {e}")
                 
@@ -213,8 +190,6 @@ class PositionCopyTradingBot:
                 pubsub.close()
             except:
                 pass
-            logger.warning(f"飞书通知器初始化失败: {e}")
-            self._notifier = None
 
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知"""
@@ -761,6 +736,98 @@ class PositionCopyTradingBot:
                     if self._on_error:
                         self._on_error(e)
 
+    async def _process_pending_opens(self):
+        """处理待处理的开仓通知（立即开仓）"""
+        if not self._pending_open_tracking_ids:
+            return
+        
+        # 取出所有待处理的 tracking_id
+        pending_ids = self._pending_open_tracking_ids.copy()
+        self._pending_open_tracking_ids.clear()
+        
+        for tracking_id in pending_ids:
+            try:
+                # 从数据库加载跟单配置
+                tracking_data = self.db.get_position_tracking(tracking_id)
+                if not tracking_data:
+                    logger.warning(f"[立即开仓] tracking_id={tracking_id} 不存在")
+                    continue
+                
+                if tracking_data.get('status') != 'pending':
+                    logger.warning(f"[立即开仓] tracking_id={tracking_id} 状态不是 pending")
+                    continue
+                
+                # 转换为 TrackingState
+                state = self._dict_to_state(tracking_data)
+                
+                # 获取目标仓位
+                target_pos = self._get_target_position(state.target_address, state.symbol)
+                if target_pos is None:
+                    logger.warning(f"[立即开仓] {state.symbol} 目标暂无仓位")
+                    continue
+                
+                logger.info(f"[立即开仓] tracking_id={tracking_id} {state.symbol} 目标仓位: {target_pos['side']} {abs(target_pos['size'])}")
+                
+                # 记录初始快照
+                state.target_initial_size = abs(target_pos['size'])
+                state.target_initial_side = target_pos['side']
+                state.target_initial_entry_price = target_pos['entry_price']
+                state.target_current_size = abs(target_pos['size'])
+                state.target_current_side = target_pos['side']
+                
+                # 保存初始快照到数据库
+                self.db.save_position_tracking({
+                    'id': state.tracking_id,
+                    'target_initial_size': state.target_initial_size,
+                    'target_initial_side': state.target_initial_side,
+                    'target_initial_entry_price': state.target_initial_entry_price,
+                    'status': 'pending'
+                })
+                
+                # 计算跟单仓位
+                current_price = self.client.get_mid_price(state.symbol)
+                copy_size = self._calculate_copy_size(state, target_pos['notional'], current_price)
+                leverage = self._calculate_leverage(state, target_pos['leverage'])
+                is_long = target_pos['side'] == 'long'
+                
+                # 检查最小订单价值
+                order_value = copy_size * current_price
+                if order_value < MIN_ORDER_VALUE_USD:
+                    logger.warning(f"[立即开仓] 订单价值 ${order_value:.2f} 小于最小值 ${MIN_ORDER_VALUE_USD}")
+                    continue
+                
+                # 更新自己的持仓
+                self.my_positions = self._get_my_positions()
+                my_pos = self.my_positions.get(state.symbol)
+                
+                # 检查是否已有仓位
+                if my_pos is None:
+                    # 执行开仓
+                    success = await self._open_position(state, is_long, copy_size, leverage, target_pos)
+                    if success:
+                        # 添加到跟单列表
+                        self.trackings[tracking_id] = state
+                        logger.success(f"[立即开仓] 成功: {state.symbol} {target_pos['side']} {copy_size}")
+                elif (my_pos.side == PositionSide.LONG) == is_long:
+                    # 方向相同，直接标记为 active
+                    state.status = 'active'
+                    state.my_size = abs(my_pos.size)
+                    state.my_side = 'long' if my_pos.side == PositionSide.LONG else 'short'
+                    state.my_entry_price = my_pos.entry_price
+                    self.db.update_tracking_status(state.tracking_id, 'active')
+                    self.db.update_tracking_position(
+                        state.tracking_id, state.my_size, state.my_side, state.my_entry_price
+                    )
+                    self.trackings[tracking_id] = state
+                    logger.info(f"[立即开仓] 已有同向仓位，标记为 active")
+                else:
+                    logger.warning(f"[立即开仓] 已有反向仓位，需要手动处理")
+                    
+            except Exception as e:
+                logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
+                if self._on_error:
+                    self._on_error(e)
+
     # ==================== 运行控制 ====================
 
     async def run(self):
@@ -771,7 +838,7 @@ class PositionCopyTradingBot:
         logger.info("仓位级别跟单机器人启动")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
-        logger.info(f"Redis 配置通知: {'已启用' if self._redis_client else '未启用'}")
+        logger.info(f"Redis 开仓通知: {'已启用' if self._redis_client else '未启用'}")
         logger.info("=" * 60)
 
         # 加载初始配置
@@ -780,27 +847,24 @@ class PositionCopyTradingBot:
         if not self.trackings:
             logger.warning("没有启用的仓位跟单，等待添加...")
 
-        # 启动 Redis 监听任务（如果启用）
+        # 启动 Redis 开仓通知监听任务（如果启用）
         redis_task = None
         if self._redis_client:
-            redis_task = asyncio.create_task(self._listen_redis_reload())
+            redis_task = asyncio.create_task(self._listen_redis_open())
 
         try:
             while self.is_running:
                 try:
-                    # 检查是否需要重载配置（定时重载或 Redis 通知触发）
-                    should_reload = (
-                        self._reload_requested or
-                        self.last_config_reload is None or
-                        (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval
-                    )
+                    # 处理待处理的开仓通知（立即开仓）
+                    if self._pending_open_tracking_ids:
+                        await self._process_pending_opens()
                     
-                    if should_reload:
-                        if self._reload_requested:
-                            logger.info("收到 Redis 通知，立即重载配置")
-                            self._reload_requested = False
+                    # 定时重载配置
+                    if (self.last_config_reload is None or
+                        (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
                         self.reload_configs()
 
+                    # 同步现有跟单
                     if self.trackings:
                         await self._sync_all_trackings()
 

@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
-from engine.position_copy_trading import PositionCopyTradingBot, REDIS_RELOAD_CHANNEL
+from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL
 from config.settings import settings
 from database import TraderDatabase
 
@@ -44,7 +44,7 @@ except ImportError:
 notifier: CopyTradingNotifier = None
 # 全局数据库
 db: TraderDatabase = None
-# 全局 Redis 客户端（用于发送配置重载通知）
+# 全局 Redis 客户端（用于发送开仓通知）
 redis_client = None
 
 
@@ -97,7 +97,7 @@ def setup_redis_client():
             decode_responses=True
         )
         redis_client.ping()
-        logger.info(f"Redis 已连接，配置重载通知已启用")
+        logger.info(f"Redis 已连接，开仓通知已启用")
         return redis_client
     except Exception as e:
         logger.warning(f"Redis 连接失败: {e}")
@@ -105,19 +105,19 @@ def setup_redis_client():
         return None
 
 
-def notify_config_reload(message: str = "reload"):
-    """发送配置重载通知到 Redis"""
+def notify_open_position(tracking_id: int):
+    """发送开仓通知到 Redis，机器人收到后立即开仓"""
     global redis_client
     
     if redis_client is None:
         return False
     
     try:
-        redis_client.publish(REDIS_RELOAD_CHANNEL, message)
-        logger.debug(f"已发送配置重载通知: {message}")
+        redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+        logger.info(f"已发送开仓通知: tracking_id={tracking_id}")
         return True
     except Exception as e:
-        logger.warning(f"发送配置重载通知失败: {e}")
+        logger.warning(f"发送开仓通知失败: {e}")
         return False
 
 
@@ -258,12 +258,12 @@ def handle_quick_position_tracking(event: CardActionEvent):
             
             logger.success(f"[仓位跟单回调] 添加成功: #{tracking_id} {coin} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
             
-            # 发送 Redis 配置重载通知，让机器人立即加载新配置
-            notify_config_reload(f"new_tracking:{tracking_id}")
+            # 发送 Redis 开仓通知，让机器人立即开仓
+            notify_open_position(tracking_id)
             
             return _build_success_card(
                 f"已添加 {coin} 仓位跟单",
-                f"**目标**: {trader_display}\n**地址**: `{address[:16]}...`\n**跟单比例**: {copy_ratio * 100:.0f}%\n**状态**: 等待开仓"
+                f"**目标**: {trader_display}\n**地址**: `{address[:16]}...`\n**跟单比例**: {copy_ratio * 100:.0f}%\n**状态**: 正在开仓..."
             )
         else:
             return _build_error_card("保存跟单配置失败")
@@ -495,14 +495,14 @@ async def run(with_callback: bool = False):
 
     # 初始化飞书通知器
     notifier = setup_feishu_notifier()
+    
+    # 初始化 Redis（用于发送/接收开仓通知）
+    setup_redis_client()
 
     # 如果需要，在后台线程启动飞书回调服务（使用 feishu_position 配置）
     callback_thread = None
     if with_callback:
         if settings.feishu_position.app_id and settings.feishu_position.app_secret:
-            # 初始化 Redis（用于发送配置重载通知）
-            setup_redis_client()
-            
             logger.info("同时启动飞书回调服务（新仓位推送配置）...")
             callback_thread = threading.Thread(target=start_callback_server, daemon=True)
             callback_thread.start()
@@ -520,11 +520,12 @@ async def run(with_callback: bool = False):
         testnet=settings.system.testnet_mode
     )
 
-    # 创建仓位跟单机器人
+    # 创建仓位跟单机器人（传入 redis_client 接收开仓通知）
     bot = PositionCopyTradingBot(
         client=client,
         check_interval=10.0,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
+        redis_client=redis_client,  # 接收开仓通知
     )
 
     # 设置回调
