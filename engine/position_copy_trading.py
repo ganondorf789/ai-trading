@@ -125,6 +125,8 @@ class PositionCopyTradingBot:
         
         # Redis 开仓通知（外部传入）
         self._redis_client = redis_client
+        # 正在处理中的 tracking_id（防止并发重复处理）
+        self._processing_tracking_ids: set = set()
 
     @property
     def db(self):
@@ -189,6 +191,12 @@ class PositionCopyTradingBot:
 
     async def _handle_open_notification(self, tracking_id: int):
         """处理开仓通知，立即执行开仓"""
+        # 防止并发重复处理
+        if tracking_id in self._processing_tracking_ids:
+            logger.debug(f"[立即开仓] tracking_id={tracking_id} 正在处理中，跳过")
+            return
+        
+        self._processing_tracking_ids.add(tracking_id)
         try:
             # 从数据库加载跟单配置
             tracking_data = self.db.get_position_tracking(tracking_id)
@@ -264,6 +272,9 @@ class PositionCopyTradingBot:
             logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
             if self._on_error:
                 self._on_error(e)
+        finally:
+            # 处理完成，移除标记
+            self._processing_tracking_ids.discard(tracking_id)
 
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知"""
@@ -694,6 +705,10 @@ class PositionCopyTradingBot:
 
     async def _sync_tracking(self, state: TrackingState):
         """同步单个仓位跟单"""
+        # 如果正在被 Redis 开仓通知处理，跳过
+        if state.tracking_id in self._processing_tracking_ids:
+            return
+        
         symbol = state.symbol
         target_address = state.target_address
         
