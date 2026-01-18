@@ -31,33 +31,7 @@ class CardActionType(Enum):
     DATE_PICKER = "date_picker"      # 日期选择
     INPUT = "input"                  # 输入框
     OVERFLOW = "overflow"            # 折叠按钮组
-    BOT_MENU = "bot_menu"            # 机器人菜单点击
     UNKNOWN = "unknown"              # 未知类型
-
-
-@dataclass
-class BotMenuEvent:
-    """机器人菜单事件数据"""
-    event_key: str                        # 菜单事件标识（菜单文本）
-    user_id: str                          # 用户 open_id
-    user_name: str = ""                   # 用户名称
-    timestamp: int = 0                    # 事件时间戳
-    tenant_key: str = ""                  # 租户 key
-    raw_event: Dict[str, Any] = field(default_factory=dict)  # 原始事件数据
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        return {
-            "event_key": self.event_key,
-            "user_id": self.user_id,
-            "user_name": self.user_name,
-            "timestamp": self.timestamp,
-            "tenant_key": self.tenant_key,
-        }
-
-
-# 机器人菜单处理函数类型
-BotMenuHandler = Callable[[BotMenuEvent], Optional[Dict[str, Any]]]
 
 
 @dataclass
@@ -368,119 +342,6 @@ class FeishuClient:
 
         except Exception as e:
             print(f"Feishu API Card: Error - {e}")
-            return False
-
-    def create_bot_menu(self, menu_items: List[Dict[str, Any]]) -> bool:
-        """
-        创建/设置机器人菜单
-        
-        需要权限: application:bot.menu:write
-        
-        Args:
-            menu_items: 菜单项列表，每个菜单项包含：
-                - action_type: 菜单类型，"NONE"(无操作)/"REDIRECT_LINK"(跳转链接)/"EVENT"(事件回调)
-                - redirect_link: 当 action_type 为 REDIRECT_LINK 时的跳转链接
-                - text: 菜单显示的文本
-                - image_key: 可选，菜单图标的 image_key
-                
-        Returns:
-            是否创建成功
-            
-        Example:
-            ```python
-            client.create_bot_menu([
-                {
-                    "action_type": "EVENT",
-                    "text": "📊 持仓",
-                },
-                {
-                    "action_type": "REDIRECT_LINK",
-                    "redirect_link": "https://example.com",
-                    "text": "🔗 官网",
-                }
-            ])
-            ```
-        """
-        headers = self._get_headers()
-        if not headers:
-            return False
-        
-        try:
-            url = f"{self.base_url}/bot/v3/menu/create"
-            
-            # 构建菜单结构
-            menu_tree = {
-                "menu_tree": {
-                    "menu_items": []
-                }
-            }
-            
-            for item in menu_items:
-                menu_item = {
-                    "action_type": item.get("action_type", "EVENT"),
-                    "text": item.get("text", "菜单"),
-                }
-                
-                # 如果是跳转链接类型，添加链接
-                if item.get("action_type") == "REDIRECT_LINK" and item.get("redirect_link"):
-                    menu_item["redirect_link"] = {
-                        "url": item.get("redirect_link"),
-                        "pc_url": item.get("redirect_link"),
-                        "ios_url": item.get("redirect_link"),
-                        "android_url": item.get("redirect_link")
-                    }
-                
-                # 如果有图标，添加图标
-                if item.get("image_key"):
-                    menu_item["image_key"] = item.get("image_key")
-                
-                menu_tree["menu_tree"]["menu_items"].append(menu_item)
-            
-            response = self.session.post(
-                url, headers=headers,
-                data=json.dumps(menu_tree), timeout=10
-            )
-            result = response.json()
-            
-            if result.get("code") == 0:
-                print(f"Feishu Bot Menu: Created successfully with {len(menu_items)} items")
-                return True
-            else:
-                print(f"Feishu Bot Menu: Failed - {result.get('msg')}")
-                return False
-                
-        except Exception as e:
-            print(f"Feishu Bot Menu: Error - {e}")
-            return False
-    
-    def delete_bot_menu(self) -> bool:
-        """
-        删除机器人菜单
-        
-        需要权限: application:bot.menu:write
-        
-        Returns:
-            是否删除成功
-        """
-        headers = self._get_headers()
-        if not headers:
-            return False
-        
-        try:
-            url = f"{self.base_url}/bot/v3/menu/delete"
-            
-            response = self.session.delete(url, headers=headers, timeout=10)
-            result = response.json()
-            
-            if result.get("code") == 0:
-                print("Feishu Bot Menu: Deleted successfully")
-                return True
-            else:
-                print(f"Feishu Bot Menu Delete: Failed - {result.get('msg')}")
-                return False
-                
-        except Exception as e:
-            print(f"Feishu Bot Menu Delete: Error - {e}")
             return False
 
 
@@ -865,9 +726,6 @@ class FeishuCallbackClient:
         # 全局处理器列表（对所有事件触发）
         self._global_handlers: List[CardActionHandler] = []
         
-        # 机器人菜单处理器 {menu_text: handler}
-        self._menu_handlers: Dict[str, "BotMenuHandler"] = {}
-        
         # WebSocket 客户端
         self._ws_client = None
         self._running = False
@@ -875,9 +733,6 @@ class FeishuCallbackClient:
         
         # HTTP Session for pushing events
         self._session = requests.Session()
-        
-        # FeishuClient 实例（用于发送消息）
-        self._feishu_client: Optional[FeishuClient] = None
     
     def register_handler(
         self, 
@@ -913,47 +768,6 @@ class FeishuCallbackClient:
         """
         self._global_handlers.append(handler)
         self.logger.info("已注册全局处理器")
-        return self
-    
-    def register_menu_handler(
-        self,
-        menu_text: str,
-        handler: "BotMenuHandler"
-    ) -> "FeishuCallbackClient":
-        """
-        注册机器人菜单处理器
-        
-        Args:
-            menu_text: 菜单显示的文本（与创建菜单时的 text 一致）
-            handler: 处理函数，接收 BotMenuEvent，返回可选的响应消息
-            
-        Returns:
-            self，支持链式调用
-            
-        Example:
-            ```python
-            def handle_positions(event: BotMenuEvent) -> Optional[Dict]:
-                # 处理"持仓"菜单点击
-                return {"text": "当前持仓信息..."}
-            
-            callback_client.register_menu_handler("📊 持仓", handle_positions)
-            ```
-        """
-        self._menu_handlers[menu_text] = handler
-        self.logger.info(f"已注册菜单处理器: {menu_text}")
-        return self
-    
-    def set_feishu_client(self, client: FeishuClient) -> "FeishuCallbackClient":
-        """
-        设置 FeishuClient 实例（用于发送消息响应）
-        
-        Args:
-            client: FeishuClient 实例
-            
-        Returns:
-            self，支持链式调用
-        """
-        self._feishu_client = client
         return self
     
     def _parse_card_action(self, event_data: Any) -> CardActionEvent:
@@ -1177,105 +991,12 @@ class FeishuCallbackClient:
         # 返回卡片 JSON 作为响应
         return card
     
-    def _parse_bot_menu_event(self, event_data: Any) -> BotMenuEvent:
-        """
-        解析机器人菜单事件
-        
-        Args:
-            event_data: 飞书 SDK 的事件数据
-            
-        Returns:
-            BotMenuEvent 对象
-        """
-        try:
-            # 获取事件数据
-            if hasattr(event_data, 'event'):
-                event = event_data.event
-            else:
-                event = event_data
-            
-            # 解析菜单事件
-            event_key = ""
-            if hasattr(event, 'event_key'):
-                event_key = event.event_key
-            
-            # 解析用户信息
-            user_id = ""
-            if hasattr(event, 'operator'):
-                operator = event.operator
-                if hasattr(operator, 'operator_id'):
-                    op_id = operator.operator_id
-                    if hasattr(op_id, 'open_id'):
-                        user_id = op_id.open_id
-            
-            # tenant_key
-            tenant_key = ""
-            if hasattr(event_data, 'header') and hasattr(event_data.header, 'tenant_key'):
-                tenant_key = event_data.header.tenant_key
-            
-            return BotMenuEvent(
-                event_key=event_key,
-                user_id=user_id,
-                tenant_key=tenant_key,
-                timestamp=int(time.time() * 1000),
-                raw_event=self._event_to_dict(event_data)
-            )
-            
-        except Exception as e:
-            self.logger.error(f"解析菜单事件失败: {e}")
-            return BotMenuEvent(
-                event_key="",
-                user_id="",
-                timestamp=int(time.time() * 1000),
-                raw_event={}
-            )
-    
-    def _handle_bot_menu(self, data: Any) -> None:
-        """
-        处理机器人菜单回调
-        
-        Args:
-            data: 飞书推送的事件数据
-        """
-        self.logger.debug("收到机器人菜单事件")
-        
-        # 解析事件
-        event = self._parse_bot_menu_event(data)
-        
-        self.logger.info(
-            f"菜单点击: event_key={event.event_key}, user={event.user_id}"
-        )
-        
-        # 调用对应菜单的处理器
-        if event.event_key and event.event_key in self._menu_handlers:
-            try:
-                result = self._menu_handlers[event.event_key](event)
-                
-                # 如果处理器返回了消息，发送给用户
-                if result and self._feishu_client and event.user_id:
-                    if isinstance(result, dict):
-                        if "card" in result:
-                            # 发送卡片消息
-                            self._feishu_client._send_card_via_api(
-                                result["card"], event.user_id
-                            )
-                        elif "text" in result:
-                            # 发送文本消息
-                            self._feishu_client.send_text(
-                                result["text"], event.user_id
-                            )
-            except Exception as e:
-                self.logger.error(f"菜单处理器 '{event.event_key}' 执行失败: {e}")
-        else:
-            self.logger.warning(f"未找到菜单处理器: {event.event_key}")
-    
     def _build_ws_client(self):
         """构建 WebSocket 客户端"""
         # 构建事件处理器
         event_handler = (
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_card_action_trigger(self._handle_card_action)
-            .register_p2_application_bot_menu_v6(self._handle_bot_menu)
             .build()
         )
         
