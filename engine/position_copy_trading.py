@@ -20,9 +20,6 @@ from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
 
-# 最小订单价值（USD）
-MIN_ORDER_VALUE_USD = 11
-
 # Redis 开仓通知 channel
 REDIS_OPEN_CHANNEL = "position_tracking_open"
 
@@ -128,8 +125,6 @@ class PositionCopyTradingBot:
         
         # Redis 开仓通知（外部传入）
         self._redis_client = redis_client
-        # 待处理的开仓通知队列
-        self._pending_open_tracking_ids: List[int] = []
 
     @property
     def db(self):
@@ -175,7 +170,8 @@ class PositionCopyTradingBot:
                         try:
                             tracking_id = int(message['data'])
                             logger.info(f"收到开仓通知: tracking_id={tracking_id}")
-                            self._pending_open_tracking_ids.append(tracking_id)
+                            # 立即执行开仓
+                            await self._handle_open_notification(tracking_id)
                         except ValueError:
                             logger.warning(f"无效的开仓通知格式: {message['data']}")
                 except Exception as e:
@@ -190,6 +186,84 @@ class PositionCopyTradingBot:
                 pubsub.close()
             except:
                 pass
+
+    async def _handle_open_notification(self, tracking_id: int):
+        """处理开仓通知，立即执行开仓"""
+        try:
+            # 从数据库加载跟单配置
+            tracking_data = self.db.get_position_tracking(tracking_id)
+            if not tracking_data:
+                logger.warning(f"[立即开仓] tracking_id={tracking_id} 不存在")
+                return
+            
+            if tracking_data.get('status') != 'pending':
+                logger.warning(f"[立即开仓] tracking_id={tracking_id} 状态不是 pending")
+                return
+            
+            # 转换为 TrackingState
+            state = self._dict_to_state(tracking_data)
+            
+            # 获取目标仓位
+            target_pos = self._get_target_position(state.target_address, state.symbol)
+            if target_pos is None:
+                logger.warning(f"[立即开仓] {state.symbol} 目标暂无仓位")
+                return
+            
+            logger.info(f"[立即开仓] tracking_id={tracking_id} {state.symbol} 目标仓位: {target_pos['side']} {abs(target_pos['size'])}")
+            
+            # 记录初始快照
+            state.target_initial_size = abs(target_pos['size'])
+            state.target_initial_side = target_pos['side']
+            state.target_initial_entry_price = target_pos['entry_price']
+            state.target_current_size = abs(target_pos['size'])
+            state.target_current_side = target_pos['side']
+            
+            # 保存初始快照到数据库
+            self.db.save_position_tracking({
+                'id': state.tracking_id,
+                'target_initial_size': state.target_initial_size,
+                'target_initial_side': state.target_initial_side,
+                'target_initial_entry_price': state.target_initial_entry_price,
+                'status': 'pending'
+            })
+            
+            # 计算跟单仓位
+            current_price = self.client.get_mid_price(state.symbol)
+            copy_size = self._calculate_copy_size(state, target_pos['notional'], current_price)
+            leverage = self._calculate_leverage(state, target_pos['leverage'])
+            is_long = target_pos['side'] == 'long'
+            
+            # 更新自己的持仓
+            self.my_positions = self._get_my_positions()
+            my_pos = self.my_positions.get(state.symbol)
+            
+            # 检查是否已有仓位
+            if my_pos is None:
+                # 执行开仓
+                success = await self._open_position(state, is_long, copy_size, leverage, target_pos)
+                if success:
+                    # 添加到跟单列表
+                    self.trackings[tracking_id] = state
+                    logger.success(f"[立即开仓] 成功: {state.symbol} {target_pos['side']} {copy_size}")
+            elif (my_pos.side == PositionSide.LONG) == is_long:
+                # 方向相同，直接标记为 active
+                state.status = 'active'
+                state.my_size = abs(my_pos.size)
+                state.my_side = 'long' if my_pos.side == PositionSide.LONG else 'short'
+                state.my_entry_price = my_pos.entry_price
+                self.db.update_tracking_status(state.tracking_id, 'active')
+                self.db.update_tracking_position(
+                    state.tracking_id, state.my_size, state.my_side, state.my_entry_price
+                )
+                self.trackings[tracking_id] = state
+                logger.info(f"[立即开仓] 已有同向仓位，标记为 active")
+            else:
+                logger.warning(f"[立即开仓] 已有反向仓位，需要手动处理")
+                
+        except Exception as e:
+            logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
+            if self._on_error:
+                self._on_error(e)
 
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知"""
@@ -736,98 +810,6 @@ class PositionCopyTradingBot:
                     if self._on_error:
                         self._on_error(e)
 
-    async def _process_pending_opens(self):
-        """处理待处理的开仓通知（立即开仓）"""
-        if not self._pending_open_tracking_ids:
-            return
-        
-        # 取出所有待处理的 tracking_id
-        pending_ids = self._pending_open_tracking_ids.copy()
-        self._pending_open_tracking_ids.clear()
-        
-        for tracking_id in pending_ids:
-            try:
-                # 从数据库加载跟单配置
-                tracking_data = self.db.get_position_tracking(tracking_id)
-                if not tracking_data:
-                    logger.warning(f"[立即开仓] tracking_id={tracking_id} 不存在")
-                    continue
-                
-                if tracking_data.get('status') != 'pending':
-                    logger.warning(f"[立即开仓] tracking_id={tracking_id} 状态不是 pending")
-                    continue
-                
-                # 转换为 TrackingState
-                state = self._dict_to_state(tracking_data)
-                
-                # 获取目标仓位
-                target_pos = self._get_target_position(state.target_address, state.symbol)
-                if target_pos is None:
-                    logger.warning(f"[立即开仓] {state.symbol} 目标暂无仓位")
-                    continue
-                
-                logger.info(f"[立即开仓] tracking_id={tracking_id} {state.symbol} 目标仓位: {target_pos['side']} {abs(target_pos['size'])}")
-                
-                # 记录初始快照
-                state.target_initial_size = abs(target_pos['size'])
-                state.target_initial_side = target_pos['side']
-                state.target_initial_entry_price = target_pos['entry_price']
-                state.target_current_size = abs(target_pos['size'])
-                state.target_current_side = target_pos['side']
-                
-                # 保存初始快照到数据库
-                self.db.save_position_tracking({
-                    'id': state.tracking_id,
-                    'target_initial_size': state.target_initial_size,
-                    'target_initial_side': state.target_initial_side,
-                    'target_initial_entry_price': state.target_initial_entry_price,
-                    'status': 'pending'
-                })
-                
-                # 计算跟单仓位
-                current_price = self.client.get_mid_price(state.symbol)
-                copy_size = self._calculate_copy_size(state, target_pos['notional'], current_price)
-                leverage = self._calculate_leverage(state, target_pos['leverage'])
-                is_long = target_pos['side'] == 'long'
-                
-                # 检查最小订单价值
-                order_value = copy_size * current_price
-                if order_value < MIN_ORDER_VALUE_USD:
-                    logger.warning(f"[立即开仓] 订单价值 ${order_value:.2f} 小于最小值 ${MIN_ORDER_VALUE_USD}")
-                    continue
-                
-                # 更新自己的持仓
-                self.my_positions = self._get_my_positions()
-                my_pos = self.my_positions.get(state.symbol)
-                
-                # 检查是否已有仓位
-                if my_pos is None:
-                    # 执行开仓
-                    success = await self._open_position(state, is_long, copy_size, leverage, target_pos)
-                    if success:
-                        # 添加到跟单列表
-                        self.trackings[tracking_id] = state
-                        logger.success(f"[立即开仓] 成功: {state.symbol} {target_pos['side']} {copy_size}")
-                elif (my_pos.side == PositionSide.LONG) == is_long:
-                    # 方向相同，直接标记为 active
-                    state.status = 'active'
-                    state.my_size = abs(my_pos.size)
-                    state.my_side = 'long' if my_pos.side == PositionSide.LONG else 'short'
-                    state.my_entry_price = my_pos.entry_price
-                    self.db.update_tracking_status(state.tracking_id, 'active')
-                    self.db.update_tracking_position(
-                        state.tracking_id, state.my_size, state.my_side, state.my_entry_price
-                    )
-                    self.trackings[tracking_id] = state
-                    logger.info(f"[立即开仓] 已有同向仓位，标记为 active")
-                else:
-                    logger.warning(f"[立即开仓] 已有反向仓位，需要手动处理")
-                    
-            except Exception as e:
-                logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
-                if self._on_error:
-                    self._on_error(e)
-
     # ==================== 运行控制 ====================
 
     async def run(self):
@@ -855,10 +837,6 @@ class PositionCopyTradingBot:
         try:
             while self.is_running:
                 try:
-                    # 处理待处理的开仓通知（立即开仓）
-                    if self._pending_open_tracking_ids:
-                        await self._process_pending_opens()
-                    
                     # 定时重载配置
                     if (self.last_config_reload is None or
                         (pendulum.now() - self.last_config_reload).total_seconds() >= self.reload_interval):
