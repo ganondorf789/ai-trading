@@ -150,6 +150,7 @@ def handle_quick_position_tracking(event: CardActionEvent):
     address = event.action_value.get("address", "")
     coin = event.action_value.get("coin", "")
     trader_name = event.action_value.get("trader_name", "")
+    ratio = event.action_value.get("ratio")  # 按钮传递的跟单比例（百分比，如 10, 20, 30）
     
     if not address:
         return _build_error_card("地址信息缺失")
@@ -161,6 +162,7 @@ def handle_quick_position_tracking(event: CardActionEvent):
     logger.info(f"  - 交易员地址: {address}")
     logger.info(f"  - 币种: {coin}")
     logger.info(f"  - 名称: {trader_name}")
+    logger.info(f"  - 按钮比例: {ratio}%") if ratio else None
     
     try:
         # 确保数据库已初始化
@@ -177,13 +179,19 @@ def handle_quick_position_tracking(event: CardActionEvent):
         # 获取默认跟单配置
         default_config = db.get_default_copy_config()
         
+        # 计算跟单比例：优先使用按钮传递的 ratio，否则使用默认配置
+        if ratio is not None:
+            copy_ratio = float(ratio) / 100.0  # 按钮传的是百分比，转换为小数
+        else:
+            copy_ratio = default_config.get('copy_ratio', 0.1)
+        
         # 构建跟单数据
         tracking_data = {
             'target_address': address,
             'target_name': trader_name or "",
             'symbol': coin,
             'is_enabled': True,
-            'copy_ratio': default_config.get('copy_ratio', 0.1),
+            'copy_ratio': copy_ratio,
             'max_position_size_usd': default_config.get('max_position_size_usd', 500),
             'min_position_size_usd': default_config.get('min_position_size_usd', 20),
             'copy_leverage': default_config.get('copy_leverage', True),
@@ -199,11 +207,11 @@ def handle_quick_position_tracking(event: CardActionEvent):
         if tracking_id:
             trader_display = trader_name if trader_name else f"{address[:10]}..."
             
-            logger.success(f"[仓位跟单回调] 添加成功: #{tracking_id} {coin} @ {trader_display}")
+            logger.success(f"[仓位跟单回调] 添加成功: #{tracking_id} {coin} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
             
             return _build_success_card(
                 f"已添加 {coin} 仓位跟单",
-                f"**目标**: {trader_display}\n**地址**: `{address[:16]}...`\n**跟单比例**: {default_config.get('copy_ratio', 0.1) * 100:.0f}%\n**状态**: 等待开仓"
+                f"**目标**: {trader_display}\n**地址**: `{address[:16]}...`\n**跟单比例**: {copy_ratio * 100:.0f}%\n**状态**: 等待开仓"
             )
         else:
             return _build_error_card("保存跟单配置失败")
