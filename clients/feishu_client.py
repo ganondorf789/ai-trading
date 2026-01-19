@@ -562,7 +562,7 @@ class CopyTradingNotifier:
         # 构建卡片内容
         content = f"""**地址**: `{address[:16]}...`{rating_info}
 **数量**: {abs(szi):.4f}
-**入场价**: ${entry_px:,.4f}
+**入场价**: ${entry_px:,.5f}
 **仓位价值**: ${position_value:,.2f}
 **杠杆**: {leverage_value}x
 **开仓时间**: {open_time_str}"""
