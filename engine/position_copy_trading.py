@@ -106,7 +106,8 @@ class PositionCopyTradingBot:
         self.last_config_reload: Optional[pendulum.DateTime] = None
         
         # 并发锁
-        self._order_lock = Lock()
+        self._order_locks: Dict[str, Lock] = {}  # 按 symbol 分离的订单锁
+        self._order_locks_lock = Lock()  # 保护 _order_locks 字典的锁
         self._sync_lock = Lock()
         
         # 缓存
@@ -392,6 +393,13 @@ class PositionCopyTradingBot:
         decimals = self._get_symbol_decimals(symbol)
         return round(size, decimals)
 
+    async def _get_order_lock(self, symbol: str) -> Lock:
+        """获取指定 symbol 的订单锁（线程安全）"""
+        async with self._order_locks_lock:
+            if symbol not in self._order_locks:
+                self._order_locks[symbol] = Lock()
+            return self._order_locks[symbol]
+
     # ==================== 配置加载 ====================
 
     def _load_trackings_from_db(self) -> List[Dict]:
@@ -547,8 +555,9 @@ class PositionCopyTradingBot:
         target_position: Dict
     ) -> bool:
         """开仓"""
-        async with self._order_lock:
-            symbol = state.symbol
+        symbol = state.symbol
+        order_lock = await self._get_order_lock(symbol)
+        async with order_lock:
             side = 'long' if is_long else 'short'
             price = self.client.get_mid_price(symbol)
             
@@ -622,7 +631,8 @@ class PositionCopyTradingBot:
                 return await self._close_position(state, "目标清仓")
             return True
         
-        async with self._order_lock:
+        order_lock = await self._get_order_lock(symbol)
+        async with order_lock:
             my_pos = self.my_positions.get(symbol)
 
             if my_pos is None:
@@ -703,8 +713,9 @@ class PositionCopyTradingBot:
         reason: str = "目标平仓"
     ) -> bool:
         """平仓"""
-        async with self._order_lock:
-            symbol = state.symbol
+        symbol = state.symbol
+        order_lock = await self._get_order_lock(symbol)
+        async with order_lock:
             my_pos = self.my_positions.get(symbol)
             pnl = my_pos.unrealized_pnl if my_pos else 0
 
