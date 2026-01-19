@@ -40,7 +40,7 @@ REDIS_POSITION_CHANNEL = "new_positions"
 
 # 行情检测配置
 MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
-MARKET_ACTIVITY_THRESHOLD = 5  # 触发阈值：新仓位数量
+MARKET_ACTIVITY_THRESHOLD = 10  # 触发阈值：新仓位数量
 MARKET_ACTIVITY_COOLDOWN = 600  # 10分钟冷却时间（秒）
 
 
