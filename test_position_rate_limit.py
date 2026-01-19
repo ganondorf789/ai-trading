@@ -1,17 +1,18 @@
 """
 测试 Hyperliquid 获取仓位的频率限制
-测试不同的请求频率（如每秒10个地址）
+测试不同的请求频率（如每秒3个地址）
+使用异步实现
 """
+import argparse
 import asyncio
 import time
 import statistics
 from datetime import datetime
-from typing import List, Dict, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
+import aiohttp
 from loguru import logger
-from hyperliquid.info import Info
 from hyperliquid.utils import constants
 
 # 测试地址列表
@@ -58,32 +59,72 @@ class TestResult:
     errors: List[str]
 
 
+class AsyncRateLimiter:
+    """异步速率限制器 - 令牌桶算法"""
+    
+    def __init__(self, rate: float, max_tokens: Optional[int] = None):
+        """
+        Args:
+            rate: 每秒允许的请求数
+            max_tokens: 最大令牌数（突发容量），默认等于rate
+        """
+        self.rate = rate
+        self.max_tokens = max_tokens or int(rate)
+        self.tokens = self.max_tokens
+        self.last_update = time.perf_counter()
+        self._lock = asyncio.Lock()
+    
+    async def acquire(self):
+        """获取一个令牌，如果没有可用令牌则等待"""
+        async with self._lock:
+            now = time.perf_counter()
+            # 补充令牌
+            elapsed = now - self.last_update
+            self.tokens = min(self.max_tokens, self.tokens + elapsed * self.rate)
+            self.last_update = now
+            
+            if self.tokens < 1:
+                # 需要等待
+                wait_time = (1 - self.tokens) / self.rate
+                await asyncio.sleep(wait_time)
+                self.tokens = 0
+                self.last_update = time.perf_counter()
+            else:
+                self.tokens -= 1
+
+
 class RateLimitTester:
-    """频率限制测试器"""
+    """频率限制测试器（异步版本）"""
     
     def __init__(self, api_url: str = constants.MAINNET_API_URL):
         self.api_url = api_url
-        self.info = Info(api_url, skip_ws=True)
+        self.info_url = f"{api_url}/info"
         
-    def fetch_user_state(self, address: str) -> RequestResult:
-        """获取单个用户状态"""
+    async def fetch_user_state_async(self, session: aiohttp.ClientSession, 
+                                     address: str) -> RequestResult:
+        """异步获取单个用户状态"""
         start_time = time.perf_counter()
         try:
-            state = self.info.user_state(address)
-            duration_ms = (time.perf_counter() - start_time) * 1000
-            
-            # 统计仓位数量
-            positions_count = len([
-                p for p in state.get('assetPositions', [])
-                if float(p.get('position', {}).get('szi', 0)) != 0
-            ])
-            
-            return RequestResult(
-                address=address,
-                success=True,
-                duration_ms=duration_ms,
-                positions_count=positions_count
-            )
+            payload = {
+                "type": "clearinghouseState",
+                "user": address
+            }
+            async with session.post(self.info_url, json=payload) as response:
+                state = await response.json()
+                duration_ms = (time.perf_counter() - start_time) * 1000
+                
+                # 统计仓位数量
+                positions_count = len([
+                    p for p in state.get('assetPositions', [])
+                    if float(p.get('position', {}).get('szi', 0)) != 0
+                ])
+                
+                return RequestResult(
+                    address=address,
+                    success=True,
+                    duration_ms=duration_ms,
+                    positions_count=positions_count
+                )
         except Exception as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
             return RequestResult(
@@ -93,147 +134,129 @@ class RateLimitTester:
                 error=str(e)
             )
     
-    def test_sequential(self, addresses: List[str], delay_between_ms: float = 0) -> TestResult:
+    async def test_rate_limited_async(self, addresses: List[str], 
+                                       requests_per_second: float = 3) -> TestResult:
         """
-        顺序请求测试
+        异步限速请求测试 - 使用令牌桶算法控制每秒请求数
         
         Args:
             addresses: 地址列表
-            delay_between_ms: 请求间隔（毫秒）
+            requests_per_second: 每秒请求数（默认3）
         """
-        logger.info(f"开始顺序请求测试，地址数: {len(addresses)}，间隔: {delay_between_ms}ms")
+        logger.info(f"开始异步限速请求测试，地址数: {len(addresses)}，"
+                   f"目标速率: {requests_per_second} 请求/秒")
         
+        rate_limiter = AsyncRateLimiter(rate=requests_per_second)
         results: List[RequestResult] = []
         start_time = time.perf_counter()
         
-        for i, address in enumerate(addresses):
-            result = self.fetch_user_state(address)
-            results.append(result)
-            
-            status = "✓" if result.success else "✗"
-            logger.info(f"  [{i+1}/{len(addresses)}] {status} {address[:10]}... "
-                       f"耗时: {result.duration_ms:.1f}ms, 仓位数: {result.positions_count}")
-            
-            if delay_between_ms > 0 and i < len(addresses) - 1:
-                time.sleep(delay_between_ms / 1000)
-        
-        total_duration_ms = (time.perf_counter() - start_time) * 1000
-        return self._summarize_results("顺序请求", results, total_duration_ms)
-    
-    def test_concurrent(self, addresses: List[str], max_workers: int = 10) -> TestResult:
-        """
-        并发请求测试
-        
-        Args:
-            addresses: 地址列表
-            max_workers: 最大并发数
-        """
-        logger.info(f"开始并发请求测试，地址数: {len(addresses)}，并发数: {max_workers}")
-        
-        results: List[RequestResult] = []
-        start_time = time.perf_counter()
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self.fetch_user_state, addr): addr 
-                for addr in addresses
-            }
-            
-            for i, future in enumerate(as_completed(futures)):
-                result = future.result()
-                results.append(result)
-                
+        async with aiohttp.ClientSession() as session:
+            async def fetch_with_rate_limit(idx: int, address: str):
+                await rate_limiter.acquire()
+                result = await self.fetch_user_state_async(session, address)
                 status = "✓" if result.success else "✗"
-                logger.info(f"  [{i+1}/{len(addresses)}] {status} {result.address[:10]}... "
+                logger.info(f"  [{idx+1}/{len(addresses)}] {status} {address[:10]}... "
                            f"耗时: {result.duration_ms:.1f}ms, 仓位数: {result.positions_count}")
+                return result
+            
+            # 创建所有任务
+            tasks = [
+                fetch_with_rate_limit(i, addr) 
+                for i, addr in enumerate(addresses)
+            ]
+            
+            # 并发执行，但受速率限制
+            results = await asyncio.gather(*tasks)
         
         total_duration_ms = (time.perf_counter() - start_time) * 1000
-        return self._summarize_results(f"并发请求(workers={max_workers})", results, total_duration_ms)
+        return self._summarize_results(
+            f"异步限速请求({requests_per_second}/s)", 
+            list(results), total_duration_ms
+        )
     
-    def test_burst(self, addresses: List[str], burst_size: int = 10, 
-                   delay_between_bursts_ms: float = 1000) -> TestResult:
+    async def test_concurrent_async(self, addresses: List[str], 
+                                     max_concurrent: int = 10) -> TestResult:
         """
-        突发请求测试 - 每次发送一批请求，然后等待
+        异步并发请求测试
         
         Args:
             addresses: 地址列表
-            burst_size: 每批请求数量
+            max_concurrent: 最大并发数
+        """
+        logger.info(f"开始异步并发请求测试，地址数: {len(addresses)}，并发数: {max_concurrent}")
+        
+        results: List[RequestResult] = []
+        start_time = time.perf_counter()
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async with aiohttp.ClientSession() as session:
+            async def fetch_with_semaphore(idx: int, address: str):
+                async with semaphore:
+                    result = await self.fetch_user_state_async(session, address)
+                    status = "✓" if result.success else "✗"
+                    logger.info(f"  [{idx+1}/{len(addresses)}] {status} {address[:10]}... "
+                               f"耗时: {result.duration_ms:.1f}ms, 仓位数: {result.positions_count}")
+                    return result
+            
+            tasks = [
+                fetch_with_semaphore(i, addr) 
+                for i, addr in enumerate(addresses)
+            ]
+            results = await asyncio.gather(*tasks)
+        
+        total_duration_ms = (time.perf_counter() - start_time) * 1000
+        return self._summarize_results(
+            f"异步并发请求(concurrent={max_concurrent})", 
+            list(results), total_duration_ms
+        )
+    
+    async def test_burst_async(self, addresses: List[str], burst_size: int = 3, 
+                                delay_between_bursts_ms: float = 1000) -> TestResult:
+        """
+        异步突发请求测试 - 每次发送一批请求，然后等待
+        
+        Args:
+            addresses: 地址列表
+            burst_size: 每批请求数量（默认3，即每秒3个）
             delay_between_bursts_ms: 批次间隔（毫秒）
         """
-        logger.info(f"开始突发请求测试，地址数: {len(addresses)}，"
+        logger.info(f"开始异步突发请求测试，地址数: {len(addresses)}，"
                    f"批大小: {burst_size}，批间隔: {delay_between_bursts_ms}ms")
         
         results: List[RequestResult] = []
         start_time = time.perf_counter()
+        completed = 0
         
-        # 分批处理
-        for batch_idx in range(0, len(addresses), burst_size):
-            batch = addresses[batch_idx:batch_idx + burst_size]
-            batch_num = batch_idx // burst_size + 1
-            logger.info(f"  批次 {batch_num}: 发送 {len(batch)} 个请求...")
-            
-            # 并发发送这一批
-            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
-                futures = {
-                    executor.submit(self.fetch_user_state, addr): addr 
-                    for addr in batch
-                }
+        async with aiohttp.ClientSession() as session:
+            # 分批处理
+            for batch_idx in range(0, len(addresses), burst_size):
+                batch = addresses[batch_idx:batch_idx + burst_size]
+                batch_num = batch_idx // burst_size + 1
+                logger.info(f"  批次 {batch_num}: 发送 {len(batch)} 个请求...")
                 
-                for future in as_completed(futures):
-                    result = future.result()
+                # 并发发送这一批
+                tasks = [
+                    self.fetch_user_state_async(session, addr) 
+                    for addr in batch
+                ]
+                batch_results = await asyncio.gather(*tasks)
+                
+                for result in batch_results:
+                    completed += 1
                     results.append(result)
-                    
                     status = "✓" if result.success else "✗"
                     error_info = f" 错误: {result.error}" if result.error else ""
-                    logger.info(f"    {status} {result.address[:10]}... "
+                    logger.info(f"    [{completed}/{len(addresses)}] {status} {result.address[:10]}... "
                                f"耗时: {result.duration_ms:.1f}ms{error_info}")
-            
-            # 如果还有下一批，等待
-            if batch_idx + burst_size < len(addresses):
-                logger.info(f"  等待 {delay_between_bursts_ms}ms...")
-                time.sleep(delay_between_bursts_ms / 1000)
+                
+                # 如果还有下一批，等待
+                if batch_idx + burst_size < len(addresses):
+                    logger.info(f"  等待 {delay_between_bursts_ms}ms...")
+                    await asyncio.sleep(delay_between_bursts_ms / 1000)
         
         total_duration_ms = (time.perf_counter() - start_time) * 1000
         return self._summarize_results(
-            f"突发请求(burst={burst_size}, interval={delay_between_bursts_ms}ms)", 
-            results, total_duration_ms
-        )
-    
-    def test_rate_limited(self, addresses: List[str], 
-                          requests_per_second: float = 10) -> TestResult:
-        """
-        限速请求测试 - 控制每秒请求数
-        
-        Args:
-            addresses: 地址列表
-            requests_per_second: 每秒请求数
-        """
-        logger.info(f"开始限速请求测试，地址数: {len(addresses)}，"
-                   f"目标速率: {requests_per_second} 请求/秒")
-        
-        results: List[RequestResult] = []
-        start_time = time.perf_counter()
-        interval = 1.0 / requests_per_second  # 请求间隔（秒）
-        
-        for i, address in enumerate(addresses):
-            request_start = time.perf_counter()
-            
-            result = self.fetch_user_state(address)
-            results.append(result)
-            
-            status = "✓" if result.success else "✗"
-            logger.info(f"  [{i+1}/{len(addresses)}] {status} {address[:10]}... "
-                       f"耗时: {result.duration_ms:.1f}ms, 仓位数: {result.positions_count}")
-            
-            # 计算需要等待的时间以维持目标速率
-            elapsed = time.perf_counter() - request_start
-            sleep_time = interval - elapsed
-            if sleep_time > 0 and i < len(addresses) - 1:
-                time.sleep(sleep_time)
-        
-        total_duration_ms = (time.perf_counter() - start_time) * 1000
-        return self._summarize_results(
-            f"限速请求({requests_per_second}/s)", 
+            f"异步突发请求(burst={burst_size}, interval={delay_between_bursts_ms}ms)", 
             results, total_duration_ms
         )
     
@@ -280,61 +303,61 @@ class RateLimitTester:
         print("=" * 60)
 
 
-def run_all_tests():
-    """运行所有测试"""
+async def run_all_tests_async():
+    """运行所有异步测试"""
     tester = RateLimitTester()
     
     print("\n" + "=" * 60)
-    print(f"Hyperliquid 仓位获取频率限制测试")
+    print(f"Hyperliquid 仓位获取频率限制测试（异步版本）")
     print(f"测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"测试地址数: {len(TEST_ADDRESSES)}")
     print("=" * 60)
     
     all_results = []
     
-    # 测试 1: 顺序请求（无间隔）
-    print("\n>>> 测试 1: 顺序请求（无间隔）")
-    result = tester.test_sequential(TEST_ADDRESSES, delay_between_ms=0)
+    # 测试 1: 异步限速请求 - 每秒3个
+    print("\n>>> 测试 1: 异步限速请求 - 每秒3个")
+    result = await tester.test_rate_limited_async(TEST_ADDRESSES, requests_per_second=3)
     tester.print_result(result)
     all_results.append(result)
     
-    time.sleep(2)  # 测试间隔
+    await asyncio.sleep(2)  # 测试间隔
     
-    # 测试 2: 10个并发请求
-    print("\n>>> 测试 2: 10个并发请求")
-    result = tester.test_concurrent(TEST_ADDRESSES, max_workers=10)
+    # 测试 2: 异步并发请求 - 3个并发
+    print("\n>>> 测试 2: 异步并发请求 - 3个并发")
+    result = await tester.test_concurrent_async(TEST_ADDRESSES, max_concurrent=3)
     tester.print_result(result)
     all_results.append(result)
     
-    time.sleep(2)
+    await asyncio.sleep(2)
     
-    # 测试 3: 14个并发请求（所有地址同时）
-    print("\n>>> 测试 3: 14个并发请求（所有地址同时）")
-    result = tester.test_concurrent(TEST_ADDRESSES, max_workers=14)
+    # 测试 3: 异步并发请求 - 10个并发
+    print("\n>>> 测试 3: 异步并发请求 - 10个并发")
+    result = await tester.test_concurrent_async(TEST_ADDRESSES, max_concurrent=10)
     tester.print_result(result)
     all_results.append(result)
     
-    time.sleep(2)
+    await asyncio.sleep(2)
     
-    # 测试 4: 突发请求 - 每秒10个
-    print("\n>>> 测试 4: 突发请求 - 每批10个，批间隔1秒")
-    result = tester.test_burst(TEST_ADDRESSES, burst_size=10, delay_between_bursts_ms=1000)
+    # 测试 4: 异步突发请求 - 每批3个，批间隔1秒
+    print("\n>>> 测试 4: 异步突发请求 - 每批3个，批间隔1秒")
+    result = await tester.test_burst_async(TEST_ADDRESSES, burst_size=3, delay_between_bursts_ms=1000)
     tester.print_result(result)
     all_results.append(result)
     
-    time.sleep(2)
+    await asyncio.sleep(2)
     
-    # 测试 5: 限速请求 - 每秒10个
-    print("\n>>> 测试 5: 限速请求 - 每秒10个")
-    result = tester.test_rate_limited(TEST_ADDRESSES, requests_per_second=10)
+    # 测试 5: 异步限速请求 - 每秒5个
+    print("\n>>> 测试 5: 异步限速请求 - 每秒5个")
+    result = await tester.test_rate_limited_async(TEST_ADDRESSES, requests_per_second=5)
     tester.print_result(result)
     all_results.append(result)
     
-    time.sleep(2)
+    await asyncio.sleep(2)
     
-    # 测试 6: 限速请求 - 每秒20个
-    print("\n>>> 测试 6: 限速请求 - 每秒20个")
-    result = tester.test_rate_limited(TEST_ADDRESSES, requests_per_second=20)
+    # 测试 6: 异步限速请求 - 每秒10个
+    print("\n>>> 测试 6: 异步限速请求 - 每秒10个")
+    result = await tester.test_rate_limited_async(TEST_ADDRESSES, requests_per_second=10)
     tester.print_result(result)
     all_results.append(result)
     
@@ -342,20 +365,20 @@ def run_all_tests():
     print("\n\n" + "=" * 60)
     print("测试汇总")
     print("=" * 60)
-    print(f"{'测试名称':<40} {'成功率':<10} {'速率(/s)':<10} {'平均延迟(ms)':<15}")
-    print("-" * 75)
+    print(f"{'测试名称':<45} {'成功率':<10} {'速率(/s)':<10} {'平均延迟(ms)':<15}")
+    print("-" * 80)
     for r in all_results:
         success_rate = f"{r.successful_requests / r.total_requests * 100:.1f}%"
-        print(f"{r.test_name:<40} {success_rate:<10} {r.requests_per_second:<10.2f} {r.avg_latency_ms:<15.1f}")
+        print(f"{r.test_name:<45} {success_rate:<10} {r.requests_per_second:<10.2f} {r.avg_latency_ms:<15.1f}")
     print("=" * 60)
 
 
-def test_specific_rate(requests_per_second: float = 10, duration_seconds: float = 5):
+async def test_specific_rate_async(requests_per_second: float = 3, duration_seconds: float = 5):
     """
-    测试特定速率
+    异步测试特定速率
     
     Args:
-        requests_per_second: 每秒请求数
+        requests_per_second: 每秒请求数（默认3）
         duration_seconds: 测试持续时间（秒）
     """
     tester = RateLimitTester()
@@ -366,60 +389,153 @@ def test_specific_rate(requests_per_second: float = 10, duration_seconds: float 
     # 循环使用地址
     addresses = (TEST_ADDRESSES * (total_requests // len(TEST_ADDRESSES) + 1))[:total_requests]
     
-    print(f"\n测试特定速率: {requests_per_second} 请求/秒, 持续 {duration_seconds} 秒")
+    print(f"\n异步测试特定速率: {requests_per_second} 请求/秒, 持续 {duration_seconds} 秒")
     print(f"总请求数: {total_requests}")
     
-    result = tester.test_rate_limited(addresses, requests_per_second=requests_per_second)
+    result = await tester.test_rate_limited_async(addresses, requests_per_second=requests_per_second)
     tester.print_result(result)
     
     return result
 
 
-def test_max_concurrent(max_workers_list: List[int] = None):
+async def test_max_concurrent_async(max_concurrent_list: List[int] = None):
     """
-    测试不同并发数的表现
+    异步测试不同并发数的表现
     
     Args:
-        max_workers_list: 要测试的并发数列表
+        max_concurrent_list: 要测试的并发数列表
     """
-    if max_workers_list is None:
-        max_workers_list = [1, 5, 10, 14, 20, 30]
+    if max_concurrent_list is None:
+        max_concurrent_list = [1, 3, 5, 10, 14, 20]
     
     tester = RateLimitTester()
     all_results = []
     
-    print(f"\n测试不同并发数的表现")
+    print(f"\n异步测试不同并发数的表现")
     print("=" * 60)
     
-    for workers in max_workers_list:
+    for concurrent in max_concurrent_list:
         # 循环使用地址以确保有足够的请求
-        addresses = (TEST_ADDRESSES * (workers // len(TEST_ADDRESSES) + 1))[:max(workers, len(TEST_ADDRESSES))]
+        addresses = (TEST_ADDRESSES * (concurrent // len(TEST_ADDRESSES) + 1))[:max(concurrent, len(TEST_ADDRESSES))]
         
-        result = tester.test_concurrent(addresses, max_workers=workers)
+        result = await tester.test_concurrent_async(addresses, max_concurrent=concurrent)
         tester.print_result(result)
         all_results.append(result)
         
-        time.sleep(2)  # 测试间隔
+        await asyncio.sleep(2)  # 测试间隔
     
     return all_results
 
 
-if __name__ == "__main__":
-    import sys
+def create_parser() -> argparse.ArgumentParser:
+    """创建命令行参数解析器"""
+    parser = argparse.ArgumentParser(
+        description="测试 Hyperliquid 获取仓位的频率限制（异步版本）",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python test_position_rate_limit.py                      # 运行所有测试
+  python test_position_rate_limit.py --mode rate          # 测试限速请求（默认3/秒）
+  python test_position_rate_limit.py --mode rate -r 5     # 测试5请求/秒
+  python test_position_rate_limit.py --mode rate -r 3 -d 10  # 测试3请求/秒，持续10秒
+  python test_position_rate_limit.py --mode concurrent    # 测试不同并发数
+  python test_position_rate_limit.py --mode burst -b 3    # 测试突发请求，每批3个
+        """
+    )
     
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "rate":
-            # 测试特定速率: python test_position_rate_limit.py rate 10 5
-            rate = float(sys.argv[2]) if len(sys.argv) > 2 else 10
-            duration = float(sys.argv[3]) if len(sys.argv) > 3 else 5
-            test_specific_rate(rate, duration)
-        elif sys.argv[1] == "concurrent":
-            # 测试并发: python test_position_rate_limit.py concurrent
-            test_max_concurrent()
+    parser.add_argument(
+        "--mode", "-m",
+        type=str,
+        choices=["all", "rate", "concurrent", "burst"],
+        default="all",
+        help="测试模式: all=所有测试, rate=限速测试, concurrent=并发测试, burst=突发测试 (默认: all)"
+    )
+    
+    parser.add_argument(
+        "--rate", "-r",
+        type=float,
+        default=3.0,
+        help="每秒请求数 (默认: 3)"
+    )
+    
+    parser.add_argument(
+        "--duration", "-d",
+        type=float,
+        default=5.0,
+        help="测试持续时间（秒）(默认: 5)"
+    )
+    
+    parser.add_argument(
+        "--concurrent", "-c",
+        type=int,
+        default=3,
+        help="最大并发数 (默认: 3)"
+    )
+    
+    parser.add_argument(
+        "--burst-size", "-b",
+        type=int,
+        default=3,
+        help="突发请求每批数量 (默认: 3)"
+    )
+    
+    parser.add_argument(
+        "--burst-interval", "-i",
+        type=float,
+        default=1000.0,
+        help="突发请求批次间隔（毫秒）(默认: 1000)"
+    )
+    
+    parser.add_argument(
+        "--api-url",
+        type=str,
+        default=constants.MAINNET_API_URL,
+        help=f"API URL (默认: {constants.MAINNET_API_URL})"
+    )
+    
+    return parser
+
+
+async def main_async(args: argparse.Namespace):
+    """异步主函数"""
+    tester = RateLimitTester(api_url=args.api_url)
+    
+    if args.mode == "all":
+        await run_all_tests_async()
+    
+    elif args.mode == "rate":
+        await test_specific_rate_async(
+            requests_per_second=args.rate,
+            duration_seconds=args.duration
+        )
+    
+    elif args.mode == "concurrent":
+        # 测试单个并发数或多个
+        if args.concurrent > 0:
+            total_requests = int(args.rate * args.duration)
+            addresses = (TEST_ADDRESSES * (total_requests // len(TEST_ADDRESSES) + 1))[:max(total_requests, len(TEST_ADDRESSES))]
+            
+            print(f"\n异步并发测试: 并发数={args.concurrent}")
+            result = await tester.test_concurrent_async(addresses, max_concurrent=args.concurrent)
+            tester.print_result(result)
         else:
-            print("用法:")
-            print("  python test_position_rate_limit.py          # 运行所有测试")
-            print("  python test_position_rate_limit.py rate 10 5  # 测试10请求/秒，持续5秒")
-            print("  python test_position_rate_limit.py concurrent # 测试不同并发数")
-    else:
-        run_all_tests()
+            await test_max_concurrent_async()
+    
+    elif args.mode == "burst":
+        total_requests = int(args.rate * args.duration)
+        addresses = (TEST_ADDRESSES * (total_requests // len(TEST_ADDRESSES) + 1))[:max(total_requests, len(TEST_ADDRESSES))]
+        
+        print(f"\n异步突发测试: 每批={args.burst_size}, 间隔={args.burst_interval}ms")
+        result = await tester.test_burst_async(
+            addresses, 
+            burst_size=args.burst_size,
+            delay_between_bursts_ms=args.burst_interval
+        )
+        tester.print_result(result)
+
+
+if __name__ == "__main__":
+    parser = create_parser()
+    args = parser.parse_args()
+    
+    asyncio.run(main_async(args))

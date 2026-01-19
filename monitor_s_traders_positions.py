@@ -11,7 +11,10 @@ S级交易员仓位监控脚本
 
 示例：
   python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
-  每隔1秒钟更新10个交易员的当前仓位，并且使用代理
+  每个 worker 异步获取100个地址，10个 worker 并行 = 每批1000个地址
+  
+  python monitor_s_traders_positions.py --workers 5 --batch-size 50 --proxy
+  每个 worker 异步获取50个地址，5个 worker 并行 = 每批250个地址
 """
 import sys
 import asyncio
@@ -295,21 +298,63 @@ def process_trader_result(
     return len(new_position_list)
 
 
+async def worker_fetch_batch(
+    client: AsyncAPIClient,
+    traders: List[Dict],
+    worker_id: int
+) -> List[tuple]:
+    """
+    单个 worker 异步获取一批交易员的仓位
+    
+    Args:
+        client: 异步API客户端
+        traders: 该 worker 负责的交易员列表
+        worker_id: worker 编号
+    
+    Returns:
+        [(trader, result), ...] 列表
+    """
+    async def fetch_one(trader: Dict):
+        result = await fetch_positions_async(client, trader['address'])
+        return (trader, result)
+    
+    # 该 worker 内部并发获取所有地址
+    tasks = [fetch_one(trader) for trader in traders]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # 处理异常情况
+    processed_results = []
+    for i, result in enumerate(results):
+        trader = traders[i]
+        if isinstance(result, Exception):
+            logger.debug(f"Worker {worker_id}: 获取失败 {trader['address'][:10]}...: {result}")
+            processed_results.append((trader, None))
+        else:
+            processed_results.append(result)
+    
+    return processed_results
+
+
 async def process_batch(
     db: TraderDatabase,
     notifier: CopyTradingNotifier,
     traders: List[Dict],
     config: APIConfig,
+    workers: int = 10,
     redis_client: redis.Redis = None
 ) -> Dict:
     """
-    异步处理一批交易员
+    异步处理一批交易员（多 worker 模式）
+    
+    每个 worker 使用独立的代理，异步获取分配给它的所有地址
     
     Args:
         db: 数据库实例
         notifier: 飞书通知器
         traders: 交易员列表
         config: API配置
+        workers: worker 数量（每个 worker 使用不同的代理）
+        redis_client: Redis 客户端
     
     Returns:
         统计信息
@@ -329,30 +374,61 @@ async def process_batch(
         address = trader['address']
         old_positions_map[address] = get_current_positions_from_db(db, address)
     
-    # 创建异步客户端并发获取持仓
+    # 将交易员分配给各个 worker
+    # 例如：100个交易员，10个worker -> 每个worker负责10个
+    traders_per_worker = len(traders) // workers if workers > 0 else len(traders)
+    if traders_per_worker == 0:
+        traders_per_worker = 1
+    
+    worker_assignments = []
+    for i in range(workers):
+        start_idx = i * traders_per_worker
+        if i == workers - 1:
+            # 最后一个 worker 处理剩余的所有
+            end_idx = len(traders)
+        else:
+            end_idx = start_idx + traders_per_worker
+        
+        if start_idx < len(traders):
+            worker_assignments.append(traders[start_idx:end_idx])
+    
+    # 创建 workers 个异步客户端，每个使用不同的代理
     clients = []
-    tasks = []
+    worker_tasks = []
     
-    for i, trader in enumerate(traders):
-        # 每个worker使用不同的代理索引
-        client = AsyncAPIClient(config, worker_index=i)
+    for worker_id, assignment in enumerate(worker_assignments):
+        if not assignment:
+            continue
+        client = AsyncAPIClient(config, worker_index=worker_id)
         clients.append(client)
-        tasks.append(fetch_positions_async(client, trader['address']))
+        worker_tasks.append(worker_fetch_batch(client, assignment, worker_id))
     
-    # 并发执行所有请求
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    logger.debug(f"启动 {len(worker_tasks)} 个 worker，共处理 {len(traders)} 个地址")
+    
+    # 并发执行所有 worker
+    worker_results = await asyncio.gather(*worker_tasks, return_exceptions=True)
     
     # 关闭所有客户端
     for client in clients:
         await client.close()
     
-    # 处理结果
-    for trader, result in zip(traders, results):
-        address = trader['address']
-        old_positions = old_positions_map[address]
-        
+    # 汇总所有 worker 的结果
+    all_results = []
+    for worker_id, result in enumerate(worker_results):
         if isinstance(result, Exception):
-            logger.error(f"处理交易员失败 {address[:10]}...: {result}")
+            logger.error(f"Worker {worker_id} 执行失败: {result}")
+            # 该 worker 的所有交易员标记为错误
+            if worker_id < len(worker_assignments):
+                stats['errors'] += len(worker_assignments[worker_id])
+            continue
+        all_results.extend(result)
+    
+    # 处理结果
+    for trader, result in all_results:
+        address = trader['address']
+        old_positions = old_positions_map.get(address, {})
+        
+        if result is None:
             stats['errors'] += 1
             continue
         
@@ -375,6 +451,7 @@ async def run_monitoring_cycle_async(
     notifier: CopyTradingNotifier,
     config: APIConfig,
     workers: int = 10,
+    batch_size: int = 100,
     delay: float = 1.0,
     redis_client: redis.Redis = None,
     activity_tracker: MarketActivityTracker = None,
@@ -387,7 +464,8 @@ async def run_monitoring_cycle_async(
         db: 数据库实例
         notifier: 飞书通知器
         config: API配置
-        workers: 并发worker数量
+        workers: 并发worker数量（每个worker使用不同的代理）
+        batch_size: 每个worker异步获取的地址数量（默认100）
         delay: 批次间延迟（秒）
         redis_client: Redis 客户端
         activity_tracker: 行情活动追踪器
@@ -409,19 +487,28 @@ async def run_monitoring_cycle_async(
         logger.warning("没有找到S级交易员")
         return total_stats
     
-    logger.info(f"开始处理 {len(traders)} 个S级交易员 (workers={workers}, delay={delay}s)")
+    # 每批处理的总地址数 = workers * batch_size
+    addresses_per_batch = workers * batch_size
+    
+    logger.info(f"开始处理 {len(traders)} 个S级交易员")
+    logger.info(f"  配置: workers={workers}, batch_size={batch_size}/worker, "
+                f"每批={addresses_per_batch}个地址, delay={delay}s")
     logger.info("-" * 60)
     
     # 分批处理
-    total_batches = (len(traders) + workers - 1) // workers
+    total_batches = (len(traders) + addresses_per_batch - 1) // addresses_per_batch
     
-    for batch_idx in range(0, len(traders), workers):
-        batch = traders[batch_idx:batch_idx + workers]
-        batch_num = batch_idx // workers + 1
+    for batch_idx in range(0, len(traders), addresses_per_batch):
+        batch = traders[batch_idx:batch_idx + addresses_per_batch]
+        batch_num = batch_idx // addresses_per_batch + 1
         
-        logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个交易员)")
+        logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个交易员, {workers} workers)")
         
-        batch_stats = await process_batch(db, notifier, batch, config, redis_client=redis_client)
+        batch_stats = await process_batch(
+            db, notifier, batch, config, 
+            workers=workers,
+            redis_client=redis_client
+        )
         
         total_stats['traders_processed'] += batch_stats['traders_processed']
         total_stats['new_positions_total'] += batch_stats['new_positions_total']
@@ -455,7 +542,7 @@ async def run_monitoring_cycle_async(
                     logger.error(f"发送行情通知异常: {e}")
         
         # 批次间延迟
-        if batch_idx + workers < len(traders) and delay > 0:
+        if batch_idx + addresses_per_batch < len(traders) and delay > 0:
             await asyncio.sleep(delay)
     
     logger.info("-" * 60)
@@ -481,7 +568,9 @@ async def main_async(args):
     logger.info("S级交易员仓位监控脚本 (异步版)")
     logger.info("=" * 60)
     logger.info(f"运行模式: 无限循环")
-    logger.info(f"并发数: {args.workers}, 批次延迟: {args.delay}s, 代理: {'启用' if args.proxy else '禁用'}")
+    logger.info(f"Workers: {args.workers}, 每Worker获取: {args.batch_size}个地址")
+    logger.info(f"每批总量: {args.workers * args.batch_size}个地址, 批次延迟: {args.delay}s")
+    logger.info(f"代理: {'启用' if args.proxy else '禁用'}")
     logger.info("")
     
     # 重置代理管理器（确保使用新配置）
@@ -568,6 +657,7 @@ async def main_async(args):
             await run_monitoring_cycle_async(
                 db, notifier, config,
                 workers=args.workers,
+                batch_size=args.batch_size,
                 delay=args.delay,
                 redis_client=redis_client,
                 activity_tracker=activity_tracker,
@@ -588,7 +678,10 @@ def main():
         epilog="""
 示例:
   python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
-    每批10个交易员并发更新，批次间隔1秒，使用代理
+    10个worker并行，每个worker异步获取100个地址 = 每批1000个地址
+  
+  python monitor_s_traders_positions.py -w 5 -b 50 -p
+    5个worker并行，每个worker异步获取50个地址 = 每批250个地址
   
   python monitor_s_traders_positions.py -w 10 -p --redis
     启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
@@ -598,7 +691,13 @@ def main():
         "--workers", "-w",
         type=int,
         default=10,
-        help="并发worker数量，即每批处理的交易员数量（默认: 10）"
+        help="并发worker数量，每个worker使用不同的代理（默认: 10）"
+    )
+    parser.add_argument(
+        "--batch-size", "-b",
+        type=int,
+        default=100,
+        help="每个worker异步获取的地址数量（默认: 100）"
     )
     parser.add_argument(
         "--proxy", "-p",
