@@ -400,6 +400,8 @@ async def run_monitoring_cycle_async(
     rate_limiter = AsyncRateLimiter(rate=rate)
     start_time = time.perf_counter()
     
+    total_traders = len(traders)
+    
     async def fetch_and_process(idx: int, trader: Dict):
         """获取并处理单个交易员"""
         address = trader['address']
@@ -412,7 +414,12 @@ async def run_monitoring_cycle_async(
         user_state = await fetch_user_state_async(hl_client, address)
         
         if user_state is None:
+            logger.warning(f"[{idx+1}/{total_traders}] ✗ {address[:16]}... 获取失败")
             return {'success': False, 'new_count': 0}
+        
+        # 统计仓位数量
+        positions = user_state.get('assetPositions', [])
+        positions_count = len([p for p in positions if float(p.get('position', {}).get('szi', 0)) != 0])
         
         # 处理结果
         try:
@@ -420,9 +427,13 @@ async def run_monitoring_cycle_async(
                 db, notifier, trader, user_state, old_positions,
                 redis_client=redis_client
             )
+            if new_count > 0:
+                logger.success(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... 仓位: {positions_count}, 新增: {new_count}")
+            else:
+                logger.info(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... 仓位: {positions_count}")
             return {'success': True, 'new_count': new_count}
         except Exception as e:
-            logger.error(f"处理交易员结果失败 {address[:10]}...: {e}")
+            logger.error(f"[{idx+1}/{total_traders}] ✗ {address[:16]}... 处理失败: {e}")
             return {'success': False, 'new_count': 0}
     
     # 创建所有任务
