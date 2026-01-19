@@ -5,20 +5,24 @@ S级交易员仓位监控脚本
 1. 获取所有S级的交易员
 2. 异步更新交易员的当前仓位并保存到数据库
 3. 如果发现有新仓位，通过飞书通知
-4. 如果1分钟内新仓位>=5个，发送行情通知（10分钟内只推送一次）
+4. 如果1分钟内新仓位>=10个，发送行情通知（10分钟内只推送一次）
 
 运行模式：无限循环执行
 
 示例：
-  python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
-  每个 worker 异步获取100个地址，10个 worker 并行 = 每批1000个地址
+  python monitor_s_traders_positions.py --rate 10
+    以每秒10个请求的速率获取仓位
   
-  python monitor_s_traders_positions.py --workers 5 --batch-size 50 --proxy
-  每个 worker 异步获取50个地址，5个 worker 并行 = 每批250个地址
+  python monitor_s_traders_positions.py -r 5 --limit 500
+    以每秒5个请求的速率，只监控评分最高的前500个交易员
+  
+  python monitor_s_traders_positions.py -r 10 --redis
+    启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
 import sys
 import asyncio
 import argparse
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -31,8 +35,8 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).parent))
 
 from database import TraderDatabase
-from screener.api_client import AsyncAPIClient, APIConfig, get_proxy_manager, reset_proxy_manager
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
+from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
 
 # Redis 新仓位推送 channel
@@ -42,6 +46,40 @@ REDIS_POSITION_CHANNEL = "new_positions"
 MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
 MARKET_ACTIVITY_THRESHOLD = 10  # 触发阈值：新仓位数量
 MARKET_ACTIVITY_COOLDOWN = 600  # 10分钟冷却时间（秒）
+
+
+class AsyncRateLimiter:
+    """异步速率限制器 - 令牌桶算法"""
+    
+    def __init__(self, rate: float, max_tokens: Optional[int] = None):
+        """
+        Args:
+            rate: 每秒允许的请求数
+            max_tokens: 最大令牌数（突发容量），默认等于rate
+        """
+        self.rate = rate
+        self.max_tokens = max_tokens or int(rate)
+        self.tokens = self.max_tokens
+        self.last_update = time.perf_counter()
+        self._lock = asyncio.Lock()
+    
+    async def acquire(self):
+        """获取一个令牌，如果没有可用令牌则等待"""
+        async with self._lock:
+            now = time.perf_counter()
+            # 补充令牌
+            elapsed = now - self.last_update
+            self.tokens = min(self.max_tokens, self.tokens + elapsed * self.rate)
+            self.last_update = now
+            
+            if self.tokens < 1:
+                # 需要等待
+                wait_time = (1 - self.tokens) / self.rate
+                await asyncio.sleep(wait_time)
+                self.tokens = 0
+                self.last_update = time.perf_counter()
+            else:
+                self.tokens -= 1
 
 
 class MarketActivityTracker:
@@ -211,27 +249,26 @@ def format_position_direction(szi: float) -> tuple[str, str]:
         return "做空", "🔴"
 
 
-async def fetch_positions_async(
-    client: AsyncAPIClient,
+async def fetch_user_state_async(
+    hl_client: HyperliquidClient,
     address: str
-) -> Optional[List[Dict]]:
+) -> Optional[Dict]:
     """
-    异步获取交易员最新的持仓
+    异步获取用户状态
     
     Args:
-        client: 异步API客户端
+        hl_client: HyperliquidClient 实例
         address: 交易员地址
     
     Returns:
-        持仓列表 (assetPositions) 或 None
+        用户状态字典或 None
     """
     try:
-        user_state = await client.get_user_state(address)
-        if not user_state:
-            return None
-        return user_state.get('assetPositions', [])
+        # 使用 asyncio.to_thread 将同步调用转换为异步
+        user_state = await asyncio.to_thread(hl_client.info.user_state, address)
+        return user_state
     except Exception as e:
-        logger.error(f"获取持仓失败 {address[:10]}...: {e}")
+        logger.debug(f"获取用户状态异常 {address[:10]}...: {e}")
         return None
 
 
@@ -239,7 +276,7 @@ def process_trader_result(
     db: TraderDatabase,
     notifier: CopyTradingNotifier,
     trader: Dict,
-    asset_positions: Optional[List[Dict]],
+    user_state: Optional[Dict],
     old_positions: Dict[str, Dict],
     redis_client: redis.Redis = None
 ) -> int:
@@ -250,8 +287,9 @@ def process_trader_result(
         db: 数据库实例
         notifier: 飞书通知器
         trader: 交易员信息
-        asset_positions: 从API获取的持仓数据
+        user_state: 从API获取的用户状态
         old_positions: 更新前的持仓
+        redis_client: Redis 客户端
     
     Returns:
         新仓位数量
@@ -260,12 +298,12 @@ def process_trader_result(
     rating = trader.get('rating')
     score = trader.get('overall_score')
     
-    if asset_positions is None:
-        logger.debug(f"  {address[:16]}... 获取持仓失败")
+    if user_state is None:
         return 0
     
+    asset_positions = user_state.get('assetPositions', [])
+    
     if not asset_positions:
-        logger.debug(f"  {address[:16]}... 当前无持仓")
         # 清空数据库中的持仓
         db.save_positions(address, [])
         return 0
@@ -280,7 +318,6 @@ def process_trader_result(
     new_position_list = detect_new_positions(old_positions, new_positions)
     
     if not new_position_list:
-        logger.debug(f"  {address[:16]}... 保存 {positions_saved} 个持仓，无新仓位")
         return 0
     
     logger.success(f"  {address[:16]}... 检测到 {len(new_position_list)} 个新仓位!")
@@ -311,161 +348,11 @@ def process_trader_result(
     return len(new_position_list)
 
 
-async def worker_fetch_batch(
-    client: AsyncAPIClient,
-    traders: List[Dict],
-    worker_id: int
-) -> List[tuple]:
-    """
-    单个 worker 异步获取一批交易员的仓位
-    
-    Args:
-        client: 异步API客户端
-        traders: 该 worker 负责的交易员列表
-        worker_id: worker 编号
-    
-    Returns:
-        [(trader, result), ...] 列表
-    """
-    async def fetch_one(trader: Dict):
-        result = await fetch_positions_async(client, trader['address'])
-        return (trader, result)
-    
-    # 该 worker 内部并发获取所有地址
-    tasks = [fetch_one(trader) for trader in traders]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # 处理异常情况
-    processed_results = []
-    for i, result in enumerate(results):
-        trader = traders[i]
-        if isinstance(result, Exception):
-            logger.debug(f"Worker {worker_id}: 获取失败 {trader['address'][:10]}...: {result}")
-            processed_results.append((trader, None))
-        else:
-            processed_results.append(result)
-    
-    return processed_results
-
-
-async def process_batch(
-    db: TraderDatabase,
-    notifier: CopyTradingNotifier,
-    traders: List[Dict],
-    config: APIConfig,
-    workers: int = 10,
-    redis_client: redis.Redis = None
-) -> Dict:
-    """
-    异步处理一批交易员（多 worker 模式）
-    
-    每个 worker 使用独立的代理，异步获取分配给它的所有地址
-    
-    Args:
-        db: 数据库实例
-        notifier: 飞书通知器
-        traders: 交易员列表
-        config: API配置
-        workers: worker 数量（每个 worker 使用不同的代理）
-        redis_client: Redis 客户端
-    
-    Returns:
-        统计信息
-    """
-    stats = {
-        'traders_processed': 0,
-        'new_positions_total': 0,
-        'errors': 0
-    }
-    
-    if not traders:
-        return stats
-    
-    # 先获取所有交易员的当前持仓（用于对比）
-    old_positions_map = {}
-    for trader in traders:
-        address = trader['address']
-        old_positions_map[address] = get_current_positions_from_db(db, address)
-    
-    # 将交易员分配给各个 worker
-    # 例如：100个交易员，10个worker -> 每个worker负责10个
-    traders_per_worker = len(traders) // workers if workers > 0 else len(traders)
-    if traders_per_worker == 0:
-        traders_per_worker = 1
-    
-    worker_assignments = []
-    for i in range(workers):
-        start_idx = i * traders_per_worker
-        if i == workers - 1:
-            # 最后一个 worker 处理剩余的所有
-            end_idx = len(traders)
-        else:
-            end_idx = start_idx + traders_per_worker
-        
-        if start_idx < len(traders):
-            worker_assignments.append(traders[start_idx:end_idx])
-    
-    # 创建 workers 个异步客户端，每个使用不同的代理
-    clients = []
-    worker_tasks = []
-    
-    for worker_id, assignment in enumerate(worker_assignments):
-        if not assignment:
-            continue
-        client = AsyncAPIClient(config, worker_index=worker_id)
-        clients.append(client)
-        worker_tasks.append(worker_fetch_batch(client, assignment, worker_id))
-    
-    logger.debug(f"启动 {len(worker_tasks)} 个 worker，共处理 {len(traders)} 个地址")
-    
-    # 并发执行所有 worker
-    worker_results = await asyncio.gather(*worker_tasks, return_exceptions=True)
-    
-    # 关闭所有客户端
-    for client in clients:
-        await client.close()
-    
-    # 汇总所有 worker 的结果
-    all_results = []
-    for worker_id, result in enumerate(worker_results):
-        if isinstance(result, Exception):
-            logger.error(f"Worker {worker_id} 执行失败: {result}")
-            # 该 worker 的所有交易员标记为错误
-            if worker_id < len(worker_assignments):
-                stats['errors'] += len(worker_assignments[worker_id])
-            continue
-        all_results.extend(result)
-    
-    # 处理结果
-    for trader, result in all_results:
-        address = trader['address']
-        old_positions = old_positions_map.get(address, {})
-        
-        if result is None:
-            stats['errors'] += 1
-            continue
-        
-        try:
-            new_count = process_trader_result(
-                db, notifier, trader, result, old_positions,
-                redis_client=redis_client
-            )
-            stats['traders_processed'] += 1
-            stats['new_positions_total'] += new_count
-        except Exception as e:
-            logger.error(f"处理交易员结果失败 {address[:10]}...: {e}")
-            stats['errors'] += 1
-    
-    return stats
-
-
 async def run_monitoring_cycle_async(
     db: TraderDatabase,
     notifier: CopyTradingNotifier,
-    config: APIConfig,
-    workers: int = 10,
-    batch_size: int = 100,
-    delay: float = 1.0,
+    hl_client: HyperliquidClient,
+    rate: float = 10.0,
     limit: int = 0,
     redis_client: redis.Redis = None,
     activity_tracker: MarketActivityTracker = None,
@@ -477,10 +364,8 @@ async def run_monitoring_cycle_async(
     Args:
         db: 数据库实例
         notifier: 飞书通知器
-        config: API配置
-        workers: 并发worker数量（每个worker使用不同的代理）
-        batch_size: 每个worker异步获取的地址数量（默认100）
-        delay: 批次间延迟（秒）
+        hl_client: HyperliquidClient 实例
+        rate: 每秒请求数
         limit: 限制处理的交易员数量，0表示不限制
         redis_client: Redis 客户端
         activity_tracker: 行情活动追踪器
@@ -502,68 +387,98 @@ async def run_monitoring_cycle_async(
         logger.warning("没有找到S级交易员")
         return total_stats
     
-    # 每批处理的总地址数 = workers * batch_size
-    addresses_per_batch = workers * batch_size
+    # 先获取所有交易员的当前持仓（用于对比）
+    old_positions_map = {}
+    for trader in traders:
+        address = trader['address']
+        old_positions_map[address] = get_current_positions_from_db(db, address)
     
-    logger.info(f"开始处理 {len(traders)} 个S级交易员")
-    logger.info(f"  配置: workers={workers}, batch_size={batch_size}/worker, "
-                f"每批={addresses_per_batch}个地址, delay={delay}s")
+    logger.info(f"开始处理 {len(traders)} 个S级交易员，速率: {rate} 请求/秒")
     logger.info("-" * 60)
     
-    # 分批处理
-    total_batches = (len(traders) + addresses_per_batch - 1) // addresses_per_batch
+    # 创建速率限制器
+    rate_limiter = AsyncRateLimiter(rate=rate)
+    start_time = time.perf_counter()
     
-    for batch_idx in range(0, len(traders), addresses_per_batch):
-        batch = traders[batch_idx:batch_idx + addresses_per_batch]
-        batch_num = batch_idx // addresses_per_batch + 1
+    async def fetch_and_process(idx: int, trader: Dict):
+        """获取并处理单个交易员"""
+        address = trader['address']
+        old_positions = old_positions_map.get(address, {})
         
-        logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 个交易员, {workers} workers)")
+        # 等待速率限制
+        await rate_limiter.acquire()
         
-        batch_stats = await process_batch(
-            db, notifier, batch, config, 
-            workers=workers,
-            redis_client=redis_client
-        )
+        # 获取用户状态
+        user_state = await fetch_user_state_async(hl_client, address)
         
-        total_stats['traders_processed'] += batch_stats['traders_processed']
-        total_stats['new_positions_total'] += batch_stats['new_positions_total']
-        total_stats['errors'] += batch_stats['errors']
+        if user_state is None:
+            return {'success': False, 'new_count': 0}
         
-        # 记录新仓位到活动追踪器
-        if activity_tracker and batch_stats['new_positions_total'] > 0:
-            activity_tracker.add_positions(batch_stats['new_positions_total'])
-            
-            # 检查是否需要发送行情通知
-            if activity_tracker.should_notify() and important_feishu:
-                recent_count = activity_tracker.get_recent_count()
-                logger.warning(f"🔥 检测到行情活动: 1分钟内 {recent_count} 个新仓位!")
-                
-                # 发送重要通知
-                try:
-                    message = (
-                        f"🔥 行情提醒\n\n"
-                        f"检测到市场活动频繁！\n"
-                        f"最近1分钟内发现 {recent_count} 个新仓位\n\n"
-                        f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                        f"📊 建议关注市场动态"
-                    )
-                    success = important_feishu.send_text(message)
-                    if success:
-                        activity_tracker.mark_notified()
-                        logger.success("✓ 行情通知已发送（10分钟内不再重复）")
-                    else:
-                        logger.error("✗ 行情通知发送失败")
-                except Exception as e:
-                    logger.error(f"发送行情通知异常: {e}")
-        
-        # 批次间延迟
-        if batch_idx + addresses_per_batch < len(traders) and delay > 0:
-            await asyncio.sleep(delay)
+        # 处理结果
+        try:
+            new_count = process_trader_result(
+                db, notifier, trader, user_state, old_positions,
+                redis_client=redis_client
+            )
+            return {'success': True, 'new_count': new_count}
+        except Exception as e:
+            logger.error(f"处理交易员结果失败 {address[:10]}...: {e}")
+            return {'success': False, 'new_count': 0}
+    
+    # 创建所有任务
+    tasks = [
+        fetch_and_process(i, trader)
+        for i, trader in enumerate(traders)
+    ]
+    
+    # 并发执行（受速率限制）
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # 统计结果
+    for result in results:
+        if isinstance(result, Exception):
+            total_stats['errors'] += 1
+        elif result['success']:
+            total_stats['traders_processed'] += 1
+            total_stats['new_positions_total'] += result['new_count']
+        else:
+            total_stats['errors'] += 1
+    
+    total_duration = time.perf_counter() - start_time
+    actual_rate = len(traders) / total_duration if total_duration > 0 else 0
     
     logger.info("-" * 60)
     logger.info(f"本轮完成: 处理 {total_stats['traders_processed']} 个交易员, "
                 f"发现 {total_stats['new_positions_total']} 个新仓位, "
                 f"错误 {total_stats['errors']} 个")
+    logger.info(f"耗时: {total_duration:.1f}s, 实际速率: {actual_rate:.2f} 请求/秒")
+    
+    # 记录新仓位到活动追踪器并检查是否需要通知
+    if activity_tracker and total_stats['new_positions_total'] > 0:
+        activity_tracker.add_positions(total_stats['new_positions_total'])
+        
+        # 检查是否需要发送行情通知
+        if activity_tracker.should_notify() and important_feishu:
+            recent_count = activity_tracker.get_recent_count()
+            logger.warning(f"🔥 检测到行情活动: 1分钟内 {recent_count} 个新仓位!")
+            
+            # 发送重要通知
+            try:
+                message = (
+                    f"🔥 行情提醒\n\n"
+                    f"检测到市场活动频繁！\n"
+                    f"最近1分钟内发现 {recent_count} 个新仓位\n\n"
+                    f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"📊 建议关注市场动态"
+                )
+                success = important_feishu.send_text(message)
+                if success:
+                    activity_tracker.mark_notified()
+                    logger.success("✓ 行情通知已发送（10分钟内不再重复）")
+                else:
+                    logger.error("✗ 行情通知发送失败")
+            except Exception as e:
+                logger.error(f"发送行情通知异常: {e}")
     
     # 显示行情追踪状态
     if activity_tracker:
@@ -580,34 +495,22 @@ async def run_monitoring_cycle_async(
 async def main_async(args):
     """异步主函数"""
     logger.info("=" * 60)
-    logger.info("S级交易员仓位监控脚本 (异步版)")
+    logger.info("S级交易员仓位监控脚本")
     logger.info("=" * 60)
     logger.info(f"运行模式: 无限循环")
-    logger.info(f"Workers: {args.workers}, 每Worker获取: {args.batch_size}个地址")
-    logger.info(f"每批总量: {args.workers * args.batch_size}个地址, 批次延迟: {args.delay}s")
+    logger.info(f"请求速率: {args.rate} 请求/秒")
     logger.info(f"交易员限制: {args.limit if args.limit > 0 else '不限制'}（按评分排序）")
-    logger.info(f"代理: {'启用' if args.proxy else '禁用'}")
     logger.info("")
     
-    # 重置代理管理器（确保使用新配置）
-    reset_proxy_manager()
-    
-    # 初始化代理管理器
-    if args.proxy:
-        proxy_manager = get_proxy_manager(enabled=True)
-        logger.info(f"代理管理器: 加载 {proxy_manager.get_proxy_count()} 个代理")
+    # 初始化 Hyperliquid 客户端
+    logger.info("初始化 Hyperliquid 客户端...")
+    hl_client = HyperliquidClient()
+    logger.success("✓ Hyperliquid 客户端初始化成功")
     
     # 初始化数据库
     logger.info("初始化数据库连接...")
     db = TraderDatabase()
     logger.success("✓ 数据库连接成功")
-    
-    # 配置 API
-    config = APIConfig()
-    config.proxy_enabled = args.proxy
-    config.max_retries = 3
-    config.api_call_delay = 0  # 异步模式下不需要单个调用延迟
-    logger.success("✓ API 配置完成")
     
     # 初始化飞书通知器（使用新仓位推送专用配置）
     logger.info("初始化飞书通知器（新仓位推送）...")
@@ -671,10 +574,8 @@ async def main_async(args):
             logger.info(f"{'='*60}")
             
             await run_monitoring_cycle_async(
-                db, notifier, config,
-                workers=args.workers,
-                batch_size=args.batch_size,
-                delay=args.delay,
+                db, notifier, hl_client,
+                rate=args.rate,
                 limit=args.limit,
                 redis_client=redis_client,
                 activity_tracker=activity_tracker,
@@ -694,30 +595,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python monitor_s_traders_positions.py --workers 10 --proxy --delay 1
-    10个worker并行，每个worker异步获取100个地址 = 每批1000个地址
+  python monitor_s_traders_positions.py --rate 10
+    以每秒10个请求的速率获取仓位
   
-  python monitor_s_traders_positions.py -w 5 -b 50 -p
-    5个worker并行，每个worker异步获取50个地址 = 每批250个地址
+  python monitor_s_traders_positions.py -r 5 --limit 500
+    以每秒5个请求的速率，只监控评分最高的前500个交易员
   
-  python monitor_s_traders_positions.py -w 10 -p --limit 500
-    只监控评分最高的前500个交易员
-  
-  python monitor_s_traders_positions.py -w 10 -p --redis
+  python monitor_s_traders_positions.py -r 10 --redis
     启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
     )
     parser.add_argument(
-        "--workers", "-w",
-        type=int,
-        default=10,
-        help="并发worker数量，每个worker使用不同的代理（默认: 10）"
-    )
-    parser.add_argument(
-        "--batch-size", "-b",
-        type=int,
-        default=100,
-        help="每个worker异步获取的地址数量（默认: 100）"
+        "--rate", "-r",
+        type=float,
+        default=10.0,
+        help="每秒请求数（默认: 10）"
     )
     parser.add_argument(
         "--limit", "-l",
@@ -726,18 +618,7 @@ def main():
         help="限制监控的交易员数量，按评分从高到低选取（默认: 0，不限制）"
     )
     parser.add_argument(
-        "--proxy", "-p",
-        action="store_true",
-        help="启用代理"
-    )
-    parser.add_argument(
-        "--delay", "-d",
-        type=float,
-        default=1.0,
-        help="批次间延迟（秒），默认: 1.0"
-    )
-    parser.add_argument(
-        "--redis", "-r",
+        "--redis",
         action="store_true",
         help="启用 Redis 推送（本地监听脚本可接收新仓位通知）"
     )
