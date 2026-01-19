@@ -16,6 +16,9 @@ S级交易员仓位监控脚本
   python monitor_s_traders_positions.py -r 5 --limit 500
     以每秒5个请求的速率，只监控评分最高的前500个交易员
   
+  python monitor_s_traders_positions.py -r 10 --offset 100 --limit 200
+    跳过前100个，监控第101-300名的交易员
+  
   python monitor_s_traders_positions.py -r 10 --redis
     启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
@@ -162,13 +165,14 @@ class MarketActivityTracker:
         return max(0, int(remaining))
 
 
-def get_s_rated_traders(db: TraderDatabase, limit: int = 0) -> List[Dict]:
+def get_s_rated_traders(db: TraderDatabase, limit: int = 0, offset: int = 0) -> List[Dict]:
     """
     获取所有S级交易员，按评分从高到低排序
     
     Args:
         db: 数据库实例
         limit: 限制返回数量，0表示不限制
+        offset: 跳过前N个交易员，0表示不跳过
     
     Returns:
         S级交易员列表（按 overall_score 降序排序）
@@ -180,10 +184,18 @@ def get_s_rated_traders(db: TraderDatabase, limit: int = 0) -> List[Dict]:
     
     total_count = len(traders)
     
-    # 应用 limit
+    # 应用 offset 和 limit
+    if offset > 0:
+        traders = traders[offset:]
+    
     if limit > 0 and len(traders) > limit:
         traders = traders[:limit]
-        logger.info(f"获取到 {total_count} 个S级交易员，限制为前 {limit} 个（按评分排序）")
+    
+    # 日志输出
+    if offset > 0 or limit > 0:
+        range_start = offset + 1
+        range_end = offset + len(traders)
+        logger.info(f"获取到 {total_count} 个S级交易员，选取第 {range_start}-{range_end} 名（按评分排序）")
     else:
         logger.info(f"获取到 {total_count} 个S级交易员（按评分排序）")
     
@@ -354,6 +366,7 @@ async def run_monitoring_cycle_async(
     hl_client: HyperliquidClient,
     rate: float = 10.0,
     limit: int = 0,
+    offset: int = 0,
     redis_client: redis.Redis = None,
     activity_tracker: MarketActivityTracker = None,
     important_feishu: FeishuClient = None
@@ -367,6 +380,7 @@ async def run_monitoring_cycle_async(
         hl_client: HyperliquidClient 实例
         rate: 每秒请求数
         limit: 限制处理的交易员数量，0表示不限制
+        offset: 跳过前N个交易员，0表示不跳过
         redis_client: Redis 客户端
         activity_tracker: 行情活动追踪器
         important_feishu: 重要通知飞书客户端
@@ -380,8 +394,8 @@ async def run_monitoring_cycle_async(
         'errors': 0
     }
     
-    # 获取S级交易员（按评分排序，可限制数量）
-    traders = get_s_rated_traders(db, limit=limit)
+    # 获取S级交易员（按评分排序，可限制数量和偏移）
+    traders = get_s_rated_traders(db, limit=limit, offset=offset)
     
     if not traders:
         logger.warning("没有找到S级交易员")
@@ -510,6 +524,7 @@ async def main_async(args):
     logger.info("=" * 60)
     logger.info(f"运行模式: 无限循环")
     logger.info(f"请求速率: {args.rate} 请求/秒")
+    logger.info(f"交易员偏移: {args.offset}（跳过前N个）")
     logger.info(f"交易员限制: {args.limit if args.limit > 0 else '不限制'}（按评分排序）")
     logger.info("")
     
@@ -588,6 +603,7 @@ async def main_async(args):
                 db, notifier, hl_client,
                 rate=args.rate,
                 limit=args.limit,
+                offset=args.offset,
                 redis_client=redis_client,
                 activity_tracker=activity_tracker,
                 important_feishu=important_feishu
@@ -612,6 +628,9 @@ def main():
   python monitor_s_traders_positions.py -r 5 --limit 500
     以每秒5个请求的速率，只监控评分最高的前500个交易员
   
+  python monitor_s_traders_positions.py -r 10 --offset 100 --limit 200
+    跳过前100个，监控第101-300名的交易员
+  
   python monitor_s_traders_positions.py -r 10 --redis
     启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
@@ -627,6 +646,12 @@ def main():
         type=int,
         default=0,
         help="限制监控的交易员数量，按评分从高到低选取（默认: 0，不限制）"
+    )
+    parser.add_argument(
+        "--offset", "-o",
+        type=int,
+        default=0,
+        help="跳过前N个交易员（默认: 0，不跳过）"
     )
     parser.add_argument(
         "--redis",
