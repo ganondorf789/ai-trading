@@ -91,6 +91,20 @@ class FeishuPositionNotifySettings(BaseSettings):
     callback_log_level: str = Field(default="INFO", description="长连接日志级别")
 
 
+class FeishuImportantNotifySettings(BaseSettings):
+    """飞书重要通知机器人配置 - 专门用于推送重要告警和通知"""
+    model_config = SettingsConfigDict(env_prefix='FEISHU_IMPORTANT_')
+
+    app_id: str = Field(default="", description="飞书应用 App ID")
+    app_secret: str = Field(default="", description="飞书应用 App Secret")
+    default_user_id: str = Field(default="", description="默认接收消息的用户 open_id")
+
+    # 长连接回调配置
+    callback_enabled: bool = Field(default=True, description="是否启用长连接回调")
+    callback_push_url: str = Field(default="", description="回调事件推送的目标 URL")
+    callback_log_level: str = Field(default="INFO", description="长连接日志级别")
+
+
 class AIModelSettings(BaseSettings):
     """AI模型配置"""
     model_config = SettingsConfigDict(env_prefix='AI_MODEL_')
@@ -169,6 +183,7 @@ class Settings:
         self.hyperliquid = HyperliquidSettings()
         self.feishu = FeishuSettings()
         self.feishu_position = FeishuPositionNotifySettings()
+        self.feishu_important = FeishuImportantNotifySettings()
         self.ai_model = AIModelSettings()
         self.system = SystemSettings()
     
