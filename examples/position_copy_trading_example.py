@@ -16,8 +16,7 @@
 - 两者同时: python examples/position_copy_trading_example.py all
 """
 
-VERSION = "1.0.1"
-import argparse
+VERSION = "1.0.0"
 import asyncio
 import os
 import sys
@@ -461,7 +460,7 @@ def start_callback_server():
     callback_client.start()
 
 
-async def run(dry_run: bool = False):
+async def run():
     """运行仓位跟单机器人"""
     global notifier, db
 
@@ -470,8 +469,6 @@ async def run(dry_run: bool = False):
     logger.info("=" * 60)
     logger.info(f"仓位级别跟单机器人 v{VERSION}")
     logger.info("第二种跟单模式：跟单特定仓位")
-    if dry_run:
-        logger.warning("⚠️  DRY-RUN 模式：不会真正下单")
     logger.info("=" * 60)
 
     # 初始化数据库
@@ -508,7 +505,6 @@ async def run(dry_run: bool = False):
         check_interval=0.5,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
         redis_client=redis_client,  # 接收开仓通知
-        dry_run=dry_run,  # 模拟模式
     )
 
     # 设置回调
@@ -547,26 +543,13 @@ async def run(dry_run: bool = False):
                 )
 
 
-def parse_args():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description="仓位级别跟单机器人")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="模拟运行模式，只记录日志不真正下单"
-    )
-    return parser.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_args()
-    
     # Windows 上需要特殊处理
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     try:
-        asyncio.run(run(dry_run=args.dry_run))
+        asyncio.run(run())
     except KeyboardInterrupt:
         logger.info("程序已退出")
     
