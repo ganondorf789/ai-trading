@@ -436,7 +436,7 @@ def start_callback_server():
     )
     
     # 注册仓位跟单处理器
-    callback_client.register_handler("quick_position_tracking", handle_quick_position_tracking)
+    callback_client.register_handler("quick_copy_trade", handle_quick_position_tracking)
     
     # 注册"当前仓位"菜单处理器
     callback_client.register_handler("current-position", handle_current_position)
@@ -453,7 +453,7 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_position_tracking, current-position")
+    logger.info("已注册处理器: quick_copy_trade, current-position")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     
