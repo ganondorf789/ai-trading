@@ -76,7 +76,8 @@ class PositionCopyTradingBot:
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
         enable_feishu_notify: bool = True,
-        redis_client = None
+        redis_client = None,
+        dry_run: bool = False
     ):
         """
         初始化仓位跟单机器人
@@ -87,10 +88,12 @@ class PositionCopyTradingBot:
             reload_interval: 配置重载间隔（秒）
             enable_feishu_notify: 是否启用飞书通知
             redis_client: Redis 客户端（用于接收开仓通知，立即执行开仓）
+            dry_run: 模拟运行模式，不会真正下单
         """
         self.client = client
         self.check_interval = check_interval
         self.reload_interval = reload_interval
+        self.dry_run = dry_run
         
         # 跟单状态 (tracking_id -> TrackingState)
         self.trackings: Dict[int, TrackingState] = {}
@@ -567,6 +570,31 @@ class PositionCopyTradingBot:
             if not self._check_balance_sufficient(required_margin, f"开仓 {symbol}"):
                 return False
 
+            # Dry-run 模式：只记录日志，不真正下单
+            if self.dry_run:
+                logger.warning(
+                    f"[DRY-RUN] [{state.tracking_id}] 模拟开仓: {symbol} {side} {size} "
+                    f"杠杆={leverage}x 价格≈{price:.4f} (目标: {state.target_address[:8]}...)"
+                )
+                # 更新状态（模拟成功）
+                state.my_size = size
+                state.my_side = side
+                state.my_entry_price = price
+                state.status = 'active'
+                
+                # 更新数据库
+                self.db.update_tracking_status(state.tracking_id, 'active')
+                self.db.update_tracking_position(
+                    state.tracking_id, size, side, price
+                )
+                
+                if self._on_copy:
+                    self._on_copy(
+                        state.tracking_id, state.target_address,
+                        symbol, side, size
+                    )
+                return True
+
             try:
                 # 设置杠杆
                 self.client.set_leverage(symbol, leverage)
@@ -663,6 +691,26 @@ class PositionCopyTradingBot:
                 if not self._check_balance_sufficient(required_margin, f"加仓 {symbol}"):
                     return False
 
+            # Dry-run 模式：只记录日志，不真正下单
+            if self.dry_run:
+                side = 'long' if is_long else 'short'
+                logger.warning(
+                    f"[DRY-RUN] [{state.tracking_id}] 模拟{action_type}: {symbol} "
+                    f"{my_current_size:.4f} → {my_target_size:.4f} (调整 {adjustment_size:.4f})"
+                )
+                # 更新状态（模拟成功）
+                state.my_size = my_target_size
+                self.db.update_tracking_position(
+                    state.tracking_id, my_target_size, state.my_side, state.my_entry_price
+                )
+                
+                if self._on_adjust:
+                    self._on_adjust(
+                        state.tracking_id, state.target_address,
+                        symbol, side, adjustment_size, is_increase
+                    )
+                return True
+
             try:
                 logger.info(
                     f"[{state.tracking_id}] {action_type}: {symbol} "
@@ -718,6 +766,26 @@ class PositionCopyTradingBot:
         async with order_lock:
             my_pos = self.my_positions.get(symbol)
             pnl = my_pos.unrealized_pnl if my_pos else 0
+
+            # Dry-run 模式：只记录日志，不真正下单
+            if self.dry_run:
+                logger.warning(
+                    f"[DRY-RUN] [{state.tracking_id}] 模拟平仓: {symbol} "
+                    f"原因={reason} 模拟PnL={pnl:.2f}"
+                )
+                # 更新状态（模拟成功）
+                state.status = 'closed'
+                state.my_size = 0
+                
+                self.db.update_tracking_status(
+                    state.tracking_id, 'closed', reason, pnl
+                )
+                
+                if self._on_close:
+                    self._on_close(
+                        state.tracking_id, state.target_address, symbol, pnl
+                    )
+                return True
 
             try:
                 result = self.client.close_position(symbol, slippage=state.slippage)
@@ -903,6 +971,8 @@ class PositionCopyTradingBot:
 
         logger.info("=" * 60)
         logger.info("仓位级别跟单机器人启动")
+        if self.dry_run:
+            logger.warning("⚠️  DRY-RUN 模式：不会真正下单")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
         logger.info(f"Redis 开仓通知: {'已启用' if self._redis_client else '未启用'}")
