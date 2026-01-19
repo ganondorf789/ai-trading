@@ -502,7 +502,7 @@ async def run():
     # 创建仓位跟单机器人（传入 redis_client 接收开仓通知）
     bot = PositionCopyTradingBot(
         client=client,
-        check_interval=10.0,  # 检查间隔（秒）
+        check_interval=0.5,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
         redis_client=redis_client,  # 接收开仓通知
     )
