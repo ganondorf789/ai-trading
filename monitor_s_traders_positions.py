@@ -124,18 +124,31 @@ class MarketActivityTracker:
         return max(0, int(remaining))
 
 
-def get_s_rated_traders(db: TraderDatabase) -> List[Dict]:
+def get_s_rated_traders(db: TraderDatabase, limit: int = 0) -> List[Dict]:
     """
-    获取所有S级交易员
+    获取所有S级交易员，按评分从高到低排序
     
     Args:
         db: 数据库实例
+        limit: 限制返回数量，0表示不限制
     
     Returns:
-        S级交易员列表
+        S级交易员列表（按 overall_score 降序排序）
     """
     traders = db.get_traders_by_rating('S')
-    logger.info(f"获取到 {len(traders)} 个S级交易员")
+    
+    # 按 overall_score 从高到低排序
+    traders.sort(key=lambda x: x.get('overall_score', 0) or 0, reverse=True)
+    
+    total_count = len(traders)
+    
+    # 应用 limit
+    if limit > 0 and len(traders) > limit:
+        traders = traders[:limit]
+        logger.info(f"获取到 {total_count} 个S级交易员，限制为前 {limit} 个（按评分排序）")
+    else:
+        logger.info(f"获取到 {total_count} 个S级交易员（按评分排序）")
+    
     return traders
 
 
@@ -453,6 +466,7 @@ async def run_monitoring_cycle_async(
     workers: int = 10,
     batch_size: int = 100,
     delay: float = 1.0,
+    limit: int = 0,
     redis_client: redis.Redis = None,
     activity_tracker: MarketActivityTracker = None,
     important_feishu: FeishuClient = None
@@ -467,6 +481,7 @@ async def run_monitoring_cycle_async(
         workers: 并发worker数量（每个worker使用不同的代理）
         batch_size: 每个worker异步获取的地址数量（默认100）
         delay: 批次间延迟（秒）
+        limit: 限制处理的交易员数量，0表示不限制
         redis_client: Redis 客户端
         activity_tracker: 行情活动追踪器
         important_feishu: 重要通知飞书客户端
@@ -480,8 +495,8 @@ async def run_monitoring_cycle_async(
         'errors': 0
     }
     
-    # 获取S级交易员
-    traders = get_s_rated_traders(db)
+    # 获取S级交易员（按评分排序，可限制数量）
+    traders = get_s_rated_traders(db, limit=limit)
     
     if not traders:
         logger.warning("没有找到S级交易员")
@@ -570,6 +585,7 @@ async def main_async(args):
     logger.info(f"运行模式: 无限循环")
     logger.info(f"Workers: {args.workers}, 每Worker获取: {args.batch_size}个地址")
     logger.info(f"每批总量: {args.workers * args.batch_size}个地址, 批次延迟: {args.delay}s")
+    logger.info(f"交易员限制: {args.limit if args.limit > 0 else '不限制'}（按评分排序）")
     logger.info(f"代理: {'启用' if args.proxy else '禁用'}")
     logger.info("")
     
@@ -659,6 +675,7 @@ async def main_async(args):
                 workers=args.workers,
                 batch_size=args.batch_size,
                 delay=args.delay,
+                limit=args.limit,
                 redis_client=redis_client,
                 activity_tracker=activity_tracker,
                 important_feishu=important_feishu
@@ -683,6 +700,9 @@ def main():
   python monitor_s_traders_positions.py -w 5 -b 50 -p
     5个worker并行，每个worker异步获取50个地址 = 每批250个地址
   
+  python monitor_s_traders_positions.py -w 10 -p --limit 500
+    只监控评分最高的前500个交易员
+  
   python monitor_s_traders_positions.py -w 10 -p --redis
     启用 Redis 推送，本地运行 local_position_listener.py 可接收通知
 """
@@ -698,6 +718,12 @@ def main():
         type=int,
         default=100,
         help="每个worker异步获取的地址数量（默认: 100）"
+    )
+    parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        default=0,
+        help="限制监控的交易员数量，按评分从高到低选取（默认: 0，不限制）"
     )
     parser.add_argument(
         "--proxy", "-p",
