@@ -98,6 +98,9 @@ class PositionCopyTradingBot:
         # 自己的持仓
         self.my_positions: Dict[str, Position] = {}
         
+        # 账户余额（可用保证金）
+        self.available_balance: float = 0.0
+        
         # 运行状态
         self.is_running = False
         self.last_config_reload: Optional[pendulum.DateTime] = None
@@ -244,8 +247,8 @@ class PositionCopyTradingBot:
             leverage = self._calculate_leverage(state, target_pos['leverage'])
             is_long = target_pos['side'] == 'long'
             
-            # 更新自己的持仓
-            self.my_positions = self._get_my_positions()
+            # 更新自己的持仓和余额
+            self._update_my_account()
             my_pos = self.my_positions.get(state.symbol)
             
             # 检查是否已有仓位
@@ -480,15 +483,36 @@ class PositionCopyTradingBot:
             logger.error(f"获取目标持仓失败 {address[:10]}... {symbol}: {e}")
             return None
 
-    def _get_my_positions(self) -> Dict[str, Position]:
-        """获取自己的当前持仓"""
-        positions = {}
+    def _update_my_account(self):
+        """更新自己的持仓和余额（单次 API 调用）"""
         try:
-            for pos in self.client.get_positions():
-                positions[pos.symbol] = pos
+            account_info = self.client.get_account_info()
+            # 更新余额
+            self.available_balance = account_info.available_margin
+            # 更新持仓
+            self.my_positions = {pos.symbol: pos for pos in account_info.positions}
+            logger.debug(f"账户可用余额: {self.available_balance:.2f} USD, 持仓数: {len(self.my_positions)}")
         except Exception as e:
-            logger.error(f"获取自己持仓失败: {e}")
-        return positions
+            logger.error(f"获取账户信息失败: {e}")
+
+    def _check_balance_sufficient(self, required_margin: float, action: str = "开仓") -> bool:
+        """
+        检查余额是否足够
+        
+        Args:
+            required_margin: 所需保证金
+            action: 操作类型（用于日志）
+            
+        Returns:
+            余额是否足够
+        """
+        if self.available_balance < required_margin:
+            logger.warning(
+                f"余额不足，无法{action}: 需要 {required_margin:.2f} USD, "
+                f"可用 {self.available_balance:.2f} USD"
+            )
+            return False
+        return True
 
     # ==================== 仓位计算 ====================
 
@@ -527,6 +551,12 @@ class PositionCopyTradingBot:
             symbol = state.symbol
             side = 'long' if is_long else 'short'
             price = self.client.get_mid_price(symbol)
+            
+            # 检查余额是否足够
+            notional_value = size * price
+            required_margin = notional_value / leverage
+            if not self._check_balance_sufficient(required_margin, f"开仓 {symbol}"):
+                return False
 
             try:
                 # 设置杠杆
@@ -613,6 +643,15 @@ class PositionCopyTradingBot:
 
             is_long = my_pos.side == PositionSide.LONG
             action_type = "加仓" if is_increase else "减仓"
+            
+            # 加仓时检查余额是否足够
+            if is_increase:
+                notional_value = adjustment_size * current_price
+                # 获取当前仓位的杠杆
+                leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
+                required_margin = notional_value / leverage
+                if not self._check_balance_sufficient(required_margin, f"加仓 {symbol}"):
+                    return False
 
             try:
                 logger.info(
@@ -828,8 +867,8 @@ class PositionCopyTradingBot:
     async def _sync_all_trackings(self):
         """同步所有仓位跟单"""
         async with self._sync_lock:
-            # 更新自己的持仓
-            self.my_positions = self._get_my_positions()
+            # 更新自己的持仓和余额
+            self._update_my_account()
             
             # 过滤出活跃的跟单
             active_trackings = [
@@ -931,6 +970,7 @@ class PositionCopyTradingBot:
 
         return {
             'is_running': self.is_running,
+            'available_balance': self.available_balance,
             'tracking_count': len(self.trackings),
             'active_count': len([s for s in self.trackings.values() if s.status == 'active']),
             'pending_count': len([s for s in self.trackings.values() if s.status == 'pending']),
