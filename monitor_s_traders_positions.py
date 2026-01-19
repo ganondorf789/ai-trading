@@ -407,14 +407,39 @@ async def process_batch(
     
     # 创建 workers 个异步客户端，每个使用不同的代理
     clients = []
-    worker_tasks = []
     
     for worker_id, assignment in enumerate(worker_assignments):
         if not assignment:
             continue
         client = AsyncAPIClient(config, worker_index=worker_id)
-        clients.append(client)
-        worker_tasks.append(worker_fetch_batch(client, assignment, worker_id))
+        clients.append((worker_id, client, assignment))
+    
+    # 预热阶段：让每个代理先发一个请求建立连接，避免冷启动403
+    async def warmup_client(worker_id: int, client: AsyncAPIClient, sample_address: str):
+        """预热单个客户端"""
+        try:
+            await client.get_user_state(sample_address)
+            logger.debug(f"Worker {worker_id} 预热完成")
+        except Exception as e:
+            logger.debug(f"Worker {worker_id} 预热失败（可忽略）: {e}")
+    
+    # 使用第一个交易员的地址作为预热请求
+    if traders:
+        warmup_address = traders[0]['address']
+        warmup_tasks = [
+            warmup_client(worker_id, client, warmup_address) 
+            for worker_id, client, _ in clients
+        ]
+        logger.debug(f"开始预热 {len(warmup_tasks)} 个代理连接...")
+        await asyncio.gather(*warmup_tasks, return_exceptions=True)
+        # 短暂等待让连接稳定
+        await asyncio.sleep(0.5)
+    
+    # 创建正式的工作任务
+    worker_tasks = [
+        worker_fetch_batch(client, assignment, worker_id)
+        for worker_id, client, assignment in clients
+    ]
     
     logger.debug(f"启动 {len(worker_tasks)} 个 worker，共处理 {len(traders)} 个地址")
     
@@ -422,7 +447,7 @@ async def process_batch(
     worker_results = await asyncio.gather(*worker_tasks, return_exceptions=True)
     
     # 关闭所有客户端
-    for client in clients:
+    for _, client, _ in clients:
         await client.close()
     
     # 汇总所有 worker 的结果
