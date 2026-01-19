@@ -572,7 +572,7 @@ async def run_monitoring_cycle_async(
                         f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                         f"📊 建议关注市场动态"
                     )
-                    success = important_feishu.send_text_message(message)
+                    success = important_feishu.send_text(message)
                     if success:
                         activity_tracker.mark_notified()
                         logger.success("✓ 行情通知已发送（10分钟内不再重复）")
