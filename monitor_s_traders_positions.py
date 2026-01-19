@@ -5,6 +5,7 @@ S级交易员仓位监控脚本
 1. 获取所有S级的交易员
 2. 异步更新交易员的当前仓位并保存到数据库
 3. 如果发现有新仓位，通过飞书通知
+4. 如果1分钟内新仓位>=5个，发送行情通知（10分钟内只推送一次）
 
 运行模式：无限循环执行
 
@@ -17,7 +18,8 @@ import asyncio
 import argparse
 from pathlib import Path
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import deque
 
 import redis
 from loguru import logger
@@ -32,6 +34,91 @@ from config.settings import settings
 
 # Redis 新仓位推送 channel
 REDIS_POSITION_CHANNEL = "new_positions"
+
+# 行情检测配置
+MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
+MARKET_ACTIVITY_THRESHOLD = 5  # 触发阈值：新仓位数量
+MARKET_ACTIVITY_COOLDOWN = 600  # 10分钟冷却时间（秒）
+
+
+class MarketActivityTracker:
+    """
+    行情活动追踪器
+    
+    追踪1分钟内的新仓位数量，如果达到阈值则触发通知
+    10分钟内只通知一次
+    """
+    
+    def __init__(
+        self,
+        window_seconds: int = MARKET_ACTIVITY_WINDOW,
+        threshold: int = MARKET_ACTIVITY_THRESHOLD,
+        cooldown_seconds: int = MARKET_ACTIVITY_COOLDOWN
+    ):
+        self.window_seconds = window_seconds
+        self.threshold = threshold
+        self.cooldown_seconds = cooldown_seconds
+        
+        # 存储新仓位的时间戳
+        self.position_timestamps: deque = deque()
+        # 上次发送通知的时间
+        self.last_notification_time: Optional[datetime] = None
+    
+    def add_positions(self, count: int) -> None:
+        """记录新仓位"""
+        now = datetime.now()
+        for _ in range(count):
+            self.position_timestamps.append(now)
+    
+    def _clean_old_positions(self) -> None:
+        """清理超出时间窗口的记录"""
+        now = datetime.now()
+        cutoff = now - timedelta(seconds=self.window_seconds)
+        
+        while self.position_timestamps and self.position_timestamps[0] < cutoff:
+            self.position_timestamps.popleft()
+    
+    def get_recent_count(self) -> int:
+        """获取时间窗口内的新仓位数量"""
+        self._clean_old_positions()
+        return len(self.position_timestamps)
+    
+    def should_notify(self) -> bool:
+        """
+        检查是否应该发送通知
+        
+        Returns:
+            True 如果满足条件：
+            1. 1分钟内新仓位 >= 阈值
+            2. 距离上次通知超过10分钟（或从未通知过）
+        """
+        self._clean_old_positions()
+        
+        # 检查数量是否达到阈值
+        if len(self.position_timestamps) < self.threshold:
+            return False
+        
+        # 检查冷却时间
+        now = datetime.now()
+        if self.last_notification_time is not None:
+            time_since_last = (now - self.last_notification_time).total_seconds()
+            if time_since_last < self.cooldown_seconds:
+                return False
+        
+        return True
+    
+    def mark_notified(self) -> None:
+        """标记已发送通知"""
+        self.last_notification_time = datetime.now()
+    
+    def get_cooldown_remaining(self) -> int:
+        """获取剩余冷却时间（秒）"""
+        if self.last_notification_time is None:
+            return 0
+        
+        elapsed = (datetime.now() - self.last_notification_time).total_seconds()
+        remaining = self.cooldown_seconds - elapsed
+        return max(0, int(remaining))
 
 
 def get_s_rated_traders(db: TraderDatabase) -> List[Dict]:
@@ -289,7 +376,9 @@ async def run_monitoring_cycle_async(
     config: APIConfig,
     workers: int = 10,
     delay: float = 1.0,
-    redis_client: redis.Redis = None
+    redis_client: redis.Redis = None,
+    activity_tracker: MarketActivityTracker = None,
+    important_feishu: FeishuClient = None
 ) -> Dict:
     """
     异步运行一次监控周期
@@ -300,6 +389,9 @@ async def run_monitoring_cycle_async(
         config: API配置
         workers: 并发worker数量
         delay: 批次间延迟（秒）
+        redis_client: Redis 客户端
+        activity_tracker: 行情活动追踪器
+        important_feishu: 重要通知飞书客户端
     
     Returns:
         统计信息
@@ -335,6 +427,33 @@ async def run_monitoring_cycle_async(
         total_stats['new_positions_total'] += batch_stats['new_positions_total']
         total_stats['errors'] += batch_stats['errors']
         
+        # 记录新仓位到活动追踪器
+        if activity_tracker and batch_stats['new_positions_total'] > 0:
+            activity_tracker.add_positions(batch_stats['new_positions_total'])
+            
+            # 检查是否需要发送行情通知
+            if activity_tracker.should_notify() and important_feishu:
+                recent_count = activity_tracker.get_recent_count()
+                logger.warning(f"🔥 检测到行情活动: 1分钟内 {recent_count} 个新仓位!")
+                
+                # 发送重要通知
+                try:
+                    message = (
+                        f"🔥 行情提醒\n\n"
+                        f"检测到市场活动频繁！\n"
+                        f"最近1分钟内发现 {recent_count} 个新仓位\n\n"
+                        f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"📊 建议关注市场动态"
+                    )
+                    success = important_feishu.send_text_message(message)
+                    if success:
+                        activity_tracker.mark_notified()
+                        logger.success("✓ 行情通知已发送（10分钟内不再重复）")
+                    else:
+                        logger.error("✗ 行情通知发送失败")
+                except Exception as e:
+                    logger.error(f"发送行情通知异常: {e}")
+        
         # 批次间延迟
         if batch_idx + workers < len(traders) and delay > 0:
             await asyncio.sleep(delay)
@@ -343,6 +462,15 @@ async def run_monitoring_cycle_async(
     logger.info(f"本轮完成: 处理 {total_stats['traders_processed']} 个交易员, "
                 f"发现 {total_stats['new_positions_total']} 个新仓位, "
                 f"错误 {total_stats['errors']} 个")
+    
+    # 显示行情追踪状态
+    if activity_tracker:
+        recent = activity_tracker.get_recent_count()
+        cooldown = activity_tracker.get_cooldown_remaining()
+        if cooldown > 0:
+            logger.info(f"行情追踪: 近1分钟 {recent} 个新仓位, 通知冷却剩余 {cooldown}s")
+        else:
+            logger.info(f"行情追踪: 近1分钟 {recent} 个新仓位")
     
     return total_stats
 
@@ -390,6 +518,24 @@ async def main_async(args):
     else:
         logger.success("✓ 飞书通知器初始化成功（新仓位推送）")
     
+    # 初始化飞书重要通知客户端（行情提醒）
+    logger.info("初始化飞书通知器（重要通知）...")
+    important_feishu = FeishuClient(
+        app_id=settings.feishu_important.app_id,
+        app_secret=settings.feishu_important.app_secret,
+        default_user_id=settings.feishu_important.default_user_id
+    )
+    
+    if not important_feishu.app_id:
+        logger.warning("⚠ 飞书重要通知未配置，行情提醒功能将不可用")
+        important_feishu = None
+    else:
+        logger.success("✓ 飞书通知器初始化成功（重要通知）")
+    
+    # 初始化行情活动追踪器
+    activity_tracker = MarketActivityTracker()
+    logger.info(f"行情追踪器: 阈值={activity_tracker.threshold}个/分钟, 冷却={activity_tracker.cooldown_seconds}秒")
+    
     # 初始化 Redis（用于本地推送）
     redis_client = None
     if args.redis:
@@ -423,7 +569,9 @@ async def main_async(args):
                 db, notifier, config,
                 workers=args.workers,
                 delay=args.delay,
-                redis_client=redis_client
+                redis_client=redis_client,
+                activity_tracker=activity_tracker,
+                important_feishu=important_feishu
             )
             
     except KeyboardInterrupt:
