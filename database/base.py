@@ -31,7 +31,12 @@ class DatabaseBase:
                     port=settings.postgres.port,
                     user=settings.postgres.user,
                     password=settings.postgres.password,
-                    database=settings.postgres.database
+                    database=settings.postgres.database,
+                    # TCP Keepalive 参数，防止连接被中间设备断开
+                    keepalives=1,  # 启用 keepalive
+                    keepalives_idle=30,  # 空闲 30 秒后发送 keepalive 探测
+                    keepalives_interval=10,  # 每 10 秒发送一次探测
+                    keepalives_count=5  # 5 次探测失败后断开连接
                 )
                 logger.info(f"PostgreSQL 连接池创建成功: {settings.postgres.host}:{settings.postgres.port}")
             except Exception as e:
