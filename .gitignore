@@ -32,6 +32,9 @@ coverage
 
 .eslintcache
 
+# Supervisor config (contains environment-specific settings)
+deploy/supervisor/monitor_positions.conf
+
 # Cypress
 /cypress/videos/
 /cypress/screenshots/
