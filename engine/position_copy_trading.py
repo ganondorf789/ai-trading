@@ -233,9 +233,20 @@ class PositionCopyTradingBot:
             state.target_current_size = abs(target_pos['size'])
             state.target_current_side = target_pos['side']
             
-            # 保存初始快照到数据库
+            # 保存初始快照到数据库（保留原有配置参数，避免被默认值覆盖）
             self.db.save_position_tracking({
                 'id': state.tracking_id,
+                'target_address': state.target_address,
+                'target_name': state.target_name,
+                'symbol': state.symbol,
+                'is_enabled': state.is_enabled,
+                'copy_ratio': state.copy_ratio,
+                'max_position_size_usd': state.max_position_size_usd,
+                'min_position_size_usd': state.min_position_size_usd,
+                'copy_leverage': state.copy_leverage,
+                'max_leverage': state.max_leverage,
+                'default_leverage': state.default_leverage,
+                'slippage': state.slippage,
                 'target_initial_size': state.target_initial_size,
                 'target_initial_side': state.target_initial_side,
                 'target_initial_entry_price': state.target_initial_entry_price,
@@ -793,9 +804,20 @@ class PositionCopyTradingBot:
                 state.target_current_size = abs(target_pos['size'])
                 state.target_current_side = target_pos['side']
                 
-                # 保存初始快照到数据库
+                # 保存初始快照到数据库（保留原有配置参数，避免被默认值覆盖）
                 self.db.save_position_tracking({
                     'id': state.tracking_id,
+                    'target_address': state.target_address,
+                    'target_name': state.target_name,
+                    'symbol': state.symbol,
+                    'is_enabled': state.is_enabled,
+                    'copy_ratio': state.copy_ratio,
+                    'max_position_size_usd': state.max_position_size_usd,
+                    'min_position_size_usd': state.min_position_size_usd,
+                    'copy_leverage': state.copy_leverage,
+                    'max_leverage': state.max_leverage,
+                    'default_leverage': state.default_leverage,
+                    'slippage': state.slippage,
                     'target_initial_size': state.target_initial_size,
                     'target_initial_side': state.target_initial_side,
                     'target_initial_entry_price': state.target_initial_entry_price,
