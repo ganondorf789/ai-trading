@@ -239,7 +239,7 @@ class PositionCopyTradingBot:
                 'target_address': state.target_address,
                 'target_name': state.target_name,
                 'symbol': state.symbol,
-                'is_enabled': state.is_enabled,
+                'is_enabled': tracking_data.get('is_enabled', True),
                 'copy_ratio': state.copy_ratio,
                 'max_position_size_usd': state.max_position_size_usd,
                 'min_position_size_usd': state.min_position_size_usd,
@@ -810,7 +810,7 @@ class PositionCopyTradingBot:
                     'target_address': state.target_address,
                     'target_name': state.target_name,
                     'symbol': state.symbol,
-                    'is_enabled': state.is_enabled,
+                    'is_enabled': True,  # 进入同步逻辑的都是启用状态
                     'copy_ratio': state.copy_ratio,
                     'max_position_size_usd': state.max_position_size_usd,
                     'min_position_size_usd': state.min_position_size_usd,
