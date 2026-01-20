@@ -887,13 +887,18 @@ class PositionCopyTradingBot:
                 if s.status in ('pending', 'active')
             ]
             
-            for state in active_trackings:
+            # 异步并行同步所有仓位
+            async def sync_with_error_handling(state):
                 try:
                     await self._sync_tracking(state)
                 except Exception as e:
                     logger.error(f"同步仓位跟单 {state.tracking_id} 失败: {e}")
                     if self._on_error:
                         self._on_error(e)
+            
+            await asyncio.gather(*[
+                sync_with_error_handling(state) for state in active_trackings
+            ])
 
     # ==================== 运行控制 ====================
 
