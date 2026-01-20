@@ -461,6 +461,15 @@ class PositionCopyTradingBot:
                 state.target_current_size = old_state.target_current_size
                 state.target_current_side = old_state.target_current_side
                 state.last_sync = old_state.last_sync
+                state.last_failed_adjust_target_size = old_state.last_failed_adjust_target_size
+                
+                # 保留运行时状态（内存中的状态可能比数据库更新）
+                # 如果内存中已经是 active/closed，不要被数据库中的 pending 覆盖
+                if old_state.status in ('active', 'closed') and state.status == 'pending':
+                    state.status = old_state.status
+                    state.my_size = old_state.my_size
+                    state.my_side = old_state.my_side
+                    state.my_entry_price = old_state.my_entry_price
                 
             self.trackings[tracking_id] = state
             logger.debug(f"加载仓位跟单: {state.symbol} <- {state.target_address[:10]}...")
@@ -569,6 +578,33 @@ class PositionCopyTradingBot:
         symbol = state.symbol
         order_lock = await self._get_order_lock(symbol)
         async with order_lock:
+            # 获取锁后重新检查状态，防止并发重复开仓
+            if state.status == 'active':
+                logger.debug(f"[{state.tracking_id}] 状态已为 active，跳过开仓")
+                return False
+            
+            # 重新获取持仓信息，检查是否已有仓位
+            self._update_my_account()
+            my_pos = self.my_positions.get(symbol)
+            if my_pos is not None:
+                existing_is_long = my_pos.side == PositionSide.LONG
+                # 检查方向是否一致
+                if existing_is_long == is_long:
+                    logger.info(f"[{state.tracking_id}] 已有同向仓位 {symbol}，跳过开仓")
+                    # 更新状态为 active（防止重复处理）
+                    state.status = 'active'
+                    state.my_size = abs(my_pos.size)
+                    state.my_side = 'long' if existing_is_long else 'short'
+                    state.my_entry_price = my_pos.entry_price
+                    self.db.update_tracking_status(state.tracking_id, 'active')
+                    self.db.update_tracking_position(
+                        state.tracking_id, state.my_size, state.my_side, state.my_entry_price
+                    )
+                    return True  # 返回 True，仓位已存在算作成功
+                else:
+                    logger.warning(f"[{state.tracking_id}] 已有反向仓位 {symbol}，无法开仓")
+                    return False  # 方向不一致，真正的失败
+            
             side = 'long' if is_long else 'short'
             price = self.client.get_mid_price(symbol)
             
@@ -644,6 +680,8 @@ class PositionCopyTradingBot:
         
         order_lock = await self._get_order_lock(symbol)
         async with order_lock:
+            # 获取锁后重新获取持仓信息，防止并发重复调整
+            self._update_my_account()
             my_pos = self.my_positions.get(symbol)
 
             if my_pos is None:
@@ -656,6 +694,13 @@ class PositionCopyTradingBot:
                 state, target_position['notional'], current_price
             )
             my_current_size = abs(my_pos.size)
+            
+            # 检查是否已经调整过（变化小于1%则跳过）
+            if my_current_size > 0:
+                size_diff_pct = abs(my_target_size - my_current_size) / my_current_size * 100
+                if size_diff_pct < 1.0:
+                    logger.debug(f"[{state.tracking_id}] 仓位变化 {size_diff_pct:.2f}% < 1%，跳过调整")
+                    return True
             
             # 判断是加仓还是减仓
             is_increase = my_target_size > my_current_size
@@ -727,8 +772,26 @@ class PositionCopyTradingBot:
         symbol = state.symbol
         order_lock = await self._get_order_lock(symbol)
         async with order_lock:
+            # 获取锁后重新检查状态，防止并发重复平仓
+            if state.status == 'closed':
+                logger.debug(f"[{state.tracking_id}] 状态已为 closed，跳过平仓")
+                return False
+            
+            # 重新获取持仓信息
+            self._update_my_account()
             my_pos = self.my_positions.get(symbol)
-            pnl = my_pos.unrealized_pnl if my_pos else 0
+            
+            # 如果已经没有仓位，直接标记为关闭（不发送通知，因为可能已经发过了）
+            if my_pos is None:
+                logger.info(f"[{state.tracking_id}] 平仓 {symbol}: 已无持仓，仅更新状态")
+                state.status = 'closed'
+                state.my_size = 0
+                self.db.update_tracking_status(
+                    state.tracking_id, 'closed', reason, 0
+                )
+                return True  # 返回 True，目标已达成（无需平仓）
+            
+            pnl = my_pos.unrealized_pnl
 
             try:
                 result = self.client.close_position(symbol, slippage=state.slippage)
