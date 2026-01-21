@@ -48,6 +48,7 @@ class CardActionEvent:
     tenant_key: str = ""                  # 租户 key
     token: str = ""                       # 用于响应的 token
     timestamp: int = 0                    # 事件时间戳
+    form_value: Dict[str, Any] = field(default_factory=dict)  # 表单提交的值（form 容器）
     raw_event: Dict[str, Any] = field(default_factory=dict)  # 原始事件数据
     
     def to_dict(self) -> Dict[str, Any]:
@@ -64,6 +65,7 @@ class CardActionEvent:
             "tenant_key": self.tenant_key,
             "token": self.token,
             "timestamp": self.timestamp,
+            "form_value": self.form_value,
         }
 
 
@@ -814,7 +816,7 @@ class CopyTradingNotifier:
         user_id: str = None
     ) -> bool:
         """
-        发送加仓/补仓表单卡片
+        发送加仓/补仓表单卡片（使用 form 容器）
         
         Args:
             address: 交易员地址
@@ -874,84 +876,87 @@ class CopyTradingNotifier:
             {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
         ]
         
-        # 构建分栏下拉选择
-        column_set_selects = {
-            "tag": "column_set",
-            "flex_mode": "none",
-            "background_style": "default",
-            "columns": [
+        # 使用 form 容器，表单提交时会自动收集所有带 name 属性的表单元素值
+        form_element = {
+            "tag": "form",
+            "name": "position_adjustment_form",
+            "elements": [
+                # 分栏布局：仓位选择 + 比例选择
                 {
-                    "tag": "column",
-                    "width": "weighted",
-                    "weight": 1,
-                    "vertical_align": "top",
-                    "elements": [
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
                         {
-                            "tag": "select_static",
-                            "placeholder": {
-                                "tag": "plain_text",
-                                "content": "选择仓位"
-                            },
-                            "options": position_options,
-                            "value": {
-                                "action_tag": "position_adjustment_select_position",
-                                "address": address,
-                                "trader_name": trader_name
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_position",  # 表单字段名
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择仓位"
+                                    },
+                                    "options": position_options
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_ratio",  # 表单字段名
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择比例"
+                                    },
+                                    "options": ratio_options
+                                }
+                            ]
                         }
                     ]
                 },
+                # 提交/取消按钮行
                 {
-                    "tag": "column",
-                    "width": "weighted",
-                    "weight": 1,
-                    "vertical_align": "top",
-                    "elements": [
+                    "tag": "action",
+                    "actions": [
                         {
-                            "tag": "select_static",
-                            "placeholder": {
+                            "tag": "button",
+                            "text": {
                                 "tag": "plain_text",
-                                "content": "选择比例"
+                                "content": "提交"
                             },
-                            "options": ratio_options,
+                            "type": "primary",
+                            "action_type": "form_submit",  # 表单提交类型
+                            "name": "submit_button",
                             "value": {
-                                "action_tag": "position_adjustment_select_ratio",
+                                "action_tag": "position_adjustment_submit",
+                                "address": address,
+                                "trader_name": trader_name
+                            }
+                        },
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "取消"
+                            },
+                            "type": "default",
+                            "action_type": "form_reset",  # 表单重置/取消
+                            "name": "cancel_button",
+                            "value": {
+                                "action_tag": "position_adjustment_cancel",
                                 "address": address
                             }
                         }
                     ]
-                }
-            ]
-        }
-        
-        # 构建提交/取消按钮行
-        action_buttons = {
-            "tag": "action",
-            "actions": [
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "提交"
-                    },
-                    "type": "primary",
-                    "value": {
-                        "action_tag": "position_adjustment_submit",
-                        "address": address,
-                        "trader_name": trader_name
-                    }
-                },
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "取消"
-                    },
-                    "type": "default",
-                    "value": {
-                        "action_tag": "position_adjustment_cancel",
-                        "address": address
-                    }
                 }
             ]
         }
@@ -962,8 +967,7 @@ class CopyTradingNotifier:
                 "tag": "markdown",
                 "content": f"**交易员**: {trader_display}"
             },
-            column_set_selects,
-            action_buttons
+            form_element
         ]
         
         card = {
@@ -988,7 +992,7 @@ class CopyTradingNotifier:
         current_positions: List[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        构建加仓/补仓表单卡片（返回卡片JSON，不发送）
+        构建加仓/补仓表单卡片（使用 form 容器，返回卡片JSON，不发送）
         
         用于在回调中返回此卡片作为响应
         
@@ -1040,84 +1044,87 @@ class CopyTradingNotifier:
             {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
         ]
         
-        # 分栏下拉选择
-        column_set_selects = {
-            "tag": "column_set",
-            "flex_mode": "none",
-            "background_style": "default",
-            "columns": [
+        # 使用 form 容器
+        form_element = {
+            "tag": "form",
+            "name": "position_adjustment_form",
+            "elements": [
+                # 分栏布局：仓位选择 + 比例选择
                 {
-                    "tag": "column",
-                    "width": "weighted",
-                    "weight": 1,
-                    "vertical_align": "top",
-                    "elements": [
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
                         {
-                            "tag": "select_static",
-                            "placeholder": {
-                                "tag": "plain_text",
-                                "content": "选择仓位"
-                            },
-                            "options": position_options,
-                            "value": {
-                                "action_tag": "position_adjustment_select_position",
-                                "address": address,
-                                "trader_name": trader_name
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_position",  # 表单字段名
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择仓位"
+                                    },
+                                    "options": position_options
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_ratio",  # 表单字段名
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择比例"
+                                    },
+                                    "options": ratio_options
+                                }
+                            ]
                         }
                     ]
                 },
+                # 提交/取消按钮行
                 {
-                    "tag": "column",
-                    "width": "weighted",
-                    "weight": 1,
-                    "vertical_align": "top",
-                    "elements": [
+                    "tag": "action",
+                    "actions": [
                         {
-                            "tag": "select_static",
-                            "placeholder": {
+                            "tag": "button",
+                            "text": {
                                 "tag": "plain_text",
-                                "content": "选择比例"
+                                "content": "提交"
                             },
-                            "options": ratio_options,
+                            "type": "primary",
+                            "action_type": "form_submit",
+                            "name": "submit_button",
                             "value": {
-                                "action_tag": "position_adjustment_select_ratio",
+                                "action_tag": "position_adjustment_submit",
+                                "address": address,
+                                "trader_name": trader_name
+                            }
+                        },
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "取消"
+                            },
+                            "type": "default",
+                            "action_type": "form_reset",
+                            "name": "cancel_button",
+                            "value": {
+                                "action_tag": "position_adjustment_cancel",
                                 "address": address
                             }
                         }
                     ]
-                }
-            ]
-        }
-        
-        # 提交/取消按钮
-        action_buttons = {
-            "tag": "action",
-            "actions": [
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "提交"
-                    },
-                    "type": "primary",
-                    "value": {
-                        "action_tag": "position_adjustment_submit",
-                        "address": address,
-                        "trader_name": trader_name
-                    }
-                },
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "取消"
-                    },
-                    "type": "default",
-                    "value": {
-                        "action_tag": "position_adjustment_cancel",
-                        "address": address
-                    }
                 }
             ]
         }
@@ -1135,8 +1142,7 @@ class CopyTradingNotifier:
                     "tag": "markdown",
                     "content": f"**交易员**: {trader_display}"
                 },
-                column_set_selects,
-                action_buttons
+                form_element
             ]
         }
 
@@ -1274,6 +1280,7 @@ class FeishuCallbackClient:
             action = {}
             action_tag = ""
             action_value = {}
+            form_value = {}
             action_type = CardActionType.UNKNOWN
             
             if hasattr(event, 'action'):
@@ -1306,6 +1313,21 @@ class FeishuCallbackClient:
                     
                     # 提取 action_tag
                     action_tag = action_value.get("action_tag", "")
+                
+                # 解析表单值（form 容器提交时会有 form_value）
+                if hasattr(action, 'form_value'):
+                    raw_form_value = action.form_value
+                    if isinstance(raw_form_value, str):
+                        try:
+                            form_value = json.loads(raw_form_value)
+                        except json.JSONDecodeError:
+                            form_value = {"raw": raw_form_value}
+                    elif isinstance(raw_form_value, dict):
+                        form_value = raw_form_value
+                    elif raw_form_value is not None:
+                        form_value = {"raw": str(raw_form_value)}
+                    
+                    self.logger.debug(f"表单值: {form_value}")
             
             # 解析用户信息
             user_id = ""
@@ -1350,6 +1372,7 @@ class FeishuCallbackClient:
                 tenant_key=tenant_key,
                 token=token,
                 timestamp=int(time.time() * 1000),
+                form_value=form_value,
                 raw_event=self._event_to_dict(event_data)
             )
             
@@ -1361,6 +1384,7 @@ class FeishuCallbackClient:
                 action_value={},
                 user_id="",
                 timestamp=int(time.time() * 1000),
+                form_value={},
                 raw_event={}
             )
     

@@ -430,17 +430,23 @@ def handle_position_adjustment(event: CardActionEvent):
 
 def handle_position_adjustment_submit(event: CardActionEvent):
     """
-    处理加仓补仓表单提交
+    处理加仓补仓表单提交（使用 form 容器）
+    
+    表单提交时，form_value 会包含所有带 name 属性的表单字段值
     """
     global db
     
+    # 从 action_value 获取按钮携带的数据
     address = event.action_value.get("address", "")
     trader_name = event.action_value.get("trader_name", "")
-    selected_position = event.action_value.get("selected_position", "")  # coin|side
-    selected_ratio = event.action_value.get("selected_ratio", "")
+    
+    # 从 form_value 获取表单选择的值（form 容器提交时自动收集）
+    selected_position = event.form_value.get("selected_position", "")  # coin|side
+    selected_ratio = event.form_value.get("selected_ratio", "")
     
     logger.info(f"[加仓补仓提交] 用户 {event.user_id}:")
     logger.info(f"  - 地址: {address}")
+    logger.info(f"  - 表单值: {event.form_value}")
     logger.info(f"  - 仓位: {selected_position}")
     logger.info(f"  - 比例: {selected_ratio}%")
     
