@@ -584,42 +584,8 @@ def handle_current_position(event: CardActionEvent):
             content += f"\n└ 入场: ${pos.entry_price:,.4f} | 现价: ${pos.current_price:,.4f}"
             content += f"\n└ {pnl_emoji} 未实现盈亏: {pnl_str}"
             
-            # 添加仓位信息和平仓按钮（使用 column_set 布局）
-            elements.append({
-                "tag": "column_set",
-                "flex_mode": "none",
-                "background_style": "default",
-                "columns": [
-                    {
-                        "tag": "column",
-                        "width": "weighted",
-                        "weight": 4,
-                        "vertical_align": "center",
-                        "elements": [
-                            {"tag": "markdown", "content": content}
-                        ]
-                    },
-                    {
-                        "tag": "column",
-                        "width": "weighted",
-                        "weight": 1,
-                        "vertical_align": "center",
-                        "elements": [
-                            {
-                                "tag": "button",
-                                "text": {"tag": "plain_text", "content": "平仓"},
-                                "type": "danger",
-                                "value": {
-                                    "action_tag": "close_position",
-                                    "symbol": pos.symbol,
-                                    "side": pos.side.value,
-                                    "size": pos.size
-                                }
-                            }
-                        ]
-                    }
-                ]
-            })
+            # 添加仓位信息
+            elements.append({"tag": "markdown", "content": content})
             
             # 添加分割线
             elements.append({"tag": "hr"})
@@ -657,40 +623,171 @@ def handle_current_position(event: CardActionEvent):
         return None
 
 
-def handle_close_position(event: CardActionEvent):
+def handle_close_position_menu(event: CardActionEvent):
     """
-    处理平仓按钮点击
-    通过 Redis 发送平仓通知，由跟单机器人执行实际平仓操作
+    处理"平仓"菜单点击
+    
+    显示平仓表单卡片，用户可以选择要平仓的仓位或全部平仓
     """
-    symbol = event.action_value.get("symbol", "")
-    side = event.action_value.get("side", "")
-    size = event.action_value.get("size", 0)
+    logger.info(f"[平仓菜单] 用户 {event.user_id} 请求平仓表单")
     
-    logger.info(f"[平仓] 用户 {event.user_id} 请求平仓: {symbol} {side} {size}")
-    
-    if not symbol:
-        return build_error_card("币种信息缺失")
+    # 创建飞书客户端用于发送消息
+    feishu_client = FeishuClient(
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret
+    )
     
     try:
+        # 检查钱包配置
+        if not settings.hyperliquid.wallet_address:
+            card = _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 创建 Hyperliquid 客户端（只需要读取，不需要私钥）
+        client = HyperliquidClient(
+            wallet_address=settings.hyperliquid.wallet_address,
+            testnet=settings.system.testnet_mode
+        )
+        
+        # 获取当前仓位
+        positions = client.get_positions()
+        
+        if not positions:
+            card = _build_info_card(
+                "📉 平仓",
+                "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 构建当前仓位列表
+        current_positions = []
+        for pos in positions:
+            current_positions.append({
+                'coin': pos.symbol,
+                'side': pos.side.value,
+                'size': pos.size,
+                'unrealized_pnl': pos.unrealized_pnl,
+            })
+        
+        # 创建通知器并发送表单卡片
+        copy_notifier = CopyTradingNotifier(feishu_client)
+        copy_notifier.notify_close_position_form(
+            current_positions=current_positions,
+            user_id=event.user_id
+        )
+        
+        logger.success(f"[平仓菜单] 已发送平仓表单卡片给用户 {event.user_id}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"[平仓菜单] 错误: {e}")
+        card = _build_error_card(f"获取仓位失败: {str(e)}")
+        _send_card_to_user(feishu_client, event.user_id, card)
+        return None
+
+
+def handle_close_position_submit(event: CardActionEvent):
+    """
+    处理平仓表单提交（使用 form 容器）
+    
+    表单提交时，form_value 会包含所有带 name 属性的表单字段值
+    """
+    # 从 form_value 获取表单选择的值
+    selected_position = event.form_value.get("selected_position", "")
+    
+    logger.info(f"[平仓提交] 用户 {event.user_id}:")
+    logger.info(f"  - 表单值: {event.form_value}")
+    logger.info(f"  - 选择的仓位: {selected_position}")
+    
+    if not selected_position:
+        return _build_warning_card(
+            "请选择仓位",
+            "请选择要平仓的仓位或全部平仓"
+        )
+    
+    try:
+        # 全部平仓
+        if selected_position == "ALL":
+            # 获取所有当前仓位并逐个发送平仓通知
+            client = HyperliquidClient(
+                wallet_address=settings.hyperliquid.wallet_address,
+                testnet=settings.system.testnet_mode
+            )
+            positions = client.get_positions()
+            
+            if not positions:
+                return _build_info_card(
+                    "暂无持仓",
+                    "当前没有可平仓的仓位"
+                )
+            
+            # 逐个发送平仓通知
+            success_count = 0
+            fail_count = 0
+            closed_symbols = []
+            
+            for pos in positions:
+                success = notify_close_position(symbol=pos.symbol)
+                if success:
+                    success_count += 1
+                    closed_symbols.append(pos.symbol)
+                else:
+                    fail_count += 1
+            
+            if success_count > 0:
+                symbols_str = ", ".join(closed_symbols)
+                return _build_success_card(
+                    "全部平仓请求已提交",
+                    f"**平仓数量**: {success_count}\n**币种**: {symbols_str}\n\n机器人将立即执行平仓操作"
+                )
+            else:
+                return _build_warning_card(
+                    "平仓请求发送失败",
+                    f"Redis 未连接或发送失败，请检查配置"
+                )
+        
+        # 单个仓位平仓
+        parts = selected_position.split("|")
+        if len(parts) < 2:
+            return _build_error_card("仓位格式错误")
+        
+        coin = parts[0]
+        side = parts[1]
+        size = float(parts[2]) if len(parts) > 2 else 0
+        
         # 发送平仓通知到 Redis
-        success = notify_close_position(symbol=symbol)
+        success = notify_close_position(symbol=coin)
         
         side_cn = "多" if side == "long" else "空"
         
         if success:
-            return build_success_card(
+            return _build_success_card(
                 "平仓请求已提交",
-                f"**币种**: {symbol}\n**方向**: {side_cn}\n**数量**: {size:.4f}\n\n机器人将立即执行平仓操作"
+                f"**币种**: {coin}\n**方向**: {side_cn}\n**数量**: {size:.4f}\n\n机器人将立即执行平仓操作"
             )
         else:
-            return build_warning_card(
+            return _build_warning_card(
                 "平仓请求发送失败",
                 f"Redis 未连接或发送失败，请检查配置"
             )
-            
+        
     except Exception as e:
-        logger.error(f"[平仓] 错误: {e}")
-        return build_error_card(f"平仓失败: {str(e)}")
+        logger.error(f"[平仓提交] 错误: {e}")
+        return _build_error_card(f"操作失败: {str(e)}")
+
+
+def handle_close_position_cancel(event: CardActionEvent):
+    """
+    处理平仓表单取消
+    """
+    logger.info(f"[平仓] 用户 {event.user_id} 取消操作")
+    
+    return _build_info_card(
+        "已取消",
+        "平仓操作已取消"
+    )
 
 
 def _send_card_to_user(feishu_client: FeishuClient, user_id: str, card: dict):
@@ -752,8 +849,12 @@ def start_callback_server():
     callback_client.register_handler("position_adjustment_submit", handle_position_adjustment_submit)
     callback_client.register_handler("position_adjustment_cancel", handle_position_adjustment_cancel)
     
-    # 注册平仓处理器
-    callback_client.register_handler("close_position", handle_close_position)
+    # 注册平仓菜单处理器
+    callback_client.register_handler("close-position", handle_close_position_menu)
+    
+    # 注册平仓表单处理器
+    callback_client.register_handler("close_position_submit", handle_close_position_submit)
+    callback_client.register_handler("close_position_cancel", handle_close_position_cancel)
     
     # 注册全局日志处理器
     def log_all_events(event: CardActionEvent):
@@ -767,7 +868,13 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_copy_trade, current-position, position-adjustment, position_adjustment_submit, position_adjustment_cancel, close_position")
+    logger.info("已注册处理器:")
+    logger.info("  - quick_copy_trade: 一键跟单")
+    logger.info("  - current-position: 当前仓位菜单")
+    logger.info("  - position-adjustment: 加仓补仓菜单")
+    logger.info("  - position_adjustment_submit/cancel: 加仓补仓表单")
+    logger.info("  - close-position: 平仓菜单")
+    logger.info("  - close_position_submit/cancel: 平仓表单")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     
