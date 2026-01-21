@@ -572,8 +572,8 @@ def handle_current_position(event: CardActionEvent):
     )
     
     try:
-        # 从 Redis 缓存获取仓位（由跟单机器人定期更新）
-        positions, _ = get_cached_positions()
+        # 从 Redis 缓存获取仓位和余额（由跟单机器人定期更新）
+        positions, available_balance = get_cached_positions()
         
         if positions is None:
             card = build_warning_card(
@@ -644,6 +644,8 @@ def handle_current_position(event: CardActionEvent):
         total_pnl_emoji = "🟢" if total_unrealized_pnl >= 0 else "🔴"
         summary = f"**持仓数**: {len(positions)} | **总价值**: ${total_position_value:,.2f}"
         summary += f"\n{total_pnl_emoji} **总未实现盈亏**: ${total_unrealized_pnl:+,.2f}"
+        if available_balance is not None:
+            summary += f"\n💰 **可用余额**: ${available_balance:,.2f}"
         
         elements.append({"tag": "hr"})
         elements.append({"tag": "markdown", "content": summary})
