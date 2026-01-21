@@ -130,14 +130,17 @@ def notify_open_position(tracking_id: int):
         return False
 
 
-def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = None):
+def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = None, direction: str = None):
     """
-    发送补仓通知到 Redis，机器人收到后立即执行补仓
+    发送加仓/减仓通知到 Redis，机器人收到后立即执行
     
     Args:
         tracking_id: 跟单记录ID
-        ratio: 补仓比例（百分比），如 50 表示在当前仓位基础上再加 50%
-        size: 补仓数量（直接指定加仓的数量）
+        ratio: 调整比例（百分比），如 50 表示调整当前仓位的 50%
+        size: 调整数量（直接指定数量）
+        direction: 下单方向 ('long' 或 'short')
+                   - 与当前持仓同向 = 加仓
+                   - 与当前持仓反向 = 减仓
         
     Returns:
         是否发送成功
@@ -145,11 +148,11 @@ def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = 
     global redis_client
     
     if redis_client is None:
-        logger.warning("Redis 未连接，无法发送补仓通知")
+        logger.warning("Redis 未连接，无法发送调仓通知")
         return False
     
     if ratio is None and size is None:
-        logger.warning("补仓通知需要指定 ratio 或 size")
+        logger.warning("调仓通知需要指定 ratio 或 size")
         return False
     
     try:
@@ -161,12 +164,14 @@ def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = 
             message["ratio"] = ratio
         if size is not None:
             message["size"] = size
+        if direction is not None:
+            message["direction"] = direction
             
         redis_client.publish(REDIS_ADJUST_CHANNEL, json.dumps(message))
-        logger.info(f"已发送补仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}")
+        logger.info(f"已发送调仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}, direction={direction}")
         return True
     except Exception as e:
-        logger.warning(f"发送补仓通知失败: {e}")
+        logger.warning(f"发送调仓通知失败: {e}")
         return False
 
 
@@ -526,15 +531,21 @@ def handle_position_adjustment_submit(event: CardActionEvent):
                 f"{coin} 跟单状态: {tracking.get('status')}，无法补仓"
             )
         
-        # 发送补仓通知到 Redis
-        success = notify_adjust_position(tracking_id, ratio=ratio)
+        # 判断是加仓还是减仓
+        current_side = tracking.get('my_side', 'long')
+        is_add = (side == current_side)  # 同向=加仓，反向=减仓
+        action_name = "加仓" if is_add else "减仓"
+        
+        # 发送调仓通知到 Redis（包含方向）
+        success = notify_adjust_position(tracking_id, ratio=ratio, direction=side)
         
         trader_display = trader_name if trader_name else f"{address[:10]}..."
+        side_cn = "做多" if side == 'long' else "做空"
         
         if success:
             return _build_success_card(
-                "补仓请求已提交",
-                f"**交易员**: {trader_display}\n**币种**: {coin}\n**方向**: {side}\n**补仓比例**: {selected_ratio}%\n\n机器人将立即执行补仓操作"
+                f"{action_name}请求已提交",
+                f"**交易员**: {trader_display}\n**币种**: {coin}\n**操作方向**: {side_cn}\n**{action_name}比例**: {selected_ratio}%\n\n机器人将立即执行{action_name}操作"
             )
         else:
             return _build_warning_card(

@@ -321,17 +321,18 @@ class PositionCopyTradingBot:
                 try:
                     message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
                     if message and message['type'] == 'message':
-                        # 消息格式: JSON {"tracking_id": 123, "ratio": 50} 或 {"tracking_id": 123, "size": 0.5}
+                        # 消息格式: JSON {"tracking_id": 123, "ratio": 50, "direction": "long"}
                         try:
                             import json
                             data = json.loads(message['data'])
                             tracking_id = int(data.get('tracking_id', 0))
-                            ratio = data.get('ratio')  # 补仓比例（百分比，如 50 表示再加 50%）
-                            size = data.get('size')    # 补仓数量（直接指定）
+                            ratio = data.get('ratio')      # 调整比例（百分比）
+                            size = data.get('size')        # 调整数量（直接指定）
+                            direction = data.get('direction')  # 下单方向: 'long' 或 'short'
                             
-                            logger.info(f"收到补仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}")
-                            # 立即执行补仓
-                            await self._handle_adjust_notification(tracking_id, ratio=ratio, size=size)
+                            logger.info(f"收到调仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}, direction={direction}")
+                            # 立即执行调仓
+                            await self._handle_adjust_notification(tracking_id, ratio=ratio, size=size, direction=direction)
                         except (ValueError, json.JSONDecodeError) as e:
                             logger.warning(f"无效的补仓通知格式: {message['data']}, error: {e}")
                 except Exception as e:
@@ -351,20 +352,24 @@ class PositionCopyTradingBot:
         self, 
         tracking_id: int, 
         ratio: float = None, 
-        size: float = None
+        size: float = None,
+        direction: str = None
     ):
         """
-        处理补仓通知，立即执行补仓
+        处理加仓/减仓通知，立即执行
         
         Args:
             tracking_id: 跟单记录ID
-            ratio: 补仓比例（百分比），如 50 表示在当前仓位基础上再加 50%
-            size: 补仓数量（直接指定加仓的数量）
+            ratio: 调整比例（百分比），如 50 表示调整当前仓位的 50%
+            size: 调整数量（直接指定数量）
+            direction: 下单方向 ('long' 或 'short')
+                       - 与当前持仓同向 = 加仓
+                       - 与当前持仓反向 = 减仓
         """
         # 防止并发重复处理
         adjust_key = f"adjust_{tracking_id}"
         if adjust_key in self._processing_tracking_ids:
-            logger.debug(f"[立即补仓] tracking_id={tracking_id} 正在处理中，跳过")
+            logger.debug(f"[调仓] tracking_id={tracking_id} 正在处理中，跳过")
             return
         
         self._processing_tracking_ids.add(adjust_key)
@@ -375,13 +380,13 @@ class PositionCopyTradingBot:
                 # 尝试从数据库加载
                 tracking_data = self.db.get_position_tracking(tracking_id)
                 if not tracking_data:
-                    logger.warning(f"[立即补仓] tracking_id={tracking_id} 不存在")
+                    logger.warning(f"[调仓] tracking_id={tracking_id} 不存在")
                     return
                 state = self._dict_to_state(tracking_data)
                 self.trackings[tracking_id] = state
             
             if state.status != 'active':
-                logger.warning(f"[立即补仓] tracking_id={tracking_id} 状态不是 active (当前: {state.status})")
+                logger.warning(f"[调仓] tracking_id={tracking_id} 状态不是 active (当前: {state.status})")
                 return
             
             symbol = state.symbol
@@ -391,65 +396,93 @@ class PositionCopyTradingBot:
             my_pos = self.my_positions.get(symbol)
             
             if my_pos is None:
-                logger.warning(f"[立即补仓] {symbol} 本地无持仓，无法补仓")
+                logger.warning(f"[调仓] {symbol} 本地无持仓，无法调仓")
                 return
             
-            is_long = my_pos.side == PositionSide.LONG
+            current_is_long = my_pos.side == PositionSide.LONG
             current_price = self.client.get_mid_price(symbol)
             my_current_size = abs(my_pos.size)
             
-            # 计算补仓数量
+            # 确定下单方向
+            if direction is not None:
+                order_is_long = (direction == 'long')
+            else:
+                # 未指定方向，默认与当前持仓同向（加仓）
+                order_is_long = current_is_long
+            
+            # 判断是加仓还是减仓
+            is_add = (order_is_long == current_is_long)  # 同向=加仓，反向=减仓
+            action_name = "加仓" if is_add else "减仓"
+            
+            # 计算调整数量
             if size is not None:
                 # 直接指定数量
                 adjust_size = abs(size)
             elif ratio is not None:
-                # 按比例计算（ratio 是百分比，如 50 表示加 50%）
+                # 按比例计算（ratio 是百分比，如 50 表示调整 50%）
                 adjust_size = my_current_size * (ratio / 100.0)
             else:
-                logger.warning(f"[立即补仓] tracking_id={tracking_id} 未指定补仓比例或数量")
+                logger.warning(f"[调仓] tracking_id={tracking_id} 未指定比例或数量")
                 return
             
             adjust_size = self._round_size(symbol, adjust_size)
             
             if adjust_size <= 0:
-                logger.warning(f"[立即补仓] tracking_id={tracking_id} 计算的补仓数量为 0")
+                logger.warning(f"[调仓] tracking_id={tracking_id} 计算的调整数量为 0")
                 return
             
-            # 检查余额是否足够
-            notional_value = adjust_size * current_price
-            leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
-            required_margin = notional_value / leverage
-            if not self._check_balance_sufficient(required_margin, f"补仓 {symbol}"):
-                return
+            # 减仓时检查数量不能超过当前仓位
+            if not is_add and adjust_size > my_current_size:
+                logger.warning(f"[减仓] {symbol} 减仓数量 {adjust_size:.4f} 超过当前仓位 {my_current_size:.4f}，调整为全部平仓")
+                adjust_size = my_current_size
             
+            # 加仓时检查余额是否足够
+            if is_add:
+                notional_value = adjust_size * current_price
+                leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
+                required_margin = notional_value / leverage
+                if not self._check_balance_sufficient(required_margin, f"加仓 {symbol}"):
+                    return
+            
+            order_direction = "做多" if order_is_long else "做空"
             logger.info(
-                f"[立即补仓] tracking_id={tracking_id} {symbol} "
-                f"当前: {my_current_size:.4f} + 补仓: {adjust_size:.4f}"
+                f"[{action_name}] tracking_id={tracking_id} {symbol} "
+                f"当前: {my_current_size:.4f}, {action_name}: {adjust_size:.4f}, 方向: {order_direction}"
             )
             
-            # 执行补仓（加仓）
+            # 执行下单
             order_lock = await self._get_order_lock(symbol)
             async with order_lock:
                 try:
                     result = self.client.market_order(
-                        symbol, is_long, adjust_size, slippage=state.slippage
+                        symbol, order_is_long, adjust_size, slippage=state.slippage
                     )
                     
                     if result.get('status') == 'ok':
-                        new_size = my_current_size + adjust_size
+                        if is_add:
+                            new_size = my_current_size + adjust_size
+                        else:
+                            new_size = my_current_size - adjust_size
+                        
                         logger.success(
-                            f"[立即补仓] 成功: {symbol} {my_current_size:.4f} → {new_size:.4f}"
+                            f"[{action_name}] 成功: {symbol} {my_current_size:.4f} → {new_size:.4f}"
                         )
                         
                         # 更新状态
-                        state.my_size = new_size
-                        self.db.update_tracking_position(
-                            state.tracking_id, new_size, state.my_side, state.my_entry_price
-                        )
+                        if new_size > 0:
+                            state.my_size = new_size
+                            self.db.update_tracking_position(
+                                state.tracking_id, new_size, state.my_side, state.my_entry_price
+                            )
+                        else:
+                            # 完全平仓
+                            state.my_size = 0
+                            state.status = 'closed'
+                            self.db.update_tracking_status(state.tracking_id, 'closed')
                         
                         # 发送飞书通知
-                        side = 'long' if is_long else 'short'
-                        self._notify_copy_adjust(state.target_address, symbol, side, adjust_size, True)
+                        side = 'long' if order_is_long else 'short'
+                        self._notify_copy_adjust(state.target_address, symbol, side, adjust_size, is_add)
                         
                         if self._on_adjust:
                             self._on_adjust(
@@ -457,15 +490,15 @@ class PositionCopyTradingBot:
                                 symbol, side, adjust_size, True
                             )
                     else:
-                        logger.error(f"[立即补仓] 失败: {result}")
+                        logger.error(f"[{action_name}] 失败: {result}")
                         
                 except Exception as e:
-                    logger.error(f"[立即补仓] 下单异常: {e}")
+                    logger.error(f"[{action_name}] 下单异常: {e}")
                     if self._on_error:
                         self._on_error(e)
                         
         except Exception as e:
-            logger.error(f"[立即补仓] 处理 tracking_id={tracking_id} 失败: {e}")
+            logger.error(f"[调仓] 处理 tracking_id={tracking_id} 失败: {e}")
             if self._on_error:
                 self._on_error(e)
         finally:
