@@ -71,6 +71,154 @@ class CardActionEvent:
 CardActionHandler = Callable[[CardActionEvent], Optional[Dict[str, Any]]]
 
 
+# ==================== 卡片构建工具函数 ====================
+
+def build_success_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建成功响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"✅ {title}"},
+            "template": "green"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_warning_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建警告响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"⚠️ {title}"},
+            "template": "orange"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_error_card(message: str) -> Dict[str, Any]:
+    """
+    构建错误响应卡片
+    
+    Args:
+        message: 错误信息
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": "❌ 操作失败"},
+            "template": "red"
+        },
+        "elements": [
+            {"tag": "markdown", "content": message}
+        ]
+    }
+
+
+def build_info_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建信息响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": "blue"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_card_with_buttons(
+    title: str,
+    content: str,
+    buttons: List[Dict[str, Any]],
+    color: str = "blue"
+) -> Dict[str, Any]:
+    """
+    构建带按钮的卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        buttons: 按钮列表，每个按钮包含:
+            - text: 按钮文本
+            - action_tag: 动作标识
+            - value: 附加数据（字典）
+            - type: 按钮类型 (default/primary/danger)
+        color: 标题颜色 (blue/green/red/orange)
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    button_elements = []
+    for btn in buttons:
+        btn_type = btn.get("type", "default")
+        btn_value = {
+            "action_tag": btn.get("action_tag", ""),
+            **(btn.get("value", {}) if isinstance(btn.get("value"), dict) else {})
+        }
+        
+        button_elements.append({
+            "tag": "button",
+            "text": {
+                "tag": "plain_text",
+                "content": btn.get("text", "按钮")
+            },
+            "type": btn_type,
+            "value": btn_value
+        })
+    
+    elements = [
+        {"tag": "markdown", "content": content}
+    ]
+    
+    if button_elements:
+        elements.append({
+            "tag": "action",
+            "actions": button_elements
+        })
+    
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": color
+        },
+        "elements": elements
+    }
+
+
 class FeishuClient:
     """
     飞书机器人客户端

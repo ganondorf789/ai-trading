@@ -28,8 +28,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
-from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
-from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL, REDIS_ADJUST_CHANNEL
+from clients.feishu_client import (
+    FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent,
+    build_success_card, build_warning_card, build_error_card, build_info_card, build_card_with_buttons
+)
+from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL, REDIS_ADJUST_CHANNEL, REDIS_CLOSE_CHANNEL
 from config.settings import settings
 from database import TraderDatabase
 
@@ -158,6 +161,43 @@ def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = 
         return True
     except Exception as e:
         logger.warning(f"发送补仓通知失败: {e}")
+        return False
+
+
+def notify_close_position(symbol: str = None, tracking_id: int = None):
+    """
+    发送平仓通知到 Redis，机器人收到后立即执行平仓
+    
+    Args:
+        symbol: 币种（直接指定要平仓的币种）
+        tracking_id: 跟单记录ID（根据跟单记录平仓）
+        
+    Returns:
+        是否发送成功
+    """
+    global redis_client
+    
+    if redis_client is None:
+        logger.warning("Redis 未连接，无法发送平仓通知")
+        return False
+    
+    if symbol is None and tracking_id is None:
+        logger.warning("平仓通知需要指定 symbol 或 tracking_id")
+        return False
+    
+    try:
+        import json
+        message = {}
+        if symbol is not None:
+            message["symbol"] = symbol
+        if tracking_id is not None:
+            message["tracking_id"] = tracking_id
+            
+        redis_client.publish(REDIS_CLOSE_CHANNEL, json.dumps(message))
+        logger.info(f"已发送平仓通知: symbol={symbol}, tracking_id={tracking_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"发送平仓通知失败: {e}")
         return False
 
 
@@ -479,6 +519,7 @@ def handle_current_position(event: CardActionEvent):
     处理"当前仓位"菜单点击
     
     获取当前钱包的实时仓位（从 Hyperliquid API），并通过飞书消息发送给用户
+    每个仓位都带有平仓按钮
     """
     logger.info(f"[当前仓位] 用户 {event.user_id} 查询当前仓位")
     
@@ -491,7 +532,7 @@ def handle_current_position(event: CardActionEvent):
     try:
         # 检查钱包配置
         if not settings.hyperliquid.wallet_address:
-            card = _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+            card = build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
@@ -505,15 +546,15 @@ def handle_current_position(event: CardActionEvent):
         positions = client.get_positions()
         
         if not positions:
-            card = _build_info_card(
+            card = build_info_card(
                 "📊 当前仓位",
                 "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 构建仓位信息
-        content_lines = []
+        # 构建卡片元素
+        elements = []
         total_unrealized_pnl = 0.0
         total_position_value = 0.0
         
@@ -531,22 +572,73 @@ def handle_current_position(event: CardActionEvent):
             pnl_emoji = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
             pnl_str = f"${pos.unrealized_pnl:+,.2f}"
             
-            # 基本信息行
-            line = f"{side_emoji} **{pos.symbol}** {side_cn} | {pos.leverage}x"
-            line += f"\n  └ 数量: {pos.size:.4f} | 价值: ${position_value:,.2f}"
-            line += f"\n  └ 入场: ${pos.entry_price:,.4f} | 现价: ${pos.current_price:,.4f}"
-            line += f"\n  └ {pnl_emoji} 未实现盈亏: {pnl_str}"
+            # 仓位信息
+            content = f"{side_emoji} **{pos.symbol}** {side_cn} | {pos.leverage}x"
+            content += f"\n└ 数量: {pos.size:.4f} | 价值: ${position_value:,.2f}"
+            content += f"\n└ 入场: ${pos.entry_price:,.4f} | 现价: ${pos.current_price:,.4f}"
+            content += f"\n└ {pnl_emoji} 未实现盈亏: {pnl_str}"
             
-            content_lines.append(line)
+            # 添加仓位信息和平仓按钮（使用 column_set 布局）
+            elements.append({
+                "tag": "column_set",
+                "flex_mode": "none",
+                "background_style": "default",
+                "columns": [
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "weight": 4,
+                        "vertical_align": "center",
+                        "elements": [
+                            {"tag": "markdown", "content": content}
+                        ]
+                    },
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "weight": 1,
+                        "vertical_align": "center",
+                        "elements": [
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "平仓"},
+                                "type": "danger",
+                                "value": {
+                                    "action_tag": "close_position",
+                                    "symbol": pos.symbol,
+                                    "side": pos.side.value,
+                                    "size": pos.size
+                                }
+                            }
+                        ]
+                    }
+                ]
+            })
+            
+            # 添加分割线
+            elements.append({"tag": "hr"})
         
-        content = "\n\n".join(content_lines)
+        # 移除最后一个分割线
+        if elements and elements[-1].get("tag") == "hr":
+            elements.pop()
         
         # 汇总统计
         total_pnl_emoji = "🟢" if total_unrealized_pnl >= 0 else "🔴"
-        content += f"\n\n---\n**持仓数**: {len(positions)} | **总价值**: ${total_position_value:,.2f}"
-        content += f"\n{total_pnl_emoji} **总未实现盈亏**: ${total_unrealized_pnl:+,.2f}"
+        summary = f"**持仓数**: {len(positions)} | **总价值**: ${total_position_value:,.2f}"
+        summary += f"\n{total_pnl_emoji} **总未实现盈亏**: ${total_unrealized_pnl:+,.2f}"
         
-        card = _build_info_card(f"📊 当前仓位 ({len(positions)})", content)
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": summary})
+        
+        # 构建完整卡片
+        card = {
+            "header": {
+                "title": {"tag": "plain_text", "content": f"📊 当前仓位 ({len(positions)})"},
+                "template": "blue"
+            },
+            "elements": elements
+        }
+        
         _send_card_to_user(feishu_client, event.user_id, card)
         
         logger.success(f"[当前仓位] 已发送 {len(positions)} 个仓位信息给用户 {event.user_id}")
@@ -554,9 +646,45 @@ def handle_current_position(event: CardActionEvent):
         
     except Exception as e:
         logger.error(f"[当前仓位] 错误: {e}")
-        card = _build_error_card(f"查询失败: {str(e)}")
+        card = build_error_card(f"查询失败: {str(e)}")
         _send_card_to_user(feishu_client, event.user_id, card)
         return None
+
+
+def handle_close_position(event: CardActionEvent):
+    """
+    处理平仓按钮点击
+    通过 Redis 发送平仓通知，由跟单机器人执行实际平仓操作
+    """
+    symbol = event.action_value.get("symbol", "")
+    side = event.action_value.get("side", "")
+    size = event.action_value.get("size", 0)
+    
+    logger.info(f"[平仓] 用户 {event.user_id} 请求平仓: {symbol} {side} {size}")
+    
+    if not symbol:
+        return build_error_card("币种信息缺失")
+    
+    try:
+        # 发送平仓通知到 Redis
+        success = notify_close_position(symbol=symbol)
+        
+        side_cn = "多" if side == "long" else "空"
+        
+        if success:
+            return build_success_card(
+                "平仓请求已提交",
+                f"**币种**: {symbol}\n**方向**: {side_cn}\n**数量**: {size:.4f}\n\n机器人将立即执行平仓操作"
+            )
+        else:
+            return build_warning_card(
+                "平仓请求发送失败",
+                f"Redis 未连接或发送失败，请检查配置"
+            )
+            
+    except Exception as e:
+        logger.error(f"[平仓] 错误: {e}")
+        return build_error_card(f"平仓失败: {str(e)}")
 
 
 def _send_card_to_user(feishu_client: FeishuClient, user_id: str, card: dict):
@@ -569,56 +697,25 @@ def _send_card_to_user(feishu_client: FeishuClient, user_id: str, card: dict):
         logger.error(f"发送卡片消息异常: {e}")
 
 
+# 使用从 feishu_client 导入的卡片构建函数（保持向后兼容）
 def _build_success_card(title: str, content: str):
     """构建成功响应卡片"""
-    return {
-        "header": {
-            "title": {"tag": "plain_text", "content": f"✅ {title}"},
-            "template": "green"
-        },
-        "elements": [
-            {"tag": "markdown", "content": content}
-        ]
-    }
+    return build_success_card(title, content)
 
 
 def _build_warning_card(title: str, content: str):
     """构建警告响应卡片"""
-    return {
-        "header": {
-            "title": {"tag": "plain_text", "content": f"⚠️ {title}"},
-            "template": "orange"
-        },
-        "elements": [
-            {"tag": "markdown", "content": content}
-        ]
-    }
+    return build_warning_card(title, content)
 
 
 def _build_error_card(message: str):
     """构建错误响应卡片"""
-    return {
-        "header": {
-            "title": {"tag": "plain_text", "content": "❌ 操作失败"},
-            "template": "red"
-        },
-        "elements": [
-            {"tag": "markdown", "content": message}
-        ]
-    }
+    return build_error_card(message)
 
 
 def _build_info_card(title: str, content: str):
     """构建信息响应卡片"""
-    return {
-        "header": {
-            "title": {"tag": "plain_text", "content": title},
-            "template": "blue"
-        },
-        "elements": [
-            {"tag": "markdown", "content": content}
-        ]
-    }
+    return build_info_card(title, content)
 
 
 def start_callback_server():
@@ -649,6 +746,9 @@ def start_callback_server():
     callback_client.register_handler("position_adjustment_submit", handle_position_adjustment_submit)
     callback_client.register_handler("position_adjustment_cancel", handle_position_adjustment_cancel)
     
+    # 注册平仓处理器
+    callback_client.register_handler("close_position", handle_close_position)
+    
     # 注册全局日志处理器
     def log_all_events(event: CardActionEvent):
         logger.debug(f"[事件日志] action={event.action_tag}, user={event.user_id}, value={event.action_value}")
@@ -661,7 +761,7 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_copy_trade, current-position, position-adjustment, position_adjustment_submit, position_adjustment_cancel")
+    logger.info("已注册处理器: quick_copy_trade, current-position, position-adjustment, position_adjustment_submit, position_adjustment_cancel, close_position")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     
