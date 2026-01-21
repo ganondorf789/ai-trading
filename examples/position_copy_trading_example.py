@@ -574,14 +574,17 @@ def handle_current_position(event: CardActionEvent):
             total_position_value += position_value
             total_unrealized_pnl += pos.unrealized_pnl
             
+            # 计算 PnL 百分比
+            entry_value = pos.size * pos.entry_price
+            pnl_percent = (pos.unrealized_pnl / entry_value * 100) if entry_value > 0 else 0
+            
             # PnL 显示
             pnl_emoji = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
-            pnl_str = f"${pos.unrealized_pnl:+,.2f}"
+            pnl_str = f"${pos.unrealized_pnl:+,.2f} ({pnl_percent:+.2f}%)"
             
             # 仓位信息
             content = f"{side_emoji} **{pos.symbol}** {side_cn} | {pos.leverage}x"
-            content += f"\n└ 数量: {pos.size:.4f} | 价值: ${position_value:,.2f}"
-            content += f"\n└ 入场: ${pos.entry_price:,.4f} | 现价: ${pos.current_price:,.4f}"
+            content += f"\n└ 价值: ${position_value:,.2f} | 现价: ${pos.current_price:,.4f}"
             content += f"\n└ {pnl_emoji} 未实现盈亏: {pnl_str}"
             
             # 添加仓位信息
