@@ -32,7 +32,11 @@ from clients.feishu_client import (
     FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent,
     build_success_card, build_warning_card, build_error_card, build_info_card, build_card_with_buttons
 )
-from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL, REDIS_ADJUST_CHANNEL, REDIS_CLOSE_CHANNEL
+from engine.position_copy_trading import (
+    PositionCopyTradingBot, 
+    REDIS_OPEN_CHANNEL, REDIS_ADJUST_CHANNEL, REDIS_CLOSE_CHANNEL,
+    REDIS_MY_POSITIONS_KEY, REDIS_MY_BALANCE_KEY
+)
 from config.settings import settings
 from database import TraderDatabase
 
@@ -49,6 +53,8 @@ notifier: CopyTradingNotifier = None
 db: TraderDatabase = None
 # 全局 Redis 客户端（用于发送开仓通知）
 redis_client = None
+# 全局 Hyperliquid 客户端（复用实例，避免重复创建）
+hl_client: HyperliquidClient = None
 
 
 def setup_logging():
@@ -199,6 +205,37 @@ def notify_close_position(symbol: str = None, tracking_id: int = None):
     except Exception as e:
         logger.warning(f"发送平仓通知失败: {e}")
         return False
+
+
+def get_cached_positions():
+    """
+    从 Redis 缓存获取当前仓位（由跟单机器人定期更新）
+    
+    Returns:
+        (positions_list, available_balance) 或 (None, None) 如果缓存不存在
+    """
+    global redis_client
+    
+    if redis_client is None:
+        return None, None
+    
+    try:
+        import json
+        
+        # 读取仓位
+        positions_json = redis_client.get(REDIS_MY_POSITIONS_KEY)
+        balance_str = redis_client.get(REDIS_MY_BALANCE_KEY)
+        
+        if positions_json is None:
+            return None, None
+        
+        positions = json.loads(positions_json)
+        balance = float(balance_str) if balance_str else 0.0
+        
+        return positions, balance
+    except Exception as e:
+        logger.debug(f"从 Redis 读取仓位缓存失败: {e}")
+        return None, None
 
 
 def on_copy_callback(tracking_id: int, target: str, symbol: str, side: str, size: float):
@@ -524,8 +561,7 @@ def handle_current_position(event: CardActionEvent):
     """
     处理"当前仓位"菜单点击
     
-    获取当前钱包的实时仓位（从 Hyperliquid API），并通过飞书消息发送给用户
-    每个仓位都带有平仓按钮
+    优先从 Redis 缓存获取仓位（由跟单机器人定期更新），响应更快
     """
     logger.info(f"[当前仓位] 用户 {event.user_id} 查询当前仓位")
     
@@ -536,25 +572,23 @@ def handle_current_position(event: CardActionEvent):
     )
     
     try:
-        # 检查钱包配置
-        if not settings.hyperliquid.wallet_address:
-            card = build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+        # 从 Redis 缓存获取仓位（由跟单机器人定期更新）
+        positions, _ = get_cached_positions()
+        
+        if positions is None:
+            card = build_warning_card(
+                "缓存不可用",
+                "仓位缓存不存在，请确保跟单机器人正在运行"
+            )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 创建 Hyperliquid 客户端（只需要读取，不需要私钥）
-        client = HyperliquidClient(
-            wallet_address=settings.hyperliquid.wallet_address,
-            testnet=settings.system.testnet_mode
-        )
-        
-        # 获取当前仓位
-        positions = client.get_positions()
+        logger.debug(f"[当前仓位] 使用 Redis 缓存，仓位数: {len(positions)}")
         
         if not positions:
             card = build_info_card(
                 "📊 当前仓位",
-                "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
+                "暂无持仓"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
@@ -565,26 +599,35 @@ def handle_current_position(event: CardActionEvent):
         total_position_value = 0.0
         
         for pos in positions:
+            # 从字典获取数据
+            symbol = pos.get('symbol', '')
+            side = pos.get('side', 'long')
+            size = pos.get('size', 0)
+            entry_price = pos.get('entry_price', 0)
+            current_price = pos.get('current_price', 0)
+            leverage = pos.get('leverage', 1)
+            unrealized_pnl = pos.get('unrealized_pnl', 0)
+            
             # 方向 emoji
-            side_emoji = "📈" if pos.side.value == "long" else "📉"
-            side_cn = "多" if pos.side.value == "long" else "空"
+            side_emoji = "📈" if side == "long" else "📉"
+            side_cn = "多" if side == "long" else "空"
             
             # 计算仓位价值
-            position_value = pos.size * pos.current_price if pos.current_price else pos.size * pos.entry_price
+            position_value = size * current_price if current_price else size * entry_price
             total_position_value += position_value
-            total_unrealized_pnl += pos.unrealized_pnl
+            total_unrealized_pnl += unrealized_pnl
             
             # 计算 PnL 百分比
-            entry_value = pos.size * pos.entry_price
-            pnl_percent = (pos.unrealized_pnl / entry_value * 100) if entry_value > 0 else 0
+            entry_value = size * entry_price
+            pnl_percent = (unrealized_pnl / entry_value * 100) if entry_value > 0 else 0
             
             # PnL 显示
-            pnl_emoji = "🟢" if pos.unrealized_pnl >= 0 else "🔴"
-            pnl_str = f"${pos.unrealized_pnl:+,.2f} ({pnl_percent:+.2f}%)"
+            pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+            pnl_str = f"${unrealized_pnl:+,.2f} ({pnl_percent:+.2f}%)"
             
             # 仓位信息
-            content = f"{side_emoji} **{pos.symbol}** {side_cn} | {pos.leverage}x"
-            content += f"\n└ 价值: ${position_value:,.2f} | 现价: ${pos.current_price:,.4f}"
+            content = f"{side_emoji} **{symbol}** {side_cn} | {leverage}x"
+            content += f"\n└ 价值: ${position_value:,.2f} | 现价: ${current_price:,.4f}"
             content += f"\n└ {pnl_emoji} 未实现盈亏: {pnl_str}"
             
             # 添加仓位信息
@@ -630,7 +673,7 @@ def handle_close_position_menu(event: CardActionEvent):
     """
     处理"平仓"菜单点击
     
-    显示平仓表单卡片，用户可以选择要平仓的仓位或全部平仓
+    优先从 Redis 缓存获取仓位，显示平仓表单卡片
     """
     logger.info(f"[平仓菜单] 用户 {event.user_id} 请求平仓表单")
     
@@ -641,38 +684,36 @@ def handle_close_position_menu(event: CardActionEvent):
     )
     
     try:
-        # 检查钱包配置
-        if not settings.hyperliquid.wallet_address:
-            card = _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
-            _send_card_to_user(feishu_client, event.user_id, card)
-            return None
+        # 从 Redis 缓存获取仓位（由跟单机器人定期更新）
+        cached_positions, _ = get_cached_positions()
         
-        # 创建 Hyperliquid 客户端（只需要读取，不需要私钥）
-        client = HyperliquidClient(
-            wallet_address=settings.hyperliquid.wallet_address,
-            testnet=settings.system.testnet_mode
-        )
-        
-        # 获取当前仓位
-        positions = client.get_positions()
-        
-        if not positions:
-            card = _build_info_card(
-                "📉 平仓",
-                "暂无持仓\n\n*钱包地址*: `" + settings.hyperliquid.wallet_address[:16] + "...`"
+        if cached_positions is None:
+            card = _build_warning_card(
+                "缓存不可用",
+                "仓位缓存不存在，请确保跟单机器人正在运行"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 构建当前仓位列表
+        logger.debug(f"[平仓菜单] 使用 Redis 缓存，仓位数: {len(cached_positions)}")
+        
+        # 转换 key 名
         current_positions = []
-        for pos in positions:
+        for pos in cached_positions:
             current_positions.append({
-                'coin': pos.symbol,
-                'side': pos.side.value,
-                'size': pos.size,
-                'unrealized_pnl': pos.unrealized_pnl,
+                'coin': pos.get('symbol', ''),
+                'side': pos.get('side', 'long'),
+                'size': pos.get('size', 0),
+                'unrealized_pnl': pos.get('unrealized_pnl', 0),
             })
+        
+        if not current_positions:
+            card = _build_info_card(
+                "📉 平仓",
+                "暂无持仓"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
         
         # 创建通知器并发送表单卡片
         copy_notifier = CopyTradingNotifier(feishu_client)
@@ -713,12 +754,14 @@ def handle_close_position_submit(event: CardActionEvent):
     try:
         # 全部平仓
         if selected_position == "ALL":
-            # 获取所有当前仓位并逐个发送平仓通知
-            client = HyperliquidClient(
-                wallet_address=settings.hyperliquid.wallet_address,
-                testnet=settings.system.testnet_mode
-            )
-            positions = client.get_positions()
+            # 从 Redis 缓存获取仓位
+            positions, _ = get_cached_positions()
+            
+            if positions is None:
+                return _build_warning_card(
+                    "缓存不可用",
+                    "仓位缓存不存在，请确保跟单机器人正在运行"
+                )
             
             if not positions:
                 return _build_info_card(
@@ -732,10 +775,11 @@ def handle_close_position_submit(event: CardActionEvent):
             closed_symbols = []
             
             for pos in positions:
-                success = notify_close_position(symbol=pos.symbol)
+                symbol = pos.get('symbol', '')
+                success = notify_close_position(symbol=symbol)
                 if success:
                     success_count += 1
-                    closed_symbols.append(pos.symbol)
+                    closed_symbols.append(symbol)
                 else:
                     fail_count += 1
             

@@ -26,6 +26,9 @@ REDIS_OPEN_CHANNEL = "position_tracking_open"
 REDIS_ADJUST_CHANNEL = "position_tracking_adjust"
 # Redis 平仓通知 channel
 REDIS_CLOSE_CHANNEL = "position_tracking_close"
+# Redis 账户缓存 key
+REDIS_MY_POSITIONS_KEY = "copy_trading:my_positions"
+REDIS_MY_BALANCE_KEY = "copy_trading:my_balance"
 
 
 @dataclass
@@ -816,7 +819,7 @@ class PositionCopyTradingBot:
             return None
 
     def _update_my_account(self):
-        """更新自己的持仓和余额（单次 API 调用）"""
+        """更新自己的持仓和余额（单次 API 调用），并缓存到 Redis"""
         try:
             account_info = self.client.get_account_info()
             # 更新余额
@@ -824,6 +827,38 @@ class PositionCopyTradingBot:
             # 更新持仓
             self.my_positions = {pos.symbol: pos for pos in account_info.positions}
             logger.debug(f"账户可用余额: {self.available_balance:.2f} USD, 持仓数: {len(self.my_positions)}")
+            
+            # 写入 Redis 缓存（供飞书回调等外部使用）
+            if self._redis_client:
+                try:
+                    import json
+                    # 序列化仓位数据
+                    positions_data = []
+                    for pos in account_info.positions:
+                        positions_data.append({
+                            'symbol': pos.symbol,
+                            'side': pos.side.value,
+                            'size': pos.size,
+                            'entry_price': pos.entry_price,
+                            'current_price': pos.current_price,
+                            'leverage': pos.leverage,
+                            'unrealized_pnl': pos.unrealized_pnl,
+                            'liquidation_price': pos.liquidation_price,
+                            'margin_used': pos.margin_used,
+                        })
+                    # 写入 Redis（设置 60 秒过期，防止数据过期）
+                    self._redis_client.setex(
+                        REDIS_MY_POSITIONS_KEY, 
+                        60, 
+                        json.dumps(positions_data)
+                    )
+                    self._redis_client.setex(
+                        REDIS_MY_BALANCE_KEY, 
+                        60, 
+                        str(self.available_balance)
+                    )
+                except Exception as e:
+                    logger.debug(f"写入 Redis 缓存失败: {e}")
         except Exception as e:
             logger.error(f"获取账户信息失败: {e}")
 
