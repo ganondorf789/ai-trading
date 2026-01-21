@@ -657,6 +657,341 @@ class CopyTradingNotifier:
         # 通过应用 API 发送（支持回调）
         return self.feishu._send_card_via_api(card, self.feishu.default_user_id)
 
+    def notify_position_adjustment_form(
+        self,
+        address: str,
+        trader_name: str = "",
+        current_positions: List[Dict[str, Any]] = None,
+        trackings: List[Dict[str, Any]] = None,
+        user_id: str = None
+    ) -> bool:
+        """
+        发送加仓/补仓表单卡片
+        
+        Args:
+            address: 交易员地址
+            trader_name: 交易员名称
+            current_positions: 当前可加仓的仓位列表，每个元素包含:
+                - coin: 币种
+                - side: 方向 (long/short)
+                - size: 当前仓位大小
+                - entry_px: 入场价格
+            trackings: 当前跟单配置列表，每个元素包含:
+                - tracking_id: 跟单ID
+                - symbol: 币种
+                - copy_ratio: 跟单比例
+            user_id: 接收者 open_id
+            
+        Returns:
+            是否发送成功
+        """
+        # 交易员显示名称
+        trader_display = trader_name if trader_name else f"{address[:12]}..."
+        
+        # 构建仓位下拉选项
+        position_options = []
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                    },
+                    "value": f"{coin}|{side}"
+                })
+        
+        # 如果没有仓位，添加占位选项
+        if not position_options:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无可加仓仓位"
+                },
+                "value": ""
+            })
+        
+        # 构建跟单比例下拉选项
+        ratio_options = [
+            {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
+            {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},
+            {"text": {"tag": "plain_text", "content": "30%"}, "value": "30"},
+            {"text": {"tag": "plain_text", "content": "50%"}, "value": "50"},
+            {"text": {"tag": "plain_text", "content": "75%"}, "value": "75"},
+            {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
+        ]
+        
+        # 构建分栏下拉选择
+        column_set_selects = {
+            "tag": "column_set",
+            "flex_mode": "none",
+            "background_style": "default",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "select_static",
+                            "placeholder": {
+                                "tag": "plain_text",
+                                "content": "选择仓位"
+                            },
+                            "options": position_options,
+                            "value": {
+                                "action_tag": "position_adjustment_select_position",
+                                "address": address,
+                                "trader_name": trader_name
+                            }
+                        }
+                    ]
+                },
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "select_static",
+                            "placeholder": {
+                                "tag": "plain_text",
+                                "content": "选择比例"
+                            },
+                            "options": ratio_options,
+                            "value": {
+                                "action_tag": "position_adjustment_select_ratio",
+                                "address": address
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # 构建提交/取消按钮行
+        action_buttons = {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "提交"
+                    },
+                    "type": "primary",
+                    "value": {
+                        "action_tag": "position_adjustment_submit",
+                        "address": address,
+                        "trader_name": trader_name
+                    }
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "取消"
+                    },
+                    "type": "default",
+                    "value": {
+                        "action_tag": "position_adjustment_cancel",
+                        "address": address
+                    }
+                }
+            ]
+        }
+        
+        # 构建卡片元素
+        elements = [
+            {
+                "tag": "markdown",
+                "content": f"**交易员**: {trader_display}"
+            },
+            column_set_selects,
+            action_buttons
+        ]
+        
+        card = {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📈 加仓/补仓"
+                },
+                "template": "blue"
+            },
+            "elements": elements
+        }
+        
+        # 通过应用 API 发送
+        recipient = user_id or self.feishu.default_user_id
+        return self.feishu._send_card_via_api(card, recipient)
+
+    def build_position_adjustment_form_card(
+        self,
+        address: str,
+        trader_name: str = "",
+        current_positions: List[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建加仓/补仓表单卡片（返回卡片JSON，不发送）
+        
+        用于在回调中返回此卡片作为响应
+        
+        Args:
+            address: 交易员地址
+            trader_name: 交易员名称
+            current_positions: 当前可加仓的仓位列表
+            
+        Returns:
+            卡片 JSON 字典
+        """
+        # 交易员显示名称
+        trader_display = trader_name if trader_name else f"{address[:12]}..."
+        
+        # 构建仓位下拉选项
+        position_options = []
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                    },
+                    "value": f"{coin}|{side}"
+                })
+        
+        if not position_options:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无可加仓仓位"
+                },
+                "value": ""
+            })
+        
+        # 跟单比例下拉选项
+        ratio_options = [
+            {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
+            {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},
+            {"text": {"tag": "plain_text", "content": "30%"}, "value": "30"},
+            {"text": {"tag": "plain_text", "content": "50%"}, "value": "50"},
+            {"text": {"tag": "plain_text", "content": "75%"}, "value": "75"},
+            {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
+        ]
+        
+        # 分栏下拉选择
+        column_set_selects = {
+            "tag": "column_set",
+            "flex_mode": "none",
+            "background_style": "default",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "select_static",
+                            "placeholder": {
+                                "tag": "plain_text",
+                                "content": "选择仓位"
+                            },
+                            "options": position_options,
+                            "value": {
+                                "action_tag": "position_adjustment_select_position",
+                                "address": address,
+                                "trader_name": trader_name
+                            }
+                        }
+                    ]
+                },
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "vertical_align": "top",
+                    "elements": [
+                        {
+                            "tag": "select_static",
+                            "placeholder": {
+                                "tag": "plain_text",
+                                "content": "选择比例"
+                            },
+                            "options": ratio_options,
+                            "value": {
+                                "action_tag": "position_adjustment_select_ratio",
+                                "address": address
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # 提交/取消按钮
+        action_buttons = {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "提交"
+                    },
+                    "type": "primary",
+                    "value": {
+                        "action_tag": "position_adjustment_submit",
+                        "address": address,
+                        "trader_name": trader_name
+                    }
+                },
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "取消"
+                    },
+                    "type": "default",
+                    "value": {
+                        "action_tag": "position_adjustment_cancel",
+                        "address": address
+                    }
+                }
+            ]
+        }
+        
+        return {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📈 加仓/补仓"
+                },
+                "template": "blue"
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": f"**交易员**: {trader_display}"
+                },
+                column_set_selects,
+                action_buttons
+            ]
+        }
+
 
 class FeishuCallbackClient:
     """

@@ -273,6 +273,152 @@ def handle_quick_position_tracking(event: CardActionEvent):
         return _build_error_card(f"操作失败: {str(e)}")
 
 
+def handle_position_adjustment(event: CardActionEvent):
+    """
+    处理"加仓补仓"菜单点击
+    
+    显示加仓补仓表单卡片，用户可以选择仓位和比例
+    """
+    global db
+    
+    logger.info(f"[加仓补仓] 用户 {event.user_id} 请求加仓补仓表单")
+    
+    # 创建飞书客户端用于发送消息
+    feishu_client = FeishuClient(
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret
+    )
+    
+    try:
+        # 检查钱包配置
+        if not settings.hyperliquid.wallet_address:
+            card = _build_error_card("未配置钱包地址 (HYPERLIQUID_WALLET_ADDRESS)")
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 确保数据库已初始化
+        if db is None:
+            db = TraderDatabase()
+        
+        # 获取当前活跃的跟单配置
+        trackings = db.get_active_position_trackings()
+        
+        if not trackings:
+            card = _build_info_card(
+                "📈 加仓/补仓",
+                "暂无活跃的跟单仓位\n\n请先通过新仓位推送添加跟单"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 构建当前仓位列表（从跟单配置中提取）
+        current_positions = []
+        for t in trackings:
+            current_positions.append({
+                'coin': t.get('symbol', ''),
+                'side': t.get('my_side', 'long'),
+                'size': t.get('my_size', 0),
+                'tracking_id': t.get('id'),
+                'target_address': t.get('target_address', ''),
+                'target_name': t.get('target_name', ''),
+            })
+        
+        # 使用第一个跟单的交易员信息（或让用户选择）
+        first_tracking = trackings[0] if trackings else {}
+        address = first_tracking.get('target_address', '')
+        trader_name = first_tracking.get('target_name', '')
+        
+        # 创建通知器并发送表单卡片
+        copy_notifier = CopyTradingNotifier(feishu_client)
+        copy_notifier.notify_position_adjustment_form(
+            address=address,
+            trader_name=trader_name,
+            current_positions=current_positions,
+            trackings=trackings,
+            user_id=event.user_id
+        )
+        
+        logger.success(f"[加仓补仓] 已发送表单卡片给用户 {event.user_id}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"[加仓补仓] 错误: {e}")
+        card = _build_error_card(f"获取仓位失败: {str(e)}")
+        _send_card_to_user(feishu_client, event.user_id, card)
+        return None
+
+
+def handle_position_adjustment_submit(event: CardActionEvent):
+    """
+    处理加仓补仓表单提交
+    """
+    global db
+    
+    address = event.action_value.get("address", "")
+    trader_name = event.action_value.get("trader_name", "")
+    selected_position = event.action_value.get("selected_position", "")  # coin|side
+    selected_ratio = event.action_value.get("selected_ratio", "")
+    
+    logger.info(f"[加仓补仓提交] 用户 {event.user_id}:")
+    logger.info(f"  - 地址: {address}")
+    logger.info(f"  - 仓位: {selected_position}")
+    logger.info(f"  - 比例: {selected_ratio}%")
+    
+    if not selected_position or not selected_ratio:
+        return _build_warning_card(
+            "请完整选择",
+            "请选择要加仓的仓位和比例"
+        )
+    
+    try:
+        # 解析选择的仓位
+        parts = selected_position.split("|")
+        if len(parts) != 2:
+            return _build_error_card("仓位格式错误")
+        
+        coin, side = parts
+        ratio = float(selected_ratio) / 100.0
+        
+        # 确保数据库已初始化
+        if db is None:
+            db = TraderDatabase()
+        
+        # 查找对应的跟单配置
+        tracking = db.get_position_tracking_by_target(address, coin)
+        
+        if not tracking:
+            return _build_warning_card(
+                "未找到跟单",
+                f"未找到 {coin} 的活跃跟单配置"
+            )
+        
+        # TODO: 执行加仓逻辑
+        # 这里可以调用实际的加仓方法
+        
+        trader_display = trader_name if trader_name else f"{address[:10]}..."
+        
+        return _build_success_card(
+            "加仓请求已提交",
+            f"**交易员**: {trader_display}\n**币种**: {coin}\n**方向**: {side}\n**加仓比例**: {selected_ratio}%"
+        )
+        
+    except Exception as e:
+        logger.error(f"[加仓补仓提交] 错误: {e}")
+        return _build_error_card(f"操作失败: {str(e)}")
+
+
+def handle_position_adjustment_cancel(event: CardActionEvent):
+    """
+    处理加仓补仓表单取消
+    """
+    logger.info(f"[加仓补仓] 用户 {event.user_id} 取消操作")
+    
+    return _build_info_card(
+        "已取消",
+        "加仓/补仓操作已取消"
+    )
+
+
 def handle_current_position(event: CardActionEvent):
     """
     处理"当前仓位"菜单点击
@@ -441,6 +587,13 @@ def start_callback_server():
     # 注册"当前仓位"菜单处理器
     callback_client.register_handler("current-position", handle_current_position)
     
+    # 注册"加仓补仓"菜单处理器
+    callback_client.register_handler("position-adjustment", handle_position_adjustment)
+    
+    # 注册加仓补仓表单处理器
+    callback_client.register_handler("position_adjustment_submit", handle_position_adjustment_submit)
+    callback_client.register_handler("position_adjustment_cancel", handle_position_adjustment_cancel)
+    
     # 注册全局日志处理器
     def log_all_events(event: CardActionEvent):
         logger.debug(f"[事件日志] action={event.action_tag}, user={event.user_id}, value={event.action_value}")
@@ -453,7 +606,7 @@ def start_callback_server():
     logger.info("飞书长连接回调服务（新仓位推送）")
     logger.info("=" * 50)
     logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("已注册处理器: quick_copy_trade, current-position")
+    logger.info("已注册处理器: quick_copy_trade, current-position, position-adjustment, position_adjustment_submit, position_adjustment_cancel")
     logger.info("-" * 50)
     logger.info("正在启动长连接...")
     
