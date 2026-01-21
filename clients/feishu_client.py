@@ -876,12 +876,13 @@ class CopyTradingNotifier:
             {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
         ]
         
-        # 使用 form 容器，表单提交时会自动收集所有带 name 属性的表单元素值
+        # 使用 form 容器，按照大纲树结构：
+        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
         form_element = {
             "tag": "form",
             "name": "position_adjustment_form",
             "elements": [
-                # 分栏布局：仓位选择 + 比例选择
+                # 第一个分栏：两个下拉选择
                 {
                     "tag": "column_set",
                     "flex_mode": "none",
@@ -895,7 +896,7 @@ class CopyTradingNotifier:
                             "elements": [
                                 {
                                     "tag": "select_static",
-                                    "name": "selected_position",  # 表单字段名
+                                    "name": "selected_position",
                                     "placeholder": {
                                         "tag": "plain_text",
                                         "content": "选择仓位"
@@ -912,7 +913,7 @@ class CopyTradingNotifier:
                             "elements": [
                                 {
                                     "tag": "select_static",
-                                    "name": "selected_ratio",  # 表单字段名
+                                    "name": "selected_ratio",
                                     "placeholder": {
                                         "tag": "plain_text",
                                         "content": "选择比例"
@@ -923,38 +924,56 @@ class CopyTradingNotifier:
                         }
                     ]
                 },
-                # 提交/取消按钮行
+                # 第二个分栏：两个按钮
                 {
-                    "tag": "action",
-                    "actions": [
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "提交"
-                            },
-                            "type": "primary",
-                            "action_type": "form_submit",  # 表单提交类型
-                            "name": "submit_button",
-                            "value": {
-                                "action_tag": "position_adjustment_submit",
-                                "address": address,
-                                "trader_name": trader_name
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交补仓"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_submit",
+                                        "address": address,
+                                        "trader_name": trader_name
+                                    }
+                                }
+                            ]
                         },
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "取消"
-                            },
-                            "type": "default",
-                            "action_type": "form_reset",  # 表单重置/取消
-                            "name": "cancel_button",
-                            "value": {
-                                "action_tag": "position_adjustment_cancel",
-                                "address": address
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_cancel",
+                                        "address": address
+                                    }
+                                }
+                            ]
                         }
                     ]
                 }
@@ -1044,12 +1063,13 @@ class CopyTradingNotifier:
             {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
         ]
         
-        # 使用 form 容器
+        # 使用 form 容器，按照大纲树结构：
+        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
         form_element = {
             "tag": "form",
             "name": "position_adjustment_form",
             "elements": [
-                # 分栏布局：仓位选择 + 比例选择
+                # 第一个分栏：两个下拉选择
                 {
                     "tag": "column_set",
                     "flex_mode": "none",
@@ -1063,7 +1083,7 @@ class CopyTradingNotifier:
                             "elements": [
                                 {
                                     "tag": "select_static",
-                                    "name": "selected_position",  # 表单字段名
+                                    "name": "selected_position",
                                     "placeholder": {
                                         "tag": "plain_text",
                                         "content": "选择仓位"
@@ -1080,7 +1100,7 @@ class CopyTradingNotifier:
                             "elements": [
                                 {
                                     "tag": "select_static",
-                                    "name": "selected_ratio",  # 表单字段名
+                                    "name": "selected_ratio",
                                     "placeholder": {
                                         "tag": "plain_text",
                                         "content": "选择比例"
@@ -1091,38 +1111,56 @@ class CopyTradingNotifier:
                         }
                     ]
                 },
-                # 提交/取消按钮行
+                # 第二个分栏：两个按钮
                 {
-                    "tag": "action",
-                    "actions": [
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "提交"
-                            },
-                            "type": "primary",
-                            "action_type": "form_submit",
-                            "name": "submit_button",
-                            "value": {
-                                "action_tag": "position_adjustment_submit",
-                                "address": address,
-                                "trader_name": trader_name
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交补仓"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_submit",
+                                        "address": address,
+                                        "trader_name": trader_name
+                                    }
+                                }
+                            ]
                         },
                         {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "取消"
-                            },
-                            "type": "default",
-                            "action_type": "form_reset",
-                            "name": "cancel_button",
-                            "value": {
-                                "action_tag": "position_adjustment_cancel",
-                                "address": address
-                            }
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_cancel",
+                                        "address": address
+                                    }
+                                }
+                            ]
                         }
                     ]
                 }
