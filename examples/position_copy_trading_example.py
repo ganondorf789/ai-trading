@@ -619,6 +619,7 @@ def handle_current_position(event: CardActionEvent):
             current_price = pos.get('current_price', 0)
             leverage = pos.get('leverage', 1)
             unrealized_pnl = pos.get('unrealized_pnl', 0)
+            margin_used = pos.get('margin_used', 0)
             
             # 方向 emoji
             side_emoji = "📈" if side == "long" else "📉"
@@ -629,9 +630,8 @@ def handle_current_position(event: CardActionEvent):
             total_position_value += position_value
             total_unrealized_pnl += unrealized_pnl
             
-            # 计算 PnL 百分比
-            entry_value = size * entry_price
-            pnl_percent = (unrealized_pnl / entry_value * 100) if entry_value > 0 else 0
+            # 计算 PnL 百分比（基于保证金）
+            pnl_percent = (unrealized_pnl / margin_used * 100) if margin_used > 0 else 0
             
             # PnL 显示
             pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
