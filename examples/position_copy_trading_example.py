@@ -478,19 +478,13 @@ def handle_position_adjustment_submit(event: CardActionEvent):
     """
     global db
     
-    # 从 action_value 获取按钮携带的数据
-    address = event.action_value.get("address", "")
-    trader_name = event.action_value.get("trader_name", "")
-    
     # 从 form_value 获取表单选择的值（form 容器提交时自动收集）
-    # 3个独立下拉框 - 仓位(coin|side)、方向、比例
-    selected_position = event.form_value.get("selected_position", "")  # coin|side
+    # 3个独立下拉框 - 仓位(tracking_id|coin|side)、方向、比例
+    selected_position = event.form_value.get("selected_position", "")  # tracking_id|coin|side
     selected_direction = event.form_value.get("selected_direction", "")
     selected_ratio = event.form_value.get("selected_ratio", "")
     
     logger.info(f"[加仓补仓提交] 用户 {event.user_id}:")
-    logger.info(f"  - 地址: {address}")
-    logger.info(f"  - 表单值: {event.form_value}")
     logger.info(f"  - 仓位: {selected_position}")
     logger.info(f"  - 方向: {selected_direction}")
     logger.info(f"  - 比例: {selected_ratio}%")
@@ -502,10 +496,14 @@ def handle_position_adjustment_submit(event: CardActionEvent):
         )
     
     try:
-        # 从仓位中解析币种
+        # 从仓位中解析 tracking_id|coin|side
         parts = selected_position.split("|")
-        coin = parts[0] if parts else selected_position
-        # 方向使用用户选择的方向
+        if len(parts) < 3:
+            return _build_error_card(f"仓位格式错误: {selected_position}")
+        
+        tracking_id = int(parts[0])
+        coin = parts[1]
+        # 方向使用用户选择的方向（可能与当前仓位方向不同，用于减仓）
         side = selected_direction
         ratio = float(selected_ratio)  # 百分比，如 50 表示再加 50%
         
@@ -513,16 +511,14 @@ def handle_position_adjustment_submit(event: CardActionEvent):
         if db is None:
             db = TraderDatabase()
         
-        # 查找对应的跟单配置
-        tracking = db.get_position_tracking_by_target(address, coin)
+        # 直接通过 tracking_id 查找跟单配置（避免地址不匹配问题）
+        tracking = db.get_position_tracking(tracking_id)
         
         if not tracking:
             return _build_warning_card(
                 "未找到跟单",
-                f"未找到 {coin} 的活跃跟单配置"
+                f"未找到 ID={tracking_id} 的跟单配置"
             )
-        
-        tracking_id = tracking.get('id')
         
         # 检查跟单状态
         if tracking.get('status') != 'active':
@@ -539,7 +535,10 @@ def handle_position_adjustment_submit(event: CardActionEvent):
         # 发送调仓通知到 Redis（包含方向）
         success = notify_adjust_position(tracking_id, ratio=ratio, direction=side)
         
-        trader_display = trader_name if trader_name else f"{address[:10]}..."
+        # 从 tracking 获取交易员信息（不再依赖 action_value 中的 address）
+        target_address = tracking.get('target_address', '')
+        target_name = tracking.get('target_name', '')
+        trader_display = target_name if target_name else f"{target_address[:10]}..."
         side_cn = "做多" if side == 'long' else "做空"
         
         if success:

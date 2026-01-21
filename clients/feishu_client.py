@@ -838,22 +838,30 @@ class CopyTradingNotifier:
         # 交易员显示名称
         trader_display = trader_name if trader_name else f"{address[:12]}..."
         
-        # 构建仓位下拉选项（显示币种+方向+仓位大小）
+        # 构建仓位下拉选项（显示币种+方向+仓位大小+交易员）
+        # value 格式: tracking_id|coin|side，确保能唯一标识跟单记录
         position_options = []
         if current_positions:
             for pos in current_positions:
                 coin = pos.get('coin', '')
                 side = pos.get('side', 'long')
                 size = pos.get('size', 0)
+                tracking_id = pos.get('tracking_id', '')
+                target_name = pos.get('target_name', '')
                 side_cn = "多" if side == 'long' else "空"
                 side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                # 显示时包含交易员名称（如果有多个交易员）
+                display_name = f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                if target_name:
+                    display_name += f" - {target_name}"
                 
                 position_options.append({
                     "text": {
                         "tag": "plain_text",
-                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                        "content": display_name
                     },
-                    "value": f"{coin}|{side}"
+                    "value": f"{tracking_id}|{coin}|{side}"
                 })
         
         # 如果没有仓位，添加占位选项
@@ -1020,22 +1028,30 @@ class CopyTradingNotifier:
         # 交易员显示名称
         trader_display = trader_name if trader_name else f"{address[:12]}..."
         
-        # 构建仓位下拉选项（显示币种+方向+仓位大小）
+        # 构建仓位下拉选项（显示币种+方向+仓位大小+交易员）
+        # value 格式: tracking_id|coin|side，确保能唯一标识跟单记录
         position_options = []
         if current_positions:
             for pos in current_positions:
                 coin = pos.get('coin', '')
                 side = pos.get('side', 'long')
                 size = pos.get('size', 0)
+                tracking_id = pos.get('tracking_id', '')
+                target_name = pos.get('target_name', '')
                 side_cn = "多" if side == 'long' else "空"
                 side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                # 显示时包含交易员名称（如果有多个交易员）
+                display_name = f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                if target_name:
+                    display_name += f" - {target_name}"
                 
                 position_options.append({
                     "text": {
                         "tag": "plain_text",
-                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                        "content": display_name
                     },
-                    "value": f"{coin}|{side}"
+                    "value": f"{tracking_id}|{coin}|{side}"
                 })
         
         if not position_options:
