@@ -838,7 +838,7 @@ class CopyTradingNotifier:
         # 交易员显示名称
         trader_display = trader_name if trader_name else f"{address[:12]}..."
         
-        # 构建仓位下拉选项
+        # 构建仓位下拉选项（显示币种+方向+仓位大小）
         position_options = []
         if current_positions:
             for pos in current_positions:
@@ -866,6 +866,12 @@ class CopyTradingNotifier:
                 "value": ""
             })
         
+        # 构建方向下拉选项
+        direction_options = [
+            {"text": {"tag": "plain_text", "content": "🟢 做多 Long"}, "value": "long"},
+            {"text": {"tag": "plain_text", "content": "🔴 做空 Short"}, "value": "short"},
+        ]
+        
         # 构建跟单比例下拉选项
         ratio_options = [
             {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
@@ -877,54 +883,42 @@ class CopyTradingNotifier:
         ]
         
         # 使用 form 容器，按照大纲树结构：
-        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
+        # 表单容器 > 下拉选择 x 3 > 分栏 > 列 > 按钮
         form_element = {
             "tag": "form",
             "name": "position_adjustment_form",
             "elements": [
-                # 第一个分栏：两个下拉选择
+                # 仓位下拉选择（显示币种+方向+仓位）
                 {
-                    "tag": "column_set",
-                    "flex_mode": "none",
-                    "background_style": "default",
-                    "columns": [
-                        {
-                            "tag": "column",
-                            "width": "weighted",
-                            "weight": 1,
-                            "vertical_align": "top",
-                            "elements": [
-                                {
-                                    "tag": "select_static",
-                                    "name": "selected_position",
-                                    "placeholder": {
-                                        "tag": "plain_text",
-                                        "content": "选择仓位"
-                                    },
-                                    "options": position_options
-                                }
-                            ]
-                        },
-                        {
-                            "tag": "column",
-                            "width": "weighted",
-                            "weight": 1,
-                            "vertical_align": "top",
-                            "elements": [
-                                {
-                                    "tag": "select_static",
-                                    "name": "selected_ratio",
-                                    "placeholder": {
-                                        "tag": "plain_text",
-                                        "content": "选择比例"
-                                    },
-                                    "options": ratio_options
-                                }
-                            ]
-                        }
-                    ]
+                    "tag": "select_static",
+                    "name": "selected_position",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择仓位"
+                    },
+                    "options": position_options
                 },
-                # 第二个分栏：两个按钮
+                # 方向下拉选择
+                {
+                    "tag": "select_static",
+                    "name": "selected_direction",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择方向"
+                    },
+                    "options": direction_options
+                },
+                # 比例下拉选择
+                {
+                    "tag": "select_static",
+                    "name": "selected_ratio",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择比例"
+                    },
+                    "options": ratio_options
+                },
+                # 分栏：两个按钮
                 {
                     "tag": "column_set",
                     "flex_mode": "none",
@@ -1026,7 +1020,7 @@ class CopyTradingNotifier:
         # 交易员显示名称
         trader_display = trader_name if trader_name else f"{address[:12]}..."
         
-        # 构建仓位下拉选项
+        # 构建仓位下拉选项（显示币种+方向+仓位大小）
         position_options = []
         if current_positions:
             for pos in current_positions:
@@ -1053,6 +1047,12 @@ class CopyTradingNotifier:
                 "value": ""
             })
         
+        # 构建方向下拉选项
+        direction_options = [
+            {"text": {"tag": "plain_text", "content": "🟢 做多 Long"}, "value": "long"},
+            {"text": {"tag": "plain_text", "content": "🔴 做空 Short"}, "value": "short"},
+        ]
+        
         # 跟单比例下拉选项
         ratio_options = [
             {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
@@ -1064,54 +1064,42 @@ class CopyTradingNotifier:
         ]
         
         # 使用 form 容器，按照大纲树结构：
-        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
+        # 表单容器 > 下拉选择 x 3 > 分栏 > 列 > 按钮
         form_element = {
             "tag": "form",
             "name": "position_adjustment_form",
             "elements": [
-                # 第一个分栏：两个下拉选择
+                # 仓位下拉选择（显示币种+方向+仓位）
                 {
-                    "tag": "column_set",
-                    "flex_mode": "none",
-                    "background_style": "default",
-                    "columns": [
-                        {
-                            "tag": "column",
-                            "width": "weighted",
-                            "weight": 1,
-                            "vertical_align": "top",
-                            "elements": [
-                                {
-                                    "tag": "select_static",
-                                    "name": "selected_position",
-                                    "placeholder": {
-                                        "tag": "plain_text",
-                                        "content": "选择仓位"
-                                    },
-                                    "options": position_options
-                                }
-                            ]
-                        },
-                        {
-                            "tag": "column",
-                            "width": "weighted",
-                            "weight": 1,
-                            "vertical_align": "top",
-                            "elements": [
-                                {
-                                    "tag": "select_static",
-                                    "name": "selected_ratio",
-                                    "placeholder": {
-                                        "tag": "plain_text",
-                                        "content": "选择比例"
-                                    },
-                                    "options": ratio_options
-                                }
-                            ]
-                        }
-                    ]
+                    "tag": "select_static",
+                    "name": "selected_position",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择仓位"
+                    },
+                    "options": position_options
                 },
-                # 第二个分栏：两个按钮
+                # 方向下拉选择
+                {
+                    "tag": "select_static",
+                    "name": "selected_direction",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择方向"
+                    },
+                    "options": direction_options
+                },
+                # 比例下拉选择
+                {
+                    "tag": "select_static",
+                    "name": "selected_ratio",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "选择比例"
+                    },
+                    "options": ratio_options
+                },
+                # 分栏：两个按钮
                 {
                     "tag": "column_set",
                     "flex_mode": "none",

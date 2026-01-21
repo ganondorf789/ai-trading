@@ -478,28 +478,30 @@ def handle_position_adjustment_submit(event: CardActionEvent):
     trader_name = event.action_value.get("trader_name", "")
     
     # 从 form_value 获取表单选择的值（form 容器提交时自动收集）
+    # 3个独立下拉框 - 仓位(coin|side)、方向、比例
     selected_position = event.form_value.get("selected_position", "")  # coin|side
+    selected_direction = event.form_value.get("selected_direction", "")
     selected_ratio = event.form_value.get("selected_ratio", "")
     
     logger.info(f"[加仓补仓提交] 用户 {event.user_id}:")
     logger.info(f"  - 地址: {address}")
     logger.info(f"  - 表单值: {event.form_value}")
     logger.info(f"  - 仓位: {selected_position}")
+    logger.info(f"  - 方向: {selected_direction}")
     logger.info(f"  - 比例: {selected_ratio}%")
     
-    if not selected_position or not selected_ratio:
+    if not selected_position or not selected_direction or not selected_ratio:
         return _build_warning_card(
             "请完整选择",
-            "请选择要加仓的仓位和比例"
+            "请选择仓位、方向和比例"
         )
     
     try:
-        # 解析选择的仓位
+        # 从仓位中解析币种
         parts = selected_position.split("|")
-        if len(parts) != 2:
-            return _build_error_card("仓位格式错误")
-        
-        coin, side = parts
+        coin = parts[0] if parts else selected_position
+        # 方向使用用户选择的方向
+        side = selected_direction
         ratio = float(selected_ratio)  # 百分比，如 50 表示再加 50%
         
         # 确保数据库已初始化
