@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
 from clients.feishu_client import FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
-from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL
+from engine.position_copy_trading import PositionCopyTradingBot, REDIS_OPEN_CHANNEL, REDIS_ADJUST_CHANNEL
 from config.settings import settings
 from database import TraderDatabase
 
@@ -118,6 +118,46 @@ def notify_open_position(tracking_id: int):
         return True
     except Exception as e:
         logger.warning(f"发送开仓通知失败: {e}")
+        return False
+
+
+def notify_adjust_position(tracking_id: int, ratio: float = None, size: float = None):
+    """
+    发送补仓通知到 Redis，机器人收到后立即执行补仓
+    
+    Args:
+        tracking_id: 跟单记录ID
+        ratio: 补仓比例（百分比），如 50 表示在当前仓位基础上再加 50%
+        size: 补仓数量（直接指定加仓的数量）
+        
+    Returns:
+        是否发送成功
+    """
+    global redis_client
+    
+    if redis_client is None:
+        logger.warning("Redis 未连接，无法发送补仓通知")
+        return False
+    
+    if ratio is None and size is None:
+        logger.warning("补仓通知需要指定 ratio 或 size")
+        return False
+    
+    try:
+        import json
+        message = {
+            "tracking_id": tracking_id,
+        }
+        if ratio is not None:
+            message["ratio"] = ratio
+        if size is not None:
+            message["size"] = size
+            
+        redis_client.publish(REDIS_ADJUST_CHANNEL, json.dumps(message))
+        logger.info(f"已发送补仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}")
+        return True
+    except Exception as e:
+        logger.warning(f"发送补仓通知失败: {e}")
         return False
 
 
@@ -377,7 +417,7 @@ def handle_position_adjustment_submit(event: CardActionEvent):
             return _build_error_card("仓位格式错误")
         
         coin, side = parts
-        ratio = float(selected_ratio) / 100.0
+        ratio = float(selected_ratio)  # 百分比，如 50 表示再加 50%
         
         # 确保数据库已初始化
         if db is None:
@@ -392,15 +432,30 @@ def handle_position_adjustment_submit(event: CardActionEvent):
                 f"未找到 {coin} 的活跃跟单配置"
             )
         
-        # TODO: 执行加仓逻辑
-        # 这里可以调用实际的加仓方法
+        tracking_id = tracking.get('id')
+        
+        # 检查跟单状态
+        if tracking.get('status') != 'active':
+            return _build_warning_card(
+                "跟单未激活",
+                f"{coin} 跟单状态: {tracking.get('status')}，无法补仓"
+            )
+        
+        # 发送补仓通知到 Redis
+        success = notify_adjust_position(tracking_id, ratio=ratio)
         
         trader_display = trader_name if trader_name else f"{address[:10]}..."
         
-        return _build_success_card(
-            "加仓请求已提交",
-            f"**交易员**: {trader_display}\n**币种**: {coin}\n**方向**: {side}\n**加仓比例**: {selected_ratio}%"
-        )
+        if success:
+            return _build_success_card(
+                "补仓请求已提交",
+                f"**交易员**: {trader_display}\n**币种**: {coin}\n**方向**: {side}\n**补仓比例**: {selected_ratio}%\n\n机器人将立即执行补仓操作"
+            )
+        else:
+            return _build_warning_card(
+                "补仓请求发送失败",
+                f"Redis 未连接或发送失败，请检查配置"
+            )
         
     except Exception as e:
         logger.error(f"[加仓补仓提交] 错误: {e}")
