@@ -22,6 +22,13 @@ from config.settings import settings
 
 # Redis 开仓通知 channel
 REDIS_OPEN_CHANNEL = "position_tracking_open"
+# Redis 补仓通知 channel
+REDIS_ADJUST_CHANNEL = "position_tracking_adjust"
+# Redis 平仓通知 channel
+REDIS_CLOSE_CHANNEL = "position_tracking_close"
+# Redis 账户缓存 key
+REDIS_MY_POSITIONS_KEY = "copy_trading:my_positions"
+REDIS_MY_BALANCE_KEY = "copy_trading:my_balance"
 
 
 @dataclass
@@ -300,6 +307,306 @@ class PositionCopyTradingBot:
             # 处理完成，移除标记
             self._processing_tracking_ids.discard(tracking_id)
 
+    async def _listen_redis_adjust(self):
+        """监听 Redis 补仓通知，收到后立即执行补仓"""
+        if not self._redis_client:
+            return
+        
+        try:
+            pubsub = self._redis_client.pubsub()
+            pubsub.subscribe(REDIS_ADJUST_CHANNEL)
+            logger.info(f"开始监听补仓通知 (channel: {REDIS_ADJUST_CHANNEL})")
+            
+            while self.is_running:
+                try:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message['type'] == 'message':
+                        # 消息格式: JSON {"tracking_id": 123, "ratio": 50} 或 {"tracking_id": 123, "size": 0.5}
+                        try:
+                            import json
+                            data = json.loads(message['data'])
+                            tracking_id = int(data.get('tracking_id', 0))
+                            ratio = data.get('ratio')  # 补仓比例（百分比，如 50 表示再加 50%）
+                            size = data.get('size')    # 补仓数量（直接指定）
+                            
+                            logger.info(f"收到补仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}")
+                            # 立即执行补仓
+                            await self._handle_adjust_notification(tracking_id, ratio=ratio, size=size)
+                        except (ValueError, json.JSONDecodeError) as e:
+                            logger.warning(f"无效的补仓通知格式: {message['data']}, error: {e}")
+                except Exception as e:
+                    logger.warning(f"Redis 补仓监听错误: {e}")
+                
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Redis 补仓监听异常: {e}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
+
+    async def _handle_adjust_notification(
+        self, 
+        tracking_id: int, 
+        ratio: float = None, 
+        size: float = None
+    ):
+        """
+        处理补仓通知，立即执行补仓
+        
+        Args:
+            tracking_id: 跟单记录ID
+            ratio: 补仓比例（百分比），如 50 表示在当前仓位基础上再加 50%
+            size: 补仓数量（直接指定加仓的数量）
+        """
+        # 防止并发重复处理
+        adjust_key = f"adjust_{tracking_id}"
+        if adjust_key in self._processing_tracking_ids:
+            logger.debug(f"[立即补仓] tracking_id={tracking_id} 正在处理中，跳过")
+            return
+        
+        self._processing_tracking_ids.add(adjust_key)
+        try:
+            # 检查跟单状态
+            state = self.trackings.get(tracking_id)
+            if state is None:
+                # 尝试从数据库加载
+                tracking_data = self.db.get_position_tracking(tracking_id)
+                if not tracking_data:
+                    logger.warning(f"[立即补仓] tracking_id={tracking_id} 不存在")
+                    return
+                state = self._dict_to_state(tracking_data)
+                self.trackings[tracking_id] = state
+            
+            if state.status != 'active':
+                logger.warning(f"[立即补仓] tracking_id={tracking_id} 状态不是 active (当前: {state.status})")
+                return
+            
+            symbol = state.symbol
+            
+            # 更新自己的持仓和余额
+            self._update_my_account()
+            my_pos = self.my_positions.get(symbol)
+            
+            if my_pos is None:
+                logger.warning(f"[立即补仓] {symbol} 本地无持仓，无法补仓")
+                return
+            
+            is_long = my_pos.side == PositionSide.LONG
+            current_price = self.client.get_mid_price(symbol)
+            my_current_size = abs(my_pos.size)
+            
+            # 计算补仓数量
+            if size is not None:
+                # 直接指定数量
+                adjust_size = abs(size)
+            elif ratio is not None:
+                # 按比例计算（ratio 是百分比，如 50 表示加 50%）
+                adjust_size = my_current_size * (ratio / 100.0)
+            else:
+                logger.warning(f"[立即补仓] tracking_id={tracking_id} 未指定补仓比例或数量")
+                return
+            
+            adjust_size = self._round_size(symbol, adjust_size)
+            
+            if adjust_size <= 0:
+                logger.warning(f"[立即补仓] tracking_id={tracking_id} 计算的补仓数量为 0")
+                return
+            
+            # 检查余额是否足够
+            notional_value = adjust_size * current_price
+            leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
+            required_margin = notional_value / leverage
+            if not self._check_balance_sufficient(required_margin, f"补仓 {symbol}"):
+                return
+            
+            logger.info(
+                f"[立即补仓] tracking_id={tracking_id} {symbol} "
+                f"当前: {my_current_size:.4f} + 补仓: {adjust_size:.4f}"
+            )
+            
+            # 执行补仓（加仓）
+            order_lock = await self._get_order_lock(symbol)
+            async with order_lock:
+                try:
+                    result = self.client.market_order(
+                        symbol, is_long, adjust_size, slippage=state.slippage
+                    )
+                    
+                    if result.get('status') == 'ok':
+                        new_size = my_current_size + adjust_size
+                        logger.success(
+                            f"[立即补仓] 成功: {symbol} {my_current_size:.4f} → {new_size:.4f}"
+                        )
+                        
+                        # 更新状态
+                        state.my_size = new_size
+                        self.db.update_tracking_position(
+                            state.tracking_id, new_size, state.my_side, state.my_entry_price
+                        )
+                        
+                        # 发送飞书通知
+                        side = 'long' if is_long else 'short'
+                        self._notify_copy_adjust(state.target_address, symbol, side, adjust_size, True)
+                        
+                        if self._on_adjust:
+                            self._on_adjust(
+                                state.tracking_id, state.target_address,
+                                symbol, side, adjust_size, True
+                            )
+                    else:
+                        logger.error(f"[立即补仓] 失败: {result}")
+                        
+                except Exception as e:
+                    logger.error(f"[立即补仓] 下单异常: {e}")
+                    if self._on_error:
+                        self._on_error(e)
+                        
+        except Exception as e:
+            logger.error(f"[立即补仓] 处理 tracking_id={tracking_id} 失败: {e}")
+            if self._on_error:
+                self._on_error(e)
+        finally:
+            # 处理完成，移除标记
+            self._processing_tracking_ids.discard(adjust_key)
+
+    async def _listen_redis_close(self):
+        """监听 Redis 平仓通知，收到后立即执行平仓"""
+        if not self._redis_client:
+            return
+        
+        try:
+            pubsub = self._redis_client.pubsub()
+            pubsub.subscribe(REDIS_CLOSE_CHANNEL)
+            logger.info(f"开始监听平仓通知 (channel: {REDIS_CLOSE_CHANNEL})")
+            
+            while self.is_running:
+                try:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message['type'] == 'message':
+                        # 消息格式: JSON {"symbol": "BTC"} 或 {"tracking_id": 123}
+                        try:
+                            import json
+                            data = json.loads(message['data'])
+                            symbol = data.get('symbol')
+                            tracking_id = data.get('tracking_id')
+                            
+                            logger.info(f"收到平仓通知: symbol={symbol}, tracking_id={tracking_id}")
+                            # 立即执行平仓
+                            await self._handle_close_notification(symbol=symbol, tracking_id=tracking_id)
+                        except (ValueError, json.JSONDecodeError) as e:
+                            logger.warning(f"无效的平仓通知格式: {message['data']}, error: {e}")
+                except Exception as e:
+                    logger.warning(f"Redis 平仓监听错误: {e}")
+                
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Redis 平仓监听异常: {e}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
+
+    async def _handle_close_notification(
+        self, 
+        symbol: str = None, 
+        tracking_id: int = None
+    ):
+        """
+        处理平仓通知，立即执行平仓
+        
+        Args:
+            symbol: 币种（直接指定要平仓的币种）
+            tracking_id: 跟单记录ID（根据跟单记录平仓）
+        """
+        # 确定要平仓的 symbol
+        target_symbol = symbol
+        state = None
+        
+        if tracking_id:
+            state = self.trackings.get(tracking_id)
+            if state is None:
+                # 尝试从数据库加载
+                tracking_data = self.db.get_position_tracking(tracking_id)
+                if tracking_data:
+                    state = self._dict_to_state(tracking_data)
+                    target_symbol = state.symbol
+            else:
+                target_symbol = state.symbol
+        
+        if not target_symbol:
+            logger.warning(f"[立即平仓] 未指定币种或跟单ID")
+            return
+        
+        # 防止并发重复处理
+        close_key = f"close_{target_symbol}"
+        if close_key in self._processing_tracking_ids:
+            logger.debug(f"[立即平仓] {target_symbol} 正在处理中，跳过")
+            return
+        
+        self._processing_tracking_ids.add(close_key)
+        try:
+            # 更新自己的持仓
+            self._update_my_account()
+            my_pos = self.my_positions.get(target_symbol)
+            
+            if my_pos is None:
+                logger.warning(f"[立即平仓] {target_symbol} 本地无持仓")
+                return
+            
+            pnl = my_pos.unrealized_pnl
+            
+            logger.info(f"[立即平仓] {target_symbol} 当前持仓: {my_pos.size:.4f}, 未实现盈亏: ${pnl:.2f}")
+            
+            # 执行平仓
+            order_lock = await self._get_order_lock(target_symbol)
+            async with order_lock:
+                try:
+                    result = self.client.close_position(target_symbol)
+                    
+                    if result is None:
+                        logger.warning(f"[立即平仓] {target_symbol} 未找到持仓")
+                        return
+                    
+                    if result.get('status') == 'ok':
+                        logger.success(f"[立即平仓] 成功: {target_symbol}, PnL: ${pnl:.2f}")
+                        
+                        # 如果有关联的跟单状态，更新状态
+                        if state:
+                            state.status = 'closed'
+                            state.my_size = 0
+                            self.db.update_tracking_status(
+                                state.tracking_id, 'closed', '手动平仓', pnl
+                            )
+                        
+                        # 发送飞书通知
+                        target_address = state.target_address if state else ""
+                        self._notify_copy_close(target_address, target_symbol, pnl)
+                        
+                        if self._on_close and state:
+                            self._on_close(
+                                state.tracking_id, state.target_address, target_symbol, pnl
+                            )
+                    else:
+                        logger.error(f"[立即平仓] 失败: {result}")
+                        
+                except Exception as e:
+                    logger.error(f"[立即平仓] 下单异常: {e}")
+                    if self._on_error:
+                        self._on_error(e)
+                        
+        except Exception as e:
+            logger.error(f"[立即平仓] 处理 {target_symbol} 失败: {e}")
+            if self._on_error:
+                self._on_error(e)
+        finally:
+            # 处理完成，移除标记
+            self._processing_tracking_ids.discard(close_key)
+
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知"""
         if self._notifier:
@@ -512,7 +819,7 @@ class PositionCopyTradingBot:
             return None
 
     def _update_my_account(self):
-        """更新自己的持仓和余额（单次 API 调用）"""
+        """更新自己的持仓和余额（单次 API 调用），并缓存到 Redis"""
         try:
             account_info = self.client.get_account_info()
             # 更新余额
@@ -520,6 +827,38 @@ class PositionCopyTradingBot:
             # 更新持仓
             self.my_positions = {pos.symbol: pos for pos in account_info.positions}
             logger.debug(f"账户可用余额: {self.available_balance:.2f} USD, 持仓数: {len(self.my_positions)}")
+            
+            # 写入 Redis 缓存（供飞书回调等外部使用）
+            if self._redis_client:
+                try:
+                    import json
+                    # 序列化仓位数据
+                    positions_data = []
+                    for pos in account_info.positions:
+                        positions_data.append({
+                            'symbol': pos.symbol,
+                            'side': pos.side.value,
+                            'size': pos.size,
+                            'entry_price': pos.entry_price,
+                            'current_price': pos.current_price,
+                            'leverage': pos.leverage,
+                            'unrealized_pnl': pos.unrealized_pnl,
+                            'liquidation_price': pos.liquidation_price,
+                            'margin_used': pos.margin_used,
+                        })
+                    # 写入 Redis（设置 60 秒过期，防止数据过期）
+                    self._redis_client.setex(
+                        REDIS_MY_POSITIONS_KEY, 
+                        60, 
+                        json.dumps(positions_data)
+                    )
+                    self._redis_client.setex(
+                        REDIS_MY_BALANCE_KEY, 
+                        60, 
+                        str(self.available_balance)
+                    )
+                except Exception as e:
+                    logger.debug(f"写入 Redis 缓存失败: {e}")
         except Exception as e:
             logger.error(f"获取账户信息失败: {e}")
 
@@ -996,6 +1335,8 @@ class PositionCopyTradingBot:
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
         logger.info(f"Redis 开仓通知: {'已启用' if self._redis_client else '未启用'}")
+        logger.info(f"Redis 补仓通知: {'已启用' if self._redis_client else '未启用'}")
+        logger.info(f"Redis 平仓通知: {'已启用' if self._redis_client else '未启用'}")
         logger.info("=" * 60)
 
         # 加载初始配置
@@ -1005,9 +1346,13 @@ class PositionCopyTradingBot:
             logger.warning("没有启用的仓位跟单，等待添加...")
 
         # 启动 Redis 开仓通知监听任务（如果启用）
-        redis_task = None
+        redis_open_task = None
+        redis_adjust_task = None
+        redis_close_task = None
         if self._redis_client:
-            redis_task = asyncio.create_task(self._listen_redis_open())
+            redis_open_task = asyncio.create_task(self._listen_redis_open())
+            redis_adjust_task = asyncio.create_task(self._listen_redis_adjust())
+            redis_close_task = asyncio.create_task(self._listen_redis_close())
 
         try:
             while self.is_running:
@@ -1034,12 +1379,14 @@ class PositionCopyTradingBot:
             logger.info("仓位跟单机器人被取消")
         finally:
             self.is_running = False
-            if redis_task:
-                redis_task.cancel()
-                try:
-                    await redis_task
-                except asyncio.CancelledError:
-                    pass
+            # 清理 Redis 任务
+            for task in [redis_open_task, redis_adjust_task, redis_close_task]:
+                if task:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
             logger.info("仓位跟单机器人停止")
 
     def stop(self):

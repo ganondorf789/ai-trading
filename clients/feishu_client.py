@@ -48,6 +48,7 @@ class CardActionEvent:
     tenant_key: str = ""                  # 租户 key
     token: str = ""                       # 用于响应的 token
     timestamp: int = 0                    # 事件时间戳
+    form_value: Dict[str, Any] = field(default_factory=dict)  # 表单提交的值（form 容器）
     raw_event: Dict[str, Any] = field(default_factory=dict)  # 原始事件数据
     
     def to_dict(self) -> Dict[str, Any]:
@@ -64,11 +65,160 @@ class CardActionEvent:
             "tenant_key": self.tenant_key,
             "token": self.token,
             "timestamp": self.timestamp,
+            "form_value": self.form_value,
         }
 
 
 # 回调处理函数类型
 CardActionHandler = Callable[[CardActionEvent], Optional[Dict[str, Any]]]
+
+
+# ==================== 卡片构建工具函数 ====================
+
+def build_success_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建成功响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"✅ {title}"},
+            "template": "green"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_warning_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建警告响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": f"⚠️ {title}"},
+            "template": "orange"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_error_card(message: str) -> Dict[str, Any]:
+    """
+    构建错误响应卡片
+    
+    Args:
+        message: 错误信息
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": "❌ 操作失败"},
+            "template": "red"
+        },
+        "elements": [
+            {"tag": "markdown", "content": message}
+        ]
+    }
+
+
+def build_info_card(title: str, content: str) -> Dict[str, Any]:
+    """
+    构建信息响应卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": "blue"
+        },
+        "elements": [
+            {"tag": "markdown", "content": content}
+        ]
+    }
+
+
+def build_card_with_buttons(
+    title: str,
+    content: str,
+    buttons: List[Dict[str, Any]],
+    color: str = "blue"
+) -> Dict[str, Any]:
+    """
+    构建带按钮的卡片
+    
+    Args:
+        title: 卡片标题
+        content: 卡片内容（支持 Markdown）
+        buttons: 按钮列表，每个按钮包含:
+            - text: 按钮文本
+            - action_tag: 动作标识
+            - value: 附加数据（字典）
+            - type: 按钮类型 (default/primary/danger)
+        color: 标题颜色 (blue/green/red/orange)
+        
+    Returns:
+        卡片 JSON 字典
+    """
+    button_elements = []
+    for btn in buttons:
+        btn_type = btn.get("type", "default")
+        btn_value = {
+            "action_tag": btn.get("action_tag", ""),
+            **(btn.get("value", {}) if isinstance(btn.get("value"), dict) else {})
+        }
+        
+        button_elements.append({
+            "tag": "button",
+            "text": {
+                "tag": "plain_text",
+                "content": btn.get("text", "按钮")
+            },
+            "type": btn_type,
+            "value": btn_value
+        })
+    
+    elements = [
+        {"tag": "markdown", "content": content}
+    ]
+    
+    if button_elements:
+        elements.append({
+            "tag": "action",
+            "actions": button_elements
+        })
+    
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": color
+        },
+        "elements": elements
+    }
 
 
 class FeishuClient:
@@ -657,6 +807,671 @@ class CopyTradingNotifier:
         # 通过应用 API 发送（支持回调）
         return self.feishu._send_card_via_api(card, self.feishu.default_user_id)
 
+    def notify_position_adjustment_form(
+        self,
+        address: str,
+        trader_name: str = "",
+        current_positions: List[Dict[str, Any]] = None,
+        trackings: List[Dict[str, Any]] = None,
+        user_id: str = None
+    ) -> bool:
+        """
+        发送加仓/补仓表单卡片（使用 form 容器）
+        
+        Args:
+            address: 交易员地址
+            trader_name: 交易员名称
+            current_positions: 当前可加仓的仓位列表，每个元素包含:
+                - coin: 币种
+                - side: 方向 (long/short)
+                - size: 当前仓位大小
+                - entry_px: 入场价格
+            trackings: 当前跟单配置列表，每个元素包含:
+                - tracking_id: 跟单ID
+                - symbol: 币种
+                - copy_ratio: 跟单比例
+            user_id: 接收者 open_id
+            
+        Returns:
+            是否发送成功
+        """
+        # 交易员显示名称
+        trader_display = trader_name if trader_name else f"{address[:12]}..."
+        
+        # 构建仓位下拉选项
+        position_options = []
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                    },
+                    "value": f"{coin}|{side}"
+                })
+        
+        # 如果没有仓位，添加占位选项
+        if not position_options:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无可加仓仓位"
+                },
+                "value": ""
+            })
+        
+        # 构建跟单比例下拉选项
+        ratio_options = [
+            {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
+            {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},
+            {"text": {"tag": "plain_text", "content": "30%"}, "value": "30"},
+            {"text": {"tag": "plain_text", "content": "50%"}, "value": "50"},
+            {"text": {"tag": "plain_text", "content": "75%"}, "value": "75"},
+            {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
+        ]
+        
+        # 使用 form 容器，按照大纲树结构：
+        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
+        form_element = {
+            "tag": "form",
+            "name": "position_adjustment_form",
+            "elements": [
+                # 第一个分栏：两个下拉选择
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_position",
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择仓位"
+                                    },
+                                    "options": position_options
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_ratio",
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择比例"
+                                    },
+                                    "options": ratio_options
+                                }
+                            ]
+                        }
+                    ]
+                },
+                # 第二个分栏：两个按钮
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交补仓"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_submit",
+                                        "address": address,
+                                        "trader_name": trader_name
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_cancel",
+                                        "address": address
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # 构建卡片元素
+        elements = [
+            {
+                "tag": "markdown",
+                "content": f"**交易员**: {trader_display}"
+            },
+            form_element
+        ]
+        
+        card = {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📈 加仓/补仓"
+                },
+                "template": "blue"
+            },
+            "elements": elements
+        }
+        
+        # 通过应用 API 发送
+        recipient = user_id or self.feishu.default_user_id
+        return self.feishu._send_card_via_api(card, recipient)
+
+    def build_position_adjustment_form_card(
+        self,
+        address: str,
+        trader_name: str = "",
+        current_positions: List[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建加仓/补仓表单卡片（使用 form 容器，返回卡片JSON，不发送）
+        
+        用于在回调中返回此卡片作为响应
+        
+        Args:
+            address: 交易员地址
+            trader_name: 交易员名称
+            current_positions: 当前可加仓的仓位列表
+            
+        Returns:
+            卡片 JSON 字典
+        """
+        # 交易员显示名称
+        trader_display = trader_name if trader_name else f"{address[:12]}..."
+        
+        # 构建仓位下拉选项
+        position_options = []
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "🟢" if side == 'long' else "🔴"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f})"
+                    },
+                    "value": f"{coin}|{side}"
+                })
+        
+        if not position_options:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无可加仓仓位"
+                },
+                "value": ""
+            })
+        
+        # 跟单比例下拉选项
+        ratio_options = [
+            {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
+            {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},
+            {"text": {"tag": "plain_text", "content": "30%"}, "value": "30"},
+            {"text": {"tag": "plain_text", "content": "50%"}, "value": "50"},
+            {"text": {"tag": "plain_text", "content": "75%"}, "value": "75"},
+            {"text": {"tag": "plain_text", "content": "100%"}, "value": "100"},
+        ]
+        
+        # 使用 form 容器，按照大纲树结构：
+        # 表单容器 > 分栏 > 列 > 下拉选择/按钮
+        form_element = {
+            "tag": "form",
+            "name": "position_adjustment_form",
+            "elements": [
+                # 第一个分栏：两个下拉选择
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_position",
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择仓位"
+                                    },
+                                    "options": position_options
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "select_static",
+                                    "name": "selected_ratio",
+                                    "placeholder": {
+                                        "tag": "plain_text",
+                                        "content": "选择比例"
+                                    },
+                                    "options": ratio_options
+                                }
+                            ]
+                        }
+                    ]
+                },
+                # 第二个分栏：两个按钮
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交补仓"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_submit",
+                                        "address": address,
+                                        "trader_name": trader_name
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "position_adjustment_cancel",
+                                        "address": address
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        return {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📈 加仓/补仓"
+                },
+                "template": "blue"
+            },
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": f"**交易员**: {trader_display}"
+                },
+                form_element
+            ]
+        }
+
+    def notify_close_position_form(
+        self,
+        current_positions: List[Dict[str, Any]] = None,
+        user_id: str = None
+    ) -> bool:
+        """
+        发送平仓表单卡片（使用 form 容器）
+        
+        Args:
+            current_positions: 当前仓位列表，每个元素包含:
+                - coin/symbol: 币种
+                - side: 方向 (long/short)
+                - size: 当前仓位大小
+                - unrealized_pnl: 未实现盈亏（可选）
+            user_id: 接收者 open_id
+            
+        Returns:
+            是否发送成功
+        """
+        # 构建仓位下拉选项
+        position_options = []
+        
+        # 添加"全部平仓"选项
+        position_options.append({
+            "text": {
+                "tag": "plain_text",
+                "content": "🔴 全部平仓"
+            },
+            "value": "ALL"
+        })
+        
+        # 添加各个仓位选项
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin') or pos.get('symbol', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                unrealized_pnl = pos.get('unrealized_pnl', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "📈" if side == 'long' else "📉"
+                
+                # 盈亏显示
+                pnl_str = ""
+                if unrealized_pnl:
+                    pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                    pnl_str = f" {pnl_emoji}${unrealized_pnl:+,.2f}"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f}){pnl_str}"
+                    },
+                    "value": f"{coin}|{side}|{size}"
+                })
+        
+        # 如果没有仓位（除了全部平仓选项），添加提示
+        if len(position_options) == 1:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无持仓"
+                },
+                "value": ""
+            })
+        
+        # 使用 form 容器，按照大纲树结构：
+        # 表单容器 > 下拉选择 > 分栏 > 列 > 按钮
+        form_element = {
+            "tag": "form",
+            "name": "close_position_form",
+            "elements": [
+                # 下拉选择
+                {
+                    "tag": "select_static",
+                    "name": "selected_position",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "请选择"
+                    },
+                    "options": position_options
+                },
+                # 分栏：两个按钮
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "close_position_submit"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "close_position_cancel"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # 构建卡片元素
+        elements = [form_element]
+        
+        card = {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📉 平仓"
+                },
+                "template": "red"
+            },
+            "elements": elements
+        }
+        
+        # 通过应用 API 发送
+        recipient = user_id or self.feishu.default_user_id
+        return self.feishu._send_card_via_api(card, recipient)
+
+    def build_close_position_form_card(
+        self,
+        current_positions: List[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建平仓表单卡片（使用 form 容器，返回卡片JSON，不发送）
+        
+        用于在回调中返回此卡片作为响应
+        
+        Args:
+            current_positions: 当前仓位列表
+            
+        Returns:
+            卡片 JSON 字典
+        """
+        # 构建仓位下拉选项
+        position_options = []
+        
+        # 添加"全部平仓"选项
+        position_options.append({
+            "text": {
+                "tag": "plain_text",
+                "content": "🔴 全部平仓"
+            },
+            "value": "ALL"
+        })
+        
+        # 添加各个仓位选项
+        if current_positions:
+            for pos in current_positions:
+                coin = pos.get('coin') or pos.get('symbol', '')
+                side = pos.get('side', 'long')
+                size = pos.get('size', 0)
+                unrealized_pnl = pos.get('unrealized_pnl', 0)
+                side_cn = "多" if side == 'long' else "空"
+                side_emoji = "📈" if side == 'long' else "📉"
+                
+                # 盈亏显示
+                pnl_str = ""
+                if unrealized_pnl:
+                    pnl_emoji = "🟢" if unrealized_pnl >= 0 else "🔴"
+                    pnl_str = f" {pnl_emoji}${unrealized_pnl:+,.2f}"
+                
+                position_options.append({
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{side_emoji} {coin} {side_cn} ({size:.4f}){pnl_str}"
+                    },
+                    "value": f"{coin}|{side}|{size}"
+                })
+        
+        if len(position_options) == 1:
+            position_options.append({
+                "text": {
+                    "tag": "plain_text",
+                    "content": "暂无持仓"
+                },
+                "value": ""
+            })
+        
+        form_element = {
+            "tag": "form",
+            "name": "close_position_form",
+            "elements": [
+                {
+                    "tag": "select_static",
+                    "name": "selected_position",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "请选择"
+                    },
+                    "options": position_options
+                },
+                {
+                    "tag": "column_set",
+                    "flex_mode": "none",
+                    "background_style": "default",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "提交"
+                                    },
+                                    "type": "primary",
+                                    "action_type": "form_submit",
+                                    "name": "submit_button",
+                                    "value": {
+                                        "action_tag": "close_position_submit"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "tag": "column",
+                            "width": "weighted",
+                            "weight": 1,
+                            "vertical_align": "top",
+                            "elements": [
+                                {
+                                    "tag": "button",
+                                    "text": {
+                                        "tag": "plain_text",
+                                        "content": "取消"
+                                    },
+                                    "type": "default",
+                                    "action_type": "form_reset",
+                                    "name": "cancel_button",
+                                    "value": {
+                                        "action_tag": "close_position_cancel"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        return {
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📉 平仓"
+                },
+                "template": "red"
+            },
+            "elements": [form_element]
+        }
+
 
 class FeishuCallbackClient:
     """
@@ -791,6 +1606,7 @@ class FeishuCallbackClient:
             action = {}
             action_tag = ""
             action_value = {}
+            form_value = {}
             action_type = CardActionType.UNKNOWN
             
             if hasattr(event, 'action'):
@@ -823,6 +1639,21 @@ class FeishuCallbackClient:
                     
                     # 提取 action_tag
                     action_tag = action_value.get("action_tag", "")
+                
+                # 解析表单值（form 容器提交时会有 form_value）
+                if hasattr(action, 'form_value'):
+                    raw_form_value = action.form_value
+                    if isinstance(raw_form_value, str):
+                        try:
+                            form_value = json.loads(raw_form_value)
+                        except json.JSONDecodeError:
+                            form_value = {"raw": raw_form_value}
+                    elif isinstance(raw_form_value, dict):
+                        form_value = raw_form_value
+                    elif raw_form_value is not None:
+                        form_value = {"raw": str(raw_form_value)}
+                    
+                    self.logger.debug(f"表单值: {form_value}")
             
             # 解析用户信息
             user_id = ""
@@ -867,6 +1698,7 @@ class FeishuCallbackClient:
                 tenant_key=tenant_key,
                 token=token,
                 timestamp=int(time.time() * 1000),
+                form_value=form_value,
                 raw_event=self._event_to_dict(event_data)
             )
             
@@ -878,6 +1710,7 @@ class FeishuCallbackClient:
                 action_value={},
                 user_id="",
                 timestamp=int(time.time() * 1000),
+                form_value={},
                 raw_event={}
             )
     
