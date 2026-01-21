@@ -487,7 +487,7 @@ class PositionCopyTradingBot:
                         if self._on_adjust:
                             self._on_adjust(
                                 state.tracking_id, state.target_address,
-                                symbol, side, adjust_size, True
+                                symbol, side, adjust_size, is_add
                             )
                     else:
                         logger.error(f"[{action_name}] 失败: {result}")

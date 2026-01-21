@@ -846,8 +846,13 @@ class CopyTradingNotifier:
                 coin = pos.get('coin', '')
                 side = pos.get('side', 'long')
                 size = pos.get('size', 0)
-                tracking_id = pos.get('tracking_id', '')
+                tracking_id = pos.get('tracking_id')
                 target_name = pos.get('target_name', '')
+                
+                # 跳过没有有效 tracking_id 的记录
+                if not tracking_id:
+                    continue
+                
                 side_cn = "多" if side == 'long' else "空"
                 side_emoji = "🟢" if side == 'long' else "🔴"
                 
@@ -1036,8 +1041,13 @@ class CopyTradingNotifier:
                 coin = pos.get('coin', '')
                 side = pos.get('side', 'long')
                 size = pos.get('size', 0)
-                tracking_id = pos.get('tracking_id', '')
+                tracking_id = pos.get('tracking_id')
                 target_name = pos.get('target_name', '')
+                
+                # 跳过没有有效 tracking_id 的记录
+                if not tracking_id:
+                    continue
+                
                 side_cn = "多" if side == 'long' else "空"
                 side_emoji = "🟢" if side == 'long' else "🔴"
                 
