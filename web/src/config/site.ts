@@ -13,10 +13,6 @@ export const siteConfig = {
       href: "/best-s-traders",
     },
     {
-      label: "Group Comparison",
-      href: "/group-comparison",
-    },
-    {
       label: "Copy Trading",
       href: "/copy-trading",
     },

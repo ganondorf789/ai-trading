@@ -16,10 +16,6 @@ import type {
   CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
-  GroupComparisonSession,
-  GroupComparisonGroup,
-  GroupComparisonTrader,
-  GroupComparisonStats,
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
@@ -51,10 +47,6 @@ export type {
   CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
-  GroupComparisonSession,
-  GroupComparisonGroup,
-  GroupComparisonTrader,
-  GroupComparisonStats,
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
@@ -606,30 +598,6 @@ export const positionTrackingApi = {
   // 停止仓位跟单
   stopTracking: (trackingId: number) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
-};
-
-// ==================== 分组对比分析 API ====================
-
-export const groupComparisonApi = {
-  // 获取会话列表
-  getSessions: (params?: { limit?: number; status?: string }) =>
-    api.get<any, ApiResponse<GroupComparisonSession[]>>('/group-comparison/sessions', { params }),
-
-  // 获取会话详情
-  getSession: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonSession>>(`/group-comparison/sessions/${sessionId}`),
-
-  // 获取会话晋级者
-  getFinalists: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonTrader[]>>(`/group-comparison/sessions/${sessionId}/finalists`),
-
-  // 获取会话分组信息
-  getGroups: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonGroup[]>>(`/group-comparison/sessions/${sessionId}/groups`),
-
-  // 获取统计信息
-  getStats: () =>
-    api.get<any, ApiResponse<GroupComparisonStats>>('/group-comparison/stats'),
 };
 
 // ==================== 风控配置 API ====================

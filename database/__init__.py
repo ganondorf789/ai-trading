@@ -15,7 +15,6 @@ from .copy_trading import CopyTradingOps
 from .copy_orders import CopyOrdersOps
 from .coins import CoinsOps
 from .ai_analysis import AIAnalysisOps
-from .group_comparison import GroupComparisonOps
 from .position_history import PositionHistoryOps
 from .fetch_fails import FetchFailsOps
 from .position_tracking import PositionTrackingOps
@@ -32,7 +31,6 @@ class TraderDatabase(
     CopyOrdersOps,
     CoinsOps,
     AIAnalysisOps,
-    GroupComparisonOps,
     PositionHistoryOps,
     FetchFailsOps,
     PositionTrackingOps
@@ -49,7 +47,6 @@ class TraderDatabase(
     - 跟单订单管理
     - Hyperliquid 币种管理
     - AI 分析管理
-    - 分组对比分析管理
     - 交易记录获取失败记录管理
     - 仓位级别跟单管理
     """
