@@ -43,6 +43,12 @@ def run_server(host='0.0.0.0', port=5000, debug=True):
     logger.info("  GET  /api/sessions - 获取筛选会话")
     logger.info("  GET  /api/copy-trading/orders - 获取跟单订单")
     logger.info("  GET  /api/copy-trading/orders/stats - 订单统计")
+    logger.info("  --- 我的仓位管理 (C端API) ---")
+    logger.info("  GET  /api/my-positions - 获取当前所有仓位")
+    logger.info("  POST /api/my-positions/adjust - 加仓/减仓")
+    logger.info("  POST /api/my-positions/<symbol>/close - 平仓指定仓位")
+    logger.info("  POST /api/my-positions/close-all - 全部平仓")
+    logger.info("  GET  /api/my-positions/balance - 获取账户余额")
     logger.info("  GET  /health - 健康检查")
 
     app.run(host=host, port=port, debug=debug)
