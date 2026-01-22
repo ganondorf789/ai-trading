@@ -430,3 +430,97 @@ class TraderFillsOps:
                 })
 
             return results
+
+    def get_high_frequency_windows(
+        self,
+        address: str = None,
+        window_minutes: int = 2,
+        threshold: int = 2000,
+        lookback_days: int = 0
+    ) -> List[Dict[str, Any]]:
+        """
+        查找高频时间段（指定时间窗口内 >= threshold 条记录）
+        
+        用于发现可能因 API 返回上限（2000条）而丢失数据的时间段。
+        
+        Args:
+            address: 可选，指定交易者地址
+            window_minutes: 时间窗口大小（分钟），默认 2
+            threshold: 阈值，默认 2000
+            lookback_days: 回溯天数，0 表示查询所有记录
+        
+        Returns:
+            高频时间段列表，每项包含：
+            - address: 交易者地址
+            - window_start: 时间窗口开始时间（毫秒）
+            - window_end: 时间窗口结束时间（毫秒）
+            - fill_count: 记录数
+        """
+        window_ms = window_minutes * 60 * 1000  # 转换为毫秒
+        
+        # 构建时间条件
+        time_condition = ""
+        params = []
+        
+        if lookback_days > 0:
+            start_dt = pendulum.now(SHANGHAI_TZ).subtract(days=lookback_days).start_of('day')
+            start_timestamp_ms = int(start_dt.timestamp() * 1000)
+            time_condition = " AND time >= %s"
+            params.append(start_timestamp_ms)
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            if address:
+                query = f"""
+                    SELECT 
+                        address,
+                        (time / %s) * %s as window_start,
+                        COUNT(*) as fill_count
+                    FROM trader_fills
+                    WHERE address = %s{time_condition}
+                    GROUP BY address, (time / %s) * %s
+                    HAVING COUNT(*) >= %s
+                    ORDER BY fill_count DESC
+                """
+                query_params = [window_ms, window_ms, address] + params + [window_ms, window_ms, threshold]
+                cursor.execute(query, query_params)
+            else:
+                if time_condition:
+                    query = f"""
+                        SELECT 
+                            address,
+                            (time / %s) * %s as window_start,
+                            COUNT(*) as fill_count
+                        FROM trader_fills
+                        WHERE 1=1{time_condition}
+                        GROUP BY address, (time / %s) * %s
+                        HAVING COUNT(*) >= %s
+                        ORDER BY fill_count DESC
+                    """
+                    query_params = [window_ms, window_ms] + params + [window_ms, window_ms, threshold]
+                else:
+                    query = """
+                        SELECT 
+                            address,
+                            (time / %s) * %s as window_start,
+                            COUNT(*) as fill_count
+                        FROM trader_fills
+                        GROUP BY address, (time / %s) * %s
+                        HAVING COUNT(*) >= %s
+                        ORDER BY fill_count DESC
+                    """
+                    query_params = [window_ms, window_ms, window_ms, window_ms, threshold]
+                cursor.execute(query, query_params)
+            
+            results = []
+            for row in cursor.fetchall():
+                window_start = int(row['window_start'])
+                results.append({
+                    'address': row['address'],
+                    'window_start': window_start,
+                    'window_end': window_start + window_ms,
+                    'fill_count': row['fill_count']
+                })
+            
+            return results
