@@ -1088,7 +1088,7 @@ def update_immediate_copy_config():
             'copy_leverage': (bool, None, None),
             # 跟单条件
             'min_trader_overall_score': (float, 0, 100),  # 最低评分 0-100，0表示不限制
-            'max_trader_leverage': (int, 1, 100),
+            'min_trader_leverage': (float, 0, 100),  # 目标交易员最小杠杆，>=此值才跟单，0表示不限制
             'min_position_value_usd': (float, 0, 10000000),
             'max_position_value_usd': (float, 0, 10000000),
         }

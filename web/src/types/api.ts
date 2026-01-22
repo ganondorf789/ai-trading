@@ -564,7 +564,7 @@ export interface ImmediateCopyConfig {
   
   // 跟单条件
   min_trader_overall_score: number;  // 最低评分 0-100，0表示不限制
-  max_trader_leverage: number;  // 目标交易员最大杠杆
+  min_trader_leverage: number;  // 目标交易员最小杠杆，>=此值才跟单
   symbols_whitelist: string[];
   symbols_blacklist: string[];
   min_position_value_usd: number;  // 目标仓位最小价值

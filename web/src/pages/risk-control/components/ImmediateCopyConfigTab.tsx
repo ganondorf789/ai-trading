@@ -26,7 +26,7 @@ const defaultImmediateCopyConfig: ImmediateCopyConfig = {
   copy_leverage: false,
   // 跟单条件
   min_trader_overall_score: 0,
-  max_trader_leverage: 50,
+  min_trader_leverage: 0,
   symbols_whitelist: [],
   symbols_blacklist: [],
   min_position_value_usd: 0,
@@ -321,10 +321,10 @@ export default function ImmediateCopyConfigTab({ onHasChanges }: ImmediateCopyCo
             />
             <Input
               type="number"
-              label="目标最大杠杆"
-              description="目标交易员杠杆超过此值时不跟单"
-              value={String(config.max_trader_leverage || 50)}
-              onValueChange={(v) => setConfig({ ...config, max_trader_leverage: parseInt(v) || 50 })}
+              label="目标最小杠杆"
+              description="目标交易员杠杆>=此值时才跟单（0=不限制）"
+              value={String(config.min_trader_leverage || 0)}
+              onValueChange={(v) => setConfig({ ...config, min_trader_leverage: parseFloat(v) || 0 })}
               endContent={<span className="text-default-400 text-sm">x</span>}
               classNames={{ label: "font-medium", description: "text-xs" }}
             />

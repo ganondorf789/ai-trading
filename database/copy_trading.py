@@ -666,7 +666,7 @@ class CopyTradingOps:
             'copy_leverage': False,
             # 跟单条件
             'min_trader_overall_score': 0,  # 最低评分 0-100，0表示不限制
-            'max_trader_leverage': 50,  # 目标交易员最大杠杆
+            'min_trader_leverage': 0,  # 目标交易员最小杠杆，>=此值才跟单，0表示不限制
             'symbols_whitelist': [],
             'symbols_blacklist': [],
             'min_position_value_usd': 0,  # 目标仓位最小价值
