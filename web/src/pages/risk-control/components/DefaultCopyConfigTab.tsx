@@ -23,9 +23,6 @@ const defaultCopyConfig: DefaultCopyTradingConfig = {
   max_leverage: 10,
   default_leverage: 3,
   copy_leverage: false,
-  sync_position: false,
-  sync_position_symbols: [],
-  dry_run: false,
   slippage: 0.001,
   symbols_whitelist: [],
   symbols_blacklist: [],
@@ -46,10 +43,8 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
   const [coinsLoading, setCoinsLoading] = useState(false);
   const [whitelistInput, setWhitelistInput] = useState("");
   const [blacklistInput, setBlacklistInput] = useState("");
-  const [syncPositionInput, setSyncPositionInput] = useState("");
   const [whitelistHighlightIndex, setWhitelistHighlightIndex] = useState(-1);
   const [blacklistHighlightIndex, setBlacklistHighlightIndex] = useState(-1);
-  const [syncPositionHighlightIndex, setSyncPositionHighlightIndex] = useState(-1);
 
   // 检查配置是否有变更
   const hasChanges = useMemo(() => {
@@ -79,15 +74,6 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
       .filter((coin) => !input || coin.includes(input))
       .slice(0, 10);
   }, [availableCoins, blacklistInput, config.symbols_blacklist]);
-
-  const filteredSyncPositionCoins = useMemo(() => {
-    const input = syncPositionInput.trim().toUpperCase();
-    const existing = config.sync_position_symbols || [];
-    return availableCoins
-      .filter((coin) => !existing.includes(coin))
-      .filter((coin) => !input || coin.includes(input))
-      .slice(0, 10);
-  }, [availableCoins, syncPositionInput, config.sync_position_symbols]);
 
   // 加载配置
   const loadConfig = useCallback(async () => {
@@ -282,63 +268,6 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
     setConfig({
       ...config,
       symbols_blacklist: config.symbols_blacklist?.filter((s) => s !== symbol) || [],
-    });
-  };
-
-  // 添加币种到同步仓位列表
-  const handleAddSyncPosition = (coin?: string) => {
-    const symbol = (coin || syncPositionInput.trim()).toUpperCase();
-    if (symbol && !config.sync_position_symbols?.includes(symbol)) {
-      setConfig({
-        ...config,
-        sync_position_symbols: [...(config.sync_position_symbols || []), symbol],
-      });
-      setSyncPositionInput("");
-      setSyncPositionHighlightIndex(-1);
-    }
-  };
-
-  // 处理同步仓位键盘事件
-  const handleSyncPositionKeyDown = (e: React.KeyboardEvent) => {
-    if (!syncPositionInput || filteredSyncPositionCoins.length === 0) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAddSyncPosition();
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setSyncPositionHighlightIndex((prev) =>
-          prev < filteredSyncPositionCoins.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setSyncPositionHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (syncPositionHighlightIndex >= 0 && syncPositionHighlightIndex < filteredSyncPositionCoins.length) {
-          handleAddSyncPosition(filteredSyncPositionCoins[syncPositionHighlightIndex]);
-        } else {
-          handleAddSyncPosition();
-        }
-        break;
-      case "Escape":
-        setSyncPositionInput("");
-        setSyncPositionHighlightIndex(-1);
-        break;
-    }
-  };
-
-  // 从同步仓位列表移除币种
-  const handleRemoveSyncPosition = (symbol: string) => {
-    setConfig({
-      ...config,
-      sync_position_symbols: config.sync_position_symbols?.filter((s) => s !== symbol) || [],
     });
   };
 
@@ -599,112 +528,16 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
           </div>
         </CardHeader>
         <CardBody>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="flex items-center justify-between p-3 bg-default-50 dark:bg-default-100/5 rounded-lg">
-              <div>
-                <p className="text-sm font-medium">复制杠杆</p>
-                <p className="text-xs text-default-500">复制目标的杠杆设置</p>
-              </div>
-              <Switch
-                isSelected={config.copy_leverage}
-                onValueChange={(v) => setConfig({ ...config, copy_leverage: v })}
-              />
+          <div className="flex items-center justify-between p-3 bg-default-50 dark:bg-default-100/5 rounded-lg max-w-sm">
+            <div>
+              <p className="text-sm font-medium">复制杠杆</p>
+              <p className="text-xs text-default-500">复制目标的杠杆设置</p>
             </div>
-            <div className="flex items-center justify-between p-3 bg-default-50 dark:bg-default-100/5 rounded-lg">
-              <div>
-                <p className="text-sm font-medium">同步仓位</p>
-                <p className="text-xs text-default-500">同步目标的现有仓位</p>
-              </div>
-              <Switch
-                isSelected={config.sync_position}
-                onValueChange={(v) => setConfig({ ...config, sync_position: v })}
-              />
-            </div>
-            <div className="flex items-center justify-between p-3 bg-default-50 dark:bg-default-100/5 rounded-lg">
-              <div>
-                <p className="text-sm font-medium">模拟运行</p>
-                <p className="text-xs text-default-500">不实际执行交易</p>
-              </div>
-              <Switch
-                isSelected={config.dry_run}
-                onValueChange={(v) => setConfig({ ...config, dry_run: v })}
-              />
-            </div>
+            <Switch
+              isSelected={config.copy_leverage}
+              onValueChange={(v) => setConfig({ ...config, copy_leverage: v })}
+            />
           </div>
-
-          {/* 同步仓位币种选择 */}
-          {config.sync_position && (
-            <div className="mt-4 p-4 border rounded-lg space-y-3">
-              <div className="flex items-center gap-2">
-                <Icon icon="lucide:refresh-cw" width={16} className="text-primary" />
-                <h4 className="text-sm font-medium text-default-700">同步仓位币种</h4>
-              </div>
-              <p className="text-xs text-default-500">
-                指定要同步的币种（留空表示同步所有币种）
-              </p>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 relative">
-                    <Input
-                      size="sm"
-                      placeholder="输入搜索币种..."
-                      value={syncPositionInput}
-                      onValueChange={(v) => {
-                        setSyncPositionInput(v);
-                        setSyncPositionHighlightIndex(-1);
-                      }}
-                      onKeyDown={handleSyncPositionKeyDown}
-                    />
-                    {syncPositionInput && filteredSyncPositionCoins.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
-                        {filteredSyncPositionCoins.map((coin, index) => (
-                          <div
-                            key={coin}
-                            className={`px-3 py-2 cursor-pointer text-sm ${
-                              index === syncPositionHighlightIndex
-                                ? "bg-primary-100 text-primary"
-                                : "hover:bg-default-100"
-                            }`}
-                            onClick={() => handleAddSyncPosition(coin)}
-                            onMouseEnter={() => setSyncPositionHighlightIndex(index)}
-                          >
-                            {coin}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    size="sm"
-                    color="primary"
-                    variant="flat"
-                    isIconOnly
-                    onPress={() => handleAddSyncPosition()}
-                    isDisabled={!syncPositionInput.trim()}
-                  >
-                    <Icon icon="lucide:plus" width={16} />
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-1 min-h-[32px]">
-                  {config.sync_position_symbols?.length === 0 ? (
-                    <span className="text-xs text-default-400">不限制（同步所有币种）</span>
-                  ) : (
-                    config.sync_position_symbols?.map((symbol) => (
-                      <Chip
-                        key={symbol}
-                        size="sm"
-                        color="primary"
-                        variant="flat"
-                        onClose={() => handleRemoveSyncPosition(symbol)}
-                      >
-                        {symbol}
-                      </Chip>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </CardBody>
       </Card>
 
