@@ -5,12 +5,11 @@
 from flask import Blueprint, jsonify, request
 import logging
 
-from database import TraderDatabase
+from .db import db
 
 logger = logging.getLogger(__name__)
 
 traders_stats_bp = Blueprint('traders_stats', __name__)
-db = TraderDatabase()
 
 
 # ==================== 统计信息 ====================

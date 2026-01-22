@@ -5,12 +5,11 @@
 from flask import Blueprint, jsonify, request
 import logging
 
-from database import TraderDatabase
+from .db import db
 
 logger = logging.getLogger(__name__)
 
 copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
-db = TraderDatabase()
 
 
 # ==================== 跟单交易员实时持仓 API ====================

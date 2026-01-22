@@ -6,13 +6,12 @@ from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 import logging
 
-from database import TraderDatabase
 from services.ai_analysis import generate_trader_analysis
+from .db import db
 
 logger = logging.getLogger(__name__)
 
 traders_analysis_bp = Blueprint('traders_analysis', __name__)
-db = TraderDatabase()
 
 
 # ==================== 收藏功能 ====================

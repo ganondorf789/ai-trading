@@ -6,13 +6,12 @@ from flask import Blueprint, jsonify, request
 from datetime import datetime, timedelta
 import logging
 
-from database import TraderDatabase
 from screener import TraderScreener, ScreenerConfig
+from .db import db
 
 logger = logging.getLogger(__name__)
 
 traders_core_bp = Blueprint('traders_core', __name__)
-db = TraderDatabase()
 
 
 @traders_core_bp.route('/api/traders', methods=['GET'])
