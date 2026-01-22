@@ -402,6 +402,7 @@ def handle_position_adjustment(event: CardActionEvent):
     处理"加仓减仓"菜单点击
     
     显示加仓减仓表单卡片，用户可以选择仓位和比例
+    优先从 Redis 缓存获取实际仓位，然后与跟单配置进行匹配
     """
     global db, feishu_position_client
     
@@ -421,33 +422,77 @@ def handle_position_adjustment(event: CardActionEvent):
         if db is None:
             db = TraderDatabase()
         
-        # 获取当前活跃的跟单配置
-        trackings = db.get_active_position_trackings()
+        # 从 Redis 缓存获取实际仓位（由跟单机器人定期更新）
+        cached_positions, _ = get_cached_positions()
         
-        if not trackings:
-            card = _build_info_card(
-                "📈 加仓/减仓",
-                "暂无活跃的跟单仓位\n\n请先通过新仓位推送添加跟单"
+        if cached_positions is None:
+            card = _build_warning_card(
+                "缓存不可用",
+                "仓位缓存不存在，请确保跟单机器人正在运行"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 构建当前仓位列表（从跟单配置中提取）
-        current_positions = []
-        for t in trackings:
-            current_positions.append({
-                'coin': t.get('symbol', ''),
-                'side': t.get('my_side', 'long'),
-                'size': t.get('my_size', 0),
-                'tracking_id': t.get('id'),
-                'target_address': t.get('target_address', ''),
-                'target_name': t.get('target_name', ''),
-            })
+        if not cached_positions:
+            card = _build_info_card(
+                "📈 加仓/减仓",
+                "暂无持仓"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
         
-        # 使用第一个跟单的交易员信息（或让用户选择）
-        first_tracking = trackings[0] if trackings else {}
-        address = first_tracking.get('target_address', '')
-        trader_name = first_tracking.get('target_name', '')
+        logger.debug(f"[加仓减仓] 使用 Redis 缓存，仓位数: {len(cached_positions)}")
+        
+        # 获取当前活跃的跟单配置
+        trackings = db.get_active_position_trackings()
+        
+        # 构建 symbol -> tracking 映射（用于匹配仓位和跟单配置）
+        tracking_by_symbol = {}
+        for t in trackings:
+            symbol = t.get('symbol', '')
+            if symbol:
+                tracking_by_symbol[symbol] = t
+        
+        # 构建当前仓位列表（从 Redis 缓存获取实际仓位，关联跟单配置）
+        current_positions = []
+        positions_without_tracking = []  # 没有跟单配置的仓位
+        
+        for pos in cached_positions:
+            symbol = pos.get('symbol', '')
+            side = pos.get('side', 'long')
+            size = pos.get('size', 0)
+            
+            # 查找对应的跟单配置
+            tracking = tracking_by_symbol.get(symbol)
+            
+            if tracking:
+                # 有跟单配置，可以加仓减仓
+                current_positions.append({
+                    'coin': symbol,
+                    'side': side,
+                    'size': size,
+                    'tracking_id': tracking.get('id'),
+                    'target_address': tracking.get('target_address', ''),
+                    'target_name': tracking.get('target_name', ''),
+                })
+            else:
+                # 没有跟单配置，记录下来
+                positions_without_tracking.append(symbol)
+        
+        # 如果没有可操作的仓位（所有仓位都没有跟单配置）
+        if not current_positions:
+            no_tracking_str = ", ".join(positions_without_tracking) if positions_without_tracking else ""
+            card = _build_info_card(
+                "📈 加仓/减仓",
+                f"暂无可加仓仓位\n\n当前持仓 ({no_tracking_str}) 没有关联的跟单配置\n请先通过新仓位推送添加跟单"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 使用第一个跟单的交易员信息
+        first_pos = current_positions[0] if current_positions else {}
+        address = first_pos.get('target_address', '')
+        trader_name = first_pos.get('target_name', '')
         
         # 创建通知器并发送表单卡片
         copy_notifier = CopyTradingNotifier(feishu_client)
@@ -459,7 +504,7 @@ def handle_position_adjustment(event: CardActionEvent):
             user_id=event.user_id
         )
         
-        logger.success(f"[加仓减仓] 已发送表单卡片给用户 {event.user_id}")
+        logger.success(f"[加仓减仓] 已发送表单卡片给用户 {event.user_id}，可操作仓位: {len(current_positions)}")
         return None
         
     except Exception as e:
@@ -993,7 +1038,7 @@ async def run():
     # 创建仓位跟单机器人（传入 redis_client 接收开仓通知）
     bot = PositionCopyTradingBot(
         client=client,
-        check_interval=0.5,  # 检查间隔（秒）
+        check_interval=0.1,  # 检查间隔（秒）
         reload_interval=60.0,  # 配置重载间隔（秒）
         redis_client=redis_client,  # 接收开仓通知
     )
