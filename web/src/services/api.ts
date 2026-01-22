@@ -21,6 +21,7 @@ import type {
   ChartDataPoint,
   RiskControlConfig,
   DefaultCopyTradingConfig,
+  ImmediateCopyConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -52,6 +53,7 @@ export type {
   ChartDataPoint,
   RiskControlConfig,
   DefaultCopyTradingConfig,
+  ImmediateCopyConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -618,6 +620,14 @@ export const riskControlApi = {
   // 更新默认跟单配置
   updateDefaultCopyConfig: (data: Partial<DefaultCopyTradingConfig>) =>
     api.put<any, ApiResponse<DefaultCopyTradingConfig> & { message?: string }>('/copy-trading/default-config', data),
+
+  // 获取立即跟单配置
+  getImmediateCopyConfig: () =>
+    api.get<any, ApiResponse<ImmediateCopyConfig>>('/copy-trading/immediate-config'),
+
+  // 更新立即跟单配置
+  updateImmediateCopyConfig: (data: Partial<ImmediateCopyConfig>) =>
+    api.put<any, ApiResponse<ImmediateCopyConfig> & { message?: string }>('/copy-trading/immediate-config', data),
 };
 
 // ==================== S级优选筛选 API ====================

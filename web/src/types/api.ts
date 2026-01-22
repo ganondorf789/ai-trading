@@ -549,3 +549,24 @@ export interface DefaultCopyTradingConfig {
   // 功能开关
   copy_leverage: boolean;
 }
+
+// ==================== 立即跟单配置类型 ====================
+
+export interface ImmediateCopyConfig {
+  // 跟单参数
+  copy_ratio: number;
+  max_position_size_usd: number;
+  min_position_size_usd: number;
+  max_leverage: number;
+  default_leverage: number;
+  slippage: number;
+  copy_leverage: boolean;
+  
+  // 跟单条件
+  min_trader_overall_score: number;  // 最低评分 0-100，0表示不限制
+  max_trader_leverage: number;  // 目标交易员最大杠杆
+  symbols_whitelist: string[];
+  symbols_blacklist: string[];
+  min_position_value_usd: number;  // 目标仓位最小价值
+  max_position_value_usd: number;  // 目标仓位最大价值，0表示不限制
+}
