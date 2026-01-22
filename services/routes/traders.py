@@ -1323,53 +1323,6 @@ def get_hyperliquid_coin_names():
         }), 500
 
 
-@traders_bp.route('/api/sessions', methods=['GET'])
-def get_sessions():
-    """
-    获取最近的筛选会话
-    Query Parameters:
-        - limit: int, 返回数量，默认10
-    """
-    try:
-        limit = int(request.args.get('limit', 10))
-        sessions = db.get_recent_sessions(limit=limit)
-
-        return jsonify({
-            'success': True,
-            'data': sessions,
-            'count': len(sessions)
-        })
-
-    except Exception as e:
-        logger.error(f"获取会话列表失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@traders_bp.route('/api/sessions/<int:session_id>/traders', methods=['GET'])
-def get_session_traders(session_id: int):
-    """
-    获取指定会话的交易者
-    """
-    try:
-        traders = db.get_session_traders(session_id)
-
-        return jsonify({
-            'success': True,
-            'data': traders,
-            'count': len(traders)
-        })
-
-    except Exception as e:
-        logger.error(f"获取会话交易者失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 # ==================== S级优选筛选 API ====================
 
 # 预设配置

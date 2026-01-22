@@ -124,38 +124,6 @@ class DatabaseMigrations:
                 ON trader_metrics(is_starred)
             """)
 
-            # 创建筛选会话表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS screening_sessions (
-                    id SERIAL PRIMARY KEY,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-                    -- 配置
-                    lookback_days INTEGER,
-                    min_total_trades INTEGER,
-                    min_win_rate REAL,
-                    min_profit_factor REAL,
-                    min_total_pnl REAL,
-                    max_drawdown REAL,
-
-                    -- 统计
-                    total_analyzed INTEGER DEFAULT 0,
-                    qualified_count INTEGER DEFAULT 0
-                )
-            """)
-
-            # 创建会话-交易者关联表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS session_traders (
-                    session_id INTEGER,
-                    trader_id INTEGER,
-                    rank INTEGER,
-                    PRIMARY KEY (session_id, trader_id),
-                    FOREIGN KEY (session_id) REFERENCES screening_sessions(id),
-                    FOREIGN KEY (trader_id) REFERENCES trader_metrics(id)
-                )
-            """)
-
             # 创建交易记录表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trader_fills (

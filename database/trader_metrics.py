@@ -376,15 +376,10 @@ class TraderMetricsOps:
             """)
             rating_distribution = {row['rating']: row['count'] for row in cursor.fetchall()}
 
-            # 会话数
-            cursor.execute("SELECT COUNT(*) as count FROM screening_sessions")
-            total_sessions = cursor.fetchone()['count']
-
             return {
                 'total_records': total_records,
                 'unique_addresses': unique_addresses,
-                'rating_distribution': rating_distribution,
-                'total_sessions': total_sessions
+                'rating_distribution': rating_distribution
             }
 
     def delete_old_records(self, days: int = 90):

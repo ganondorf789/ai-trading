@@ -10,7 +10,6 @@ from .migrations import DatabaseMigrations
 from .trader_metrics import TraderMetricsOps
 from .trader_fills import TraderFillsOps
 from .positions import PositionsOps
-from .screening import ScreeningOps
 from .copy_trading import CopyTradingOps
 from .copy_orders import CopyOrdersOps
 from .coins import CoinsOps
@@ -25,7 +24,6 @@ class TraderDatabase(
     TraderMetricsOps,
     TraderFillsOps,
     PositionsOps,
-    ScreeningOps,
     CopyTradingOps,
     CopyOrdersOps,
     CoinsOps,
@@ -40,7 +38,6 @@ class TraderDatabase(
     - 交易者指标管理
     - 交易记录管理
     - 持仓管理
-    - 筛选会话管理
     - 跟单地址和分组管理
     - 跟单订单管理
     - Hyperliquid 币种管理
