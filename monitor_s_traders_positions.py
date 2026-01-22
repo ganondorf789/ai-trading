@@ -91,41 +91,109 @@ class MarketActivityTracker:
     
     追踪1分钟内的新仓位数量，如果达到阈值则触发通知
     10分钟内只通知一次
+    
+    支持 Redis 存储以实现多服务器共享状态
     """
+    
+    # Redis 键名
+    REDIS_POSITION_TIMESTAMPS_KEY = "market_activity:position_timestamps"
+    REDIS_LAST_NOTIFICATION_KEY = "market_activity:last_notification_time"
     
     def __init__(
         self,
         window_seconds: int = MARKET_ACTIVITY_WINDOW,
         threshold: int = MARKET_ACTIVITY_THRESHOLD,
-        cooldown_seconds: int = MARKET_ACTIVITY_COOLDOWN
+        cooldown_seconds: int = MARKET_ACTIVITY_COOLDOWN,
+        redis_client: redis.Redis = None
     ):
         self.window_seconds = window_seconds
         self.threshold = threshold
         self.cooldown_seconds = cooldown_seconds
+        self.redis_client = redis_client
         
-        # 存储新仓位的时间戳
-        self.position_timestamps: deque = deque()
-        # 上次发送通知的时间
-        self.last_notification_time: Optional[datetime] = None
+        # 本地备用存储（当 Redis 不可用时）
+        self._local_position_timestamps: deque = deque()
+        self._local_last_notification_time: Optional[datetime] = None
     
     def add_positions(self, count: int) -> None:
         """记录新仓位"""
         now = datetime.now()
+        timestamp = now.timestamp()
+        
+        if self.redis_client:
+            try:
+                # 使用 Redis ZSET，score 为时间戳
+                pipe = self.redis_client.pipeline()
+                for _ in range(count):
+                    # 使用唯一的成员值（时间戳+随机后缀）
+                    member = f"{timestamp}:{time.perf_counter_ns()}"
+                    pipe.zadd(self.REDIS_POSITION_TIMESTAMPS_KEY, {member: timestamp})
+                # 设置 key 过期时间（比窗口时间稍长一点，自动清理）
+                pipe.expire(self.REDIS_POSITION_TIMESTAMPS_KEY, self.window_seconds + 60)
+                pipe.execute()
+                return
+            except Exception as e:
+                logger.debug(f"Redis add_positions 失败，使用本地存储: {e}")
+        
+        # 本地备用
         for _ in range(count):
-            self.position_timestamps.append(now)
+            self._local_position_timestamps.append(now)
     
     def _clean_old_positions(self) -> None:
         """清理超出时间窗口的记录"""
         now = datetime.now()
-        cutoff = now - timedelta(seconds=self.window_seconds)
+        cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
         
-        while self.position_timestamps and self.position_timestamps[0] < cutoff:
-            self.position_timestamps.popleft()
+        if self.redis_client:
+            try:
+                # 删除时间窗口之前的记录
+                self.redis_client.zremrangebyscore(
+                    self.REDIS_POSITION_TIMESTAMPS_KEY,
+                    "-inf",
+                    cutoff_timestamp
+                )
+                return
+            except Exception as e:
+                logger.debug(f"Redis _clean_old_positions 失败: {e}")
+        
+        # 本地备用
+        cutoff = now - timedelta(seconds=self.window_seconds)
+        while self._local_position_timestamps and self._local_position_timestamps[0] < cutoff:
+            self._local_position_timestamps.popleft()
     
     def get_recent_count(self) -> int:
         """获取时间窗口内的新仓位数量"""
         self._clean_old_positions()
-        return len(self.position_timestamps)
+        
+        if self.redis_client:
+            try:
+                now = datetime.now()
+                cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
+                # 统计在时间窗口内的记录数
+                count = self.redis_client.zcount(
+                    self.REDIS_POSITION_TIMESTAMPS_KEY,
+                    cutoff_timestamp,
+                    "+inf"
+                )
+                return count
+            except Exception as e:
+                logger.debug(f"Redis get_recent_count 失败: {e}")
+        
+        # 本地备用
+        return len(self._local_position_timestamps)
+    
+    def _get_last_notification_time(self) -> Optional[datetime]:
+        """获取上次通知时间"""
+        if self.redis_client:
+            try:
+                value = self.redis_client.get(self.REDIS_LAST_NOTIFICATION_KEY)
+                if value:
+                    return datetime.fromtimestamp(float(value))
+                return None
+            except Exception as e:
+                logger.debug(f"Redis _get_last_notification_time 失败: {e}")
+        
+        return self._local_last_notification_time
     
     def should_notify(self) -> bool:
         """
@@ -136,16 +204,18 @@ class MarketActivityTracker:
             1. 1分钟内新仓位 >= 阈值
             2. 距离上次通知超过10分钟（或从未通知过）
         """
-        self._clean_old_positions()
+        # 获取最近的仓位数量
+        recent_count = self.get_recent_count()
         
         # 检查数量是否达到阈值
-        if len(self.position_timestamps) < self.threshold:
+        if recent_count < self.threshold:
             return False
         
         # 检查冷却时间
         now = datetime.now()
-        if self.last_notification_time is not None:
-            time_since_last = (now - self.last_notification_time).total_seconds()
+        last_notification = self._get_last_notification_time()
+        if last_notification is not None:
+            time_since_last = (now - last_notification).total_seconds()
             if time_since_last < self.cooldown_seconds:
                 return False
         
@@ -153,14 +223,30 @@ class MarketActivityTracker:
     
     def mark_notified(self) -> None:
         """标记已发送通知"""
-        self.last_notification_time = datetime.now()
+        now = datetime.now()
+        
+        if self.redis_client:
+            try:
+                # 存储时间戳，并设置过期时间
+                self.redis_client.set(
+                    self.REDIS_LAST_NOTIFICATION_KEY,
+                    str(now.timestamp()),
+                    ex=self.cooldown_seconds + 60  # 过期时间比冷却时间稍长
+                )
+                return
+            except Exception as e:
+                logger.debug(f"Redis mark_notified 失败: {e}")
+        
+        # 本地备用
+        self._local_last_notification_time = now
     
     def get_cooldown_remaining(self) -> int:
         """获取剩余冷却时间（秒）"""
-        if self.last_notification_time is None:
+        last_notification = self._get_last_notification_time()
+        if last_notification is None:
             return 0
         
-        elapsed = (datetime.now() - self.last_notification_time).total_seconds()
+        elapsed = (datetime.now() - last_notification).total_seconds()
         remaining = self.cooldown_seconds - elapsed
         return max(0, int(remaining))
 
@@ -566,27 +652,30 @@ async def main_async(args):
     else:
         logger.success("✓ 飞书通知器初始化成功（重要通知）")
     
-    # 初始化行情活动追踪器
-    activity_tracker = MarketActivityTracker()
-    logger.info(f"行情追踪器: 阈值={activity_tracker.threshold}个/分钟, 冷却={activity_tracker.cooldown_seconds}秒")
-    
-    # 初始化 Redis（用于本地推送）
+    # 初始化 Redis（用于本地推送和行情追踪共享状态）
+    logger.info("初始化 Redis 连接...")
     redis_client = None
-    if args.redis:
-        try:
-            redis_client = redis.Redis(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                password=settings.redis.password or None,
-                db=settings.redis.db,
-                decode_responses=True
-            )
-            redis_client.ping()
-            logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+    try:
+        redis_client = redis.Redis(
+            host=settings.redis.host,
+            port=settings.redis.port,
+            password=settings.redis.password or None,
+            db=settings.redis.db,
+            decode_responses=True
+        )
+        redis_client.ping()
+        logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+        if args.redis:
             logger.info(f"  本地监听: python local_position_listener.py")
-        except Exception as e:
-            logger.warning(f"⚠ Redis 连接失败: {e}，本地推送将不可用")
-            redis_client = None
+    except Exception as e:
+        logger.warning(f"⚠ Redis 连接失败: {e}，行情追踪将使用本地存储（不跨服务器共享）")
+        redis_client = None
+    
+    # 初始化行情活动追踪器（使用 Redis 共享状态）
+    activity_tracker = MarketActivityTracker(redis_client=redis_client)
+    logger.info(f"行情追踪器: 阈值={activity_tracker.threshold}个/分钟, 冷却={activity_tracker.cooldown_seconds}秒")
+    if redis_client:
+        logger.info(f"  行情追踪状态通过 Redis 共享（支持多服务器）")
     
     logger.info("")
     
@@ -604,7 +693,7 @@ async def main_async(args):
                 rate=args.rate,
                 limit=args.limit,
                 offset=args.offset,
-                redis_client=redis_client,
+                redis_client=redis_client if args.redis else None,  # 仅用于位置推送
                 activity_tracker=activity_tracker,
                 important_feishu=important_feishu
             )
