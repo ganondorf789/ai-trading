@@ -400,6 +400,7 @@ def handle_position_adjustment(event: CardActionEvent):
     处理"加仓减仓"菜单点击
     
     显示加仓减仓表单卡片，用户可以选择仓位和比例
+    优先从 Redis 缓存获取仓位
     """
     global db
     
@@ -418,32 +419,43 @@ def handle_position_adjustment(event: CardActionEvent):
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 确保数据库已初始化
-        if db is None:
-            db = TraderDatabase()
+        # 从 Redis 缓存获取仓位（由跟单机器人定期更新）
+        cached_positions, _ = get_cached_positions()
         
-        # 获取当前活跃的跟单配置
-        trackings = db.get_active_position_trackings()
-        
-        if not trackings:
-            card = _build_info_card(
-                "📈 加仓/减仓",
-                "暂无活跃的跟单仓位\n\n请先通过新仓位推送添加跟单"
+        if cached_positions is None:
+            card = _build_warning_card(
+                "缓存不可用",
+                "仓位缓存不存在，请确保跟单机器人正在运行"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
             return None
         
-        # 构建当前仓位列表（从跟单配置中提取）
+        logger.debug(f"[加仓减仓] 使用 Redis 缓存，仓位数: {len(cached_positions)}")
+        
+        # 转换 key 名
         current_positions = []
-        for t in trackings:
+        for pos in cached_positions:
             current_positions.append({
-                'coin': t.get('symbol', ''),
-                'side': t.get('my_side', 'long'),
-                'size': t.get('my_size', 0),
-                'tracking_id': t.get('id'),
-                'target_address': t.get('target_address', ''),
-                'target_name': t.get('target_name', ''),
+                'coin': pos.get('symbol', ''),
+                'side': pos.get('side', 'long'),
+                'size': pos.get('size', 0),
+                'unrealized_pnl': pos.get('unrealized_pnl', 0),
             })
+        
+        if not current_positions:
+            card = _build_info_card(
+                "📈 加仓/减仓",
+                "暂无持仓"
+            )
+            _send_card_to_user(feishu_client, event.user_id, card)
+            return None
+        
+        # 确保数据库已初始化（用于获取跟单配置）
+        if db is None:
+            db = TraderDatabase()
+        
+        # 获取当前活跃的跟单配置（用于获取交易员信息）
+        trackings = db.get_active_position_trackings()
         
         # 使用第一个跟单的交易员信息（或让用户选择）
         first_tracking = trackings[0] if trackings else {}
