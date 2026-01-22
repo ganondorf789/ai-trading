@@ -55,6 +55,8 @@ db: TraderDatabase = None
 redis_client = None
 # 全局 Hyperliquid 客户端（复用实例，避免重复创建）
 hl_client: HyperliquidClient = None
+# 全局飞书客户端（用于回调处理，复用实例）
+feishu_position_client: FeishuClient = None
 
 
 def setup_logging():
@@ -401,15 +403,12 @@ def handle_position_adjustment(event: CardActionEvent):
     
     显示加仓减仓表单卡片，用户可以选择仓位和比例
     """
-    global db
+    global db, feishu_position_client
     
     logger.info(f"[加仓减仓] 用户 {event.user_id} 请求加仓减仓表单")
     
-    # 创建飞书客户端用于发送消息
-    feishu_client = FeishuClient(
-        app_id=settings.feishu_position.app_id,
-        app_secret=settings.feishu_position.app_secret
-    )
+    # 使用全局飞书客户端
+    feishu_client = feishu_position_client
     
     try:
         # 检查钱包配置
@@ -578,13 +577,12 @@ def handle_current_position(event: CardActionEvent):
     
     优先从 Redis 缓存获取仓位（由跟单机器人定期更新），响应更快
     """
+    global feishu_position_client
+    
     logger.info(f"[当前仓位] 用户 {event.user_id} 查询当前仓位")
     
-    # 创建飞书客户端用于发送消息
-    feishu_client = FeishuClient(
-        app_id=settings.feishu_position.app_id,
-        app_secret=settings.feishu_position.app_secret
-    )
+    # 使用全局飞书客户端
+    feishu_client = feishu_position_client
     
     try:
         # 从 Redis 缓存获取仓位和余额（由跟单机器人定期更新）
@@ -692,13 +690,12 @@ def handle_close_position_menu(event: CardActionEvent):
     
     优先从 Redis 缓存获取仓位，显示平仓表单卡片
     """
+    global feishu_position_client
+    
     logger.info(f"[平仓菜单] 用户 {event.user_id} 请求平仓表单")
     
-    # 创建飞书客户端用于发送消息
-    feishu_client = FeishuClient(
-        app_id=settings.feishu_position.app_id,
-        app_secret=settings.feishu_position.app_secret
-    )
+    # 使用全局飞书客户端
+    feishu_client = feishu_position_client
     
     try:
         # 从 Redis 缓存获取仓位（由跟单机器人定期更新）
@@ -887,10 +884,19 @@ def _build_info_card(title: str, content: str):
 
 def start_callback_server():
     """启动飞书长连接回调服务（使用新仓位推送专用配置）"""
+    global feishu_position_client
+    
     # 检查配置（使用 feishu_position 配置）
     if not settings.feishu_position.app_id or not settings.feishu_position.app_secret:
         logger.error("错误: 请配置飞书新仓位推送 FEISHU_POSITION_APP_ID 和 FEISHU_POSITION_APP_SECRET")
         return
+    
+    # 初始化全局飞书客户端（复用实例，避免每次菜单点击都创建）
+    feishu_position_client = FeishuClient(
+        app_id=settings.feishu_position.app_id,
+        app_secret=settings.feishu_position.app_secret
+    )
+    logger.info("飞书客户端已初始化（用于回调处理）")
     
     # 创建回调客户端（使用 feishu_position 配置）
     callback_client = FeishuCallbackClient(
