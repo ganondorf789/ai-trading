@@ -285,19 +285,15 @@ class PositionCopyTradingBot:
                     self.trackings[tracking_id] = state
                     logger.error(f"[立即开仓] 失败: {state.symbol}，已停止")
             elif (my_pos.side == PositionSide.LONG) == is_long:
-                # 方向相同，直接标记为 active
-                state.status = 'active'
-                state.my_size = abs(my_pos.size)
-                state.my_side = 'long' if my_pos.side == PositionSide.LONG else 'short'
-                state.my_entry_price = my_pos.entry_price
-                self.db.update_tracking_status(state.tracking_id, 'active')
-                self.db.update_tracking_position(
-                    state.tracking_id, state.my_size, state.my_side, state.my_entry_price
-                )
-                self.trackings[tracking_id] = state
-                logger.info(f"[立即开仓] 已有同向仓位，标记为 active")
+                # 方向相同，标记为 closed
+                state.status = 'closed'
+                self.db.update_tracking_status(state.tracking_id, 'closed', '已有同向仓位，需要手动处理')
+                logger.warning(f"[立即开仓] 已有同向仓位，标记为 closed")
             else:
-                logger.warning(f"[立即开仓] 已有反向仓位，需要手动处理")
+                # 已有反向仓位，标记为 closed
+                state.status = 'closed'
+                self.db.update_tracking_status(state.tracking_id, 'closed', '已有反向仓位，需要手动处理')
+                logger.warning(f"[立即开仓] 已有反向仓位，标记为 closed")
                 
         except Exception as e:
             logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
