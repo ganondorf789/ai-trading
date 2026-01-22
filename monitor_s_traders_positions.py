@@ -383,7 +383,7 @@ def check_immediate_copy_conditions(
         return False, f"币种 {coin} 在黑名单中"
     
     # 3. 检查目标交易员杠杆（只跟单杠杆 >= min_trader_leverage 的仓位）
-    min_trader_leverage = config.get('min_trader_leverage', 1)
+    min_trader_leverage = config.get('min_trader_leverage', 0)
     position_leverage = float(position.get('leverage', 1) or 1)
     if position_leverage < min_trader_leverage:
         return False, f"目标杠杆 {position_leverage}x < 最小要求 {min_trader_leverage}x"
