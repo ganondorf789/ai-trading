@@ -1,0 +1,532 @@
+"""
+交易者基础管理相关路由
+包括：交易者列表、添加、详情、刷新、交易记录
+"""
+from flask import Blueprint, jsonify, request
+from datetime import datetime, timedelta
+import logging
+
+from database import TraderDatabase
+from screener import TraderScreener, ScreenerConfig
+
+logger = logging.getLogger(__name__)
+
+traders_core_bp = Blueprint('traders_core', __name__)
+db = TraderDatabase()
+
+
+@traders_core_bp.route('/api/traders', methods=['GET'])
+def get_traders():
+    """
+    获取交易者列表（支持分页和排序）
+    Query Parameters:
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
+        - rating: str, 精确评级筛选 (S/A/B/C/D/F)
+        - search: str, 地址搜索
+        - sort_by: str, 排序字段
+        - sort_order: str, 排序方向 (asc/desc)
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        rating = request.args.get('rating')
+        search = request.args.get('search', '').strip()
+        sort_by = request.args.get('sort_by', 'overall_score')
+        sort_order = request.args.get('sort_order', 'desc')
+
+        # 获取所有交易者
+        all_traders = db.get_top_traders(limit=100000)
+
+        # 应用精确评级筛选
+        if rating:
+            all_traders = [t for t in all_traders if t.get('rating') == rating]
+
+        # 应用搜索过滤
+        if search:
+            all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
+
+        # 应用高级筛选（区间查询）
+        min_win_rate = request.args.get('min_win_rate', type=float)
+        max_win_rate = request.args.get('max_win_rate', type=float)
+        min_profit_factor = request.args.get('min_profit_factor', type=float)
+        max_profit_factor = request.args.get('max_profit_factor', type=float)
+        min_pnl = request.args.get('min_pnl', type=float)
+        max_pnl = request.args.get('max_pnl', type=float)
+        min_drawdown = request.args.get('min_drawdown', type=float)
+        max_drawdown = request.args.get('max_drawdown', type=float)
+        min_sharpe = request.args.get('min_sharpe', type=float)
+        max_sharpe = request.args.get('max_sharpe', type=float)
+        min_sortino = request.args.get('min_sortino', type=float)
+        max_sortino = request.args.get('max_sortino', type=float)
+        min_calmar = request.args.get('min_calmar', type=float)
+        max_calmar = request.args.get('max_calmar', type=float)
+        min_trades = request.args.get('min_trades', type=int)
+        max_trades = request.args.get('max_trades', type=int)
+        min_active_days = request.args.get('min_active_days', type=int)
+        max_active_days = request.args.get('max_active_days', type=int)
+        has_recent_trade = request.args.get('has_recent_trade', type=int)
+
+        # 胜率区间
+        if min_win_rate is not None:
+            all_traders = [t for t in all_traders if t.get('win_rate', 0) >= min_win_rate]
+        if max_win_rate is not None:
+            all_traders = [t for t in all_traders if t.get('win_rate', 0) <= max_win_rate]
+        # 盈亏比区间
+        if min_profit_factor is not None:
+            all_traders = [t for t in all_traders if t.get('profit_factor', 0) >= min_profit_factor]
+        if max_profit_factor is not None:
+            all_traders = [t for t in all_traders if t.get('profit_factor', 0) <= max_profit_factor]
+        # PnL区间
+        if min_pnl is not None:
+            all_traders = [t for t in all_traders if t.get('total_pnl', 0) >= min_pnl]
+        if max_pnl is not None:
+            all_traders = [t for t in all_traders if t.get('total_pnl', 0) <= max_pnl]
+        # 回撤区间
+        if min_drawdown is not None:
+            all_traders = [t for t in all_traders if t.get('max_drawdown', 0) >= min_drawdown]
+        if max_drawdown is not None:
+            all_traders = [t for t in all_traders if t.get('max_drawdown', 1) <= max_drawdown]
+        # Sharpe区间
+        if min_sharpe is not None:
+            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) >= min_sharpe]
+        if max_sharpe is not None:
+            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) <= max_sharpe]
+        # Sortino区间
+        if min_sortino is not None:
+            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) >= min_sortino]
+        if max_sortino is not None:
+            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) <= max_sortino]
+        # Calmar区间
+        if min_calmar is not None:
+            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) >= min_calmar]
+        if max_calmar is not None:
+            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) <= max_calmar]
+        # 交易数区间
+        if min_trades is not None:
+            all_traders = [t for t in all_traders if t.get('total_trades', 0) >= min_trades]
+        if max_trades is not None:
+            all_traders = [t for t in all_traders if t.get('total_trades', 0) <= max_trades]
+        # 活跃天区间
+        if min_active_days is not None:
+            all_traders = [t for t in all_traders if t.get('active_days', 0) >= min_active_days]
+        if max_active_days is not None:
+            all_traders = [t for t in all_traders if t.get('active_days', 0) <= max_active_days]
+        # 最近活跃
+        if has_recent_trade is not None:
+            cutoff = datetime.now() - timedelta(days=has_recent_trade)
+            def is_recent(t):
+                last_trade = t.get('last_trade_time')
+                if not last_trade:
+                    return False
+                try:
+                    trade_time = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
+                    return trade_time.replace(tzinfo=None) >= cutoff
+                except:
+                    return False
+            all_traders = [t for t in all_traders if is_recent(t)]
+
+        # 应用排序
+        valid_sort_fields = {
+            'overall_score', 'rating', 'total_trades', 'win_rate',
+            'total_pnl', 'roi', 'profit_factor', 'max_drawdown',
+            'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'current_equity', 'active_days',
+            'last_trade_time', 'avg_leverage', 'current_positions',
+            'recent_7d_pnl', 'recent_7d_win_rate', 'unique_symbols',
+            'max_consecutive_wins', 'max_consecutive_losses', 'long_short_ratio'
+        }
+        if sort_by in valid_sort_fields:
+            reverse = sort_order.lower() != 'asc'
+            # 处理 rating 特殊排序（S > A > B > C > D > F）
+            if sort_by == 'rating':
+                rating_order = {'S': 1, 'A': 2, 'B': 3, 'C': 4, 'D': 5, 'F': 6}
+                all_traders.sort(
+                    key=lambda x: rating_order.get(x.get('rating', 'F'), 6),
+                    reverse=reverse
+                )
+            else:
+                all_traders.sort(
+                    key=lambda x: x.get(sort_by) or 0,
+                    reverse=reverse
+                )
+
+        total_count = len(all_traders)
+        total_pages = (total_count + limit - 1) // limit
+
+        # 分页
+        start = (page - 1) * limit
+        end = start + limit
+        traders = all_traders[start:end]
+
+        # 格式化数据（返回所有可用字段）
+        result = []
+        for trader in traders:
+            result.append({
+                'id': trader.get('id'),
+                'address': trader.get('address'),
+                'analyzed_at': trader.get('analyzed_at'),
+                # 基础统计
+                'total_trades': trader.get('total_trades', 0),
+                'winning_trades': trader.get('winning_trades', 0),
+                'losing_trades': trader.get('losing_trades', 0),
+                'win_rate': trader.get('win_rate', 0),
+                # 盈亏指标
+                'total_pnl': trader.get('total_pnl', 0),
+                'realized_pnl': trader.get('realized_pnl', 0),
+                'unrealized_pnl': trader.get('unrealized_pnl', 0),
+                'roi': trader.get('roi', 0),
+                'profit_factor': trader.get('profit_factor', 0),
+                # 风险指标
+                'max_drawdown': trader.get('max_drawdown', 0),
+                'max_drawdown_abs': trader.get('max_drawdown_abs', 0),
+                'sharpe_ratio': trader.get('sharpe_ratio', 0),
+                'sortino_ratio': trader.get('sortino_ratio', 0),
+                'calmar_ratio': trader.get('calmar_ratio', 0),
+                'var_95': trader.get('var_95', 0),
+                'var_99': trader.get('var_99', 0),
+                'cvar_95': trader.get('cvar_95', 0),
+                # 评分
+                'overall_score': trader.get('overall_score', 0),
+                'rating': trader.get('rating', 'F'),
+                'profitability_score': trader.get('profitability_score', 0),
+                'risk_score': trader.get('risk_score', 0),
+                'consistency_score': trader.get('consistency_score', 0),
+                'activity_score': trader.get('activity_score', 0),
+                # 活跃度
+                'current_equity': trader.get('current_equity', 0),
+                'current_positions': trader.get('current_positions', 0),
+                'active_days': trader.get('active_days', 0),
+                'avg_leverage': trader.get('avg_leverage', 1),
+                'max_leverage': trader.get('max_leverage', 1),
+                'last_trade_time': trader.get('last_trade_time'),
+                'first_trade_time': trader.get('first_trade_time'),
+                # 新增分析字段
+                'avg_trade_price': trader.get('avg_trade_price', 0),
+                'avg_trade_size': trader.get('avg_trade_size', 0),
+                'max_single_win': trader.get('max_single_win', 0),
+                'max_single_loss': trader.get('max_single_loss', 0),
+                'max_consecutive_wins': trader.get('max_consecutive_wins', 0),
+                'max_consecutive_losses': trader.get('max_consecutive_losses', 0),
+                'avg_win_amount': trader.get('avg_win_amount', 0),
+                'avg_loss_amount': trader.get('avg_loss_amount', 0),
+                'unique_symbols': trader.get('unique_symbols', 0),
+                'favorite_symbol': trader.get('favorite_symbol', ''),
+                'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
+                'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
+                'long_short_ratio': trader.get('long_short_ratio', 0),
+                # 用户标记
+                'is_starred': trader.get('is_starred', False),
+            })
+
+        return jsonify({
+            'success': True,
+            'data': result,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取交易者列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders', methods=['POST'])
+def add_trader():
+    """
+    新增交易者（分析并保存到数据库）
+    Body:
+        - address: str, 交易者地址
+        - lookback_days: int, 分析回溯天数，默认0（全部）
+        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """
+    try:
+        data = request.get_json()
+        if not data or not data.get('address'):
+            return jsonify({
+                'success': False,
+                'error': '地址不能为空'
+            }), 400
+
+        address = data['address'].strip()
+        lookback_days = int(data.get('lookback_days', 0))
+        max_fills = int(data.get('max_fills', 0))
+
+        # 验证地址格式
+        if not address.startswith('0x') or len(address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        # 检查是否已存在
+        existing = db.get_trader_by_address(address)
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': '该交易者已存在，请使用刷新功能更新数据'
+            }), 409
+
+        logger.info(f"开始分析新交易者: {address}")
+
+        # 初始化筛选器
+        config = ScreenerConfig()
+        config.data.lookback_days = lookback_days
+        config.data.max_fills_per_trader = max_fills
+        config.api.api_call_delay = 2.0
+        config.api.max_retries = 3
+        screener = TraderScreener(config)
+
+        # 分析交易者
+        metrics = screener.analyze_trader(address)
+
+        if not metrics or metrics.total_trades == 0:
+            return jsonify({
+                'success': False,
+                'error': '无法获取交易者数据或该交易者无交易记录'
+            }), 404
+
+        # 保存到数据库
+        _, fills_saved = db.save_trader_with_fills(metrics, metrics.fills)
+
+        # 保存持仓数据
+        positions_saved = db.save_positions(address, metrics.asset_positions)
+
+        logger.info(f"新交易者添加成功: {address}, 评分: {metrics.overall_score:.1f}, 评级: {metrics.rating.value}")
+
+        # 返回新增的数据
+        trader = db.get_trader_by_address(address)
+
+        return jsonify({
+            'success': True,
+            'data': trader,
+            'message': f'添加成功，保存了 {fills_saved} 条交易记录，{positions_saved} 个持仓'
+        })
+
+    except Exception as e:
+        logger.error(f"添加交易者失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders/<address>', methods=['GET'])
+def get_trader_detail(address: str):
+    """
+    获取交易者详细信息
+    """
+    try:
+        # 获取交易者基本信息
+        trader = db.get_trader_by_address(address)
+
+        if not trader:
+            return jsonify({
+                'success': False,
+                'error': 'Trader not found'
+            }), 404
+
+        # 获取交易记录汇总
+        fills_summary = db.get_fills_summary(address)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'trader': trader,
+                'fills_summary': fills_summary
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取交易者详情失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders/<address>/refresh', methods=['POST'])
+def refresh_trader(address: str):
+    """
+    重新分析交易者数据
+    Query Parameters:
+        - lookback_days: int, 分析回溯天数，默认30
+        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """
+    try:
+        lookback_days = int(request.args.get('lookback_days', 30))
+        max_fills = int(request.args.get('max_fills', 0))
+
+        logger.info(f"开始重新分析交易者: {address}")
+
+        # 初始化筛选器
+        config = ScreenerConfig()
+        config.data.lookback_days = lookback_days
+        config.data.max_fills_per_trader = max_fills
+        config.api.api_call_delay = 2.0
+        config.api.max_retries = 3
+        screener = TraderScreener(config)
+
+        # 从 API 获取新的交易记录
+        metrics = screener.analyze_trader(address)
+
+        if not metrics:
+            return jsonify({
+                'success': False,
+                'error': '无法获取交易者数据'
+            }), 404
+
+        # 保存新获取的 fills 到数据库
+        fills_saved = db.save_fills(address, metrics.fills) if metrics.fills else 0
+
+        # 保存持仓数据
+        positions_saved = db.save_positions(address, metrics.asset_positions)
+
+        # 从数据库获取所有交易记录，重新计算指标
+        from screener.metrics_calculator import MetricsCalculator
+        from screener.scorer import TraderScorer
+
+        all_fills = db.get_fills_for_metrics(address, lookback_days=0)  # 获取所有记录
+
+        if not all_fills:
+            return jsonify({
+                'success': False,
+                'error': '该交易者无交易记录'
+            }), 404
+
+        # 使用数据库中的所有 fills 重新计算指标
+        calculator = MetricsCalculator()
+        user_state = {
+            'assetPositions': metrics.asset_positions,
+            'marginSummary': {'accountValue': metrics.current_equity}
+        }
+        recalculated_metrics = calculator.calculate(address, all_fills, user_state, store_fills=False)
+
+        # 计算评分
+        scorer = TraderScorer(config.scoring)
+        recalculated_metrics = scorer.calculate_scores(recalculated_metrics)
+
+        # 保存持仓信息到重新计算的指标
+        recalculated_metrics.asset_positions = metrics.asset_positions
+
+        # 保存重新计算的指标到数据库
+        db.save_trader(recalculated_metrics)
+
+        logger.info(f"交易者分析完成: {address}, 评分: {recalculated_metrics.overall_score:.1f}, 评级: {recalculated_metrics.rating.value}, 持仓: {positions_saved}, 数据库总记录: {len(all_fills)}")
+
+        # 返回更新后的数据
+        trader = db.get_trader_by_address(address)
+        fills_summary = db.get_fills_summary(address)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'trader': trader,
+                'fills_summary': fills_summary,
+                'fills_saved': fills_saved,
+                'total_fills_in_db': len(all_fills)
+            },
+            'message': f'分析完成，新增 {fills_saved} 条交易记录，基于数据库中 {len(all_fills)} 条记录计算指标'
+        })
+
+    except Exception as e:
+        logger.error(f"重新分析交易者失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders/<address>/fills', methods=['GET'])
+def get_trader_fills(address: str):
+    """
+    获取交易者的历史交易记录（支持分页和排序）
+    Query Parameters:
+        - page: int, 页码，默认1
+        - limit: int, 每页数量，默认20
+        - coin: str, 筛选特定币种
+        - pnl_filter: str, 盈亏筛选 (all/profit/loss)
+        - trade_type: str, 交易类型筛选 (all/open_long/add_long/close_long/open_short/add_short/close_short)
+        - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
+        - sort_order: str, 排序方向 (asc/desc)
+        - start_date: str, 开始日期 (YYYY-MM-DD)
+        - end_date: str, 结束日期 (YYYY-MM-DD)
+    """
+    try:
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        coin = request.args.get('coin')
+        pnl_filter = request.args.get('pnl_filter', 'all')
+        trade_type = request.args.get('trade_type', 'all')
+        sort_by = request.args.get('sort_by', 'trade_time')
+        sort_order = request.args.get('sort_order', 'desc')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        # 获取所有符合条件的交易记录（筛选在数据库层完成）
+        all_fills = db.get_trader_fills(
+            address,
+            limit=100000,
+            coin=coin,
+            trade_type=trade_type if trade_type != 'all' else None,
+            pnl_filter=pnl_filter if pnl_filter != 'all' else None,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        total_count = len(all_fills)
+        total_pages = (total_count + limit - 1) // limit
+
+        # 计算基于全部筛选数据的统计信息
+        profitable_count = sum(1 for f in all_fills if f.get('closed_pnl', 0) > 0)
+        losing_count = sum(1 for f in all_fills if f.get('closed_pnl', 0) < 0)
+        total_pnl = sum(f.get('closed_pnl', 0) for f in all_fills)
+        total_fees = sum(f.get('fee', 0) for f in all_fills)
+        total_volume = sum(f.get('px', 0) * f.get('sz', 0) for f in all_fills)
+        win_rate = (profitable_count / total_count * 100) if total_count > 0 else 0
+
+        stats = {
+            'total': total_count,
+            'profitable': profitable_count,
+            'losing': losing_count,
+            'total_pnl': total_pnl,
+            'total_fees': total_fees,
+            'total_volume': total_volume,
+            'win_rate': win_rate
+        }
+
+        # 分页
+        start = (page - 1) * limit
+        end = start + limit
+        fills = all_fills[start:end]
+
+        return jsonify({
+            'success': True,
+            'data': fills,
+            'stats': stats,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': total_pages,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取交易记录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

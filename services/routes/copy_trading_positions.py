@@ -1,0 +1,838 @@
+"""
+跟单交易员持仓和配置管理相关路由
+包括：交易员持仓、风控配置、默认配置、立即跟单配置、AI分析
+"""
+from flask import Blueprint, jsonify, request
+import logging
+
+from database import TraderDatabase
+
+logger = logging.getLogger(__name__)
+
+copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
+db = TraderDatabase()
+
+
+# ==================== 跟单交易员实时持仓 API ====================
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions', methods=['GET'])
+def get_all_trader_positions():
+    """
+    获取所有跟单交易员的当前持仓（从数据库 asset_positions 表）
+    Query Parameters:
+        - enabled_only: bool, 是否只显示已启用的跟单地址，默认 true
+        - group_id: int, 按分组筛选
+        - min_win_rate: float, 最小胜率
+        - max_win_rate: float, 最大胜率
+        - min_profit_factor: float, 最小盈亏比
+        - max_profit_factor: float, 最大盈亏比
+        - min_pnl: float, 最小总盈亏
+        - max_pnl: float, 最大总盈亏
+        - min_drawdown: float, 最小回撤
+        - max_drawdown: float, 最大回撤
+        - min_sharpe: float, 最小Sharpe
+        - max_sharpe: float, 最大Sharpe
+        - min_sortino: float, 最小Sortino
+        - max_sortino: float, 最大Sortino
+        - min_trades: int, 最小交易数
+        - max_trades: int, 最大交易数
+        - min_score: float, 最小综合评分
+        - max_score: float, 最大综合评分
+    """
+    try:
+        enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
+        group_id = request.args.get('group_id', type=int)
+
+        # 构建指标筛选条件
+        metric_filters = {
+            'min_win_rate': request.args.get('min_win_rate', type=float),
+            'max_win_rate': request.args.get('max_win_rate', type=float),
+            'min_profit_factor': request.args.get('min_profit_factor', type=float),
+            'max_profit_factor': request.args.get('max_profit_factor', type=float),
+            'min_pnl': request.args.get('min_pnl', type=float),
+            'max_pnl': request.args.get('max_pnl', type=float),
+            'min_drawdown': request.args.get('min_drawdown', type=float),
+            'max_drawdown': request.args.get('max_drawdown', type=float),
+            'min_sharpe': request.args.get('min_sharpe', type=float),
+            'max_sharpe': request.args.get('max_sharpe', type=float),
+            'min_sortino': request.args.get('min_sortino', type=float),
+            'max_sortino': request.args.get('max_sortino', type=float),
+            'min_trades': request.args.get('min_trades', type=int),
+            'max_trades': request.args.get('max_trades', type=int),
+            'min_score': request.args.get('min_score', type=float),
+            'max_score': request.args.get('max_score', type=float),
+        }
+
+        positions, stats = db.get_trader_positions_with_filters(
+            enabled_only=enabled_only,
+            group_id=group_id,
+            metric_filters=metric_filters
+        )
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'stats': stats
+        })
+    except Exception as e:
+        logger.error(f"获取跟单交易员持仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
+def refresh_all_trader_positions():
+    """
+    刷新所有跟单交易员的当前持仓（从 Hyperliquid API 获取最新数据）
+    Query Parameters:
+        - enabled_only: bool, 是否只刷新已启用的跟单地址，默认 true
+    """
+    try:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        import time
+
+        enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
+
+        addresses = db.get_copy_trading_addresses_list(enabled_only)
+
+        if not addresses:
+            return jsonify({
+                'success': True,
+                'data': {'refreshed_count': 0, 'total_positions': 0},
+                'message': '没有需要刷新的跟单地址'
+            })
+
+        logger.info(f"开始刷新 {len(addresses)} 个跟单交易员的持仓数据...")
+
+        info = Info(constants.MAINNET_API_URL, skip_ws=True)
+        refreshed_count = 0
+        total_positions = 0
+        errors = []
+
+        for addr_info in addresses:
+            address = addr_info['address']
+            try:
+                # 获取最新持仓
+                user_state = info.user_state(address)
+
+                if user_state:
+                    asset_positions = user_state.get('assetPositions', [])
+                    positions_saved = db.save_positions(address, asset_positions)
+                    total_positions += positions_saved
+                    refreshed_count += 1
+                    logger.debug(f"刷新 {address[:10]}... 持仓: {positions_saved} 个")
+
+                # 添加小延迟避免 API 限流
+                time.sleep(0.1)
+            except Exception as e:
+                logger.warning(f"刷新 {address[:10]}... 持仓失败: {e}")
+                errors.append({'address': address, 'error': str(e)})
+
+        logger.info(f"持仓刷新完成: {refreshed_count}/{len(addresses)} 个地址，共 {total_positions} 个持仓")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'refreshed_count': refreshed_count,
+                'total_positions': total_positions,
+                'errors': errors if errors else None
+            },
+            'message': f'已刷新 {refreshed_count} 个交易员的持仓数据，共 {total_positions} 个持仓'
+        })
+    except Exception as e:
+        logger.error(f"刷新跟单交易员持仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 风控配置 API ====================
+
+@copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['GET'])
+def get_risk_control_config():
+    """
+    获取风控配置
+    """
+    try:
+        config = db.get_risk_control_config()
+        return jsonify({
+            'success': True,
+            'data': config
+        })
+    except Exception as e:
+        logger.error(f"获取风控配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['PUT'])
+def update_risk_control_config():
+    """
+    更新风控配置
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证配置字段
+        valid_fields = {
+            'max_total_positions': (int, 1, 100),
+            'max_daily_trades': (int, 1, 1000),
+            'max_single_loss_usd': (float, 0, 100000),
+            'max_daily_loss_usd': (float, 0, 1000000),
+            'max_drawdown_pct': (float, 0, 100),
+            'max_margin_usage_pct': (float, 0, 100),
+            'pause_on_consecutive_losses': (int, 1, 100),
+            'max_order_retries': (int, 0, 10),
+            'retry_base_delay': (float, 0.1, 60),
+        }
+
+        config = {}
+        for field, (field_type, min_val, max_val) in valid_fields.items():
+            if field in data:
+                value = data[field]
+                if field_type == int:
+                    value = int(value)
+                else:
+                    value = float(value)
+                # 范围验证
+                value = max(min_val, min(max_val, value))
+                config[field] = value
+
+        success = db.save_risk_control_config(config)
+        if success:
+            return jsonify({
+                'success': True,
+                'data': config,
+                'message': '风控配置更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '保存配置失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新风控配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 默认跟单配置 API ====================
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['GET'])
+def get_default_copy_config():
+    """
+    获取默认跟单配置
+    """
+    try:
+        config = db.get_default_copy_config()
+        return jsonify({
+            'success': True,
+            'data': config
+        })
+    except Exception as e:
+        logger.error(f"获取默认跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['PUT'])
+def update_default_copy_config():
+    """
+    更新默认跟单配置
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证配置字段
+        valid_fields = {
+            'copy_ratio': (float, 0.01, 10.0),
+            'max_position_size_usd': (float, 1, 1000000),
+            'min_position_size_usd': (float, 1, 100000),
+            'max_leverage': (int, 1, 100),
+            'default_leverage': (int, 1, 100),
+            'slippage': (float, 0.0001, 0.1),
+            'copy_leverage': (bool, None, None),
+            'sync_position': (bool, None, None),
+            'dry_run': (bool, None, None),
+        }
+
+        config = {}
+        for field, (field_type, min_val, max_val) in valid_fields.items():
+            if field in data:
+                value = data[field]
+                if field_type == int:
+                    value = int(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == float:
+                    value = float(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == bool:
+                    value = bool(value)
+                config[field] = value
+
+        # 处理数组字段
+        if 'symbols_whitelist' in data:
+            config['symbols_whitelist'] = data['symbols_whitelist'] if isinstance(data['symbols_whitelist'], list) else []
+        if 'symbols_blacklist' in data:
+            config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
+        if 'sync_position_symbols' in data:
+            config['sync_position_symbols'] = data['sync_position_symbols'] if isinstance(data['sync_position_symbols'], list) else []
+
+        success = db.save_default_copy_config(config)
+        if success:
+            return jsonify({
+                'success': True,
+                'data': config,
+                'message': '默认跟单配置更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '保存配置失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新默认跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 立即跟单配置 API ====================
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['GET'])
+def get_immediate_copy_config():
+    """
+    获取立即跟单配置
+    """
+    try:
+        config = db.get_immediate_copy_config()
+        return jsonify({
+            'success': True,
+            'data': config
+        })
+    except Exception as e:
+        logger.error(f"获取立即跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['PUT'])
+def update_immediate_copy_config():
+    """
+    更新立即跟单配置
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 验证配置字段
+        valid_fields = {
+            # 跟单参数
+            'copy_ratio': (float, 0.01, 10.0),
+            'max_position_size_usd': (float, 1, 1000000),
+            'min_position_size_usd': (float, 1, 100000),
+            'max_leverage': (int, 1, 100),
+            'default_leverage': (int, 1, 100),
+            'slippage': (float, 0.0001, 0.1),
+            'copy_leverage': (bool, None, None),
+            # 跟单条件
+            'min_trader_overall_score': (float, 0, 100),  # 最低评分 0-100，0表示不限制
+            'min_trader_leverage': (float, 0, 100),  # 目标交易员最小杠杆，>=此值才跟单，0表示不限制
+            'min_position_value_usd': (float, 0, 10000000),
+            'max_position_value_usd': (float, 0, 10000000),
+        }
+
+        config = {}
+        for field, (field_type, min_val, max_val) in valid_fields.items():
+            if field in data:
+                value = data[field]
+                if field_type == int:
+                    value = int(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == float:
+                    value = float(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == bool:
+                    value = bool(value)
+                config[field] = value
+
+        # 处理数组字段
+        if 'symbols_whitelist' in data:
+            config['symbols_whitelist'] = data['symbols_whitelist'] if isinstance(data['symbols_whitelist'], list) else []
+        if 'symbols_blacklist' in data:
+            config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
+
+        success = db.save_immediate_copy_config(config)
+        if success:
+            return jsonify({
+                'success': True,
+                'data': config,
+                'message': '立即跟单配置更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '保存配置失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新立即跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 持仓 AI 分析 API ====================
+
+def _build_positions_stats(positions: list) -> dict:
+    """构建持仓统计数据"""
+    if not positions:
+        return {
+            'total_positions': 0,
+            'total_traders': 0,
+            'total_notional': 0,
+            'long_count': 0,
+            'short_count': 0,
+            'long_notional': 0,
+            'short_notional': 0,
+            'total_unrealized_pnl': 0,
+            'profit_count': 0,
+            'loss_count': 0,
+            'profit_pnl': 0,
+            'loss_pnl': 0,
+            'by_coin': [],
+            'by_trader': [],
+        }
+    
+    # 基础统计
+    unique_traders = set(p.get('address') for p in positions)
+    long_positions = [p for p in positions if p.get('szi', 0) > 0]
+    short_positions = [p for p in positions if p.get('szi', 0) < 0]
+    
+    # 盈亏统计
+    profit_positions = [p for p in positions if (p.get('unrealized_pnl') or 0) > 0]
+    loss_positions = [p for p in positions if (p.get('unrealized_pnl') or 0) < 0]
+    
+    total_unrealized_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in positions)
+    profit_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in profit_positions)
+    loss_pnl = sum(p.get('unrealized_pnl', 0) or 0 for p in loss_positions)
+    
+    # 按币种分组统计
+    coin_map = {}
+    for p in positions:
+        coin = p.get('coin', '-')
+        if coin not in coin_map:
+            coin_map[coin] = {'count': 0, 'notional': 0, 'long': 0, 'short': 0}
+        coin_map[coin]['count'] += 1
+        coin_map[coin]['notional'] += abs(p.get('position_value', 0) or 0)
+        if p.get('szi', 0) > 0:
+            coin_map[coin]['long'] += 1
+        else:
+            coin_map[coin]['short'] += 1
+    
+    by_coin = sorted(
+        [{'coin': k, **v} for k, v in coin_map.items()],
+        key=lambda x: x['notional'],
+        reverse=True
+    )
+    
+    # 按交易员分组统计
+    trader_map = {}
+    for p in positions:
+        addr = p.get('address', '-')
+        if addr not in trader_map:
+            trader_map[addr] = {'name': p.get('trader_name'), 'count': 0, 'notional': 0}
+        trader_map[addr]['count'] += 1
+        trader_map[addr]['notional'] += abs(p.get('position_value', 0) or 0)
+    
+    by_trader = sorted(
+        [{'address': k, **v} for k, v in trader_map.items()],
+        key=lambda x: x['notional'],
+        reverse=True
+    )
+    
+    return {
+        'total_positions': len(positions),
+        'total_traders': len(unique_traders),
+        'total_notional': sum(abs(p.get('position_value', 0) or 0) for p in positions),
+        'long_count': len(long_positions),
+        'short_count': len(short_positions),
+        'long_notional': sum(abs(p.get('position_value', 0) or 0) for p in long_positions),
+        'short_notional': sum(abs(p.get('position_value', 0) or 0) for p in short_positions),
+        'total_unrealized_pnl': total_unrealized_pnl,
+        'profit_count': len(profit_positions),
+        'loss_count': len(loss_positions),
+        'profit_pnl': profit_pnl,
+        'loss_pnl': loss_pnl,
+        'by_coin': by_coin,
+        'by_trader': by_trader,
+    }
+
+
+def _build_coin_stats(positions: list) -> dict:
+    """构建币种统计数据"""
+    if not positions:
+        return {'notional': 0, 'count': 0, 'long': 0, 'short': 0}
+    
+    long_positions = [p for p in positions if p.get('szi', 0) > 0]
+    short_positions = [p for p in positions if p.get('szi', 0) < 0]
+    
+    return {
+        'notional': sum(abs(p.get('position_value', 0) or 0) for p in positions),
+        'count': len(positions),
+        'long': len(long_positions),
+        'short': len(short_positions),
+    }
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis', methods=['POST'])
+def ai_analyze_all_positions():
+    """
+    AI分析所有持仓（整体分析）
+    Body (JSON):
+        - positions: List[Dict], 持仓数据列表（可选，不传则从数据库获取）
+        - stats: Dict, 持仓统计数据（可选）
+        - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)
+        - filters: Dict, 筛选条件（可选）
+        - force_refresh: bool, 是否强制重新分析（忽略缓存）
+    """
+    try:
+        from services.positions_analysis import analyze_all_positions
+        
+        data = request.get_json() or {}
+        provider = data.get('provider') or request.args.get('provider')
+        filters = data.get('filters', {})
+        force_refresh = data.get('force_refresh', False)
+        
+        # 如果没有传入持仓数据，从数据库获取
+        positions = data.get('positions')
+        stats = data.get('stats')
+        
+        if not positions:
+            # 构建指标筛选条件
+            metric_filters = {
+                'min_win_rate': filters.get('min_win_rate'),
+                'max_win_rate': filters.get('max_win_rate'),
+                'min_profit_factor': filters.get('min_profit_factor'),
+                'max_profit_factor': filters.get('max_profit_factor'),
+                'min_pnl': filters.get('min_pnl'),
+                'max_pnl': filters.get('max_pnl'),
+                'min_drawdown': filters.get('min_drawdown'),
+                'max_drawdown': filters.get('max_drawdown'),
+                'min_sharpe': filters.get('min_sharpe'),
+                'max_sharpe': filters.get('max_sharpe'),
+                'min_sortino': filters.get('min_sortino'),
+                'max_sortino': filters.get('max_sortino'),
+                'min_trades': filters.get('min_trades'),
+                'max_trades': filters.get('max_trades'),
+                'min_score': filters.get('min_score'),
+                'max_score': filters.get('max_score'),
+            }
+            
+            positions, stats = db.get_trader_positions_with_filters(
+                enabled_only=filters.get('enabled_only', False),
+                group_id=filters.get('group_id'),
+                metric_filters=metric_filters
+            )
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': '没有找到持仓数据'
+            }), 400
+        
+        if not stats:
+            # 构建基础统计
+            stats = _build_positions_stats(positions)
+        
+        # 检查是否已有分析结果（除非强制刷新）
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('overall', positions)
+            if existing:
+                logger.info(f"返回已存在的整体持仓AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'position_count': existing.get('position_count'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': '返回已存在的分析结果'
+                })
+        
+        logger.info(f"开始整体持仓AI分析，共 {len(positions)} 个持仓，提供商: {provider or '默认'}")
+        
+        analysis = analyze_all_positions(positions, stats, provider=provider)
+        
+        # 保存分析结果到数据库
+        db.save_positions_ai_analysis(
+            analysis_type='overall',
+            analysis=analysis,
+            positions=positions,
+            stats=stats,
+            provider=provider
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'cached': False,
+            'message': 'AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"整体持仓AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/coin', methods=['POST'])
+def ai_analyze_coin_positions():
+    """
+    AI分析单个币种的所有持仓
+    Body (JSON):
+        - coin: str, 币种名称（必填）
+        - positions: List[Dict], 该币种的持仓数据列表（可选）
+        - provider: str, AI提供商
+        - force_refresh: bool, 是否强制重新分析
+    """
+    try:
+        from services.positions_analysis import analyze_coin_positions
+        
+        data = request.get_json() or {}
+        coin = data.get('coin')
+        provider = data.get('provider') or request.args.get('provider')
+        force_refresh = data.get('force_refresh', False)
+        
+        if not coin:
+            return jsonify({
+                'success': False,
+                'error': '缺少 coin 参数'
+            }), 400
+        
+        # 如果没有传入持仓数据，从数据库获取
+        positions = data.get('positions')
+        if not positions:
+            all_positions, _ = db.get_trader_positions_with_filters(enabled_only=False)
+            positions = [p for p in all_positions if p.get('coin') == coin]
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': f'没有找到 {coin} 的持仓数据'
+            }), 400
+        
+        # 检查是否已有分析结果
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('coin', positions, coin=coin)
+            if existing:
+                logger.info(f"返回已存在的 {coin} 币种AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'coin': existing.get('coin'),
+                        'position_count': existing.get('position_count'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': f'返回已存在的 {coin} 分析结果'
+                })
+        
+        # 构建币种统计
+        coin_stats = _build_coin_stats(positions)
+        
+        logger.info(f"开始 {coin} 币种持仓AI分析，共 {len(positions)} 个持仓，提供商: {provider or '默认'}")
+        
+        analysis = analyze_coin_positions(coin, positions, coin_stats, provider=provider)
+        
+        # 保存分析结果
+        db.save_positions_ai_analysis(
+            analysis_type='coin',
+            analysis=analysis,
+            positions=positions,
+            stats=coin_stats,
+            coin=coin,
+            provider=provider
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'cached': False,
+            'message': f'{coin} AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"币种持仓AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/single', methods=['POST'])
+def ai_analyze_single_position():
+    """
+    AI分析单个仓位
+    Body (JSON):
+        - position: Dict, 仓位数据（必填）
+        - provider: str, AI提供商
+        - force_refresh: bool, 是否强制重新分析
+    """
+    try:
+        from services.positions_analysis import analyze_single_position
+        
+        data = request.get_json() or {}
+        position = data.get('position')
+        provider = data.get('provider') or request.args.get('provider')
+        force_refresh = data.get('force_refresh', False)
+        
+        if not position:
+            return jsonify({
+                'success': False,
+                'error': '缺少 position 参数'
+            }), 400
+        
+        address = position.get('address')
+        coin = position.get('coin', 'Unknown')
+        
+        # 检查是否已有分析结果
+        if not force_refresh:
+            existing = db.get_positions_ai_analysis('single', [position], coin=coin, address=address)
+            if existing:
+                logger.info(f"返回已存在的单仓位 {coin} AI分析结果")
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'analysis_type': existing.get('analysis_type'),
+                        'coin': existing.get('coin'),
+                        'address': existing.get('address'),
+                        'analysis_text': existing.get('analysis_text'),
+                        'sections': existing.get('sections', {}),
+                    },
+                    'cached': True,
+                    'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None,
+                    'message': f'返回已存在的 {coin} 仓位分析结果'
+                })
+        
+        # 尝试获取交易员详细信息
+        trader_info = None
+        if address:
+            trader_info = db.get_trader_by_address(address)
+        
+        logger.info(f"开始单仓位 {coin} AI分析，提供商: {provider or '默认'}")
+        
+        analysis = analyze_single_position(position, trader_info, provider=provider)
+        
+        # 保存分析结果
+        db.save_positions_ai_analysis(
+            analysis_type='single',
+            analysis=analysis,
+            positions=[position],
+            coin=coin,
+            address=address,
+            provider=provider
+        )
+        
+        return jsonify({
+            'success': True,
+            'data': analysis,
+            'cached': False,
+            'message': f'{coin} 仓位AI分析完成'
+        })
+    except Exception as e:
+        logger.error(f"单仓位AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/check', methods=['POST'])
+def check_positions_ai_analysis():
+    """
+    检查是否已有持仓 AI 分析结果（不执行分析）
+    Body (JSON):
+        - analysis_type: str, 分析类型 (overall/coin/single)
+        - positions: List[Dict], 持仓数据列表
+        - coin: str, 币种（coin/single类型时需要）
+        - address: str, 地址（single类型时需要）
+    """
+    try:
+        data = request.get_json() or {}
+        analysis_type = data.get('analysis_type', 'overall')
+        positions = data.get('positions', [])
+        coin = data.get('coin')
+        address = data.get('address')
+        
+        if not positions:
+            return jsonify({
+                'success': False,
+                'error': '缺少 positions 参数'
+            }), 400
+        
+        existing = db.get_positions_ai_analysis(analysis_type, positions, coin=coin, address=address)
+        
+        if existing:
+            return jsonify({
+                'success': True,
+                'exists': True,
+                'data': {
+                    'analysis_type': existing.get('analysis_type'),
+                    'coin': existing.get('coin'),
+                    'address': existing.get('address'),
+                    'position_count': existing.get('position_count'),
+                    'analysis_text': existing.get('analysis_text'),
+                    'sections': existing.get('sections', {}),
+                },
+                'analyzed_at': existing.get('updated_at').isoformat() if existing.get('updated_at') else None
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'exists': False,
+                'data': None
+            })
+    except Exception as e:
+        logger.error(f"检查持仓AI分析失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
