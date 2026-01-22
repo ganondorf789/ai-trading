@@ -371,16 +371,15 @@ def check_immediate_copy_conditions(
     if min_score > 0 and trader_score < min_score:
         return False, f"交易员评分 {trader_score} < 最低要求 {min_score}"
     
-    # 2. 检查币种白名单/黑名单
+    # 2. 检查币种白名单（只有在白名单中的币种才会跟单）
     coin = position.get('coin', '')
     whitelist = config.get('symbols_whitelist', []) or []
-    blacklist = config.get('symbols_blacklist', []) or []
     
-    if whitelist and coin not in whitelist:
+    if not whitelist:
+        return False, "白名单为空，不跟单任何币种"
+    
+    if coin not in whitelist:
         return False, f"币种 {coin} 不在白名单中"
-    
-    if blacklist and coin in blacklist:
-        return False, f"币种 {coin} 在黑名单中"
     
     # 3. 检查目标交易员杠杆（只跟单杠杆 >= min_trader_leverage 的仓位）
     min_trader_leverage = config.get('min_trader_leverage', 0)

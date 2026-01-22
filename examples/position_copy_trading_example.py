@@ -642,7 +642,7 @@ def handle_current_position(event: CardActionEvent):
             
             # 仓位信息
             content = f"{side_emoji} **{symbol}** {side_cn} | {leverage}x"
-            content += f"\n└ 价值: ${position_value:,.2f} | 现价: ${current_price:,.4f}"
+            content += f"\n└ 价值: ${position_value:,.2f} | 入场价: ${entry_price:,.4f}"
             content += f"\n└ {pnl_emoji} 未实现盈亏: {pnl_str}"
             
             # 添加仓位信息
