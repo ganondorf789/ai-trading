@@ -6,7 +6,6 @@ import {
   Input,
   Button,
   Spinner,
-  Divider,
   addToast,
   Switch,
   Chip,
@@ -538,43 +537,6 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
               onValueChange={(v) => setConfig({ ...config, copy_leverage: v })}
             />
           </div>
-        </CardBody>
-      </Card>
-
-      {/* 说明卡片 */}
-      <Card className="shadow-sm bg-default-50 dark:bg-default-100/5">
-        <CardBody className="gap-3">
-          <div className="flex items-center gap-2">
-            <Icon icon="lucide:info" width={20} className="text-primary" />
-            <h4 className="font-semibold">默认配置说明</h4>
-          </div>
-          <Divider />
-          <ul className="space-y-2 text-sm text-default-600">
-            <li className="flex items-start gap-2">
-              <Icon icon="lucide:check" width={16} className="text-success mt-0.5" />
-              <span>
-                <strong>默认跟单配置</strong>：添加新跟单地址时将使用这些默认值
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Icon icon="lucide:check" width={16} className="text-success mt-0.5" />
-              <span>
-                <strong>跟单比例</strong>：表示跟单目标仓位的百分比，如10%表示跟单目标仓位的十分之一
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Icon icon="lucide:check" width={16} className="text-success mt-0.5" />
-              <span>
-                <strong>仓位限制</strong>：最小和最大仓位限制跟单订单的大小范围
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <Icon icon="lucide:check" width={16} className="text-success mt-0.5" />
-              <span>
-                <strong>币种过滤</strong>：通过白名单和黑名单控制可跟单的币种范围
-              </span>
-            </li>
-          </ul>
         </CardBody>
       </Card>
 
