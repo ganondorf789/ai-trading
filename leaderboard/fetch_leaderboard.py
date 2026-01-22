@@ -3,16 +3,11 @@ Hyperliquid Leaderboard Scraper
 直接调用Hyperliquid的stats-data API获取排行榜上所有交易者的地址
 """
 import requests
-import json
-import os
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
-# 获取当前脚本所在目录
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> List[Dict[str, Any]]:
+def fetch_leaderboard(sort_by_pnl: bool = True) -> List[Dict[str, Any]]:
     """
     获取Hyperliquid排行榜数据
 
@@ -37,20 +32,6 @@ def fetch_leaderboard(save_to_file: bool = True, sort_by_pnl: bool = True) -> Li
                 row["_vlm"] = float(month_data.get("vlm", 0))
             leaderboard_rows.sort(key=lambda x: x.get("_vlm", 0), reverse=True)
             logger.info("已按最近30天的成交量从大到小排序")
-
-        if save_to_file:
-            # 保存完整数据到 leaderboard 目录
-            full_path = os.path.join(SCRIPT_DIR, "leaderboard_full.json")
-            with open(full_path, "w", encoding="utf-8") as f:
-                json.dump(leaderboard_rows, f, indent=2, ensure_ascii=False)
-            logger.info(f"完整数据已保存到 {full_path}")
-
-            # 只保存地址到 leaderboard 目录
-            addresses = [row["ethAddress"] for row in leaderboard_rows]
-            addr_path = os.path.join(SCRIPT_DIR, "leaderboard_addresses.txt")
-            with open(addr_path, "w") as f:
-                f.write("\n".join(addresses))
-            logger.info(f"地址已保存到 {addr_path}")
 
         return leaderboard_rows
 
@@ -77,7 +58,7 @@ def get_top_traders(
     Returns:
         排序后的交易者列表
     """
-    rows = fetch_leaderboard(save_to_file=False)
+    rows = fetch_leaderboard()
 
     if not rows:
         return []
@@ -134,18 +115,14 @@ if __name__ == "__main__":
     parser.add_argument("--window", choices=["day", "week", "month", "allTime"],
                         default="allTime", help="时间窗口")
     parser.add_argument("--min-pnl", type=float, help="最低盈利过滤")
-    parser.add_argument("--save", action="store_true", help="保存到文件")
     parser.add_argument("--addresses-only", action="store_true",
                         help="只输出地址列表")
 
     args = parser.parse_args()
 
-    if args.save:
-        # 保存所有数据
-        fetch_leaderboard(save_to_file=True)
-    elif args.addresses_only:
+    if args.addresses_only:
         # 只输出地址
-        rows = fetch_leaderboard(save_to_file=False)
+        rows = fetch_leaderboard()
         for row in rows:
             logger.info(row["ethAddress"])
     else:
@@ -159,5 +136,4 @@ if __name__ == "__main__":
         print_trader_summary(traders, args.window)
 
         logger.info(f"\n共 {len(traders)} 个交易者")
-        logger.info("\n提示: 使用 --save 保存完整数据到文件")
-        logger.info("      使用 --addresses-only 只输出地址列表")
+        logger.info("\n提示: 使用 --addresses-only 只输出地址列表")
