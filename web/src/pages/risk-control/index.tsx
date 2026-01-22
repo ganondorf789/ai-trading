@@ -3,12 +3,13 @@ import { Tabs, Tab } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { RiskControlTab, DefaultCopyConfigTab } from "./components";
+import { RiskControlTab, DefaultCopyConfigTab, ImmediateCopyConfigTab } from "./components";
 
 export default function RiskControlPage() {
   const [activeTab, setActiveTab] = useState("risk-control");
   const [riskHasChanges, setRiskHasChanges] = useState(false);
   const [copyHasChanges, setCopyHasChanges] = useState(false);
+  const [immediateHasChanges, setImmediateHasChanges] = useState(false);
 
   return (
     <DefaultLayout>
@@ -66,6 +67,22 @@ export default function RiskControlPage() {
           >
             <div className="pt-4">
               <DefaultCopyConfigTab onHasChanges={setCopyHasChanges} />
+            </div>
+          </Tab>
+          <Tab
+            key="immediate-copy"
+            title={
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:zap" width={18} />
+                <span>立即跟单配置</span>
+                {immediateHasChanges && (
+                  <span className="w-2 h-2 rounded-full bg-warning" />
+                )}
+              </div>
+            }
+          >
+            <div className="pt-4">
+              <ImmediateCopyConfigTab onHasChanges={setImmediateHasChanges} />
             </div>
           </Tab>
         </Tabs>

@@ -478,71 +478,6 @@ export interface HyperliquidCoin {
   updated_at: string;
 }
 
-// ==================== 分组对比分析类型 ====================
-
-export interface GroupComparisonSession {
-  id: number;
-  created_at: string;
-  rating: string;
-  total_traders: number;
-  group_size: number;
-  top_per_group: number;
-  final_size: number;
-  num_groups: number;
-  total_rounds: number;
-  min_sharpe: number | null;
-  min_sortino: number | null;
-  max_drawdown: number | null;
-  min_win_rate: number | null;
-  max_win_rate: number | null;
-  finalists_count: number;
-  final_ranking: string | null;
-  ai_provider: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  // 详情中包含
-  groups?: GroupComparisonGroup[];
-  traders?: GroupComparisonTrader[];
-  finalists?: GroupComparisonTrader[];
-}
-
-export interface GroupComparisonGroup {
-  id: number;
-  session_id: number;
-  round_num: number;
-  group_num: number;
-  total_in_group: number;
-  analysis: string;
-  traders?: GroupComparisonTrader[];
-}
-
-export interface GroupComparisonTrader {
-  id: number;
-  session_id: number;
-  group_id: number | null;
-  address: string;
-  overall_score: number;
-  win_rate: number;
-  total_pnl: number;
-  recent_7d_pnl: number;
-  max_drawdown: number;
-  sharpe_ratio: number;
-  sortino_ratio: number;
-  profit_factor: number;
-  is_finalist: boolean;
-  final_rank: number | null;
-  eliminated_round: number | null;
-  elimination_reason: string | null;
-  // 关联的交易员详情
-  trader_info?: Trader;
-}
-
-export interface GroupComparisonStats {
-  total_sessions: number;
-  by_status: Record<string, number>;
-  recent_sessions: number;
-  avg_finalists: number;
-}
-
 // ==================== 持仓AI分析类型 ====================
 
 export interface PositionsAIAnalysis {
@@ -613,7 +548,25 @@ export interface DefaultCopyTradingConfig {
   
   // 功能开关
   copy_leverage: boolean;
-  sync_position: boolean;
-  sync_position_symbols: string[];
-  dry_run: boolean;
+}
+
+// ==================== 立即跟单配置类型 ====================
+
+export interface ImmediateCopyConfig {
+  // 跟单参数
+  copy_ratio: number;
+  max_position_size_usd: number;
+  min_position_size_usd: number;
+  max_leverage: number;
+  default_leverage: number;
+  slippage: number;
+  copy_leverage: boolean;
+  
+  // 跟单条件
+  min_trader_overall_score: number;  // 最低评分 0-100，0表示不限制
+  min_trader_leverage: number;  // 目标交易员最小杠杆，>=此值才跟单
+  symbols_whitelist: string[];
+  symbols_blacklist: string[];
+  min_position_value_usd: number;  // 目标仓位最小价值
+  max_position_value_usd: number;  // 目标仓位最大价值，0表示不限制
 }

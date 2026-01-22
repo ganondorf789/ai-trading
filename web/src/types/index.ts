@@ -27,9 +27,4 @@ export type {
   CopyPositionStats,
   // Hyperliquid types
   HyperliquidCoin,
-  // Group comparison types
-  GroupComparisonSession,
-  GroupComparisonGroup,
-  GroupComparisonTrader,
-  GroupComparisonStats,
 } from './api';

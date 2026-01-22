@@ -44,6 +44,8 @@ from config.settings import settings
 
 # Redis 新仓位推送 channel
 REDIS_POSITION_CHANNEL = "new_positions"
+# Redis 立即跟单开仓通知 channel（与 engine/position_copy_trading.py 一致）
+REDIS_OPEN_CHANNEL = "position_tracking_open"
 
 # 行情检测配置
 MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
@@ -91,41 +93,109 @@ class MarketActivityTracker:
     
     追踪1分钟内的新仓位数量，如果达到阈值则触发通知
     10分钟内只通知一次
+    
+    支持 Redis 存储以实现多服务器共享状态
     """
+    
+    # Redis 键名
+    REDIS_POSITION_TIMESTAMPS_KEY = "market_activity:position_timestamps"
+    REDIS_LAST_NOTIFICATION_KEY = "market_activity:last_notification_time"
     
     def __init__(
         self,
         window_seconds: int = MARKET_ACTIVITY_WINDOW,
         threshold: int = MARKET_ACTIVITY_THRESHOLD,
-        cooldown_seconds: int = MARKET_ACTIVITY_COOLDOWN
+        cooldown_seconds: int = MARKET_ACTIVITY_COOLDOWN,
+        redis_client: redis.Redis = None
     ):
         self.window_seconds = window_seconds
         self.threshold = threshold
         self.cooldown_seconds = cooldown_seconds
+        self.redis_client = redis_client
         
-        # 存储新仓位的时间戳
-        self.position_timestamps: deque = deque()
-        # 上次发送通知的时间
-        self.last_notification_time: Optional[datetime] = None
+        # 本地备用存储（当 Redis 不可用时）
+        self._local_position_timestamps: deque = deque()
+        self._local_last_notification_time: Optional[datetime] = None
     
     def add_positions(self, count: int) -> None:
         """记录新仓位"""
         now = datetime.now()
+        timestamp = now.timestamp()
+        
+        if self.redis_client:
+            try:
+                # 使用 Redis ZSET，score 为时间戳
+                pipe = self.redis_client.pipeline()
+                for _ in range(count):
+                    # 使用唯一的成员值（时间戳+随机后缀）
+                    member = f"{timestamp}:{time.perf_counter_ns()}"
+                    pipe.zadd(self.REDIS_POSITION_TIMESTAMPS_KEY, {member: timestamp})
+                # 设置 key 过期时间（比窗口时间稍长一点，自动清理）
+                pipe.expire(self.REDIS_POSITION_TIMESTAMPS_KEY, self.window_seconds + 60)
+                pipe.execute()
+                return
+            except Exception as e:
+                logger.debug(f"Redis add_positions 失败，使用本地存储: {e}")
+        
+        # 本地备用
         for _ in range(count):
-            self.position_timestamps.append(now)
+            self._local_position_timestamps.append(now)
     
     def _clean_old_positions(self) -> None:
         """清理超出时间窗口的记录"""
         now = datetime.now()
-        cutoff = now - timedelta(seconds=self.window_seconds)
+        cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
         
-        while self.position_timestamps and self.position_timestamps[0] < cutoff:
-            self.position_timestamps.popleft()
+        if self.redis_client:
+            try:
+                # 删除时间窗口之前的记录
+                self.redis_client.zremrangebyscore(
+                    self.REDIS_POSITION_TIMESTAMPS_KEY,
+                    "-inf",
+                    cutoff_timestamp
+                )
+                return
+            except Exception as e:
+                logger.debug(f"Redis _clean_old_positions 失败: {e}")
+        
+        # 本地备用
+        cutoff = now - timedelta(seconds=self.window_seconds)
+        while self._local_position_timestamps and self._local_position_timestamps[0] < cutoff:
+            self._local_position_timestamps.popleft()
     
     def get_recent_count(self) -> int:
         """获取时间窗口内的新仓位数量"""
         self._clean_old_positions()
-        return len(self.position_timestamps)
+        
+        if self.redis_client:
+            try:
+                now = datetime.now()
+                cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
+                # 统计在时间窗口内的记录数
+                count = self.redis_client.zcount(
+                    self.REDIS_POSITION_TIMESTAMPS_KEY,
+                    cutoff_timestamp,
+                    "+inf"
+                )
+                return count
+            except Exception as e:
+                logger.debug(f"Redis get_recent_count 失败: {e}")
+        
+        # 本地备用
+        return len(self._local_position_timestamps)
+    
+    def _get_last_notification_time(self) -> Optional[datetime]:
+        """获取上次通知时间"""
+        if self.redis_client:
+            try:
+                value = self.redis_client.get(self.REDIS_LAST_NOTIFICATION_KEY)
+                if value:
+                    return datetime.fromtimestamp(float(value))
+                return None
+            except Exception as e:
+                logger.debug(f"Redis _get_last_notification_time 失败: {e}")
+        
+        return self._local_last_notification_time
     
     def should_notify(self) -> bool:
         """
@@ -136,16 +206,18 @@ class MarketActivityTracker:
             1. 1分钟内新仓位 >= 阈值
             2. 距离上次通知超过10分钟（或从未通知过）
         """
-        self._clean_old_positions()
+        # 获取最近的仓位数量
+        recent_count = self.get_recent_count()
         
         # 检查数量是否达到阈值
-        if len(self.position_timestamps) < self.threshold:
+        if recent_count < self.threshold:
             return False
         
         # 检查冷却时间
         now = datetime.now()
-        if self.last_notification_time is not None:
-            time_since_last = (now - self.last_notification_time).total_seconds()
+        last_notification = self._get_last_notification_time()
+        if last_notification is not None:
+            time_since_last = (now - last_notification).total_seconds()
             if time_since_last < self.cooldown_seconds:
                 return False
         
@@ -153,14 +225,30 @@ class MarketActivityTracker:
     
     def mark_notified(self) -> None:
         """标记已发送通知"""
-        self.last_notification_time = datetime.now()
+        now = datetime.now()
+        
+        if self.redis_client:
+            try:
+                # 存储时间戳，并设置过期时间
+                self.redis_client.set(
+                    self.REDIS_LAST_NOTIFICATION_KEY,
+                    str(now.timestamp()),
+                    ex=self.cooldown_seconds + 60  # 过期时间比冷却时间稍长
+                )
+                return
+            except Exception as e:
+                logger.debug(f"Redis mark_notified 失败: {e}")
+        
+        # 本地备用
+        self._local_last_notification_time = now
     
     def get_cooldown_remaining(self) -> int:
         """获取剩余冷却时间（秒）"""
-        if self.last_notification_time is None:
+        last_notification = self._get_last_notification_time()
+        if last_notification is None:
             return 0
         
-        elapsed = (datetime.now() - self.last_notification_time).total_seconds()
+        elapsed = (datetime.now() - last_notification).total_seconds()
         remaining = self.cooldown_seconds - elapsed
         return max(0, int(remaining))
 
@@ -261,6 +349,141 @@ def format_position_direction(szi: float) -> tuple[str, str]:
         return "做空", "🔴"
 
 
+def check_immediate_copy_conditions(
+    config: Dict,
+    trader: Dict,
+    position: Dict
+) -> tuple[bool, str]:
+    """
+    检查仓位是否符合立即跟单条件
+    
+    Args:
+        config: 立即跟单配置（来自 db.get_immediate_copy_config()）
+        trader: 交易员信息（包含 overall_score 等）
+        position: 仓位信息（包含 coin, szi, leverage, entry_px 等）
+    
+    Returns:
+        (是否符合条件, 原因说明)
+    """
+    # 1. 检查交易员评分
+    min_score = config.get('min_trader_overall_score', 0)
+    trader_score = trader.get('overall_score', 0) or 0
+    if min_score > 0 and trader_score < min_score:
+        return False, f"交易员评分 {trader_score} < 最低要求 {min_score}"
+    
+    # 2. 检查币种白名单/黑名单
+    coin = position.get('coin', '')
+    whitelist = config.get('symbols_whitelist', []) or []
+    blacklist = config.get('symbols_blacklist', []) or []
+    
+    if whitelist and coin not in whitelist:
+        return False, f"币种 {coin} 不在白名单中"
+    
+    if blacklist and coin in blacklist:
+        return False, f"币种 {coin} 在黑名单中"
+    
+    # 3. 检查目标交易员杠杆（只跟单杠杆 >= min_trader_leverage 的仓位）
+    min_trader_leverage = config.get('min_trader_leverage', 0)
+    position_leverage = float(position.get('leverage', 1) or 1)
+    if position_leverage < min_trader_leverage:
+        return False, f"目标杠杆 {position_leverage}x < 最小要求 {min_trader_leverage}x"
+    
+    # 4. 检查仓位价值
+    szi = float(position.get('szi', 0) or 0)
+    entry_px = float(position.get('entry_px', 0) or 0)
+    position_value = abs(szi) * entry_px
+    
+    min_value = config.get('min_position_value_usd', 0) or 0
+    max_value = config.get('max_position_value_usd', 0) or 0
+    
+    if min_value > 0 and position_value < min_value:
+        return False, f"仓位价值 ${position_value:.2f} < 最小要求 ${min_value}"
+    
+    if max_value > 0 and position_value > max_value:
+        return False, f"仓位价值 ${position_value:.2f} > 最大限制 ${max_value}"
+    
+    return True, "符合所有条件"
+
+
+def create_position_tracking_for_copy(
+    db: TraderDatabase,
+    config: Dict,
+    trader: Dict,
+    position: Dict,
+    redis_client: redis.Redis = None
+) -> Optional[int]:
+    """
+    为符合条件的仓位创建跟单记录并发送 Redis 通知
+    
+    Args:
+        db: 数据库实例
+        config: 立即跟单配置
+        trader: 交易员信息
+        position: 仓位信息
+        redis_client: Redis 客户端
+    
+    Returns:
+        创建的 tracking_id，如果已存在或创建失败则返回 None
+    """
+    address = trader['address']
+    coin = position.get('coin', '')
+    
+    # 检查是否已存在活跃的跟单记录
+    if db.check_position_tracking_exists(address, coin):
+        logger.debug(f"    跳过立即跟单: {coin} 已有活跃跟单记录")
+        return None
+    
+    # 获取仓位详情
+    szi = float(position.get('szi', 0) or 0)
+    entry_px = float(position.get('entry_px', 0) or 0)
+    leverage = float(position.get('leverage', 1) or 1)
+    side = 'long' if szi > 0 else 'short'
+    
+    # 创建跟单记录
+    tracking_data = {
+        'target_address': address,
+        'target_name': trader.get('name', '') or address[:10] + '...',
+        'symbol': coin,
+        'is_enabled': True,
+        # 从立即跟单配置获取跟单参数
+        'copy_ratio': config.get('copy_ratio', 0.1),
+        'max_position_size_usd': config.get('max_position_size_usd', 500.0),
+        'min_position_size_usd': config.get('min_position_size_usd', 20.0),
+        'copy_leverage': config.get('copy_leverage', False),
+        'max_leverage': config.get('max_leverage', 10),
+        'default_leverage': config.get('default_leverage', 3),
+        'slippage': config.get('slippage', 0.001),
+        # 目标仓位快照
+        'target_initial_size': abs(szi),
+        'target_initial_side': side,
+        'target_initial_entry_price': entry_px,
+        'status': 'pending'
+    }
+    
+    try:
+        tracking_id = db.save_position_tracking(tracking_data)
+        
+        if tracking_id:
+            logger.success(f"    ✓ 创建立即跟单记录: {coin} {side} (tracking_id={tracking_id})")
+            
+            # 发送 Redis 通知触发开仓
+            if redis_client:
+                try:
+                    redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+                    logger.info(f"    ✓ 已发送开仓通知 (channel={REDIS_OPEN_CHANNEL})")
+                except Exception as e:
+                    logger.warning(f"    ⚠ Redis 开仓通知发送失败: {e}")
+            
+            return tracking_id
+        else:
+            logger.error(f"    ✗ 创建跟单记录失败: {coin}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"    ✗ 创建跟单记录异常: {coin} - {e}")
+        return None
+
+
 async def fetch_user_state_async(
     hl_client: HyperliquidClient,
     address: str
@@ -290,7 +513,8 @@ def process_trader_result(
     trader: Dict,
     user_state: Optional[Dict],
     old_positions: Dict[str, Dict],
-    redis_client: redis.Redis = None
+    redis_client: redis.Redis = None,
+    immediate_copy_config: Optional[Dict] = None
 ) -> int:
     """
     处理单个交易员的持仓结果
@@ -302,6 +526,7 @@ def process_trader_result(
         user_state: 从API获取的用户状态
         old_positions: 更新前的持仓
         redis_client: Redis 客户端
+        immediate_copy_config: 立即跟单配置（如果提供，则检查条件并触发跟单）
     
     Returns:
         新仓位数量
@@ -319,6 +544,20 @@ def process_trader_result(
         # 清空数据库中的持仓
         db.save_positions(address, [])
         return 0
+    
+    # 构建原始仓位数据映射（用于立即跟单条件检查）
+    raw_positions_map = {}
+    for pos_data in asset_positions:
+        pos = pos_data.get('position', {})
+        coin = pos.get('coin', '')
+        if coin:
+            leverage_info = pos.get('leverage', {})
+            raw_positions_map[coin] = {
+                'coin': coin,
+                'szi': pos.get('szi', 0),
+                'entry_px': pos.get('entryPx', 0),
+                'leverage': leverage_info.get('value', 1) if isinstance(leverage_info, dict) else leverage_info
+            }
     
     # 保存持仓到数据库
     positions_saved = db.save_positions(address, asset_positions)
@@ -356,6 +595,25 @@ def process_trader_result(
                 redis_client.publish(REDIS_POSITION_CHANNEL, f"https://app.hyperliquid.xyz/trade/{coin}")
             except Exception as e:
                 logger.debug(f"    Redis 推送失败: {e}")
+        
+        # 立即跟单条件检查
+        if immediate_copy_config and redis_client:
+            # 获取原始仓位数据（包含杠杆等信息）
+            raw_pos = raw_positions_map.get(coin, pos)
+            
+            # 检查是否符合立即跟单条件
+            is_match, reason = check_immediate_copy_conditions(
+                immediate_copy_config, trader, raw_pos
+            )
+            
+            if is_match:
+                logger.info(f"    → 符合立即跟单条件")
+                # 创建跟单记录并发送通知
+                create_position_tracking_for_copy(
+                    db, immediate_copy_config, trader, raw_pos, redis_client
+                )
+            else:
+                logger.debug(f"    → 不符合立即跟单条件: {reason}")
     
     return len(new_position_list)
 
@@ -393,6 +651,19 @@ async def run_monitoring_cycle_async(
         'new_positions_total': 0,
         'errors': 0
     }
+    
+    # 获取立即跟单配置（每个循环获取一次，确保使用最新配置）
+    immediate_copy_config = None
+    if redis_client:
+        try:
+            immediate_copy_config = db.get_immediate_copy_config()
+            min_score = immediate_copy_config.get('min_trader_overall_score', 0)
+            logger.info(f"立即跟单已启用: 最低评分={min_score}, "
+                       f"跟单比例={immediate_copy_config.get('copy_ratio', 0.1)}, "
+                       f"最大仓位=${immediate_copy_config.get('max_position_size_usd', 500)}")
+        except Exception as e:
+            logger.warning(f"获取立即跟单配置失败: {e}")
+            immediate_copy_config = None
     
     # 获取S级交易员（按评分排序，可限制数量和偏移）
     traders = get_s_rated_traders(db, limit=limit, offset=offset)
@@ -439,7 +710,8 @@ async def run_monitoring_cycle_async(
         try:
             new_count = process_trader_result(
                 db, notifier, trader, user_state, old_positions,
-                redis_client=redis_client
+                redis_client=redis_client,
+                immediate_copy_config=immediate_copy_config
             )
             if new_count > 0:
                 logger.success(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... 仓位: {positions_count}, 新增: {new_count}")
@@ -566,27 +838,30 @@ async def main_async(args):
     else:
         logger.success("✓ 飞书通知器初始化成功（重要通知）")
     
-    # 初始化行情活动追踪器
-    activity_tracker = MarketActivityTracker()
-    logger.info(f"行情追踪器: 阈值={activity_tracker.threshold}个/分钟, 冷却={activity_tracker.cooldown_seconds}秒")
-    
-    # 初始化 Redis（用于本地推送）
+    # 初始化 Redis（用于本地推送和行情追踪共享状态）
+    logger.info("初始化 Redis 连接...")
     redis_client = None
-    if args.redis:
-        try:
-            redis_client = redis.Redis(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                password=settings.redis.password or None,
-                db=settings.redis.db,
-                decode_responses=True
-            )
-            redis_client.ping()
-            logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+    try:
+        redis_client = redis.Redis(
+            host=settings.redis.host,
+            port=settings.redis.port,
+            password=settings.redis.password or None,
+            db=settings.redis.db,
+            decode_responses=True
+        )
+        redis_client.ping()
+        logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+        if args.redis:
             logger.info(f"  本地监听: python local_position_listener.py")
-        except Exception as e:
-            logger.warning(f"⚠ Redis 连接失败: {e}，本地推送将不可用")
-            redis_client = None
+    except Exception as e:
+        logger.warning(f"⚠ Redis 连接失败: {e}，行情追踪将使用本地存储（不跨服务器共享）")
+        redis_client = None
+    
+    # 初始化行情活动追踪器（使用 Redis 共享状态）
+    activity_tracker = MarketActivityTracker(redis_client=redis_client)
+    logger.info(f"行情追踪器: 阈值={activity_tracker.threshold}个/分钟, 冷却={activity_tracker.cooldown_seconds}秒")
+    if redis_client:
+        logger.info(f"  行情追踪状态通过 Redis 共享（支持多服务器）")
     
     logger.info("")
     
@@ -604,7 +879,7 @@ async def main_async(args):
                 rate=args.rate,
                 limit=args.limit,
                 offset=args.offset,
-                redis_client=redis_client,
+                redis_client=redis_client if args.redis else None,  # 仅用于位置推送
                 activity_tracker=activity_tracker,
                 important_feishu=important_feishu
             )

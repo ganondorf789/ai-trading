@@ -16,15 +16,12 @@ import type {
   CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
-  GroupComparisonSession,
-  GroupComparisonGroup,
-  GroupComparisonTrader,
-  GroupComparisonStats,
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
   DefaultCopyTradingConfig,
+  ImmediateCopyConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -51,15 +48,12 @@ export type {
   CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
-  GroupComparisonSession,
-  GroupComparisonGroup,
-  GroupComparisonTrader,
-  GroupComparisonStats,
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
   RiskControlConfig,
   DefaultCopyTradingConfig,
+  ImmediateCopyConfig,
   PositionHistoryRecord,
   PositionHistoryStats,
   PositionHistoryByCoin,
@@ -608,30 +602,6 @@ export const positionTrackingApi = {
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
 };
 
-// ==================== 分组对比分析 API ====================
-
-export const groupComparisonApi = {
-  // 获取会话列表
-  getSessions: (params?: { limit?: number; status?: string }) =>
-    api.get<any, ApiResponse<GroupComparisonSession[]>>('/group-comparison/sessions', { params }),
-
-  // 获取会话详情
-  getSession: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonSession>>(`/group-comparison/sessions/${sessionId}`),
-
-  // 获取会话晋级者
-  getFinalists: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonTrader[]>>(`/group-comparison/sessions/${sessionId}/finalists`),
-
-  // 获取会话分组信息
-  getGroups: (sessionId: number) =>
-    api.get<any, ApiResponse<GroupComparisonGroup[]>>(`/group-comparison/sessions/${sessionId}/groups`),
-
-  // 获取统计信息
-  getStats: () =>
-    api.get<any, ApiResponse<GroupComparisonStats>>('/group-comparison/stats'),
-};
-
 // ==================== 风控配置 API ====================
 
 export const riskControlApi = {
@@ -650,6 +620,14 @@ export const riskControlApi = {
   // 更新默认跟单配置
   updateDefaultCopyConfig: (data: Partial<DefaultCopyTradingConfig>) =>
     api.put<any, ApiResponse<DefaultCopyTradingConfig> & { message?: string }>('/copy-trading/default-config', data),
+
+  // 获取立即跟单配置
+  getImmediateCopyConfig: () =>
+    api.get<any, ApiResponse<ImmediateCopyConfig>>('/copy-trading/immediate-config'),
+
+  // 更新立即跟单配置
+  updateImmediateCopyConfig: (data: Partial<ImmediateCopyConfig>) =>
+    api.put<any, ApiResponse<ImmediateCopyConfig> & { message?: string }>('/copy-trading/immediate-config', data),
 };
 
 // ==================== S级优选筛选 API ====================

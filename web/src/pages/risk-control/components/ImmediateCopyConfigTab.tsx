@@ -12,28 +12,34 @@ import {
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
-import { riskControlApi, hyperliquidApi, DefaultCopyTradingConfig } from "@/services/api";
+import { riskControlApi, hyperliquidApi, ImmediateCopyConfig } from "@/services/api";
 
-// 默认跟单配置
-const defaultCopyConfig: DefaultCopyTradingConfig = {
+// 默认立即跟单配置
+const defaultImmediateCopyConfig: ImmediateCopyConfig = {
+  // 跟单参数
   copy_ratio: 0.1,
   max_position_size_usd: 500,
   min_position_size_usd: 20,
   max_leverage: 10,
   default_leverage: 3,
-  copy_leverage: false,
   slippage: 0.001,
+  copy_leverage: false,
+  // 跟单条件
+  min_trader_overall_score: 0,
+  min_trader_leverage: 0,
   symbols_whitelist: [],
   symbols_blacklist: [],
+  min_position_value_usd: 0,
+  max_position_value_usd: 0,
 };
 
-interface DefaultCopyConfigTabProps {
+interface ImmediateCopyConfigTabProps {
   onHasChanges?: (hasChanges: boolean) => void;
 }
 
-export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfigTabProps) {
-  const [config, setConfig] = useState<DefaultCopyTradingConfig>(defaultCopyConfig);
-  const [originalConfig, setOriginalConfig] = useState<DefaultCopyTradingConfig>(defaultCopyConfig);
+export default function ImmediateCopyConfigTab({ onHasChanges }: ImmediateCopyConfigTabProps) {
+  const [config, setConfig] = useState<ImmediateCopyConfig>(defaultImmediateCopyConfig);
+  const [originalConfig, setOriginalConfig] = useState<ImmediateCopyConfig>(defaultImmediateCopyConfig);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -78,15 +84,15 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await riskControlApi.getDefaultCopyConfig();
+      const response = await riskControlApi.getImmediateCopyConfig();
       if (response.success && response.data) {
-        const loadedConfig = { ...defaultCopyConfig, ...response.data };
+        const loadedConfig = { ...defaultImmediateCopyConfig, ...response.data };
         setConfig(loadedConfig);
         setOriginalConfig(loadedConfig);
       }
     } catch (error) {
-      console.error("Failed to load default copy config:", error);
-      addToast({ title: "加载默认跟单配置失败", color: "danger" });
+      console.error("Failed to load immediate copy config:", error);
+      addToast({ title: "加载立即跟单配置失败", color: "danger" });
     } finally {
       setLoading(false);
     }
@@ -131,7 +137,7 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await riskControlApi.updateDefaultCopyConfig(config);
+      const response = await riskControlApi.updateImmediateCopyConfig(config);
       if (response.success) {
         setOriginalConfig(config);
         addToast({ title: response.message || "保存成功", color: "success" });
@@ -139,7 +145,7 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
         addToast({ title: response.error || "保存失败", color: "danger" });
       }
     } catch (error) {
-      console.error("Failed to save default copy config:", error);
+      console.error("Failed to save immediate copy config:", error);
       addToast({ title: "保存配置失败", color: "danger" });
     } finally {
       setSaving(false);
@@ -148,7 +154,7 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
 
   // 重置为默认值
   const handleReset = () => {
-    setConfig(defaultCopyConfig);
+    setConfig(defaultImmediateCopyConfig);
   };
 
   // 撤销更改
@@ -290,70 +296,54 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
         </div>
       )}
 
-      {/* 基础跟单配置 */}
+      {/* 跟单条件 */}
       <Card className="shadow-sm">
         <CardHeader className="flex gap-3 pb-0">
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
-              <Icon icon="lucide:copy" width={20} className="text-primary" />
+            <div className="p-2 bg-secondary-100 dark:bg-secondary-900/30 rounded-lg">
+              <Icon icon="lucide:filter" width={20} className="text-secondary" />
             </div>
-            <h3 className="text-lg font-semibold">跟单参数</h3>
+            <h3 className="text-lg font-semibold">跟单条件</h3>
           </div>
         </CardHeader>
         <CardBody className="gap-4">
+          <p className="text-xs text-default-500 mb-2">
+            设置触发立即跟单的条件，符合以下所有条件时才会执行跟单
+          </p>
           <div className="grid gap-4 md:grid-cols-2">
             <Input
               type="number"
-              label="跟单比例"
-              description="跟单目标仓位的百分比"
-              value={String(((config.copy_ratio || 0.1) * 100).toFixed(0))}
-              onValueChange={(v) => setConfig({ ...config, copy_ratio: (parseFloat(v) || 10) / 100 })}
-              endContent={<span className="text-default-400 text-sm">%</span>}
+              label="交易员最低评分"
+              description="只跟单评分达到此值的交易员（0-100，0=不限制）"
+              value={String(config.min_trader_overall_score || 0)}
+              onValueChange={(v) => setConfig({ ...config, min_trader_overall_score: parseFloat(v) || 0 })}
               classNames={{ label: "font-medium", description: "text-xs" }}
             />
             <Input
               type="number"
-              label="滑点容忍度"
-              description="允许的最大滑点百分比"
-              value={String(((config.slippage || 0.001) * 100).toFixed(2))}
-              onValueChange={(v) => setConfig({ ...config, slippage: (parseFloat(v) || 0.1) / 100 })}
-              endContent={<span className="text-default-400 text-sm">%</span>}
-              classNames={{ label: "font-medium", description: "text-xs" }}
-            />
-            <Input
-              type="number"
-              label="最大仓位"
-              description="单个跟单仓位的最大价值"
-              value={String(config.max_position_size_usd || 500)}
-              onValueChange={(v) => setConfig({ ...config, max_position_size_usd: parseFloat(v) || 500 })}
-              startContent={<span className="text-default-400 text-sm">$</span>}
-              classNames={{ label: "font-medium", description: "text-xs" }}
-            />
-            <Input
-              type="number"
-              label="最小仓位"
-              description="单个跟单仓位的最小价值"
-              value={String(config.min_position_size_usd || 20)}
-              onValueChange={(v) => setConfig({ ...config, min_position_size_usd: parseFloat(v) || 20 })}
-              startContent={<span className="text-default-400 text-sm">$</span>}
-              classNames={{ label: "font-medium", description: "text-xs" }}
-            />
-            <Input
-              type="number"
-              label="最大杠杆"
-              description="允许使用的最大杠杆倍数"
-              value={String(config.max_leverage || 10)}
-              onValueChange={(v) => setConfig({ ...config, max_leverage: parseInt(v) || 10 })}
+              label="目标最小杠杆"
+              description="目标交易员杠杆>=此值时才跟单（0=不限制）"
+              value={String(config.min_trader_leverage || 0)}
+              onValueChange={(v) => setConfig({ ...config, min_trader_leverage: parseFloat(v) || 0 })}
               endContent={<span className="text-default-400 text-sm">x</span>}
               classNames={{ label: "font-medium", description: "text-xs" }}
             />
             <Input
               type="number"
-              label="默认杠杆"
-              description="不复制杠杆时使用的默认杠杆"
-              value={String(config.default_leverage || 3)}
-              onValueChange={(v) => setConfig({ ...config, default_leverage: parseInt(v) || 3 })}
-              endContent={<span className="text-default-400 text-sm">x</span>}
+              label="最小仓位价值"
+              description="目标仓位价值低于此值时不跟单（0=不限制）"
+              value={String(config.min_position_value_usd || 0)}
+              onValueChange={(v) => setConfig({ ...config, min_position_value_usd: parseFloat(v) || 0 })}
+              startContent={<span className="text-default-400 text-sm">$</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="最大仓位价值"
+              description="目标仓位价值高于此值时不跟单（0=不限制）"
+              value={String(config.max_position_value_usd || 0)}
+              onValueChange={(v) => setConfig({ ...config, max_position_value_usd: parseFloat(v) || 0 })}
+              startContent={<span className="text-default-400 text-sm">$</span>}
               classNames={{ label: "font-medium", description: "text-xs" }}
             />
           </div>
@@ -365,7 +355,7 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
         <CardHeader className="flex gap-3 pb-0">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
-              <Icon icon="lucide:filter" width={20} className="text-primary" />
+              <Icon icon="lucide:coins" width={20} className="text-primary" />
             </div>
             <h3 className="text-lg font-semibold">币种限制</h3>
           </div>
@@ -516,7 +506,77 @@ export default function DefaultCopyConfigTab({ onHasChanges }: DefaultCopyConfig
         </CardBody>
       </Card>
 
-      {/* 开关选项 */}
+      {/* 基础跟单配置 */}
+      <Card className="shadow-sm">
+        <CardHeader className="flex gap-3 pb-0">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+              <Icon icon="lucide:copy" width={20} className="text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold">跟单参数</h3>
+          </div>
+        </CardHeader>
+        <CardBody className="gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              type="number"
+              label="跟单比例"
+              description="跟单目标仓位的百分比"
+              value={String(((config.copy_ratio || 0.1) * 100).toFixed(0))}
+              onValueChange={(v) => setConfig({ ...config, copy_ratio: (parseFloat(v) || 10) / 100 })}
+              endContent={<span className="text-default-400 text-sm">%</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="滑点容忍度"
+              description="允许的最大滑点百分比"
+              value={String(((config.slippage || 0.001) * 100).toFixed(2))}
+              onValueChange={(v) => setConfig({ ...config, slippage: (parseFloat(v) || 0.1) / 100 })}
+              endContent={<span className="text-default-400 text-sm">%</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="最大仓位"
+              description="单个跟单仓位的最大价值"
+              value={String(config.max_position_size_usd || 500)}
+              onValueChange={(v) => setConfig({ ...config, max_position_size_usd: parseFloat(v) || 500 })}
+              startContent={<span className="text-default-400 text-sm">$</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="最小仓位"
+              description="单个跟单仓位的最小价值"
+              value={String(config.min_position_size_usd || 20)}
+              onValueChange={(v) => setConfig({ ...config, min_position_size_usd: parseFloat(v) || 20 })}
+              startContent={<span className="text-default-400 text-sm">$</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="最大杠杆"
+              description="允许使用的最大杠杆倍数"
+              value={String(config.max_leverage || 10)}
+              onValueChange={(v) => setConfig({ ...config, max_leverage: parseInt(v) || 10 })}
+              endContent={<span className="text-default-400 text-sm">x</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+            <Input
+              type="number"
+              label="默认杠杆"
+              description="不复制杠杆时使用的默认杠杆"
+              value={String(config.default_leverage || 3)}
+              onValueChange={(v) => setConfig({ ...config, default_leverage: parseInt(v) || 3 })}
+              endContent={<span className="text-default-400 text-sm">x</span>}
+              classNames={{ label: "font-medium", description: "text-xs" }}
+            />
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* 功能开关 */}
       <Card className="shadow-sm">
         <CardHeader className="flex gap-3 pb-0">
           <div className="flex items-center gap-2">
