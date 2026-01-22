@@ -816,7 +816,7 @@ class CopyTradingNotifier:
         user_id: str = None
     ) -> bool:
         """
-        发送加仓/补仓表单卡片（使用 form 容器）
+        发送加仓/减仓表单卡片（使用 form 容器）
         
         Args:
             address: 交易员地址
@@ -879,13 +879,13 @@ class CopyTradingNotifier:
                 "value": ""
             })
         
-        # 构建方向下拉选项
+        # 构建方向下拉选项（加仓=同向，减仓=反向）
         direction_options = [
-            {"text": {"tag": "plain_text", "content": "🟢 做多 Long"}, "value": "long"},
-            {"text": {"tag": "plain_text", "content": "🔴 做空 Short"}, "value": "short"},
+            {"text": {"tag": "plain_text", "content": "🟢 加仓"}, "value": "add"},
+            {"text": {"tag": "plain_text", "content": "🔴 减仓"}, "value": "reduce"},
         ]
         
-        # 构建跟单比例下拉选项
+        # 构建比例下拉选项
         ratio_options = [
             {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
             {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},
@@ -1000,7 +1000,7 @@ class CopyTradingNotifier:
             "header": {
                 "title": {
                     "tag": "plain_text",
-                    "content": "📈 加仓/补仓"
+                    "content": "📈 加仓/减仓"
                 },
                 "template": "blue"
             },
@@ -1073,13 +1073,13 @@ class CopyTradingNotifier:
                 "value": ""
             })
         
-        # 构建方向下拉选项
+        # 构建方向下拉选项（加仓=同向，减仓=反向）
         direction_options = [
-            {"text": {"tag": "plain_text", "content": "🟢 做多 Long"}, "value": "long"},
-            {"text": {"tag": "plain_text", "content": "🔴 做空 Short"}, "value": "short"},
+            {"text": {"tag": "plain_text", "content": "🟢 加仓"}, "value": "add"},
+            {"text": {"tag": "plain_text", "content": "🔴 减仓"}, "value": "reduce"},
         ]
         
-        # 跟单比例下拉选项
+        # 比例下拉选项
         ratio_options = [
             {"text": {"tag": "plain_text", "content": "10%"}, "value": "10"},
             {"text": {"tag": "plain_text", "content": "20%"}, "value": "20"},

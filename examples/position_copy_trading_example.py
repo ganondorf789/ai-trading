@@ -397,13 +397,13 @@ def handle_quick_position_tracking(event: CardActionEvent):
 
 def handle_position_adjustment(event: CardActionEvent):
     """
-    处理"加仓补仓"菜单点击
+    处理"加仓减仓"菜单点击
     
-    显示加仓补仓表单卡片，用户可以选择仓位和比例
+    显示加仓减仓表单卡片，用户可以选择仓位和比例
     """
     global db
     
-    logger.info(f"[加仓补仓] 用户 {event.user_id} 请求加仓补仓表单")
+    logger.info(f"[加仓减仓] 用户 {event.user_id} 请求加仓减仓表单")
     
     # 创建飞书客户端用于发送消息
     feishu_client = FeishuClient(
@@ -427,7 +427,7 @@ def handle_position_adjustment(event: CardActionEvent):
         
         if not trackings:
             card = _build_info_card(
-                "📈 加仓/补仓",
+                "📈 加仓/减仓",
                 "暂无活跃的跟单仓位\n\n请先通过新仓位推送添加跟单"
             )
             _send_card_to_user(feishu_client, event.user_id, card)
@@ -460,11 +460,11 @@ def handle_position_adjustment(event: CardActionEvent):
             user_id=event.user_id
         )
         
-        logger.success(f"[加仓补仓] 已发送表单卡片给用户 {event.user_id}")
+        logger.success(f"[加仓减仓] 已发送表单卡片给用户 {event.user_id}")
         return None
         
     except Exception as e:
-        logger.error(f"[加仓补仓] 错误: {e}")
+        logger.error(f"[加仓减仓] 错误: {e}")
         card = _build_error_card(f"获取仓位失败: {str(e)}")
         _send_card_to_user(feishu_client, event.user_id, card)
         return None
@@ -472,7 +472,7 @@ def handle_position_adjustment(event: CardActionEvent):
 
 def handle_position_adjustment_submit(event: CardActionEvent):
     """
-    处理加仓补仓表单提交（使用 form 容器）
+    处理加仓减仓表单提交（使用 form 容器）
     
     表单提交时，form_value 会包含所有带 name 属性的表单字段值
     """
@@ -484,7 +484,7 @@ def handle_position_adjustment_submit(event: CardActionEvent):
     selected_direction = event.form_value.get("selected_direction", "")
     selected_ratio = event.form_value.get("selected_ratio", "")
     
-    logger.info(f"[加仓补仓提交] 用户 {event.user_id}:")
+    logger.info(f"[加仓减仓提交] 用户 {event.user_id}:")
     logger.info(f"  - 仓位: {selected_position}")
     logger.info(f"  - 方向: {selected_direction}")
     logger.info(f"  - 比例: {selected_ratio}%")
@@ -503,9 +503,7 @@ def handle_position_adjustment_submit(event: CardActionEvent):
         
         tracking_id = int(parts[0])
         coin = parts[1]
-        # 方向使用用户选择的方向（可能与当前仓位方向不同，用于减仓）
-        side = selected_direction
-        ratio = float(selected_ratio)  # 百分比，如 50 表示再加 50%
+        ratio = float(selected_ratio)  # 百分比，如 50 表示调整 50%
         
         # 确保数据库已初始化
         if db is None:
@@ -524,27 +522,32 @@ def handle_position_adjustment_submit(event: CardActionEvent):
         if tracking.get('status') != 'active':
             return _build_warning_card(
                 "跟单未激活",
-                f"{coin} 跟单状态: {tracking.get('status')}，无法补仓"
+                f"{coin} 跟单状态: {tracking.get('status')}，无法操作"
             )
         
-        # 判断是加仓还是减仓
-        current_side = tracking.get('my_side', 'long')
-        is_add = (side == current_side)  # 同向=加仓，反向=减仓
+        # 根据用户选择判断是加仓还是减仓
+        is_add = (selected_direction == "add")
         action_name = "加仓" if is_add else "减仓"
         
-        # 发送调仓通知到 Redis（包含方向）
-        success = notify_adjust_position(tracking_id, ratio=ratio, direction=side)
+        # 计算实际下单方向：加仓=同向，减仓=反向
+        current_side = tracking.get('my_side', 'long')
+        if is_add:
+            order_direction = current_side  # 加仓：与当前仓位同向
+        else:
+            order_direction = 'short' if current_side == 'long' else 'long'  # 减仓：反向
+        
+        # 发送调仓通知到 Redis（包含下单方向）
+        success = notify_adjust_position(tracking_id, ratio=ratio, direction=order_direction)
         
         # 从 tracking 获取交易员信息（不再依赖 action_value 中的 address）
         target_address = tracking.get('target_address', '')
         target_name = tracking.get('target_name', '')
         trader_display = target_name if target_name else f"{target_address[:10]}..."
-        side_cn = "做多" if side == 'long' else "做空"
         
         if success:
             return _build_success_card(
                 f"{action_name}请求已提交",
-                f"**交易员**: {trader_display}\n**币种**: {coin}\n**操作方向**: {side_cn}\n**{action_name}比例**: {selected_ratio}%\n\n机器人将立即执行{action_name}操作"
+                f"**交易员**: {trader_display}\n**币种**: {coin}\n**操作**: {action_name}\n**{action_name}比例**: {selected_ratio}%\n\n机器人将立即执行{action_name}操作"
             )
         else:
             return _build_warning_card(
@@ -553,15 +556,15 @@ def handle_position_adjustment_submit(event: CardActionEvent):
             )
         
     except Exception as e:
-        logger.error(f"[加仓补仓提交] 错误: {e}")
+        logger.error(f"[加仓减仓提交] 错误: {e}")
         return _build_error_card(f"操作失败: {str(e)}")
 
 
 def handle_position_adjustment_cancel(event: CardActionEvent):
     """
-    处理加仓补仓表单取消
+    处理加仓减仓表单取消
     """
-    logger.info(f"[加仓补仓] 用户 {event.user_id} 取消操作")
+    logger.info(f"[加仓减仓] 用户 {event.user_id} 取消操作")
     
     return _build_info_card(
         "已取消",
@@ -903,10 +906,10 @@ def start_callback_server():
     # 注册"当前仓位"菜单处理器
     callback_client.register_handler("current-position", handle_current_position)
     
-    # 注册"加仓补仓"菜单处理器
+    # 注册"加仓减仓"菜单处理器
     callback_client.register_handler("position-adjustment", handle_position_adjustment)
     
-    # 注册加仓补仓表单处理器
+    # 注册加仓减仓表单处理器
     callback_client.register_handler("position_adjustment_submit", handle_position_adjustment_submit)
     callback_client.register_handler("position_adjustment_cancel", handle_position_adjustment_cancel)
     
@@ -932,8 +935,8 @@ def start_callback_server():
     logger.info("已注册处理器:")
     logger.info("  - quick_copy_trade: 一键跟单")
     logger.info("  - current-position: 当前仓位菜单")
-    logger.info("  - position-adjustment: 加仓补仓菜单")
-    logger.info("  - position_adjustment_submit/cancel: 加仓补仓表单")
+    logger.info("  - position-adjustment: 加仓减仓菜单")
+    logger.info("  - position_adjustment_submit/cancel: 加仓减仓表单")
     logger.info("  - close-position: 平仓菜单")
     logger.info("  - close_position_submit/cancel: 平仓表单")
     logger.info("-" * 50)
