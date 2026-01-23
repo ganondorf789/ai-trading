@@ -47,11 +47,24 @@ def get_client() -> HyperliquidClient:
 
 @trading_bp.route('/api/trading/meta', methods=['GET'])
 def get_market_meta():
-    """
-    获取市场元数据（交易对信息等）
-    
-    Returns:
-        市场元数据，包含 universe（交易对列表）等信息
+    """获取市场元数据
+    ---
+    tags:
+      - Trading - Market
+    responses:
+      200:
+        description: 市场元数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         from hyperliquid.info import Info
@@ -79,11 +92,24 @@ def get_market_meta():
 
 @trading_bp.route('/api/trading/mids', methods=['GET'])
 def get_all_mids():
-    """
-    获取所有交易对的中间价
-    
-    Returns:
-        {symbol: mid_price} 字典
+    """获取所有交易对中间价
+    ---
+    tags:
+      - Trading - Market
+    responses:
+      200:
+        description: 中间价字典
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         # 使用只读客户端，无需私钥
@@ -115,14 +141,30 @@ def get_all_mids():
 
 @trading_bp.route('/api/trading/mids/<symbol>', methods=['GET'])
 def get_mid_price(symbol: str):
-    """
-    获取指定交易对的中间价
-    
-    Args:
-        symbol: 交易对符号
-    
-    Returns:
-        中间价
+    """获取指定交易对中间价
+    ---
+    tags:
+      - Trading - Market
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+    responses:
+      200:
+        description: 中间价
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      404:
+        description: 交易对不存在
+      500:
+        description: 服务器错误
     """
     try:
         from hyperliquid.info import Info
@@ -160,11 +202,26 @@ def get_mid_price(symbol: str):
 
 @trading_bp.route('/api/trading/positions', methods=['GET'])
 def get_positions():
-    """
-    获取当前所有仓位
-    
-    Returns:
-        仓位列表
+    """获取当前所有仓位
+    ---
+    tags:
+      - Trading - Positions
+    responses:
+      200:
+        description: 仓位列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -198,14 +255,28 @@ def get_positions():
 
 @trading_bp.route('/api/trading/positions/<symbol>', methods=['GET'])
 def get_position(symbol: str):
-    """
-    获取指定交易对的仓位
-    
-    Args:
-        symbol: 交易对符号
-    
-    Returns:
-        仓位信息
+    """获取指定交易对仓位
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+    responses:
+      200:
+        description: 仓位信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -247,17 +318,33 @@ def get_position(symbol: str):
 
 @trading_bp.route('/api/trading/positions/<symbol>/close', methods=['POST'])
 def close_position(symbol: str):
-    """
-    市价平仓
-    
-    Args:
-        symbol: 交易对符号
-    
-    Request Body (可选):
-        - slippage: float, 滑点容忍度（默认 0.01）
-    
-    Returns:
-        平仓结果
+    """市价平仓
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: body
+        in: body
+        required: false
+        schema:
+          type: object
+          properties:
+            slippage:
+              type: number
+              default: 0.01
+              description: 滑点容忍度
+    responses:
+      200:
+        description: 平仓成功
+      404:
+        description: 仓位不存在
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -289,19 +376,43 @@ def close_position(symbol: str):
 
 @trading_bp.route('/api/trading/positions/<symbol>/close-limit', methods=['POST'])
 def close_position_limit(symbol: str):
-    """
-    限价平仓
-    
-    Args:
-        symbol: 交易对符号
-    
-    Request Body:
-        - price: float, 限价（必填）
-        - size: float, 平仓数量（可选，不填则全部平仓）
-        - post_only: bool, 是否只做 maker（默认 false）
-    
-    Returns:
-        平仓结果
+    """限价平仓
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - price
+          properties:
+            price:
+              type: number
+              description: 限价
+            size:
+              type: number
+              description: 平仓数量
+            post_only:
+              type: boolean
+              default: false
+              description: 是否只做maker
+    responses:
+      200:
+        description: 平仓订单已提交
+      400:
+        description: 缺少必填参数
+      404:
+        description: 仓位不存在
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -346,11 +457,26 @@ def close_position_limit(symbol: str):
 
 @trading_bp.route('/api/trading/positions/close-all', methods=['POST'])
 def close_all_positions():
-    """
-    市价平掉所有仓位
-    
-    Returns:
-        平仓结果列表
+    """市价平掉所有仓位
+    ---
+    tags:
+      - Trading - Positions
+    responses:
+      200:
+        description: 平仓结果列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -375,22 +501,49 @@ def close_all_positions():
 
 @trading_bp.route('/api/trading/positions/<symbol>/tp-sl', methods=['POST'])
 def set_position_tp_sl(symbol: str):
-    """
-    设置仓位的止盈止损
-    
-    Args:
-        symbol: 交易对符号
-    
-    Request Body:
-        - tp_trigger_price: float, 止盈触发价格（可选）
-        - tp_limit_price: float, 止盈限价（可选，不填则市价触发）
-        - tp_size: float, 止盈数量（可选，不填则使用全部仓位）
-        - sl_trigger_price: float, 止损触发价格（可选）
-        - sl_limit_price: float, 止损限价（可选，不填则市价触发）
-        - sl_size: float, 止损数量（可选，不填则使用全部仓位）
-    
-    Returns:
-        设置结果 {'tp': result, 'sl': result}
+    """设置仓位止盈止损
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            tp_trigger_price:
+              type: number
+              description: 止盈触发价格
+            tp_limit_price:
+              type: number
+              description: 止盈限价
+            tp_size:
+              type: number
+              description: 止盈数量
+            sl_trigger_price:
+              type: number
+              description: 止损触发价格
+            sl_limit_price:
+              type: number
+              description: 止损限价
+            sl_size:
+              type: number
+              description: 止损数量
+    responses:
+      200:
+        description: 设置成功
+      400:
+        description: 参数错误
+      404:
+        description: 仓位不存在
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -438,14 +591,31 @@ def set_position_tp_sl(symbol: str):
 
 @trading_bp.route('/api/trading/orders', methods=['GET'])
 def get_open_orders():
-    """
-    获取未成交订单
-    
-    Query Parameters:
-        - symbol: str, 筛选特定交易对（可选）
-    
-    Returns:
-        订单列表
+    """获取未成交订单
+    ---
+    tags:
+      - Trading - Orders
+    parameters:
+      - name: symbol
+        in: query
+        type: string
+        description: 筛选特定交易对
+    responses:
+      200:
+        description: 订单列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -483,15 +653,26 @@ def get_open_orders():
 
 @trading_bp.route('/api/trading/orders/<symbol>/<int:order_id>', methods=['DELETE'])
 def cancel_order(symbol: str, order_id: int):
-    """
-    取消订单
-    
-    Args:
-        symbol: 交易对符号
-        order_id: 订单 ID
-    
-    Returns:
-        取消结果
+    """取消订单
+    ---
+    tags:
+      - Trading - Orders
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: order_id
+        in: path
+        type: integer
+        required: true
+        description: 订单ID
+    responses:
+      200:
+        description: 取消成功
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -513,14 +694,32 @@ def cancel_order(symbol: str, order_id: int):
 
 @trading_bp.route('/api/trading/orders/<symbol>', methods=['DELETE'])
 def cancel_orders_by_symbol(symbol: str):
-    """
-    取消指定交易对的所有订单
-    
-    Args:
-        symbol: 交易对符号
-    
-    Returns:
-        取消结果列表
+    """取消指定交易对所有订单
+    ---
+    tags:
+      - Trading - Orders
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+    responses:
+      200:
+        description: 取消成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -543,11 +742,26 @@ def cancel_orders_by_symbol(symbol: str):
 
 @trading_bp.route('/api/trading/orders', methods=['DELETE'])
 def cancel_all_orders():
-    """
-    取消所有订单
-    
-    Returns:
-        取消结果列表
+    """取消所有订单
+    ---
+    tags:
+      - Trading - Orders
+    responses:
+      200:
+        description: 取消成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()
@@ -572,11 +786,37 @@ def cancel_all_orders():
 
 @trading_bp.route('/api/trading/account', methods=['GET'])
 def get_account_info():
-    """
-    获取账户信息
-    
-    Returns:
-        账户信息
+    """获取账户信息
+    ---
+    tags:
+      - Trading - Account
+    responses:
+      200:
+        description: 账户信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                balance:
+                  type: number
+                equity:
+                  type: number
+                available_margin:
+                  type: number
+                used_margin:
+                  type: number
+                unrealized_pnl:
+                  type: number
+                realized_pnl:
+                  type: number
+                positions_count:
+                  type: integer
+      500:
+        description: 服务器错误
     """
     try:
         client = get_client()

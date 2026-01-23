@@ -16,15 +16,118 @@ traders_core_bp = Blueprint('traders_core', __name__)
 
 @traders_core_bp.route('/api/traders', methods=['GET'])
 def get_traders():
-    """
-    获取交易者列表（支持分页和排序）
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - rating: str, 精确评级筛选 (S/A/B/C/D/F)
-        - search: str, 地址搜索
-        - sort_by: str, 排序字段
-        - sort_order: str, 排序方向 (asc/desc)
+    """获取交易者列表
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: rating
+        in: query
+        type: string
+        enum: [S, A, B, C, D, F]
+        description: 评级筛选
+      - name: search
+        in: query
+        type: string
+        description: 地址搜索
+      - name: sort_by
+        in: query
+        type: string
+        default: overall_score
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+      - name: min_win_rate
+        in: query
+        type: number
+        description: 最小胜率
+      - name: max_win_rate
+        in: query
+        type: number
+        description: 最大胜率
+      - name: min_profit_factor
+        in: query
+        type: number
+        description: 最小盈亏比
+      - name: max_profit_factor
+        in: query
+        type: number
+        description: 最大盈亏比
+      - name: min_pnl
+        in: query
+        type: number
+        description: 最小PnL
+      - name: max_pnl
+        in: query
+        type: number
+        description: 最大PnL
+      - name: min_drawdown
+        in: query
+        type: number
+        description: 最小回撤
+      - name: max_drawdown
+        in: query
+        type: number
+        description: 最大回撤
+      - name: min_sharpe
+        in: query
+        type: number
+        description: 最小夏普比率
+      - name: max_sharpe
+        in: query
+        type: number
+        description: 最大夏普比率
+      - name: min_trades
+        in: query
+        type: integer
+        description: 最小交易数
+      - name: max_trades
+        in: query
+        type: integer
+        description: 最大交易数
+      - name: has_recent_trade
+        in: query
+        type: integer
+        description: 最近N天内有交易
+    responses:
+      200:
+        description: 交易者列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+              properties:
+                page:
+                  type: integer
+                limit:
+                  type: integer
+                total_count:
+                  type: integer
+                total_pages:
+                  type: integer
+      500:
+        description: 服务器错误
     """
     try:
         page = int(request.args.get('page', 1))
@@ -240,12 +343,51 @@ def get_traders():
 
 @traders_core_bp.route('/api/traders', methods=['POST'])
 def add_trader():
-    """
-    新增交易者（分析并保存到数据库）
-    Body:
-        - address: str, 交易者地址
-        - lookback_days: int, 分析回溯天数，默认0（全部）
-        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """新增交易者
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - address
+          properties:
+            address:
+              type: string
+              description: 交易者地址（0x开头的42位以太坊地址）
+              example: "0x1234567890abcdef1234567890abcdef12345678"
+            lookback_days:
+              type: integer
+              default: 0
+              description: 分析回溯天数，0表示全部
+            max_fills:
+              type: integer
+              default: 0
+              description: 最大获取交易记录数，0表示不限制
+    responses:
+      200:
+        description: 添加成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      404:
+        description: 无法获取交易者数据
+      409:
+        description: 交易者已存在
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -320,8 +462,35 @@ def add_trader():
 
 @traders_core_bp.route('/api/traders/<address>', methods=['GET'])
 def get_trader_detail(address: str):
-    """
-    获取交易者详细信息
+    """获取交易者详情
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 交易者详情
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                trader:
+                  type: object
+                fills_summary:
+                  type: object
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
     """
     try:
         # 获取交易者基本信息
@@ -354,11 +523,42 @@ def get_trader_detail(address: str):
 
 @traders_core_bp.route('/api/traders/<address>/refresh', methods=['POST'])
 def refresh_trader(address: str):
-    """
-    重新分析交易者数据
-    Query Parameters:
-        - lookback_days: int, 分析回溯天数，默认30
-        - max_fills: int, 最大获取交易记录数，默认0（不限制）
+    """刷新交易者数据
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: lookback_days
+        in: query
+        type: integer
+        default: 30
+        description: 分析回溯天数
+      - name: max_fills
+        in: query
+        type: integer
+        default: 0
+        description: 最大获取交易记录数，0表示不限制
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      404:
+        description: 无法获取交易者数据
+      500:
+        description: 服务器错误
     """
     try:
         lookback_days = int(request.args.get('lookback_days', 30))
@@ -446,18 +646,82 @@ def refresh_trader(address: str):
 
 @traders_core_bp.route('/api/traders/<address>/fills', methods=['GET'])
 def get_trader_fills(address: str):
-    """
-    获取交易者的历史交易记录（支持分页和排序）
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - coin: str, 筛选特定币种
-        - pnl_filter: str, 盈亏筛选 (all/profit/loss)
-        - trade_type: str, 交易类型筛选 (all/open_long/add_long/close_long/open_short/add_short/close_short)
-        - sort_by: str, 排序字段 (trade_time/coin/side/px/sz/value/closed_pnl/roi/fee)
-        - sort_order: str, 排序方向 (asc/desc)
-        - start_date: str, 开始日期 (YYYY-MM-DD)
-        - end_date: str, 结束日期 (YYYY-MM-DD)
+    """获取交易者历史交易记录
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: coin
+        in: query
+        type: string
+        description: 筛选特定币种
+      - name: pnl_filter
+        in: query
+        type: string
+        enum: [all, profit, loss]
+        default: all
+        description: 盈亏筛选
+      - name: trade_type
+        in: query
+        type: string
+        enum: [all, open_long, add_long, close_long, open_short, add_short, close_short]
+        default: all
+        description: 交易类型筛选
+      - name: sort_by
+        in: query
+        type: string
+        enum: [trade_time, coin, side, px, sz, value, closed_pnl, roi, fee]
+        default: trade_time
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+      - name: start_date
+        in: query
+        type: string
+        format: date
+        description: 开始日期 (YYYY-MM-DD)
+      - name: end_date
+        in: query
+        type: string
+        format: date
+        description: 结束日期 (YYYY-MM-DD)
+    responses:
+      200:
+        description: 交易记录列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            stats:
+              type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         page = int(request.args.get('page', 1))

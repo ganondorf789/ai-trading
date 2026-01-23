@@ -16,8 +16,22 @@ traders_stats_bp = Blueprint('traders_stats', __name__)
 
 @traders_stats_bp.route('/api/stats', methods=['GET'])
 def get_statistics():
-    """
-    获取数据库统计信息
+    """获取数据库统计信息
+    ---
+    tags:
+      - Traders - Stats
+    responses:
+      200:
+        description: 统计信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         stats = db.get_statistics()
@@ -39,12 +53,41 @@ def get_statistics():
 
 @traders_stats_bp.route('/api/coins', methods=['GET'])
 def get_coins():
-    """
-    获取所有币种列表
-    Query Parameters:
-        - address: str, 可选，筛选特定交易者的币种
-        - exclude_user_perps: bool, 是否排除用户创建的永续合约(@数字格式)，默认true
-        - include_stats: bool, 是否包含统计信息，默认false
+    """获取所有币种列表
+    ---
+    tags:
+      - Traders - Stats
+    parameters:
+      - name: address
+        in: query
+        type: string
+        description: 筛选特定交易者的币种
+      - name: exclude_user_perps
+        in: query
+        type: boolean
+        default: true
+        description: 是否排除用户创建的永续合约
+      - name: include_stats
+        in: query
+        type: boolean
+        default: false
+        description: 是否包含统计信息
+    responses:
+      200:
+        description: 币种列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: string
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         address = request.args.get('address')
@@ -82,10 +125,32 @@ def get_coins():
 
 @traders_stats_bp.route('/api/hyperliquid/coins', methods=['GET'])
 def get_hyperliquid_coins():
-    """
-    获取 Hyperliquid 可交易币种列表（从数据库）
-    Query Parameters:
-        - active_only: bool, 是否只返回活跃币种，默认true
+    """获取Hyperliquid可交易币种列表
+    ---
+    tags:
+      - Traders - Stats
+    parameters:
+      - name: active_only
+        in: query
+        type: boolean
+        default: true
+        description: 是否只返回活跃币种
+    responses:
+      200:
+        description: 币种列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         active_only = request.args.get('active_only', 'true').lower() == 'true'
@@ -107,8 +172,28 @@ def get_hyperliquid_coins():
 
 @traders_stats_bp.route('/api/hyperliquid/coins/sync', methods=['POST'])
 def sync_hyperliquid_coins():
-    """
-    从 Hyperliquid API 同步币种列表到数据库
+    """同步Hyperliquid币种列表
+    ---
+    tags:
+      - Traders - Stats
+    responses:
+      200:
+        description: 同步成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+            message:
+              type: string
+      500:
+        description: 服务器错误
     """
     try:
         from hyperliquid.info import Info
@@ -155,8 +240,26 @@ def sync_hyperliquid_coins():
 
 @traders_stats_bp.route('/api/hyperliquid/coins/names', methods=['GET'])
 def get_hyperliquid_coin_names():
-    """
-    获取 Hyperliquid 币种名称列表（仅名称，用于下拉选择）
+    """获取Hyperliquid币种名称列表
+    ---
+    tags:
+      - Traders - Stats
+    responses:
+      200:
+        description: 币种名称列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: string
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         names = db.get_hyperliquid_coin_names()
@@ -289,25 +392,94 @@ BEST_S_PRESETS = {
 
 @traders_stats_bp.route('/api/traders/best-s', methods=['GET'])
 def get_best_s_traders():
-    """
-    获取S级优选交易员（结合仓位历史分析）
-    
-    Query Parameters:
-        - preset: str, 预设配置 (default/safe/aggressive/scalper/swing/hot)
-        - min_sharpe: float, 最小夏普比率
-        - max_drawdown: float, 最大回撤
-        - min_profit_factor: float, 最小盈亏比
-        - min_positions: int, 最小已平仓位数
-        - min_position_win_rate: float, 最小仓位胜率 (0-1)
-        - min_position_pf: float, 最小仓位盈亏比
-        - recent_days: int, 近期天数
-        - min_recent_positions: int, 近期最小仓位数
-        - require_recent_profit: bool, 是否要求近期盈利
-        - max_inactive_days: int, 最大不活跃天数
-        - min_holding_hours: float, 最小平均持仓时长
-        - max_holding_hours: float, 最大平均持仓时长
-        - sort_by: str, 排序字段
-        - limit: int, 返回数量
+    """获取S级优选交易员
+    ---
+    tags:
+      - Traders - Stats
+    parameters:
+      - name: preset
+        in: query
+        type: string
+        enum: [default, safe, aggressive, scalper, swing, hot]
+        default: default
+        description: 预设配置
+      - name: min_sharpe
+        in: query
+        type: number
+        description: 最小夏普比率
+      - name: max_drawdown
+        in: query
+        type: number
+        description: 最大回撤
+      - name: min_profit_factor
+        in: query
+        type: number
+        description: 最小盈亏比
+      - name: min_positions
+        in: query
+        type: integer
+        description: 最小已平仓位数
+      - name: min_position_win_rate
+        in: query
+        type: number
+        description: 最小仓位胜率 (0-1)
+      - name: min_position_pf
+        in: query
+        type: number
+        description: 最小仓位盈亏比
+      - name: recent_days
+        in: query
+        type: integer
+        description: 近期天数
+      - name: min_recent_positions
+        in: query
+        type: integer
+        description: 近期最小仓位数
+      - name: require_recent_profit
+        in: query
+        type: boolean
+        description: 是否要求近期盈利
+      - name: max_inactive_days
+        in: query
+        type: integer
+        description: 最大不活跃天数
+      - name: min_holding_hours
+        in: query
+        type: number
+        description: 最小平均持仓时长
+      - name: max_holding_hours
+        in: query
+        type: number
+        description: 最大平均持仓时长
+      - name: sort_by
+        in: query
+        type: string
+        description: 排序字段
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 返回数量
+    responses:
+      200:
+        description: S级优选交易员列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+            preset:
+              type: object
+            params:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         # 获取预设配置
@@ -374,8 +546,35 @@ def get_best_s_traders():
 
 @traders_stats_bp.route('/api/traders/best-s/presets', methods=['GET'])
 def get_best_s_presets():
-    """
-    获取S级优选筛选的所有预设配置
+    """获取S级优选筛选预设配置
+    ---
+    tags:
+      - Traders - Stats
+    responses:
+      200:
+        description: 预设配置列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  params:
+                    type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         presets = []

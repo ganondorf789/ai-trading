@@ -16,33 +16,75 @@ copy_trading_orders_bp = Blueprint('copy_trading_orders', __name__)
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders', methods=['GET'])
 def get_copy_trading_orders():
-    """
-    获取跟单订单列表
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - target_address: str, 筛选目标地址
-        - symbol: str, 筛选交易对
-        - status: str, 筛选状态 (pending/success/failed)
-        - action: str, 筛选操作类型 (open/close)
-        - is_dry_run: bool, 筛选模拟/实盘
-        - days: int, 最近N天，默认7
-        - sort_by: str, 排序字段，默认created_at
-        - sort_order: str, 排序方向，默认desc
-        - min_win_rate: float, 最小胜率
-        - max_win_rate: float, 最大胜率
-        - min_profit_factor: float, 最小盈亏比
-        - max_profit_factor: float, 最大盈亏比
-        - min_pnl: float, 最小总盈亏
-        - max_pnl: float, 最大总盈亏
-        - min_drawdown: float, 最小回撤
-        - max_drawdown: float, 最大回撤
-        - min_sharpe: float, 最小Sharpe
-        - max_sharpe: float, 最大Sharpe
-        - min_trades: int, 最小交易数
-        - max_trades: int, 最大交易数
-        - min_score: float, 最小综合评分
-        - max_score: float, 最大综合评分
+    """获取跟单订单列表
+    ---
+    tags:
+      - Copy Trading - Orders
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: target_address
+        in: query
+        type: string
+        description: 筛选目标地址
+      - name: symbol
+        in: query
+        type: string
+        description: 筛选交易对
+      - name: status
+        in: query
+        type: string
+        enum: [pending, success, failed]
+        description: 筛选状态
+      - name: action
+        in: query
+        type: string
+        enum: [open, close]
+        description: 筛选操作类型
+      - name: is_dry_run
+        in: query
+        type: boolean
+        description: 筛选模拟/实盘
+      - name: days
+        in: query
+        type: integer
+        default: 7
+        description: 最近N天
+      - name: sort_by
+        in: query
+        type: string
+        default: created_at
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+    responses:
+      200:
+        description: 订单列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         page = int(request.args.get('page', 1))
@@ -134,11 +176,32 @@ def get_copy_trading_orders():
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders/stats', methods=['GET'])
 def get_copy_trading_order_stats():
-    """
-    获取跟单订单统计
-    Query Parameters:
-        - target_address: str, 筛选目标地址
-        - days: int, 统计天数，默认7
+    """获取跟单订单统计
+    ---
+    tags:
+      - Copy Trading - Orders
+    parameters:
+      - name: target_address
+        in: query
+        type: string
+        description: 筛选目标地址
+      - name: days
+        in: query
+        type: integer
+        default: 7
+        description: 统计天数
+    responses:
+      200:
+        description: 订单统计
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         target_address = request.args.get('target_address')
@@ -163,10 +226,30 @@ def get_copy_trading_order_stats():
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders/cleanup', methods=['POST'])
 def cleanup_copy_trading_orders():
-    """
-    清理旧订单记录
-    Query Parameters:
-        - days: int, 保留最近N天的记录，默认30
+    """清理旧订单记录
+    ---
+    tags:
+      - Copy Trading - Orders
+    parameters:
+      - name: days
+        in: query
+        type: integer
+        default: 30
+        description: 保留最近N天的记录
+    responses:
+      200:
+        description: 清理成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      500:
+        description: 服务器错误
     """
     try:
         days = int(request.args.get('days', 30))
@@ -189,10 +272,31 @@ def cleanup_copy_trading_orders():
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions', methods=['GET'])
 def get_copy_position_states():
-    """
-    获取所有跟单仓位状态（用于重启后恢复的持久化状态）
-    Query Parameters:
-        - target_address: str, 筛选目标地址
+    """获取所有跟单仓位状态
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: target_address
+        in: query
+        type: string
+        description: 筛选目标地址
+    responses:
+      200:
+        description: 仓位状态列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         target_address = request.args.get('target_address')
@@ -213,8 +317,22 @@ def get_copy_position_states():
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/stats', methods=['GET'])
 def get_copy_position_stats():
-    """
-    获取跟单仓位统计
+    """获取跟单仓位统计
+    ---
+    tags:
+      - Copy Trading - Positions
+    responses:
+      200:
+        description: 仓位统计
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         stats = db.get_copy_position_stats()
@@ -233,8 +351,32 @@ def get_copy_position_stats():
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>', methods=['GET'])
 def get_target_position_states(target_address: str):
-    """
-    获取特定目标的仓位状态
+    """获取特定目标的仓位状态
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: target_address
+        in: path
+        type: string
+        required: true
+        description: 目标地址
+    responses:
+      200:
+        description: 仓位状态列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         positions = db.get_copied_positions(target_address)
@@ -254,8 +396,28 @@ def get_target_position_states(target_address: str):
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>/<symbol>', methods=['DELETE'])
 def delete_position_state(target_address: str, symbol: str):
-    """
-    删除单个仓位状态
+    """删除单个仓位状态
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: target_address
+        in: path
+        type: string
+        required: true
+        description: 目标地址
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对
+    responses:
+      200:
+        description: 删除成功
+      404:
+        description: 仓位状态不存在
+      500:
+        description: 服务器错误
     """
     try:
         success = db.delete_copied_position(target_address, symbol)
@@ -280,8 +442,30 @@ def delete_position_state(target_address: str, symbol: str):
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>', methods=['DELETE'])
 def clear_target_position_states(target_address: str):
-    """
-    清空目标的所有仓位状态
+    """清空目标的所有仓位状态
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: target_address
+        in: path
+        type: string
+        required: true
+        description: 目标地址
+    responses:
+      200:
+        description: 清空成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      500:
+        description: 服务器错误
     """
     try:
         deleted_count = db.clear_copied_positions(target_address)
@@ -301,8 +485,24 @@ def clear_target_position_states(target_address: str):
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/clear-all', methods=['POST'])
 def clear_all_position_states():
-    """
-    清空所有仓位状态（谨慎使用）
+    """清空所有仓位状态
+    ---
+    tags:
+      - Copy Trading - Positions
+    responses:
+      200:
+        description: 清空成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      500:
+        description: 服务器错误
     """
     try:
         deleted_count = db.clear_all_copy_position_states()

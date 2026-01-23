@@ -15,15 +15,54 @@ copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking', methods=['GET'])
 def get_position_trackings():
-    """
-    获取仓位跟单列表
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - status: str, 状态筛选 (pending/active/closed/stopped)
-        - is_enabled: bool, 启用状态筛选
-        - target_address: str, 目标地址筛选
-        - symbol: str, 币种筛选
+    """获取仓位跟单列表
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: status
+        in: query
+        type: string
+        enum: [pending, active, closed, stopped]
+        description: 状态筛选
+      - name: is_enabled
+        in: query
+        type: boolean
+        description: 启用状态筛选
+      - name: target_address
+        in: query
+        type: string
+        description: 目标地址筛选
+      - name: symbol
+        in: query
+        type: string
+        description: 币种筛选
+    responses:
+      200:
+        description: 跟单列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         page = int(request.args.get('page', 1))
@@ -71,7 +110,23 @@ def get_position_trackings():
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/stats', methods=['GET'])
 def get_position_tracking_stats():
-    """获取仓位跟单统计"""
+    """获取仓位跟单统计
+    ---
+    tags:
+      - Copy Trading - Tracking
+    responses:
+      200:
+        description: 跟单统计
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
+    """
     try:
         stats = db.get_position_tracking_stats()
         return jsonify({
@@ -88,7 +143,31 @@ def get_position_tracking_stats():
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['GET'])
 def get_position_tracking(tracking_id: int):
-    """获取单个仓位跟单详情"""
+    """获取仓位跟单详情
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+    responses:
+      200:
+        description: 跟单详情
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      404:
+        description: 记录不存在
+      500:
+        description: 服务器错误
+    """
     try:
         tracking = db.get_position_tracking(tracking_id)
         if not tracking:
@@ -111,15 +190,44 @@ def get_position_tracking(tracking_id: int):
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking', methods=['POST'])
 def create_position_tracking():
-    """
-    创建仓位跟单（跟单特定交易员的特定仓位）
-    Body:
-        - target_address: str, 目标交易员地址（必需）
-        - symbol: str, 币种（必需）
-        - target_name: str, 交易员名称（可选）
-        - copy_ratio: float, 跟单比例（可选，使用默认配置）
-        - max_position_size_usd: float, 最大仓位（可选）
-        - 其他跟单配置...
+    """创建仓位跟单
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - target_address
+            - symbol
+          properties:
+            target_address:
+              type: string
+              description: 目标交易员地址
+            symbol:
+              type: string
+              description: 币种
+            target_name:
+              type: string
+              description: 交易员名称
+            copy_ratio:
+              type: number
+              description: 跟单比例
+            max_position_size_usd:
+              type: number
+              description: 最大仓位
+    responses:
+      200:
+        description: 创建成功
+      400:
+        description: 参数错误
+      409:
+        description: 跟单已存在
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -197,7 +305,31 @@ def create_position_tracking():
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['PUT'])
 def update_position_tracking(tracking_id: int):
-    """更新仓位跟单配置"""
+    """更新仓位跟单配置
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 参数错误
+      404:
+        description: 记录不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if not data:
@@ -258,7 +390,26 @@ def update_position_tracking(tracking_id: int):
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['DELETE'])
 def delete_position_tracking(tracking_id: int):
-    """删除仓位跟单记录"""
+    """删除仓位跟单记录
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+    responses:
+      200:
+        description: 删除成功
+      400:
+        description: 请先停止跟单
+      404:
+        description: 记录不存在
+      500:
+        description: 服务器错误
+    """
     try:
         # 检查记录是否存在
         existing = db.get_position_tracking(tracking_id)
@@ -296,7 +447,36 @@ def delete_position_tracking(tracking_id: int):
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/toggle', methods=['POST'])
 def toggle_position_tracking(tracking_id: int):
-    """启用/禁用仓位跟单"""
+    """启用/禁用仓位跟单
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - is_enabled
+          properties:
+            is_enabled:
+              type: boolean
+    responses:
+      200:
+        description: 操作成功
+      400:
+        description: 缺少参数
+      404:
+        description: 记录不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if data is None or 'is_enabled' not in data:
@@ -328,10 +508,30 @@ def toggle_position_tracking(tracking_id: int):
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/stop', methods=['POST'])
 def stop_position_tracking(tracking_id: int):
-    """
-    停止仓位跟单
-    Query Parameters:
-        - close_position: bool, 是否同时平仓（默认 false）
+    """停止仓位跟单
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+      - name: close_position
+        in: query
+        type: boolean
+        default: false
+        description: 是否同时平仓
+    responses:
+      200:
+        description: 停止成功
+      400:
+        description: 状态不正确
+      404:
+        description: 记录不存在
+      500:
+        description: 服务器错误
     """
     try:
         # 检查记录是否存在
@@ -371,13 +571,38 @@ def stop_position_tracking(tracking_id: int):
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/quick-add', methods=['POST'])
 def quick_add_position_tracking():
-    """
-    快速添加仓位跟单（从持仓页面一键添加）
-    使用默认配置
-    Body:
-        - target_address: str, 目标交易员地址（必需）
-        - symbol: str, 币种（必需）
-        - target_name: str, 交易员名称（可选）
+    """快速添加仓位跟单
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - target_address
+            - symbol
+          properties:
+            target_address:
+              type: string
+              description: 目标交易员地址
+            symbol:
+              type: string
+              description: 币种
+            target_name:
+              type: string
+              description: 交易员名称
+    responses:
+      200:
+        description: 添加成功
+      400:
+        description: 参数错误
+      409:
+        description: 跟单已存在
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()

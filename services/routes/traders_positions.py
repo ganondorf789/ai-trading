@@ -15,8 +15,32 @@ traders_positions_bp = Blueprint('traders_positions', __name__)
 
 @traders_positions_bp.route('/api/traders/<address>/positions', methods=['GET'])
 def get_trader_positions(address: str):
-    """
-    获取交易者的当前持仓（来自 assetPositions）
+    """获取交易者当前持仓
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 持仓列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         positions = db.get_positions(address)
@@ -37,8 +61,36 @@ def get_trader_positions(address: str):
 
 @traders_positions_bp.route('/api/traders/<address>/positions/refresh', methods=['POST'])
 def refresh_trader_positions(address: str):
-    """
-    刷新交易者的当前持仓（从 Hyperliquid API 获取最新数据）
+    """刷新交易者持仓
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            count:
+              type: integer
+            message:
+              type: string
+      404:
+        description: 无法获取用户状态
+      500:
+        description: 服务器错误
     """
     try:
         from hyperliquid.info import Info
@@ -84,19 +136,82 @@ def refresh_trader_positions(address: str):
 
 @traders_positions_bp.route('/api/traders/<address>/position-history', methods=['GET'])
 def get_trader_position_history(address: str):
-    """
-    获取交易者的仓位历史记录
-    Query Parameters:
-        - coin: str, 筛选特定币种（可选）
-        - status: str, 筛选状态 'open'/'closed'（可选）
-        - direction: str, 筛选方向 'long'/'short'（可选）
-        - start_time: str, 开始时间ISO格式（可选）
-        - end_time: str, 结束时间ISO格式（可选）
-        - pnl_filter: str, 盈亏筛选 'profit'/'loss'（可选）
-        - sort_by: str, 排序字段（可选，默认open_time）
-        - sort_order: str, 排序方向 'asc'/'desc'（可选，默认desc）
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认50
+    """获取交易者仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: coin
+        in: query
+        type: string
+        description: 筛选特定币种
+      - name: status
+        in: query
+        type: string
+        enum: [open, closed]
+        description: 筛选状态
+      - name: direction
+        in: query
+        type: string
+        enum: [long, short]
+        description: 筛选方向
+      - name: start_time
+        in: query
+        type: string
+        format: date-time
+        description: 开始时间ISO格式
+      - name: end_time
+        in: query
+        type: string
+        format: date-time
+        description: 结束时间ISO格式
+      - name: pnl_filter
+        in: query
+        type: string
+        enum: [profit, loss]
+        description: 盈亏筛选
+      - name: sort_by
+        in: query
+        type: string
+        default: open_time
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 50
+        description: 每页数量
+    responses:
+      200:
+        description: 仓位历史列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         coin = request.args.get('coin')
@@ -158,8 +273,30 @@ def get_trader_position_history(address: str):
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/rebuild', methods=['POST'])
 def rebuild_trader_position_history(address: str):
-    """
-    重建交易者的仓位历史（从 fills 重新计算）
+    """重建交易者仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 重建成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+            count:
+              type: integer
+      500:
+        description: 服务器错误
     """
     try:
         logger.info(f"重建仓位历史: {address}")
@@ -182,8 +319,28 @@ def rebuild_trader_position_history(address: str):
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/stats', methods=['GET'])
 def get_trader_position_history_stats(address: str):
-    """
-    获取交易者的仓位历史统计信息
+    """获取交易者仓位历史统计
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 统计信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         stats = db.get_position_history_stats(address)
@@ -203,8 +360,30 @@ def get_trader_position_history_stats(address: str):
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/by-coin', methods=['GET'])
 def get_trader_position_history_by_coin(address: str):
-    """
-    获取按币种汇总的仓位历史
+    """获取按币种汇总的仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 按币种汇总的仓位数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+      500:
+        description: 服务器错误
     """
     try:
         by_coin = db.get_position_history_by_coin(address)
@@ -226,16 +405,61 @@ def get_trader_position_history_by_coin(address: str):
 
 @traders_positions_bp.route('/api/position-history', methods=['GET'])
 def get_all_position_history():
-    """
-    获取所有交易员的仓位历史
-    Query Parameters:
-        - coin: str, 筛选特定币种（可选）
-        - status: str, 筛选状态 'open'/'closed'（可选）
-        - direction: str, 筛选方向 'long'/'short'（可选）
-        - min_pnl: float, 最小盈亏（可选）
-        - max_pnl: float, 最大盈亏（可选）
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认50
+    """获取所有交易员仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: coin
+        in: query
+        type: string
+        description: 筛选特定币种
+      - name: status
+        in: query
+        type: string
+        enum: [open, closed]
+        description: 筛选状态
+      - name: direction
+        in: query
+        type: string
+        enum: [long, short]
+        description: 筛选方向
+      - name: min_pnl
+        in: query
+        type: number
+        description: 最小盈亏
+      - name: max_pnl
+        in: query
+        type: number
+        description: 最大盈亏
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 50
+        description: 每页数量
+    responses:
+      200:
+        description: 仓位历史列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            stats:
+              type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         coin = request.args.get('coin')
@@ -292,8 +516,22 @@ def get_all_position_history():
 
 @traders_positions_bp.route('/api/position-history/stats', methods=['GET'])
 def get_all_position_history_stats():
-    """
-    获取所有交易员的仓位历史统计
+    """获取全局仓位历史统计
+    ---
+    tags:
+      - Traders - Positions
+    responses:
+      200:
+        description: 统计信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         stats = db.get_all_position_history_stats()
@@ -313,8 +551,24 @@ def get_all_position_history_stats():
 
 @traders_positions_bp.route('/api/position-history/by-coin', methods=['GET'])
 def get_all_position_history_by_coin():
-    """
-    获取所有交易员按币种汇总的仓位历史
+    """获取全局按币种汇总的仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    responses:
+      200:
+        description: 按币种汇总的仓位数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+      500:
+        description: 服务器错误
     """
     try:
         by_coin = db.get_all_position_history_by_coin()

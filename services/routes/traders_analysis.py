@@ -18,10 +18,42 @@ traders_analysis_bp = Blueprint('traders_analysis', __name__)
 
 @traders_analysis_bp.route('/api/traders/<address>/star', methods=['POST'])
 def toggle_trader_star(address: str):
-    """
-    切换交易者的收藏状态
-    Request Body:
-        - is_starred: bool, 是否收藏
+    """切换交易者收藏状态
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            is_starred:
+              type: boolean
+              description: 是否收藏
+              example: true
+    responses:
+      200:
+        description: 操作成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json() or {}
@@ -64,10 +96,37 @@ def toggle_trader_star(address: str):
 
 @traders_analysis_bp.route('/api/traders/<address>/ai-analysis', methods=['POST'])
 def ai_analyze_trader(address: str):
-    """
-    使用AI分析交易者表现并保存到数据库
-    Query Parameters:
-        - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)，可选
+    """AI分析交易者
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: provider
+        in: query
+        type: string
+        enum: [zhipu, qwen, deepseek, openrouter]
+        description: AI提供商
+    responses:
+      200:
+        description: 分析成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
     """
     try:
         provider = request.args.get('provider')
@@ -119,8 +178,30 @@ def ai_analyze_trader(address: str):
 
 @traders_analysis_bp.route('/api/traders/<address>/ai-analysis', methods=['GET'])
 def get_trader_ai_analysis(address: str):
-    """
-    获取交易者的AI分析结果
+    """获取交易者AI分析结果
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: AI分析结果
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      404:
+        description: AI分析不存在
+      500:
+        description: 服务器错误
     """
     try:
         analysis = db.get_trader_ai_analysis(address)
@@ -148,10 +229,48 @@ def get_trader_ai_analysis(address: str):
 
 @traders_analysis_bp.route('/api/traders/<address>/history', methods=['GET'])
 def get_trader_history(address: str):
-    """
-    获取交易者的历史分析记录（用于生成历史图表）
-    Query Parameters:
-        - days: int, 时间范围（天数），默认30，0表示全部
+    """获取交易者历史图表数据
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: days
+        in: query
+        type: integer
+        default: 30
+        description: 时间范围（天数），0表示全部
+    responses:
+      200:
+        description: 历史图表数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                roi:
+                  type: array
+                  items:
+                    type: object
+                pnl:
+                  type: array
+                  items:
+                    type: object
+                equity:
+                  type: array
+                  items:
+                    type: object
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
     """
     try:
         days = int(request.args.get('days', 30))
@@ -281,14 +400,49 @@ def get_trader_history(address: str):
 
 @traders_analysis_bp.route('/api/traders/rating/<rating>', methods=['GET'])
 def get_traders_by_rating(rating: str):
-    """
-    根据评级获取交易者（支持分页）
-    Path Parameters:
-        - rating: str, 评级 (S/A/B/C/D/F)
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - search: str, 地址搜索
+    """按评级获取交易者
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: rating
+        in: path
+        type: string
+        required: true
+        enum: [S, A, B, C, D, F]
+        description: 评级
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: search
+        in: query
+        type: string
+        description: 地址搜索
+    responses:
+      200:
+        description: 交易者列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      400:
+        description: 无效的评级
+      500:
+        description: 服务器错误
     """
     try:
         if rating not in ['S', 'A', 'B', 'C', 'D', 'F']:
@@ -341,8 +495,35 @@ def get_traders_by_rating(rating: str):
 
 @traders_analysis_bp.route('/api/traders/<address>/position-analysis', methods=['GET'])
 def get_trader_position_analysis(address: str):
-    """
-    获取交易员的仓位分析详情（综合统计）
+    """获取交易员仓位分析详情
+    ---
+    tags:
+      - Traders - Analysis
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 仓位分析详情
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                trader:
+                  type: object
+                position_analysis:
+                  type: object
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
     """
     try:
         # 获取基础信息

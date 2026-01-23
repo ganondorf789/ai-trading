@@ -16,7 +16,25 @@ copy_trading_addresses_bp = Blueprint('copy_trading_addresses', __name__)
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['GET'])
 def get_copy_trading_groups():
-    """获取跟单分组列表"""
+    """获取跟单分组列表
+    ---
+    tags:
+      - Copy Trading - Groups
+    responses:
+      200:
+        description: 分组列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+      500:
+        description: 服务器错误
+    """
     try:
         groups = db.get_copy_trading_groups()
         return jsonify({
@@ -33,7 +51,39 @@ def get_copy_trading_groups():
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['POST'])
 def create_copy_trading_group():
-    """创建跟单分组"""
+    """创建跟单分组
+    ---
+    tags:
+      - Copy Trading - Groups
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              description: 分组名称
+    responses:
+      200:
+        description: 创建成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if not data or not data.get('name'):
@@ -58,7 +108,33 @@ def create_copy_trading_group():
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['PUT'])
 def update_copy_trading_group(group_id: int):
-    """更新跟单分组"""
+    """更新跟单分组
+    ---
+    tags:
+      - Copy Trading - Groups
+    parameters:
+      - name: group_id
+        in: path
+        type: integer
+        required: true
+        description: 分组ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: 分组名称
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if not data:
@@ -83,7 +159,26 @@ def update_copy_trading_group(group_id: int):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['DELETE'])
 def delete_copy_trading_group(group_id: int):
-    """删除跟单分组"""
+    """删除跟单分组
+    ---
+    tags:
+      - Copy Trading - Groups
+    parameters:
+      - name: group_id
+        in: path
+        type: integer
+        required: true
+        description: 分组ID
+    responses:
+      200:
+        description: 删除成功
+      400:
+        description: 默认分组不能删除
+      404:
+        description: 分组不存在
+      500:
+        description: 服务器错误
+    """
     try:
         if group_id == 1:
             return jsonify({
@@ -114,16 +209,60 @@ def delete_copy_trading_group(group_id: int):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses', methods=['GET'])
 def get_copy_trading_addresses():
-    """
-    获取跟单地址列表
-    Query Parameters:
-        - page: int, 页码，默认1
-        - limit: int, 每页数量，默认20
-        - group_id: int, 分组ID筛选
-        - is_enabled: bool, 状态筛选
-        - search: str, 搜索地址或名称
-        - sort_by: str, 排序字段
-        - sort_order: str, 排序方向
+    """获取跟单地址列表
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 20
+        description: 每页数量
+      - name: group_id
+        in: query
+        type: integer
+        description: 分组ID筛选
+      - name: is_enabled
+        in: query
+        type: boolean
+        description: 状态筛选
+      - name: search
+        in: query
+        type: string
+        description: 搜索地址或名称
+      - name: sort_by
+        in: query
+        type: string
+        default: updated_at
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+    responses:
+      200:
+        description: 地址列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         page = int(request.args.get('page', 1))
@@ -173,7 +312,31 @@ def get_copy_trading_addresses():
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['GET'])
 def get_copy_trading_address(address: str):
-    """获取单个跟单地址详情"""
+    """获取单个跟单地址详情
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 跟单地址
+    responses:
+      200:
+        description: 地址详情
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      404:
+        description: 地址不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = db.get_copy_trading_address(address)
         if not data:
@@ -196,7 +359,30 @@ def get_copy_trading_address(address: str):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses', methods=['POST'])
 def create_copy_trading_address():
-    """添加跟单地址"""
+    """添加跟单地址
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - address
+          properties:
+            address:
+              type: string
+              description: 以太坊地址
+    responses:
+      200:
+        description: 添加成功
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if not data or not data.get('address'):
@@ -231,14 +417,39 @@ def create_copy_trading_address():
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/quick-add', methods=['POST'])
 def quick_add_copy_trading_address():
-    """
-    快速添加跟单地址（使用默认配置）
-    用于从持仓页面一键添加跟单
-    
-    Request Body:
-        - address: 交易员地址（必需）
-        - name: 名称（可选）
-        - sync_position_symbols: 同步仓位的币种列表（可选，默认空列表表示同步所有）
+    """快速添加跟单地址
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - address
+          properties:
+            address:
+              type: string
+              description: 交易员地址
+            name:
+              type: string
+              description: 名称
+            sync_position_symbols:
+              type: array
+              items:
+                type: string
+              description: 同步仓位的币种列表
+    responses:
+      200:
+        description: 添加成功
+      400:
+        description: 请求参数错误
+      409:
+        description: 地址已存在
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -325,7 +536,31 @@ def quick_add_copy_trading_address():
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['PUT'])
 def update_copy_trading_address(address: str):
-    """更新跟单地址配置"""
+    """更新跟单地址配置
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 跟单地址
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      404:
+        description: 地址不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if not data:
@@ -359,7 +594,24 @@ def update_copy_trading_address(address: str):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['DELETE'])
 def delete_copy_trading_address(address: str):
-    """删除跟单地址"""
+    """删除跟单地址
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 跟单地址
+    responses:
+      200:
+        description: 删除成功
+      404:
+        description: 地址不存在
+      500:
+        description: 服务器错误
+    """
     try:
         success = db.delete_copy_trading_address(address)
         if success:
@@ -382,7 +634,37 @@ def delete_copy_trading_address(address: str):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>/toggle', methods=['POST'])
 def toggle_copy_trading_address(address: str):
-    """启用/禁用跟单地址"""
+    """启用/禁用跟单地址
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 跟单地址
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - is_enabled
+          properties:
+            is_enabled:
+              type: boolean
+              description: 是否启用
+    responses:
+      200:
+        description: 操作成功
+      400:
+        description: 缺少参数
+      404:
+        description: 地址不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if data is None or 'is_enabled' not in data:
@@ -414,7 +696,37 @@ def toggle_copy_trading_address(address: str):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>/sync-position', methods=['POST'])
 def toggle_copy_trading_sync_position(address: str):
-    """切换同步仓位状态"""
+    """切换同步仓位状态
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 跟单地址
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - sync_position
+          properties:
+            sync_position:
+              type: boolean
+              description: 是否同步仓位
+    responses:
+      200:
+        description: 操作成功
+      400:
+        description: 缺少参数
+      404:
+        description: 地址不存在
+      500:
+        description: 服务器错误
+    """
     try:
         data = request.get_json()
         if data is None or 'sync_position' not in data:
@@ -446,12 +758,48 @@ def toggle_copy_trading_sync_position(address: str):
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/batch', methods=['POST'])
 def batch_update_copy_trading_addresses():
-    """
-    批量操作跟单地址
-    Body:
-        - action: str, 操作类型 (enable/disable/delete/move_group)
-        - addresses: List[str], 地址列表
-        - group_id: int, 目标分组ID（仅 move_group 时需要）
+    """批量操作跟单地址
+    ---
+    tags:
+      - Copy Trading - Addresses
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - action
+            - addresses
+          properties:
+            action:
+              type: string
+              enum: [enable, disable, delete, move_group]
+              description: 操作类型
+            addresses:
+              type: array
+              items:
+                type: string
+              description: 地址列表
+            group_id:
+              type: integer
+              description: 目标分组ID（仅move_group时需要）
+    responses:
+      200:
+        description: 操作成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            affected_count:
+              type: integer
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()

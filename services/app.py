@@ -4,6 +4,7 @@ Flask API Server 主入口
 """
 from flask import Flask
 from flask_cors import CORS
+from flasgger import Swagger
 import logging
 
 from services.routes import register_routes
@@ -18,10 +19,54 @@ def create_app():
     app = Flask(__name__)
     CORS(app)  # 允许跨域请求
 
+    # Swagger 配置
+    swagger_config = {
+        "headers": [],
+        "specs": [
+            {
+                "endpoint": 'apispec',
+                "route": '/apispec.json',
+                "rule_filter": lambda rule: True,
+                "model_filter": lambda tag: True,
+            }
+        ],
+        "static_url_path": "/flasgger_static",
+        "swagger_ui": True,
+        "specs_route": "/docs"
+    }
+
+    swagger_template = {
+        "info": {
+            "title": "Trader Analytics API",
+            "description": "交易者分析和跟单交易 API",
+            "version": "1.0.0"
+        },
+        "tags": [
+            {"name": "System", "description": "系统相关接口"},
+            {"name": "Traders", "description": "交易者管理"},
+            {"name": "Traders - Positions", "description": "交易者持仓管理"},
+            {"name": "Traders - Analysis", "description": "交易者分析"},
+            {"name": "Traders - Stats", "description": "交易者统计"},
+            {"name": "Copy Trading - Groups", "description": "跟单分组管理"},
+            {"name": "Copy Trading - Addresses", "description": "跟单地址管理"},
+            {"name": "Copy Trading - Orders", "description": "跟单订单管理"},
+            {"name": "Copy Trading - Positions", "description": "跟单仓位管理"},
+            {"name": "Copy Trading - Tracking", "description": "仓位级别跟单"},
+            {"name": "Copy Trading - Config", "description": "跟单配置管理"},
+            {"name": "Trading - Market", "description": "市场数据"},
+            {"name": "Trading - Positions", "description": "交易仓位"},
+            {"name": "Trading - Orders", "description": "交易订单"},
+            {"name": "Trading - Account", "description": "账户信息"}
+        ]
+    }
+
     # 注册所有路由
     register_routes(app)
 
-    logger.info("Flask 应用初始化完成")
+    # 初始化 Swagger（在路由注册后）
+    Swagger(app, config=swagger_config, template=swagger_template)
+
+    logger.info("Flask 应用初始化完成，Swagger 文档可访问: /docs")
     return app
 
 

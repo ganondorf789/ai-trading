@@ -16,27 +16,52 @@ copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions', methods=['GET'])
 def get_all_trader_positions():
-    """
-    获取所有跟单交易员的当前持仓（从数据库 asset_positions 表）
-    Query Parameters:
-        - enabled_only: bool, 是否只显示已启用的跟单地址，默认 true
-        - group_id: int, 按分组筛选
-        - min_win_rate: float, 最小胜率
-        - max_win_rate: float, 最大胜率
-        - min_profit_factor: float, 最小盈亏比
-        - max_profit_factor: float, 最大盈亏比
-        - min_pnl: float, 最小总盈亏
-        - max_pnl: float, 最大总盈亏
-        - min_drawdown: float, 最小回撤
-        - max_drawdown: float, 最大回撤
-        - min_sharpe: float, 最小Sharpe
-        - max_sharpe: float, 最大Sharpe
-        - min_sortino: float, 最小Sortino
-        - max_sortino: float, 最大Sortino
-        - min_trades: int, 最小交易数
-        - max_trades: int, 最大交易数
-        - min_score: float, 最小综合评分
-        - max_score: float, 最大综合评分
+    """获取所有跟单交易员当前持仓
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: enabled_only
+        in: query
+        type: boolean
+        default: true
+        description: 是否只显示已启用的跟单地址
+      - name: group_id
+        in: query
+        type: integer
+        description: 按分组筛选
+      - name: min_win_rate
+        in: query
+        type: number
+        description: 最小胜率
+      - name: max_win_rate
+        in: query
+        type: number
+        description: 最大胜率
+      - name: min_score
+        in: query
+        type: number
+        description: 最小综合评分
+      - name: max_score
+        in: query
+        type: number
+        description: 最大综合评分
+    responses:
+      200:
+        description: 持仓列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            stats:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
@@ -83,10 +108,30 @@ def get_all_trader_positions():
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
 def refresh_all_trader_positions():
-    """
-    刷新所有跟单交易员的当前持仓（从 Hyperliquid API 获取最新数据）
-    Query Parameters:
-        - enabled_only: bool, 是否只刷新已启用的跟单地址，默认 true
+    """刷新所有跟单交易员持仓
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: enabled_only
+        in: query
+        type: boolean
+        default: true
+        description: 是否只刷新已启用的跟单地址
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            message:
+              type: string
+      500:
+        description: 服务器错误
     """
     try:
         from hyperliquid.info import Info
@@ -153,8 +198,22 @@ def refresh_all_trader_positions():
 
 @copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['GET'])
 def get_risk_control_config():
-    """
-    获取风控配置
+    """获取风控配置
+    ---
+    tags:
+      - Copy Trading - Config
+    responses:
+      200:
+        description: 风控配置
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         config = db.get_risk_control_config()
@@ -172,8 +231,23 @@ def get_risk_control_config():
 
 @copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['PUT'])
 def update_risk_control_config():
-    """
-    更新风控配置
+    """更新风控配置
+    ---
+    tags:
+      - Copy Trading - Config
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -232,8 +306,22 @@ def update_risk_control_config():
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['GET'])
 def get_default_copy_config():
-    """
-    获取默认跟单配置
+    """获取默认跟单配置
+    ---
+    tags:
+      - Copy Trading - Config
+    responses:
+      200:
+        description: 默认跟单配置
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         config = db.get_default_copy_config()
@@ -251,8 +339,23 @@ def get_default_copy_config():
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['PUT'])
 def update_default_copy_config():
-    """
-    更新默认跟单配置
+    """更新默认跟单配置
+    ---
+    tags:
+      - Copy Trading - Config
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -323,8 +426,22 @@ def update_default_copy_config():
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['GET'])
 def get_immediate_copy_config():
-    """
-    获取立即跟单配置
+    """获取立即跟单配置
+    ---
+    tags:
+      - Copy Trading - Config
+    responses:
+      200:
+        description: 立即跟单配置
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
     """
     try:
         config = db.get_immediate_copy_config()
@@ -342,8 +459,23 @@ def get_immediate_copy_config():
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['PUT'])
 def update_immediate_copy_config():
-    """
-    更新立即跟单配置
+    """更新立即跟单配置
+    ---
+    tags:
+      - Copy Trading - Config
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json()
@@ -517,14 +649,42 @@ def _build_coin_stats(positions: list) -> dict:
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis', methods=['POST'])
 def ai_analyze_all_positions():
-    """
-    AI分析所有持仓（整体分析）
-    Body (JSON):
-        - positions: List[Dict], 持仓数据列表（可选，不传则从数据库获取）
-        - stats: Dict, 持仓统计数据（可选）
-        - provider: str, AI提供商 (zhipu/qwen/deepseek/openrouter)
-        - filters: Dict, 筛选条件（可选）
-        - force_refresh: bool, 是否强制重新分析（忽略缓存）
+    """AI分析所有持仓
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: body
+        in: body
+        required: false
+        schema:
+          type: object
+          properties:
+            positions:
+              type: array
+              description: 持仓数据列表
+            provider:
+              type: string
+              enum: [zhipu, qwen, deepseek, openrouter]
+            force_refresh:
+              type: boolean
+              default: false
+    responses:
+      200:
+        description: AI分析结果
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            cached:
+              type: boolean
+      400:
+        description: 没有找到持仓数据
+      500:
+        description: 服务器错误
     """
     try:
         from services.positions_analysis import analyze_all_positions
@@ -622,13 +782,35 @@ def ai_analyze_all_positions():
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/coin', methods=['POST'])
 def ai_analyze_coin_positions():
-    """
-    AI分析单个币种的所有持仓
-    Body (JSON):
-        - coin: str, 币种名称（必填）
-        - positions: List[Dict], 该币种的持仓数据列表（可选）
-        - provider: str, AI提供商
-        - force_refresh: bool, 是否强制重新分析
+    """AI分析单个币种持仓
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - coin
+          properties:
+            coin:
+              type: string
+              description: 币种名称
+            provider:
+              type: string
+              enum: [zhipu, qwen, deepseek, openrouter]
+            force_refresh:
+              type: boolean
+              default: false
+    responses:
+      200:
+        description: AI分析结果
+      400:
+        description: 参数错误
+      500:
+        description: 服务器错误
     """
     try:
         from services.positions_analysis import analyze_coin_positions
@@ -708,12 +890,35 @@ def ai_analyze_coin_positions():
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/single', methods=['POST'])
 def ai_analyze_single_position():
-    """
-    AI分析单个仓位
-    Body (JSON):
-        - position: Dict, 仓位数据（必填）
-        - provider: str, AI提供商
-        - force_refresh: bool, 是否强制重新分析
+    """AI分析单个仓位
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - position
+          properties:
+            position:
+              type: object
+              description: 仓位数据
+            provider:
+              type: string
+              enum: [zhipu, qwen, deepseek, openrouter]
+            force_refresh:
+              type: boolean
+              default: false
+    responses:
+      200:
+        description: AI分析结果
+      400:
+        description: 参数错误
+      500:
+        description: 服务器错误
     """
     try:
         from services.positions_analysis import analyze_single_position
@@ -786,13 +991,47 @@ def ai_analyze_single_position():
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/check', methods=['POST'])
 def check_positions_ai_analysis():
-    """
-    检查是否已有持仓 AI 分析结果（不执行分析）
-    Body (JSON):
-        - analysis_type: str, 分析类型 (overall/coin/single)
-        - positions: List[Dict], 持仓数据列表
-        - coin: str, 币种（coin/single类型时需要）
-        - address: str, 地址（single类型时需要）
+    """检查是否已有持仓AI分析结果
+    ---
+    tags:
+      - Copy Trading - Positions
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - positions
+          properties:
+            analysis_type:
+              type: string
+              enum: [overall, coin, single]
+              default: overall
+            positions:
+              type: array
+              items:
+                type: object
+            coin:
+              type: string
+            address:
+              type: string
+    responses:
+      200:
+        description: 检查结果
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            exists:
+              type: boolean
+            data:
+              type: object
+      400:
+        description: 参数错误
+      500:
+        description: 服务器错误
     """
     try:
         data = request.get_json() or {}
