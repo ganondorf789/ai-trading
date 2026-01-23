@@ -7,6 +7,7 @@ import logging
 import os
 
 from clients.hyperliquid_client import HyperliquidClient
+from services.routes.db import db
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,37 @@ def get_positions():
               type: array
               items:
                 type: object
+                properties:
+                  symbol:
+                    type: string
+                  side:
+                    type: string
+                  size:
+                    type: number
+                  entry_price:
+                    type: number
+                  current_price:
+                    type: number
+                  leverage:
+                    type: integer
+                  unrealized_pnl:
+                    type: number
+                  liquidation_price:
+                    type: number
+                  margin_used:
+                    type: number
+                  tracking_id:
+                    type: integer
+                    description: 跟单ID
+                  target_address:
+                    type: string
+                    description: 跟单目标地址
+                  target_name:
+                    type: string
+                    description: 跟单目标名称
+                  has_tracking:
+                    type: boolean
+                    description: 是否有跟单
             count:
               type: integer
       500:
@@ -274,17 +306,38 @@ def get_positions():
         client = get_client()
         positions = client.get_positions()
         
-        positions_data = [{
-            'symbol': p.symbol,
-            'side': p.side.value,
-            'size': p.size,
-            'entry_price': p.entry_price,
-            'current_price': p.current_price,
-            'leverage': p.leverage,
-            'unrealized_pnl': p.unrealized_pnl,
-            'liquidation_price': p.liquidation_price,
-            'margin_used': p.margin_used
-        } for p in positions]
+        # 获取所有活跃的跟单记录，用于匹配仓位
+        active_trackings = db.get_active_position_trackings()
+        
+        # 构建 symbol -> tracking 的映射（只取活跃的跟单）
+        tracking_map = {}
+        for tracking in active_trackings:
+            symbol = tracking.get('symbol')
+            if symbol and symbol not in tracking_map:
+                tracking_map[symbol] = tracking
+        
+        positions_data = []
+        for p in positions:
+            # 查找该仓位对应的跟单记录
+            tracking = tracking_map.get(p.symbol)
+            
+            position_info = {
+                'symbol': p.symbol,
+                'side': p.side.value,
+                'size': p.size,
+                'entry_price': p.entry_price,
+                'current_price': p.current_price,
+                'leverage': p.leverage,
+                'unrealized_pnl': p.unrealized_pnl,
+                'liquidation_price': p.liquidation_price,
+                'margin_used': p.margin_used,
+                # 跟单相关字段
+                'tracking_id': tracking.get('id') if tracking else None,
+                'target_address': tracking.get('target_address') if tracking else None,
+                'target_name': tracking.get('target_name') if tracking else None,
+                'has_tracking': tracking is not None
+            }
+            positions_data.append(position_info)
         
         return jsonify({
             'success': True,
