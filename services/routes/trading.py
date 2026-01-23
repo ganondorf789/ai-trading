@@ -16,6 +16,53 @@ trading_bp = Blueprint('trading', __name__)
 _client: HyperliquidClient = None
 
 
+def _extract_order_data(result: dict) -> dict:
+    """
+    从 Hyperliquid API 响应中提取核心数据，简化嵌套结构
+    
+    原始响应格式:
+    {
+        "status": "ok",
+        "response": {
+            "type": "order",
+            "data": {
+                "statuses": [...]
+            }
+        }
+    }
+    
+    提取后:
+    {
+        "statuses": [...]
+    }
+    """
+    if result is None:
+        return None
+    
+    try:
+        # 提取 response.data
+        if isinstance(result, dict):
+            if 'response' in result and isinstance(result['response'], dict):
+                response = result['response']
+                if 'data' in response:
+                    return response['data']
+            # 如果已经是简化格式，直接返回
+            if 'statuses' in result:
+                return result
+        return result
+    except Exception:
+        return result
+
+
+def _extract_order_data_list(results: list) -> list:
+    """
+    批量提取订单数据
+    """
+    if results is None:
+        return []
+    return [_extract_order_data(r) for r in results]
+
+
 def get_client() -> HyperliquidClient:
     """
     获取 HyperliquidClient 实例（单例模式）
@@ -362,7 +409,7 @@ def close_position(symbol: str):
         
         return jsonify({
             'success': True,
-            'data': result,
+            'data': _extract_order_data(result),
             'message': f'{symbol} 市价平仓成功'
         })
         
@@ -443,7 +490,7 @@ def close_position_limit(symbol: str):
         
         return jsonify({
             'success': True,
-            'data': result,
+            'data': _extract_order_data(result),
             'message': f'{symbol} 限价平仓订单已提交'
         })
         
@@ -484,7 +531,7 @@ def close_all_positions():
         
         return jsonify({
             'success': True,
-            'data': results,
+            'data': _extract_order_data_list(results),
             'count': len(results),
             'message': f'已平掉 {len(results)} 个仓位'
         })
@@ -567,9 +614,15 @@ def set_position_tp_sl(symbol: str):
             sl_size=float(data['sl_size']) if 'sl_size' in data else None
         )
         
+        # 简化响应结构
+        simplified_result = {
+            'tp': _extract_order_data(result.get('tp')) if result.get('tp') else None,
+            'sl': _extract_order_data(result.get('sl')) if result.get('sl') else None
+        }
+        
         return jsonify({
             'success': True,
-            'data': result,
+            'data': simplified_result,
             'message': f'{symbol} 止盈止损设置成功'
         })
         
@@ -680,7 +733,7 @@ def cancel_order(symbol: str, order_id: int):
         
         return jsonify({
             'success': True,
-            'data': result,
+            'data': _extract_order_data(result),
             'message': f'订单 {order_id} 已取消'
         })
         
@@ -727,7 +780,7 @@ def cancel_orders_by_symbol(symbol: str):
         
         return jsonify({
             'success': True,
-            'data': results,
+            'data': _extract_order_data_list(results),
             'count': len(results),
             'message': f'{symbol} 的 {len(results)} 个订单已取消'
         })
@@ -769,7 +822,7 @@ def cancel_all_orders():
         
         return jsonify({
             'success': True,
-            'data': results,
+            'data': _extract_order_data_list(results),
             'count': len(results),
             'message': f'已取消 {len(results)} 个订单'
         })

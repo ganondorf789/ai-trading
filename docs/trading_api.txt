@@ -1,0 +1,1022 @@
+================================================================================
+                        Hyperliquid Trading API 文档
+================================================================================
+
+基础信息
+--------
+Base URL: /api/trading
+认证方式: 通过环境变量配置钱包私钥
+
+环境变量配置:
+  - HL_PRIVATE_KEY    : 钱包私钥（必填，交易相关接口需要）
+  - HL_WALLET_ADDRESS : 钱包地址（可选）
+  - HL_TESTNET        : 是否使用测试网，true/false（可选，默认 false）
+
+响应格式:
+  成功: { "success": true, "data": ..., "message": "..." }
+  失败: { "success": false, "error": "错误信息" }
+
+
+================================================================================
+                              类型定义
+================================================================================
+
+// 仓位方向
+type PositionSide = "long" | "short";
+
+// 订单方向
+type OrderSide = "buy" | "sell" | "long" | "short";
+
+// 订单类型
+type OrderType = "market" | "limit" | "stop_loss" | "take_profit";
+
+// 订单状态
+type OrderStatus = "pending" | "open" | "filled" | "partially_filled" | "cancelled" | "rejected";
+
+// 仓位数据
+interface Position {
+    symbol: string;                    // 交易对符号，如 "BTC"
+    side: PositionSide;                // 持仓方向
+    size: number;                      // 持仓数量
+    entry_price: number;               // 开仓均价
+    current_price: number;             // 当前价格
+    leverage: number;                  // 杠杆倍数
+    unrealized_pnl: number;            // 未实现盈亏
+    liquidation_price: number | null;  // 强平价格
+    margin_used: number;               // 占用保证金
+}
+
+// 订单数据
+interface Order {
+    id: string;                        // 订单ID
+    symbol: string;                    // 交易对符号
+    side: OrderSide;                   // 订单方向
+    order_type: OrderType;             // 订单类型
+    size: number;                      // 订单数量
+    price: number;                     // 订单价格
+    status: OrderStatus;               // 订单状态
+    created_at: string | null;         // 创建时间 ISO格式
+}
+
+// 账户信息
+interface AccountInfo {
+    balance: number;                   // 账户余额
+    equity: number;                    // 账户权益
+    available_margin: number;          // 可用保证金
+    used_margin: number;               // 已用保证金
+    unrealized_pnl: number;            // 未实现盈亏
+    realized_pnl: number;              // 已实现盈亏
+    positions_count: number;           // 持仓数量
+}
+
+// 交易对元数据
+interface AssetMeta {
+    name: string;                      // 交易对名称，如 "BTC"
+    szDecimals: number;                // 数量精度
+    maxLeverage: number;               // 最大杠杆
+    onlyIsolated: boolean;             // 是否仅支持逐仓
+}
+
+// 市场元数据
+interface MarketMeta {
+    universe: AssetMeta[];             // 交易对列表
+}
+
+// 订单状态项
+interface OrderStatusItem {
+    resting?: {
+        oid: number;                   // 挂单ID
+    };
+    filled?: {
+        totalSz: string;               // 成交数量
+        avgPx: string;                 // 成交均价
+        oid: number;                   // 订单ID
+    };
+    error?: string;                    // 错误信息
+}
+
+// 订单执行结果（简化后）
+interface OrderResult {
+    statuses: OrderStatusItem[];       // 订单状态列表
+}
+
+// 止盈止损设置结果
+interface TpSlResult {
+    tp: OrderResult | null;            // 止盈订单结果
+    sl: OrderResult | null;            // 止损订单结果
+}
+
+
+================================================================================
+                              市场数据 API
+================================================================================
+
+--------------------------------------------------------------------------------
+1. 获取市场元数据
+--------------------------------------------------------------------------------
+GET /api/trading/meta
+
+描述: 获取市场元数据，包含所有交易对信息（名称、最小下单量、价格精度等）
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: MarketMeta;
+    count: number;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "universe": [
+            {
+                "name": "BTC",
+                "szDecimals": 4,
+                "maxLeverage": 50,
+                "onlyIsolated": false
+            },
+            {
+                "name": "ETH",
+                "szDecimals": 3,
+                "maxLeverage": 50,
+                "onlyIsolated": false
+            },
+            {
+                "name": "SOL",
+                "szDecimals": 1,
+                "maxLeverage": 20,
+                "onlyIsolated": false
+            }
+        ]
+    },
+    "count": 150
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+2. 获取所有交易对中间价
+--------------------------------------------------------------------------------
+GET /api/trading/mids
+
+描述: 获取所有交易对的中间价
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: Record<string, number>;      // { [symbol: string]: mid_price }
+    count: number;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "BTC": 42350.5,
+        "ETH": 2250.25,
+        "SOL": 98.5,
+        "DOGE": 0.0825,
+        "XRP": 0.625
+    },
+    "count": 150
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+3. 获取指定交易对中间价
+--------------------------------------------------------------------------------
+GET /api/trading/mids/<symbol>
+
+描述: 获取指定交易对的中间价
+
+路径参数:
+  - symbol (string, 必填): 交易对符号，如 BTC, ETH, SOL
+
+响应类型:
+{
+    success: boolean;
+    data: {
+        symbol: string;
+        mid_price: number;
+    };
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "symbol": "BTC",
+        "mid_price": 42350.5
+    }
+}
+
+失败响应 (404):
+{
+    "success": false,
+    "error": "未找到交易对 INVALID"
+}
+
+状态码:
+  200 - 成功
+  404 - 交易对不存在
+  500 - 服务器错误
+
+
+================================================================================
+                              仓位管理 API
+================================================================================
+
+--------------------------------------------------------------------------------
+4. 获取当前所有仓位
+--------------------------------------------------------------------------------
+GET /api/trading/positions
+
+描述: 获取当前账户的所有仓位
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: Position[];
+    count: number;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": [
+        {
+            "symbol": "BTC",
+            "side": "long",
+            "size": 0.5,
+            "entry_price": 42000.0,
+            "current_price": 42350.5,
+            "leverage": 10,
+            "unrealized_pnl": 175.25,
+            "liquidation_price": 38000.0,
+            "margin_used": 2100.0
+        },
+        {
+            "symbol": "ETH",
+            "side": "short",
+            "size": 2.0,
+            "entry_price": 2300.0,
+            "current_price": 2250.25,
+            "leverage": 5,
+            "unrealized_pnl": 99.5,
+            "liquidation_price": 2800.0,
+            "margin_used": 920.0
+        }
+    ],
+    "count": 2
+}
+
+空仓位时:
+{
+    "success": true,
+    "data": [],
+    "count": 0
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+5. 获取指定交易对仓位
+--------------------------------------------------------------------------------
+GET /api/trading/positions/<symbol>
+
+描述: 获取指定交易对的仓位信息
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+
+响应类型:
+{
+    success: boolean;
+    data: Position | null;
+    message?: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "symbol": "BTC",
+        "side": "long",
+        "size": 0.5,
+        "entry_price": 42000.0,
+        "current_price": 42350.5,
+        "leverage": 10,
+        "unrealized_pnl": 175.25,
+        "liquidation_price": 38000.0,
+        "margin_used": 2100.0
+    }
+}
+
+无仓位时:
+{
+    "success": true,
+    "data": null,
+    "message": "未找到 BTC 的仓位"
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+
+================================================================================
+                              平仓 API
+================================================================================
+
+--------------------------------------------------------------------------------
+6. 市价平仓
+--------------------------------------------------------------------------------
+POST /api/trading/positions/<symbol>/close
+
+描述: 以市价平掉指定交易对的仓位
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+
+请求体 (JSON, 可选):
+{
+    "slippage": 0.01                   // 滑点容忍度，默认 0.01 (1%)
+}
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "statuses": [
+            {
+                "filled": {
+                    "totalSz": "0.5",
+                    "avgPx": "42350.5",
+                    "oid": 12345678
+                }
+            }
+        ]
+    },
+    "message": "BTC 市价平仓成功"
+}
+
+失败响应 (404):
+{
+    "success": false,
+    "error": "未找到 BTC 的仓位"
+}
+
+状态码:
+  200 - 成功
+  404 - 仓位不存在
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+7. 限价平仓
+--------------------------------------------------------------------------------
+POST /api/trading/positions/<symbol>/close-limit
+
+描述: 以限价平掉指定交易对的仓位
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+
+请求体 (JSON, 必填):
+{
+    "price": 43000.0,                  // 限价（必填）
+    "size": 0.25,                      // 平仓数量（可选，不填则全部平仓）
+    "post_only": false                 // 是否只做 maker（可选，默认 false）
+}
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "statuses": [
+            {
+                "resting": {
+                    "oid": 12345679
+                }
+            }
+        ]
+    },
+    "message": "BTC 限价平仓订单已提交"
+}
+
+失败响应 (400):
+{
+    "success": false,
+    "error": "缺少必填参数 price"
+}
+
+失败响应 (404):
+{
+    "success": false,
+    "error": "未找到 BTC 的仓位"
+}
+
+状态码:
+  200 - 成功
+  400 - 缺少必填参数 price
+  404 - 仓位不存在
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+8. 市价平掉所有仓位
+--------------------------------------------------------------------------------
+POST /api/trading/positions/close-all
+
+描述: 以市价平掉所有仓位
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult[];
+    count: number;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": [
+        {
+            "statuses": [
+                {
+                    "filled": {
+                        "totalSz": "0.5",
+                        "avgPx": "42350.5",
+                        "oid": 12345678
+                    }
+                }
+            ]
+        },
+        {
+            "statuses": [
+                {
+                    "filled": {
+                        "totalSz": "2.0",
+                        "avgPx": "2250.25",
+                        "oid": 12345680
+                    }
+                }
+            ]
+        }
+    ],
+    "count": 2,
+    "message": "已平掉 2 个仓位"
+}
+
+无仓位时:
+{
+    "success": true,
+    "data": [],
+    "count": 0,
+    "message": "已平掉 0 个仓位"
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+
+================================================================================
+                            止盈止损 API
+================================================================================
+
+--------------------------------------------------------------------------------
+9. 设置仓位止盈止损
+--------------------------------------------------------------------------------
+POST /api/trading/positions/<symbol>/tp-sl
+
+描述: 为指定仓位设置止盈和/或止损订单
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+
+请求体 (JSON, 至少需要设置 tp 或 sl 其中之一):
+{
+    // 止盈设置
+    "tp_trigger_price": 45000.0,       // 止盈触发价格
+    "tp_limit_price": 44900.0,         // 止盈限价（可选，不填则市价触发）
+    "tp_size": 0.25,                   // 止盈数量（可选，不填则使用全部仓位）
+
+    // 止损设置
+    "sl_trigger_price": 40000.0,       // 止损触发价格
+    "sl_limit_price": 39900.0,         // 止损限价（可选，不填则市价触发）
+    "sl_size": 0.25                    // 止损数量（可选，不填则使用全部仓位）
+}
+
+响应类型:
+{
+    success: boolean;
+    data: TpSlResult;
+    message: string;
+}
+
+响应示例 (同时设置 TP 和 SL):
+{
+    "success": true,
+    "data": {
+        "tp": {
+            "statuses": [
+                {
+                    "resting": {
+                        "oid": 12345681
+                    }
+                }
+            ]
+        },
+        "sl": {
+            "statuses": [
+                {
+                    "resting": {
+                        "oid": 12345682
+                    }
+                }
+            ]
+        }
+    },
+    "message": "BTC 止盈止损设置成功"
+}
+
+响应示例 (仅设置 TP):
+{
+    "success": true,
+    "data": {
+        "tp": {
+            "statuses": [
+                {
+                    "resting": {
+                        "oid": 12345681
+                    }
+                }
+            ]
+        },
+        "sl": null
+    },
+    "message": "BTC 止盈止损设置成功"
+}
+
+失败响应 (400):
+{
+    "success": false,
+    "error": "至少需要设置 tp_trigger_price 或 sl_trigger_price"
+}
+
+失败响应 (404):
+{
+    "success": false,
+    "error": "未找到 BTC 的仓位"
+}
+
+状态码:
+  200 - 成功
+  400 - 参数错误（未设置 tp 或 sl）
+  404 - 仓位不存在
+  500 - 服务器错误
+
+
+================================================================================
+                              订单管理 API
+================================================================================
+
+--------------------------------------------------------------------------------
+10. 获取未成交订单
+--------------------------------------------------------------------------------
+GET /api/trading/orders
+
+描述: 获取所有未成交的挂单
+
+查询参数:
+  - symbol (string, 可选): 筛选特定交易对
+
+响应类型:
+{
+    success: boolean;
+    data: Order[];
+    count: number;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": [
+        {
+            "id": "12345678",
+            "symbol": "BTC",
+            "side": "buy",
+            "order_type": "limit",
+            "size": 0.1,
+            "price": 41000.0,
+            "status": "open",
+            "created_at": "2024-01-15T10:30:00.000Z"
+        },
+        {
+            "id": "12345679",
+            "symbol": "ETH",
+            "side": "sell",
+            "order_type": "limit",
+            "size": 1.5,
+            "price": 2400.0,
+            "status": "open",
+            "created_at": "2024-01-15T10:35:00.000Z"
+        },
+        {
+            "id": "12345680",
+            "symbol": "BTC",
+            "side": "sell",
+            "order_type": "limit",
+            "size": 0.2,
+            "price": 45000.0,
+            "status": "open",
+            "created_at": "2024-01-15T10:40:00.000Z"
+        }
+    ],
+    "count": 3
+}
+
+无订单时:
+{
+    "success": true,
+    "data": [],
+    "count": 0
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+11. 取消订单
+--------------------------------------------------------------------------------
+DELETE /api/trading/orders/<symbol>/<order_id>
+
+描述: 取消指定的订单
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+  - order_id (integer, 必填): 订单 ID
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "statuses": ["success"]
+    },
+    "message": "订单 12345678 已取消"
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+12. 取消指定交易对所有订单
+--------------------------------------------------------------------------------
+DELETE /api/trading/orders/<symbol>
+
+描述: 取消指定交易对的所有订单
+
+路径参数:
+  - symbol (string, 必填): 交易对符号
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult[];
+    count: number;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": [
+        {
+            "statuses": ["success"]
+        },
+        {
+            "statuses": ["success"]
+        }
+    ],
+    "count": 2,
+    "message": "BTC 的 2 个订单已取消"
+}
+
+无订单时:
+{
+    "success": true,
+    "data": [],
+    "count": 0,
+    "message": "BTC 的 0 个订单已取消"
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+--------------------------------------------------------------------------------
+13. 取消所有订单
+--------------------------------------------------------------------------------
+DELETE /api/trading/orders
+
+描述: 取消所有未成交订单
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: OrderResult[];
+    count: number;
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": [
+        {
+            "statuses": ["success"]
+        },
+        {
+            "statuses": ["success"]
+        },
+        {
+            "statuses": ["success"]
+        }
+    ],
+    "count": 3,
+    "message": "已取消 3 个订单"
+}
+
+无订单时:
+{
+    "success": true,
+    "data": [],
+    "count": 0,
+    "message": "已取消 0 个订单"
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+
+================================================================================
+                              账户信息 API
+================================================================================
+
+--------------------------------------------------------------------------------
+14. 获取账户信息
+--------------------------------------------------------------------------------
+GET /api/trading/account
+
+描述: 获取账户余额、保证金等信息
+
+请求参数: 无
+
+响应类型:
+{
+    success: boolean;
+    data: AccountInfo;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "balance": 10000.0,
+        "equity": 10274.75,
+        "available_margin": 7254.75,
+        "used_margin": 3020.0,
+        "unrealized_pnl": 274.75,
+        "realized_pnl": 0.0,
+        "positions_count": 2
+    }
+}
+
+空账户:
+{
+    "success": true,
+    "data": {
+        "balance": 0.0,
+        "equity": 0.0,
+        "available_margin": 0.0,
+        "used_margin": 0.0,
+        "unrealized_pnl": 0.0,
+        "realized_pnl": 0.0,
+        "positions_count": 0
+    }
+}
+
+状态码:
+  200 - 成功
+  500 - 服务器错误
+
+
+================================================================================
+                              API 接口汇总
+================================================================================
+
+市场数据:
+  GET    /api/trading/meta                        获取市场元数据
+  GET    /api/trading/mids                        获取所有交易对中间价
+  GET    /api/trading/mids/<symbol>               获取指定交易对中间价
+
+仓位管理:
+  GET    /api/trading/positions                   获取当前所有仓位
+  GET    /api/trading/positions/<symbol>          获取指定交易对仓位
+
+平仓操作:
+  POST   /api/trading/positions/<symbol>/close        市价平仓
+  POST   /api/trading/positions/<symbol>/close-limit  限价平仓
+  POST   /api/trading/positions/close-all             市价平掉所有仓位
+
+止盈止损:
+  POST   /api/trading/positions/<symbol>/tp-sl    设置仓位止盈止损
+
+订单管理:
+  GET    /api/trading/orders                      获取未成交订单
+  DELETE /api/trading/orders/<symbol>/<order_id>  取消订单
+  DELETE /api/trading/orders/<symbol>             取消指定交易对所有订单
+  DELETE /api/trading/orders                      取消所有订单
+
+账户信息:
+  GET    /api/trading/account                     获取账户信息
+
+
+================================================================================
+                           TypeScript 类型定义
+================================================================================
+
+// 完整的 TypeScript 类型定义，可直接复制使用
+
+// ==================== 枚举类型 ====================
+
+export type PositionSide = "long" | "short";
+
+export type OrderSide = "buy" | "sell" | "long" | "short";
+
+export type OrderType = "market" | "limit" | "stop_loss" | "take_profit";
+
+export type OrderStatusEnum = "pending" | "open" | "filled" | "partially_filled" | "cancelled" | "rejected";
+
+// ==================== 数据模型 ====================
+
+export interface Position {
+    symbol: string;
+    side: PositionSide;
+    size: number;
+    entry_price: number;
+    current_price: number;
+    leverage: number;
+    unrealized_pnl: number;
+    liquidation_price: number | null;
+    margin_used: number;
+}
+
+export interface Order {
+    id: string;
+    symbol: string;
+    side: OrderSide;
+    order_type: OrderType;
+    size: number;
+    price: number;
+    status: OrderStatusEnum;
+    created_at: string | null;
+}
+
+export interface AccountInfo {
+    balance: number;
+    equity: number;
+    available_margin: number;
+    used_margin: number;
+    unrealized_pnl: number;
+    realized_pnl: number;
+    positions_count: number;
+}
+
+export interface AssetMeta {
+    name: string;
+    szDecimals: number;
+    maxLeverage: number;
+    onlyIsolated: boolean;
+}
+
+export interface MarketMeta {
+    universe: AssetMeta[];
+}
+
+export interface MidPrice {
+    symbol: string;
+    mid_price: number;
+}
+
+// ==================== 订单执行结果（简化后） ====================
+
+export interface OrderStatusItem {
+    resting?: {
+        oid: number;
+    };
+    filled?: {
+        totalSz: string;
+        avgPx: string;
+        oid: number;
+    };
+    error?: string;
+}
+
+export interface OrderResult {
+    statuses: OrderStatusItem[] | string[];
+}
+
+export interface TpSlResult {
+    tp: OrderResult | null;
+    sl: OrderResult | null;
+}
+
+// ==================== API 响应类型 ====================
+
+export interface ApiResponse<T> {
+    success: boolean;
+    data: T;
+    message?: string;
+    error?: string;
+    count?: number;
+}
+
+// 具体响应类型
+export type GetMetaResponse = ApiResponse<MarketMeta>;
+export type GetMidsResponse = ApiResponse<Record<string, number>>;
+export type GetMidPriceResponse = ApiResponse<MidPrice>;
+export type GetPositionsResponse = ApiResponse<Position[]>;
+export type GetPositionResponse = ApiResponse<Position | null>;
+export type GetOrdersResponse = ApiResponse<Order[]>;
+export type GetAccountResponse = ApiResponse<AccountInfo>;
+export type ClosePositionResponse = ApiResponse<OrderResult>;
+export type CloseAllPositionsResponse = ApiResponse<OrderResult[]>;
+export type SetTpSlResponse = ApiResponse<TpSlResult>;
+export type CancelOrderResponse = ApiResponse<OrderResult>;
+export type CancelOrdersResponse = ApiResponse<OrderResult[]>;
+
+// ==================== 请求体类型 ====================
+
+export interface ClosePositionRequest {
+    slippage?: number;
+}
+
+export interface ClosePositionLimitRequest {
+    price: number;
+    size?: number;
+    post_only?: boolean;
+}
+
+export interface SetTpSlRequest {
+    tp_trigger_price?: number;
+    tp_limit_price?: number;
+    tp_size?: number;
+    sl_trigger_price?: number;
+    sl_limit_price?: number;
+    sl_size?: number;
+}
+
+================================================================================
