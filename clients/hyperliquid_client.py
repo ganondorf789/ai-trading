@@ -647,6 +647,211 @@ class HyperliquidClient:
         
         return results
     
+    def close_position_limit(
+        self,
+        symbol: str,
+        price: float,
+        size: Optional[float] = None,
+        post_only: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        限价平仓
+        
+        Args:
+            symbol: 交易对符号
+            price: 限价
+            size: 平仓数量（可选，不提供则全部平仓）
+            post_only: 是否只做 maker
+        
+        Returns:
+            平仓结果，如果没有持仓则返回 None
+        """
+        self._ensure_exchange()
+        
+        # 获取当前持仓
+        positions = self.get_positions()
+        position = next((p for p in positions if p.symbol == symbol), None)
+        
+        if position is None:
+            logger.warning(f"限价平仓 {symbol}: 未找到持仓")
+            return None
+        
+        # 确定平仓数量
+        close_size = size if size is not None else position.size
+        if close_size > position.size:
+            close_size = position.size
+        
+        logger.info(f"限价平仓 {symbol}: {position.side.value} {close_size}@{price}")
+        
+        # 平多仓需要卖出，平空仓需要买入
+        is_buy = position.side == PositionSide.SHORT
+        
+        try:
+            result = self.limit_order(
+                symbol=symbol,
+                is_buy=is_buy,
+                size=close_size,
+                price=price,
+                reduce_only=True,
+                post_only=post_only
+            )
+            logger.info(f"限价平仓订单已提交: {symbol}, 结果: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"限价平仓失败 {symbol}: {e}")
+            return None
+    
+    def set_position_tp_sl(
+        self,
+        symbol: str,
+        tp_trigger_price: Optional[float] = None,
+        tp_limit_price: Optional[float] = None,
+        tp_size: Optional[float] = None,
+        sl_trigger_price: Optional[float] = None,
+        sl_limit_price: Optional[float] = None,
+        sl_size: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        设置仓位的止盈止损
+        
+        Args:
+            symbol: 交易对符号
+            tp_trigger_price: 止盈触发价格
+            tp_limit_price: 止盈限价（可选，不提供则市价触发）
+            tp_size: 止盈数量（可选，不提供则使用全部仓位）
+            sl_trigger_price: 止损触发价格
+            sl_limit_price: 止损限价（可选，不提供则市价触发）
+            sl_size: 止损数量（可选，不提供则使用全部仓位）
+        
+        Returns:
+            设置结果 {'tp': result, 'sl': result}
+        """
+        self._ensure_exchange()
+        
+        # 获取当前持仓
+        positions = self.get_positions()
+        position = next((p for p in positions if p.symbol == symbol), None)
+        
+        if position is None:
+            raise ValueError(f"未找到 {symbol} 的持仓")
+        
+        results = {'tp': None, 'sl': None}
+        
+        # 设置止盈
+        if tp_trigger_price is not None:
+            size = tp_size if tp_size is not None else position.size
+            # 平多仓需要卖出，平空仓需要买入
+            is_buy = position.side == PositionSide.SHORT
+            
+            if tp_limit_price:
+                # 限价止盈
+                order_type = {
+                    "trigger": {
+                        "triggerPx": str(tp_trigger_price),
+                        "isMarket": False,
+                        "tpsl": "tp"
+                    }
+                }
+                result = self.exchange.order(
+                    symbol,
+                    is_buy,
+                    size,
+                    tp_limit_price,
+                    order_type,
+                    reduce_only=True
+                )
+            else:
+                # 市价止盈
+                order_type = {
+                    "trigger": {
+                        "triggerPx": str(tp_trigger_price),
+                        "isMarket": True,
+                        "tpsl": "tp"
+                    }
+                }
+                result = self.exchange.order(
+                    symbol,
+                    is_buy,
+                    size,
+                    tp_trigger_price,
+                    order_type,
+                    reduce_only=True
+                )
+            
+            results['tp'] = result
+            logger.info(f"止盈设置: {symbol} 触发价{tp_trigger_price}, 限价{tp_limit_price}, 结果: {result}")
+        
+        # 设置止损
+        if sl_trigger_price is not None:
+            size = sl_size if sl_size is not None else position.size
+            # 平多仓需要卖出，平空仓需要买入
+            is_buy = position.side == PositionSide.SHORT
+            
+            if sl_limit_price:
+                # 限价止损
+                order_type = {
+                    "trigger": {
+                        "triggerPx": str(sl_trigger_price),
+                        "isMarket": False,
+                        "tpsl": "sl"
+                    }
+                }
+                result = self.exchange.order(
+                    symbol,
+                    is_buy,
+                    size,
+                    sl_limit_price,
+                    order_type,
+                    reduce_only=True
+                )
+            else:
+                # 市价止损
+                order_type = {
+                    "trigger": {
+                        "triggerPx": str(sl_trigger_price),
+                        "isMarket": True,
+                        "tpsl": "sl"
+                    }
+                }
+                result = self.exchange.order(
+                    symbol,
+                    is_buy,
+                    size,
+                    sl_trigger_price,
+                    order_type,
+                    reduce_only=True
+                )
+            
+            results['sl'] = result
+            logger.info(f"止损设置: {symbol} 触发价{sl_trigger_price}, 限价{sl_limit_price}, 结果: {result}")
+        
+        return results
+    
+    def get_position(self, symbol: str) -> Optional[Position]:
+        """
+        获取指定交易对的持仓
+        
+        Args:
+            symbol: 交易对符号
+        
+        Returns:
+            Position 对象，如果没有持仓则返回 None
+        """
+        positions = self.get_positions()
+        return next((p for p in positions if p.symbol == symbol), None)
+    
+    def cancel_orders_by_symbol(self, symbol: str) -> List[Dict[str, Any]]:
+        """
+        取消指定交易对的所有订单
+        
+        Args:
+            symbol: 交易对符号
+        
+        Returns:
+            取消结果列表
+        """
+        return self.cancel_all_orders(symbol)
+    
     def set_leverage(self, symbol: str, leverage: int, is_cross: bool = True) -> Dict[str, Any]:
         """
         设置杠杆

@@ -32,3 +32,7 @@ def register_routes(app):
     app.register_blueprint(copy_trading_orders_bp)
     app.register_blueprint(copy_trading_positions_bp)
     app.register_blueprint(copy_trading_tracking_bp)
+    
+    # C端交易 API 路由
+    from .trading import trading_bp
+    app.register_blueprint(trading_bp)
