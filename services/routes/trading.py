@@ -4,10 +4,10 @@ C端交易 API 路由
 """
 from flask import Blueprint, jsonify, request
 import logging
-import os
 
 from clients.hyperliquid_client import HyperliquidClient
 from services.routes.db import db
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +67,19 @@ def _extract_order_data_list(results: list) -> list:
 def get_client() -> HyperliquidClient:
     """
     获取 HyperliquidClient 实例（单例模式）
-    需要设置环境变量:
-        - HL_PRIVATE_KEY: 钱包私钥
-        - HL_WALLET_ADDRESS: 钱包地址（可选）
-        - HL_TESTNET: 是否使用测试网（可选，默认 false）
+    使用 config/settings.py 中的配置:
+        - HYPERLIQUID_PRIVATE_KEY: 钱包私钥
+        - HYPERLIQUID_WALLET_ADDRESS: 钱包地址（可选）
+        - TESTNET_MODE: 是否使用测试网（可选，默认 false）
     """
     global _client
     if _client is None:
-        private_key = os.environ.get('HL_PRIVATE_KEY')
-        wallet_address = os.environ.get('HL_WALLET_ADDRESS')
-        testnet = os.environ.get('HL_TESTNET', 'false').lower() == 'true'
+        private_key = settings.hyperliquid.private_key
+        wallet_address = settings.hyperliquid.wallet_address
+        testnet = settings.system.testnet_mode
         
         if not private_key:
-            raise ValueError("未配置 HL_PRIVATE_KEY 环境变量")
+            raise ValueError("未配置 HYPERLIQUID_PRIVATE_KEY 环境变量")
         
         _client = HyperliquidClient(
             private_key=private_key,
@@ -118,7 +118,7 @@ def get_market_meta():
         from hyperliquid.info import Info
         from hyperliquid.utils import constants
         
-        testnet = os.environ.get('HL_TESTNET', 'false').lower() == 'true'
+        testnet = settings.system.testnet_mode
         api_url = constants.TESTNET_API_URL if testnet else constants.MAINNET_API_URL
         
         info = Info(api_url, skip_ws=True)
@@ -164,7 +164,7 @@ def get_all_mids():
         from hyperliquid.info import Info
         from hyperliquid.utils import constants
         
-        testnet = os.environ.get('HL_TESTNET', 'false').lower() == 'true'
+        testnet = settings.system.testnet_mode
         api_url = constants.TESTNET_API_URL if testnet else constants.MAINNET_API_URL
         
         info = Info(api_url, skip_ws=True)
@@ -218,7 +218,7 @@ def get_mid_price(symbol: str):
         from hyperliquid.info import Info
         from hyperliquid.utils import constants
         
-        testnet = os.environ.get('HL_TESTNET', 'false').lower() == 'true'
+        testnet = settings.system.testnet_mode
         api_url = constants.TESTNET_API_URL if testnet else constants.MAINNET_API_URL
         
         info = Info(api_url, skip_ws=True)
