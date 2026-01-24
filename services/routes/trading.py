@@ -277,18 +277,13 @@ def get_positions():
                     type: number
                   current_price:
                     type: number
-                  mark_price:
-                    type: number
-                    description: 标记价格（中间价）
+                    description: 当前价格（标记价格/中间价）
                   leverage:
                     type: integer
                   unrealized_pnl:
                     type: number
                   liquidation_price:
                     type: number
-                  liquidation_price_usdc:
-                    type: number
-                    description: 清算价格（USDC）
                   position_value:
                     type: number
                     description: 仓位价值（USDC）
@@ -333,26 +328,21 @@ def get_positions():
             # 查找该仓位对应的跟单记录
             tracking = tracking_map.get(p.symbol)
             
-            # 获取标记价格（中间价）
-            mark_price = float(all_mids.get(p.symbol, 0))
+            # 获取当前价格（标记价格/中间价）
+            current_price = float(all_mids.get(p.symbol, 0)) or p.current_price
             
-            # 计算仓位价值（USDC）= 仓位数量 * 标记价格
-            position_value = p.size * mark_price if mark_price > 0 else p.size * p.current_price
-            
-            # 清算价格（USDC）- 直接使用API返回的清算价格
-            liquidation_price_usdc = p.liquidation_price
+            # 计算仓位价值（USDC）= 仓位数量 * 当前价格
+            position_value = p.size * current_price
             
             position_info = {
                 'symbol': p.symbol,
                 'side': p.side.value,
                 'size': p.size,
                 'entry_price': p.entry_price,
-                'current_price': p.current_price,
-                'mark_price': mark_price,
+                'current_price': current_price,
                 'leverage': p.leverage,
                 'unrealized_pnl': p.unrealized_pnl,
                 'liquidation_price': p.liquidation_price,
-                'liquidation_price_usdc': liquidation_price_usdc,
                 'position_value': position_value,
                 'margin_used': p.margin_used,
                 # 跟单相关字段
