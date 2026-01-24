@@ -740,7 +740,13 @@ def get_open_orders():
             'size': o.size,
             'price': o.price,
             'status': o.status.value,
-            'created_at': o.created_at.isoformat() if o.created_at else None
+            'filled_size': o.filled_size,
+            'filled_price': o.filled_price,
+            'stop_loss': o.stop_loss,
+            'take_profit': o.take_profit,
+            'created_at': o.created_at.isoformat() if o.created_at else None,
+            'updated_at': o.updated_at.isoformat() if o.updated_at else None,
+            'client_order_id': o.client_order_id
         } for o in orders]
         
         return jsonify({
