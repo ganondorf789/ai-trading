@@ -3,7 +3,6 @@ WebSocket 模块
 通过 Redis Pub/Sub 接收新仓位通知并广播给连接的客户端
 """
 import json
-import threading
 import logging
 from typing import Optional
 
@@ -21,8 +20,7 @@ REDIS_WS_CHANNEL = "ws_new_positions"
 # SocketIO 实例
 socketio: Optional[SocketIO] = None
 
-# Redis 订阅线程
-_redis_thread: Optional[threading.Thread] = None
+# Redis 订阅状态
 _redis_running = False
 
 
@@ -73,18 +71,23 @@ def init_socketio(app: Flask) -> SocketIO:
 
 def start_redis_listener():
     """
-    启动 Redis 订阅监听线程
+    启动 Redis 订阅监听
+    使用 socketio.start_background_task 确保在 eventlet 上下文中运行
     监听新仓位消息并广播给所有 WebSocket 客户端
     """
-    global _redis_thread, _redis_running
+    global _redis_running
     
-    if _redis_thread and _redis_thread.is_alive():
-        logger.warning("Redis 监听线程已在运行")
+    if _redis_running:
+        logger.warning("Redis 监听已在运行")
+        return
+    
+    if socketio is None:
+        logger.error("SocketIO 未初始化，无法启动 Redis 监听")
         return
     
     _redis_running = True
-    _redis_thread = threading.Thread(target=_redis_listener_loop, daemon=True)
-    _redis_thread.start()
+    # 使用 socketio.start_background_task 启动，确保在正确的 async 上下文中运行
+    socketio.start_background_task(_redis_listener_loop)
     logger.info(f"Redis 订阅监听已启动 (channel: {REDIS_WS_CHANNEL})")
 
 
@@ -96,8 +99,16 @@ def stop_redis_listener():
 
 
 def _redis_listener_loop():
-    """Redis 订阅监听循环"""
+    """Redis 订阅监听循环（在 eventlet 上下文中运行）"""
     global _redis_running
+    
+    # 导入 eventlet sleep 以确保协作式调度
+    try:
+        import eventlet
+        sleep = eventlet.sleep
+    except ImportError:
+        import time
+        sleep = time.sleep
     
     while _redis_running:
         try:
@@ -115,11 +126,10 @@ def _redis_listener_loop():
             
             logger.info(f"已订阅 Redis channel: {REDIS_WS_CHANNEL}")
             
-            for message in pubsub.listen():
-                if not _redis_running:
-                    break
-                    
-                if message['type'] == 'message':
+            # 使用非阻塞方式获取消息，配合 sleep 实现协作式调度
+            while _redis_running:
+                message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+                if message is not None and message['type'] == 'message':
                     try:
                         data = json.loads(message['data'])
                         _broadcast_new_position(data)
@@ -127,18 +137,18 @@ def _redis_listener_loop():
                         logger.warning(f"无效的 JSON 消息: {message['data']}")
                     except Exception as e:
                         logger.error(f"处理消息失败: {e}")
+                # 让出控制权给其他 greenlet
+                sleep(0.01)
             
             pubsub.close()
             redis_client.close()
             
         except redis.ConnectionError as e:
             logger.error(f"Redis 连接失败: {e}，5秒后重试...")
-            import time
-            time.sleep(5)
+            sleep(5)
         except Exception as e:
             logger.error(f"Redis 监听异常: {e}，5秒后重试...")
-            import time
-            time.sleep(5)
+            sleep(5)
 
 
 def _broadcast_new_position(data: dict):
