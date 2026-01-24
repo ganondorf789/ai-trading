@@ -528,7 +528,7 @@ class HyperliquidClient:
         if limit_price:
             order_type = {
                 "trigger": {
-                    "triggerPx": str(trigger_price),
+                    "triggerPx": trigger_price,
                     "isMarket": False,
                     "tpsl": "sl" if not is_buy else "tp"
                 }
@@ -536,7 +536,7 @@ class HyperliquidClient:
         else:
             order_type = {
                 "trigger": {
-                    "triggerPx": str(trigger_price),
+                    "triggerPx": trigger_price,
                     "isMarket": True,
                     "tpsl": "sl" if not is_buy else "tp"
                 }
@@ -747,7 +747,7 @@ class HyperliquidClient:
                 # 限价止盈
                 order_type = {
                     "trigger": {
-                        "triggerPx": str(tp_trigger_price),
+                        "triggerPx": tp_trigger_price,
                         "isMarket": False,
                         "tpsl": "tp"
                     }
@@ -764,7 +764,7 @@ class HyperliquidClient:
                 # 市价止盈
                 order_type = {
                     "trigger": {
-                        "triggerPx": str(tp_trigger_price),
+                        "triggerPx": tp_trigger_price,
                         "isMarket": True,
                         "tpsl": "tp"
                     }
@@ -791,7 +791,7 @@ class HyperliquidClient:
                 # 限价止损
                 order_type = {
                     "trigger": {
-                        "triggerPx": str(sl_trigger_price),
+                        "triggerPx": sl_trigger_price,
                         "isMarket": False,
                         "tpsl": "sl"
                     }
@@ -808,7 +808,7 @@ class HyperliquidClient:
                 # 市价止损
                 order_type = {
                     "trigger": {
-                        "triggerPx": str(sl_trigger_price),
+                        "triggerPx": sl_trigger_price,
                         "isMarket": True,
                         "tpsl": "sl"
                     }
