@@ -546,6 +546,58 @@ class DatabaseMigrations:
                 ON positions_ai_analysis(coin)
             """)
 
+            # 创建新仓位检测记录表（监控脚本检测到的新仓位）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS detected_new_positions (
+                    id SERIAL PRIMARY KEY,
+                    
+                    -- 交易员信息
+                    trader_address TEXT NOT NULL,
+                    trader_name TEXT DEFAULT '',
+                    trader_rating TEXT,
+                    trader_score REAL,
+                    
+                    -- 仓位信息
+                    coin TEXT NOT NULL,
+                    direction TEXT NOT NULL,          -- 'long' 或 'short'
+                    szi REAL DEFAULT 0.0,             -- 仓位大小（绝对值）
+                    entry_px REAL DEFAULT 0.0,        -- 开仓价格
+                    position_value REAL DEFAULT 0.0,  -- 仓位价值（USD）
+                    leverage INTEGER DEFAULT 1,       -- 杠杆倍数
+                    
+                    -- 检测信息
+                    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    notified BOOLEAN DEFAULT FALSE,   -- 是否已发送通知
+                    
+                    -- 可选：跟单相关
+                    copy_tracking_id INTEGER,         -- 关联的跟单记录ID
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detected_new_positions_trader
+                ON detected_new_positions(trader_address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detected_new_positions_coin
+                ON detected_new_positions(coin)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detected_new_positions_detected_at
+                ON detected_new_positions(detected_at DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detected_new_positions_rating
+                ON detected_new_positions(trader_rating)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_detected_new_positions_direction
+                ON detected_new_positions(direction)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

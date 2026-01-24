@@ -580,6 +580,9 @@ def process_trader_result(
         # 设置开仓时间为当前时间
         pos['open_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        # 获取原始仓位数据（包含杠杆等完整信息）
+        raw_pos = raw_positions_map.get(coin, pos)
+        
         success = notifier.notify_new_position(
             address, pos, rating=rating, score=score
         )
@@ -587,6 +590,20 @@ def process_trader_result(
             logger.success(f"    ✓ 已通知: {coin} {direction}")
         else:
             logger.error(f"    ✗ 通知失败: {coin}")
+        
+        # 保存新仓位记录到数据库
+        record_id = db.save_new_position(
+            trader_address=address,
+            position=raw_pos,
+            trader_name=trader.get('name'),
+            trader_rating=rating,
+            trader_score=score,
+            notified=success
+        )
+        if record_id:
+            logger.debug(f"    ✓ 已保存新仓位记录: id={record_id}")
+        else:
+            logger.warning(f"    ⚠ 保存新仓位记录失败: {coin}")
         
         # Redis Pub/Sub 推送（供本地客户端接收）
         if redis_client:

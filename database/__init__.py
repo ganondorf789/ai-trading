@@ -16,6 +16,7 @@ from .coins import CoinsOps
 from .ai_analysis import AIAnalysisOps
 from .position_history import PositionHistoryOps
 from .position_tracking import PositionTrackingOps
+from .new_positions import NewPositionsOps
 
 
 class TraderDatabase(
@@ -29,7 +30,8 @@ class TraderDatabase(
     CoinsOps,
     AIAnalysisOps,
     PositionHistoryOps,
-    PositionTrackingOps
+    PositionTrackingOps,
+    NewPositionsOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)
@@ -43,6 +45,7 @@ class TraderDatabase(
     - Hyperliquid 币种管理
     - AI 分析管理
     - 仓位级别跟单管理
+    - 新仓位检测记录
     """
 
     def __init__(self):
