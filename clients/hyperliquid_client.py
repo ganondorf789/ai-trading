@@ -742,6 +742,10 @@ class HyperliquidClient:
             size = tp_size if tp_size is not None else position.size
             # 平多仓需要卖出，平空仓需要买入
             is_buy = position.side == PositionSide.SHORT
+            # tpsl 基于价格方向：
+            # - "tp" = 价格上涨触发（多头止盈、空头止损）
+            # - "sl" = 价格下跌触发（多头止损、空头止盈）
+            tpsl = "tp" if position.side == PositionSide.LONG else "sl"
             
             if tp_limit_price:
                 # 限价止盈
@@ -749,7 +753,7 @@ class HyperliquidClient:
                     "trigger": {
                         "triggerPx": tp_trigger_price,
                         "isMarket": False,
-                        "tpsl": "tp"
+                        "tpsl": tpsl
                     }
                 }
                 result = self.exchange.order(
@@ -766,7 +770,7 @@ class HyperliquidClient:
                     "trigger": {
                         "triggerPx": tp_trigger_price,
                         "isMarket": True,
-                        "tpsl": "tp"
+                        "tpsl": tpsl
                     }
                 }
                 result = self.exchange.order(
@@ -779,13 +783,17 @@ class HyperliquidClient:
                 )
             
             results['tp'] = result
-            logger.info(f"止盈设置: {symbol} 触发价{tp_trigger_price}, 限价{tp_limit_price}, 结果: {result}")
+            logger.info(f"止盈设置: {symbol} 触发价{tp_trigger_price}, 限价{tp_limit_price}, tpsl={tpsl}, 结果: {result}")
         
         # 设置止损
         if sl_trigger_price is not None:
             size = sl_size if sl_size is not None else position.size
             # 平多仓需要卖出，平空仓需要买入
             is_buy = position.side == PositionSide.SHORT
+            # tpsl 基于价格方向：
+            # - "tp" = 价格上涨触发（多头止盈、空头止损）
+            # - "sl" = 价格下跌触发（多头止损、空头止盈）
+            tpsl = "sl" if position.side == PositionSide.LONG else "tp"
             
             if sl_limit_price:
                 # 限价止损
@@ -793,7 +801,7 @@ class HyperliquidClient:
                     "trigger": {
                         "triggerPx": sl_trigger_price,
                         "isMarket": False,
-                        "tpsl": "sl"
+                        "tpsl": tpsl
                     }
                 }
                 result = self.exchange.order(
@@ -810,7 +818,7 @@ class HyperliquidClient:
                     "trigger": {
                         "triggerPx": sl_trigger_price,
                         "isMarket": True,
-                        "tpsl": "sl"
+                        "tpsl": tpsl
                     }
                 }
                 result = self.exchange.order(
@@ -823,7 +831,7 @@ class HyperliquidClient:
                 )
             
             results['sl'] = result
-            logger.info(f"止损设置: {symbol} 触发价{sl_trigger_price}, 限价{sl_limit_price}, 结果: {result}")
+            logger.info(f"止损设置: {symbol} 触发价{sl_trigger_price}, 限价{sl_limit_price}, tpsl={tpsl}, 结果: {result}")
         
         return results
     
