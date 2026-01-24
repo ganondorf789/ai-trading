@@ -115,10 +115,9 @@ def run_server(host='0.0.0.0', port=5000, debug=True, enable_websocket=True):
         logger.info("WebSocket 端点:")
         logger.info(f"  ws://{host}:{port}/socket.io - 新仓位实时推送")
         logger.info("  事件: 'new_position' - 接收新仓位通知")
+        logger.info("  Redis 订阅将在首个客户端连接时自动启动")
         
-        # 启动 Redis 订阅监听
-        from services.websocket import start_redis_listener, socketio
-        start_redis_listener()
+        from services.websocket import socketio
         
         # 使用 SocketIO 运行（支持 WebSocket）
         socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)

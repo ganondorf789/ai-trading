@@ -48,6 +48,8 @@ def init_socketio(app: Flask) -> SocketIO:
     @socketio.on('connect')
     def handle_connect():
         logger.info("WebSocket 客户端已连接")
+        # 确保 Redis 监听已启动
+        _ensure_redis_listener_started()
         emit('connected', {'message': '已连接到新仓位推送服务'})
     
     @socketio.on('disconnect')
@@ -67,6 +69,13 @@ def init_socketio(app: Flask) -> SocketIO:
     
     logger.info("Flask-SocketIO 初始化完成")
     return socketio
+
+
+def _ensure_redis_listener_started():
+    """确保 Redis 监听已启动（在 eventlet 上下文中调用）"""
+    global _redis_running
+    if not _redis_running and socketio is not None:
+        start_redis_listener()
 
 
 def start_redis_listener():
