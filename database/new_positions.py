@@ -199,7 +199,11 @@ class NewPositionsOps:
         trader_address: Optional[str] = None,
         coin: Optional[str] = None,
         direction: Optional[str] = None,
-        rating: Optional[str] = None
+        rating: Optional[str] = None,
+        min_position_value: Optional[float] = None,
+        max_position_value: Optional[float] = None,
+        min_leverage: Optional[int] = None,
+        max_leverage: Optional[int] = None
     ) -> List[Dict]:
         """
         使用游标分页查询新仓位记录
@@ -211,6 +215,10 @@ class NewPositionsOps:
             coin: 按币种过滤
             direction: 按方向过滤 ('long' 或 'short')
             rating: 按评级过滤
+            min_position_value: 最小仓位价值 (USD)
+            max_position_value: 最大仓位价值 (USD)
+            min_leverage: 最小杠杆
+            max_leverage: 最大杠杆
 
         Returns:
             新仓位记录列表（按 id 降序排列）
@@ -242,6 +250,24 @@ class NewPositionsOps:
             if rating:
                 conditions.append("trader_rating = %s")
                 params.append(rating)
+            
+            # 仓位价值筛选
+            if min_position_value is not None:
+                conditions.append("position_value >= %s")
+                params.append(min_position_value)
+            
+            if max_position_value is not None:
+                conditions.append("position_value <= %s")
+                params.append(max_position_value)
+            
+            # 杠杆筛选
+            if min_leverage is not None:
+                conditions.append("leverage >= %s")
+                params.append(min_leverage)
+            
+            if max_leverage is not None:
+                conditions.append("leverage <= %s")
+                params.append(max_leverage)
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             

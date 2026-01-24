@@ -621,6 +621,22 @@ def get_new_positions():
         in: query
         type: string
         description: 按交易员评级过滤
+      - name: min_position_value
+        in: query
+        type: number
+        description: 最小仓位价值 (USD)
+      - name: max_position_value
+        in: query
+        type: number
+        description: 最大仓位价值 (USD)
+      - name: min_leverage
+        in: query
+        type: integer
+        description: 最小杠杆
+      - name: max_leverage
+        in: query
+        type: integer
+        description: 最大杠杆
     responses:
       200:
         description: 新仓位记录列表
@@ -650,6 +666,10 @@ def get_new_positions():
         coin = request.args.get('coin')
         direction = request.args.get('direction')
         rating = request.args.get('rating')
+        min_position_value = request.args.get('min_position_value', type=float)
+        max_position_value = request.args.get('max_position_value', type=float)
+        min_leverage = request.args.get('min_leverage', type=int)
+        max_leverage = request.args.get('max_leverage', type=int)
 
         # 查询数据（多取一条用于判断是否有更多）
         positions = db.get_new_positions_cursor(
@@ -658,7 +678,11 @@ def get_new_positions():
             trader_address=trader_address,
             coin=coin,
             direction=direction,
-            rating=rating
+            rating=rating,
+            min_position_value=min_position_value,
+            max_position_value=max_position_value,
+            min_leverage=min_leverage,
+            max_leverage=max_leverage
         )
 
         # 判断是否有更多数据
