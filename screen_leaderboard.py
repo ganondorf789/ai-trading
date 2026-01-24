@@ -314,7 +314,7 @@ def screen_leaderboard_traders(
 
     # 1. 获取排行榜数据（按 month PnL 排序）
     logger.info(f"\n[1/3] 正在获取排行榜前 {limit} 名交易者...")
-    leaderboard_rows = fetch_leaderboard(save_to_file=False, sort_by_pnl=True)
+    leaderboard_rows = fetch_leaderboard(sort_by_pnl=True)
 
     if not leaderboard_rows:
         logger.error("获取排行榜数据失败")
