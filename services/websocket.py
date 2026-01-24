@@ -3,6 +3,7 @@ WebSocket 模块
 通过 Redis Pub/Sub 接收新仓位通知并广播给连接的客户端
 """
 import json
+import threading
 import logging
 from typing import Optional
 
@@ -74,24 +75,16 @@ def start_redis_listener():
     """
     启动 Redis 订阅监听线程
     监听新仓位消息并广播给所有 WebSocket 客户端
-    
-    注意: 必须使用 socketio.start_background_task() 而不是 threading.Thread，
-    因为 Flask-SocketIO 使用 eventlet async_mode，从普通线程 emit 消息无法正确推送
     """
-    global _redis_thread, _redis_running, socketio
+    global _redis_thread, _redis_running
     
-    if _redis_running:
+    if _redis_thread and _redis_thread.is_alive():
         logger.warning("Redis 监听线程已在运行")
         return
     
-    if socketio is None:
-        logger.error("SocketIO 未初始化，无法启动 Redis 监听")
-        return
-    
     _redis_running = True
-    # 使用 socketio.start_background_task 确保在 eventlet 上下文中运行
-    # 这样 emit 才能正确推送消息给客户端
-    _redis_thread = socketio.start_background_task(_redis_listener_loop)
+    _redis_thread = threading.Thread(target=_redis_listener_loop, daemon=True)
+    _redis_thread.start()
     logger.info(f"Redis 订阅监听已启动 (channel: {REDIS_WS_CHANNEL})")
 
 
@@ -104,7 +97,7 @@ def stop_redis_listener():
 
 def _redis_listener_loop():
     """Redis 订阅监听循环"""
-    global _redis_running, socketio
+    global _redis_running
     
     while _redis_running:
         try:
@@ -140,19 +133,12 @@ def _redis_listener_loop():
             
         except redis.ConnectionError as e:
             logger.error(f"Redis 连接失败: {e}，5秒后重试...")
-            # 使用 socketio.sleep 而不是 time.sleep，确保与 eventlet 兼容
-            if socketio:
-                socketio.sleep(5)
-            else:
-                import time
-                time.sleep(5)
+            import time
+            time.sleep(5)
         except Exception as e:
             logger.error(f"Redis 监听异常: {e}，5秒后重试...")
-            if socketio:
-                socketio.sleep(5)
-            else:
-                import time
-                time.sleep(5)
+            import time
+            time.sleep(5)
 
 
 def _broadcast_new_position(data: dict):
