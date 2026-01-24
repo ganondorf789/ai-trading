@@ -192,6 +192,70 @@ class NewPositionsOps:
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_new_positions_cursor(
+        self,
+        limit: int = 50,
+        before: Optional[int] = None,
+        trader_address: Optional[str] = None,
+        coin: Optional[str] = None,
+        direction: Optional[str] = None,
+        rating: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        使用游标分页查询新仓位记录
+
+        Args:
+            limit: 返回数量限制
+            before: 游标ID，获取此ID之前的记录（不包含此ID），为空则从最新记录开始
+            trader_address: 按交易员地址过滤
+            coin: 按币种过滤
+            direction: 按方向过滤 ('long' 或 'short')
+            rating: 按评级过滤
+
+        Returns:
+            新仓位记录列表（按 id 降序排列）
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            # 构建查询条件
+            conditions = []
+            params = []
+            
+            # before 游标条件
+            if before is not None:
+                conditions.append("id < %s")
+                params.append(before)
+            
+            if trader_address:
+                conditions.append("trader_address = %s")
+                params.append(trader_address)
+            
+            if coin:
+                conditions.append("coin = %s")
+                params.append(coin)
+            
+            if direction:
+                conditions.append("direction = %s")
+                params.append(direction)
+            
+            if rating:
+                conditions.append("trader_rating = %s")
+                params.append(rating)
+            
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            
+            query = f"""
+                SELECT * FROM detected_new_positions
+                WHERE {where_clause}
+                ORDER BY id DESC
+                LIMIT %s
+            """
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
     def get_new_positions_count(
         self,
         trader_address: Optional[str] = None,

@@ -26,6 +26,7 @@ import sys
 import asyncio
 import argparse
 import time
+import json
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -46,6 +47,8 @@ from config.settings import settings
 REDIS_POSITION_CHANNEL = "new_positions"
 # Redis 立即跟单开仓通知 channel（与 engine/position_copy_trading.py 一致）
 REDIS_OPEN_CHANNEL = "position_tracking_open"
+# Redis WebSocket 广播 channel（供 WebSocket 服务接收并广播给客户端）
+REDIS_WS_CHANNEL = "ws_new_positions"
 
 # 行情检测配置
 MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
@@ -611,6 +614,34 @@ def process_trader_result(
                 redis_client.publish(REDIS_POSITION_CHANNEL, f"https://app.hyperliquid.xyz/trade/{coin}")
             except Exception as e:
                 logger.debug(f"    Redis 推送失败: {e}")
+            
+            # 发送详细数据到 WebSocket 广播 channel
+            try:
+                szi_val = float(raw_pos.get('szi', 0) or 0)
+                entry_px_val = float(raw_pos.get('entry_px', 0) or 0)
+                leverage_val = raw_pos.get('leverage', 1)
+                if isinstance(leverage_val, dict):
+                    leverage_val = leverage_val.get('value', 1)
+                
+                ws_data = {
+                    'id': record_id,
+                    'trader_address': address,
+                    'trader_name': trader.get('name', ''),
+                    'trader_rating': rating,
+                    'trader_score': score,
+                    'coin': coin,
+                    'direction': 'long' if szi_val > 0 else 'short',
+                    'szi': abs(szi_val),
+                    'entry_px': entry_px_val,
+                    'position_value': abs(szi_val) * entry_px_val,
+                    'leverage': int(leverage_val or 1),
+                    'detected_at': datetime.now().isoformat(),
+                    'trade_url': f"https://app.hyperliquid.xyz/trade/{coin}"
+                }
+                redis_client.publish(REDIS_WS_CHANNEL, json.dumps(ws_data))
+                logger.debug(f"    ✓ 已发送 WebSocket 广播")
+            except Exception as e:
+                logger.debug(f"    WebSocket 广播失败: {e}")
         
         # 立即跟单条件检查
         if immediate_copy_config and redis_client:

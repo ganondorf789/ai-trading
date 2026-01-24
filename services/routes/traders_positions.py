@@ -584,3 +584,190 @@ def get_all_position_history_by_coin():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ==================== 新仓位检测记录 API ====================
+
+@traders_positions_bp.route('/api/new-positions', methods=['GET'])
+def get_new_positions():
+    """获取新仓位检测记录（游标分页）
+    ---
+    tags:
+      - Traders - New Positions
+    parameters:
+      - name: before
+        in: query
+        type: integer
+        description: 游标ID，获取此ID之前的记录。为空则从最新记录开始
+      - name: limit
+        in: query
+        type: integer
+        default: 50
+        description: 返回数量限制（最大100）
+      - name: trader_address
+        in: query
+        type: string
+        description: 按交易员地址过滤
+      - name: coin
+        in: query
+        type: string
+        description: 按币种过滤
+      - name: direction
+        in: query
+        type: string
+        enum: [long, short]
+        description: 按方向过滤
+      - name: rating
+        in: query
+        type: string
+        description: 按交易员评级过滤
+    responses:
+      200:
+        description: 新仓位记录列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            has_more:
+              type: boolean
+              description: 是否还有更多数据
+            next_before:
+              type: integer
+              description: 下一页的游标ID
+      500:
+        description: 服务器错误
+    """
+    try:
+        # 解析参数
+        before = request.args.get('before', type=int)
+        limit = min(int(request.args.get('limit', 50)), 100)  # 最大100
+        trader_address = request.args.get('trader_address')
+        coin = request.args.get('coin')
+        direction = request.args.get('direction')
+        rating = request.args.get('rating')
+
+        # 查询数据（多取一条用于判断是否有更多）
+        positions = db.get_new_positions_cursor(
+            limit=limit + 1,
+            before=before,
+            trader_address=trader_address,
+            coin=coin,
+            direction=direction,
+            rating=rating
+        )
+
+        # 判断是否有更多数据
+        has_more = len(positions) > limit
+        if has_more:
+            positions = positions[:limit]
+
+        # 计算下一页游标
+        next_before = positions[-1]['id'] if positions else None
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'has_more': has_more,
+            'next_before': next_before
+        })
+
+    except Exception as e:
+        logger.error(f"获取新仓位记录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_positions_bp.route('/api/new-positions/stats', methods=['GET'])
+def get_new_positions_stats():
+    """获取新仓位统计信息
+    ---
+    tags:
+      - Traders - New Positions
+    responses:
+      200:
+        description: 统计信息
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      500:
+        description: 服务器错误
+    """
+    try:
+        stats = db.get_new_positions_stats()
+
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+
+    except Exception as e:
+        logger.error(f"获取新仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_positions_bp.route('/api/new-positions/by-coin', methods=['GET'])
+def get_new_positions_by_coin():
+    """获取最近一段时间内各币种的新仓位统计
+    ---
+    tags:
+      - Traders - New Positions
+    parameters:
+      - name: minutes
+        in: query
+        type: integer
+        default: 60
+        description: 时间范围（分钟）
+      - name: min_count
+        in: query
+        type: integer
+        default: 1
+        description: 最小数量过滤
+    responses:
+      200:
+        description: 按币种统计的新仓位数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+      500:
+        description: 服务器错误
+    """
+    try:
+        minutes = int(request.args.get('minutes', 60))
+        min_count = int(request.args.get('min_count', 1))
+
+        by_coin = db.get_recent_new_positions_by_coin(
+            minutes=minutes,
+            min_count=min_count
+        )
+
+        return jsonify({
+            'success': True,
+            'data': by_coin
+        })
+
+    except Exception as e:
+        logger.error(f"获取币种新仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
