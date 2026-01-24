@@ -448,6 +448,9 @@ def close_position(symbol: str):
         schema:
           type: object
           properties:
+            size:
+              type: number
+              description: 平仓数量（可选，不提供则全部平仓）
             slippage:
               type: number
               default: 0.01
@@ -464,9 +467,10 @@ def close_position(symbol: str):
         client = get_client()
         
         data = request.get_json() or {}
+        size = data.get('size')
         slippage = data.get('slippage', 0.01)
         
-        result = client.close_position(symbol, slippage=slippage)
+        result = client.close_position(symbol, size=size, slippage=slippage)
         
         if result is None:
             return jsonify({

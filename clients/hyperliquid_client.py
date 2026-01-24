@@ -591,12 +591,13 @@ class HyperliquidClient:
         
         return results
     
-    def close_position(self, symbol: str, slippage: float = 0.01) -> Optional[Dict[str, Any]]:
+    def close_position(self, symbol: str, size: Optional[float] = None, slippage: float = 0.01) -> Optional[Dict[str, Any]]:
         """
         平仓（直接使用 market_order 实现）
 
         Args:
             symbol: 交易对符号
+            size: 平仓数量（可选，不提供则全部平仓）
             slippage: 滑点容忍度
 
         Returns:
@@ -612,7 +613,10 @@ class HyperliquidClient:
             logger.warning(f"平仓 {symbol}: 未找到持仓")
             return None
 
-        logger.info(f"平仓 {symbol}: {position.side.value} {position.size}")
+        # 确定平仓数量
+        close_size = size if size is not None else position.size
+        
+        logger.info(f"平仓 {symbol}: {position.side.value} {close_size} (持仓: {position.size})")
 
         # 平多仓需要卖出，平空仓需要买入
         is_buy = position.side == PositionSide.SHORT
@@ -621,7 +625,7 @@ class HyperliquidClient:
             result = self.market_order(
                 symbol=symbol,
                 is_buy=is_buy,
-                size=position.size,
+                size=close_size,
                 slippage=slippage
             )
             logger.info(f"平仓成功: {symbol}, 结果: {result}")
