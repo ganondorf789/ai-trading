@@ -110,11 +110,15 @@ sudo supervisorctl status position_copy_trading
 sudo tail -f /www/ai-trading/logs/supervisor_position_copy_trading.log
 sudo tail -f /www/ai-trading/logs/supervisor_api_server.log
 sudo tail -f /www/ai-trading/logs/supervisor_monitor_positions.log
+sudo tail -f /www/ai-trading/logs/supervisor_screen_leaderboard.log
+sudo tail -f /www/ai-trading/logs/supervisor_refresh_stale_traders.log
 
 # 查看 stderr 错误日志
 sudo tail -f /www/ai-trading/logs/supervisor_position_copy_trading_error.log
 sudo tail -f /www/ai-trading/logs/supervisor_api_server_error.log
 sudo tail -f /www/ai-trading/logs/supervisor_monitor_positions_error.log
+sudo tail -f /www/ai-trading/logs/supervisor_screen_leaderboard_error.log
+sudo tail -f /www/ai-trading/logs/supervisor_refresh_stale_traders_error.log
 
 # 查看最近 100 行日志
 sudo tail -n 100 /www/ai-trading/logs/supervisor_position_copy_trading.log
