@@ -310,57 +310,6 @@ async def analyze_traders_concurrent(
     return stats, interrupted
 
 
-def test_proxy_health(max_workers: int = 10) -> Dict[str, bool]:
-    """
-    测试所有代理的健康状态
-    
-    Args:
-        max_workers: 测试的代理数量（对应 worker 数量）
-    
-    Returns:
-        {proxy_host: is_healthy} 字典
-    """
-    import httpx
-    from screener.api_client import get_proxy_manager
-    
-    proxy_manager = get_proxy_manager(enabled=True)
-    results = {}
-    
-    if not proxy_manager.enabled or proxy_manager.get_proxy_count() == 0:
-        logger.warning("代理未启用或无可用代理")
-        return results
-    
-    logger.info(f"正在测试 {min(max_workers, proxy_manager.get_proxy_count())} 个代理的连接...")
-    
-    for i in range(min(max_workers, proxy_manager.get_proxy_count())):
-        proxy_url = proxy_manager.get_proxy_by_index(i)
-        if not proxy_url:
-            continue
-        
-        proxy_host = proxy_url.split('@')[1] if '@' in proxy_url else proxy_url
-        
-        try:
-            with httpx.Client(proxy=proxy_url, timeout=10.0) as client:
-                response = client.post(
-                    "https://api.hyperliquid.xyz/info",
-                    json={"type": "meta"}
-                )
-                if response.status_code == 200:
-                    results[proxy_host] = True
-                    logger.success(f"  ✓ 代理 {i+1}: {proxy_host} - 正常")
-                else:
-                    results[proxy_host] = False
-                    logger.warning(f"  ✗ 代理 {i+1}: {proxy_host} - HTTP {response.status_code}")
-        except Exception as e:
-            results[proxy_host] = False
-            logger.error(f"  ✗ 代理 {i+1}: {proxy_host} - 连接失败: {e}")
-    
-    healthy_count = sum(1 for v in results.values() if v)
-    logger.info(f"代理测试完成: {healthy_count}/{len(results)} 个正常")
-    
-    return results
-
-
 def screen_leaderboard_traders(
     limit: int = 3000,
     lookback_days: int = 0,
@@ -386,16 +335,6 @@ def screen_leaderboard_traders(
     logger.info("Hyperliquid 排行榜交易者批量分析（并发版本）")
     logger.info(f"并发数: {max_workers}, 代理: {'启用' if use_proxy else '禁用'}")
     logger.info("=" * 70)
-    
-    # 如果启用代理，先测试代理健康状态
-    if use_proxy:
-        proxy_health = test_proxy_health(max_workers)
-        healthy_proxies = sum(1 for v in proxy_health.values() if v)
-        if healthy_proxies == 0:
-            logger.error("所有代理都不可用，请检查代理配置")
-            return
-        elif healthy_proxies < max_workers:
-            logger.warning(f"只有 {healthy_proxies}/{max_workers} 个代理可用，建议减少 workers 数量")
 
     # 1. 获取排行榜数据（按 month PnL 排序）
     logger.info(f"\n[1/3] 正在获取排行榜前 {limit} 名交易者...")

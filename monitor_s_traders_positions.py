@@ -27,8 +27,6 @@ import asyncio
 import argparse
 import time
 import json
-import signal
-import traceback
 from pathlib import Path
 from typing import List, Dict, Optional
 from collections import deque
@@ -36,36 +34,6 @@ import pendulum
 
 import redis
 from loguru import logger
-
-# 内存监控（可选）
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-
-
-def get_memory_usage_mb() -> float:
-    """获取当前进程内存使用（MB）"""
-    if not PSUTIL_AVAILABLE:
-        return 0.0
-    try:
-        process = psutil.Process()
-        return process.memory_info().rss / 1024 / 1024
-    except Exception:
-        return 0.0
-
-
-# 全局变量用于信号处理
-_shutdown_requested = False
-
-
-def signal_handler(signum, frame):
-    """信号处理器"""
-    global _shutdown_requested
-    signal_name = signal.Signals(signum).name
-    logger.warning(f"收到信号 {signal_name}，准备优雅关闭...")
-    _shutdown_requested = True
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
@@ -948,48 +916,28 @@ async def main_async(args):
     
     # 主循环
     cycle_count = 0
-    global _shutdown_requested
-    
     try:
-        while not _shutdown_requested:
+        while True:
             cycle_count += 1
             logger.info(f"{'='*60}")
             logger.info(f"第 {cycle_count} 轮监控 - {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}")
-            
-            # 内存监控
-            if PSUTIL_AVAILABLE:
-                mem_mb = get_memory_usage_mb()
-                logger.info(f"内存使用: {mem_mb:.1f} MB")
-                if mem_mb > 1024:  # 超过 1GB 警告
-                    logger.warning(f"内存使用过高: {mem_mb:.1f} MB，建议重启服务")
-            
             logger.info(f"{'='*60}")
             
-            try:
-                await run_monitoring_cycle_async(
-                    db, notifier, hl_client,
-                    rate=args.rate,
-                    limit=args.limit,
-                    offset=args.offset,
-                    redis_client=redis_client if args.redis else None,  # 仅用于位置推送
-                    activity_tracker=activity_tracker,
-                    important_feishu=important_feishu
-                )
-            except Exception as e:
-                logger.error(f"监控周期执行异常: {e}")
-                logger.error(traceback.format_exc())
-                # 出错后等待一段时间再继续
-                await asyncio.sleep(5)
+            await run_monitoring_cycle_async(
+                db, notifier, hl_client,
+                rate=args.rate,
+                limit=args.limit,
+                offset=args.offset,
+                redis_client=redis_client if args.redis else None,  # 仅用于位置推送
+                activity_tracker=activity_tracker,
+                important_feishu=important_feishu
+            )
             
     except KeyboardInterrupt:
         logger.warning("\n用户中断")
-    except Exception as e:
-        logger.critical(f"主循环发生未处理异常: {e}")
-        logger.critical(traceback.format_exc())
     finally:
         db.close()
         logger.info("数据库连接已关闭")
-        logger.info(f"程序结束，共运行 {cycle_count} 轮监控")
 
 
 def main():
@@ -1037,20 +985,8 @@ def main():
     
     args = parser.parse_args()
     
-    # 注册信号处理器（用于优雅关闭）
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    logger.info(f"进程 PID: {sys.argv}")
-    if PSUTIL_AVAILABLE:
-        logger.info(f"初始内存使用: {get_memory_usage_mb():.1f} MB")
-    
     # 运行异步主函数
-    try:
-        asyncio.run(main_async(args))
-    except Exception as e:
-        logger.critical(f"程序异常退出: {e}")
-        logger.critical(traceback.format_exc())
+    asyncio.run(main_async(args))
 
 
 if __name__ == "__main__":

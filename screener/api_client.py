@@ -278,8 +278,7 @@ class SyncAPIClient(BaseAPIClient):
                 
             except httpx.TimeoutException as e:
                 last_error = e
-                proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                logger.warning(f"请求超时 (代理: {proxy_info}, 尝试 {attempt + 1}/{self.config.max_retries}): {e}")
+                logger.debug(f"请求超时: {e}")
                 if attempt < self.config.max_retries - 1:
                     time.sleep(self.config.retry_delay)
                     
@@ -289,8 +288,7 @@ class SyncAPIClient(BaseAPIClient):
                     wait_time = self.config.retry_delay * (attempt + 1)
                     time.sleep(wait_time)
                 else:
-                    proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                    logger.warning(f"HTTP 错误 (代理: {proxy_info}): {e}")
+                    logger.debug(f"HTTP 错误: {e}")
                     if attempt < self.config.max_retries - 1:
                         time.sleep(self.config.retry_delay)
                     else:
@@ -298,8 +296,7 @@ class SyncAPIClient(BaseAPIClient):
                         
             except Exception as e:
                 last_error = e
-                proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                logger.warning(f"请求失败 (代理: {proxy_info}, 尝试 {attempt + 1}/{self.config.max_retries}): {e}")
+                logger.debug(f"请求失败: {e}")
                 if attempt < self.config.max_retries - 1:
                     time.sleep(self.config.retry_delay)
         
@@ -630,8 +627,7 @@ class AsyncAPIClient(BaseAPIClient):
                 
             except httpx.TimeoutException as e:
                 last_error = e
-                proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                logger.warning(f"请求超时 (代理: {proxy_info}, 尝试 {attempt + 1}/{self.config.max_retries}): {e}")
+                logger.debug(f"请求超时: {e}")
                 if attempt < self.config.max_retries - 1:
                     await asyncio.sleep(self.config.retry_delay)
                     
@@ -641,8 +637,7 @@ class AsyncAPIClient(BaseAPIClient):
                     wait_time = self.config.retry_delay * (attempt + 1)
                     await asyncio.sleep(wait_time)
                 else:
-                    proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                    logger.warning(f"HTTP 错误 (代理: {proxy_info}): {e}")
+                    logger.debug(f"HTTP 错误: {e}")
                     if attempt < self.config.max_retries - 1:
                         await asyncio.sleep(self.config.retry_delay)
                     else:
@@ -650,8 +645,7 @@ class AsyncAPIClient(BaseAPIClient):
                         
             except Exception as e:
                 last_error = e
-                proxy_info = self._proxy_url.split('@')[1] if self._proxy_url and '@' in self._proxy_url else 'N/A'
-                logger.warning(f"请求失败 (代理: {proxy_info}, 尝试 {attempt + 1}/{self.config.max_retries}): {e}")
+                logger.debug(f"请求失败: {e}")
                 if attempt < self.config.max_retries - 1:
                     await asyncio.sleep(self.config.retry_delay)
         
