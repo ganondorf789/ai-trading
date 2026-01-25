@@ -3,7 +3,6 @@
 包括：收藏、AI分析、历史图表、评级筛选
 """
 from flask import Blueprint, jsonify, request
-from datetime import timedelta
 import logging
 
 from services.ai_analysis import generate_trader_analysis

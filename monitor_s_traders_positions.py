@@ -29,8 +29,8 @@ import time
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
-from datetime import timedelta
 from collections import deque
+import pendulum
 
 import redis
 from loguru import logger
@@ -119,7 +119,7 @@ class MarketActivityTracker:
         
         # 本地备用存储（当 Redis 不可用时）
         self._local_position_timestamps: deque = deque()
-        self._local_last_notification_time: Optional[datetime] = None
+        self._local_last_notification_time: Optional[pendulum.DateTime] = None
     
     def add_positions(self, count: int) -> None:
         """记录新仓位"""

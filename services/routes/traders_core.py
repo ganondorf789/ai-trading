@@ -3,7 +3,6 @@
 包括：交易者列表、添加、详情、刷新、交易记录
 """
 from flask import Blueprint, jsonify, request
-from datetime import timedelta
 import logging
 
 from screener import TraderScreener, ScreenerConfig
