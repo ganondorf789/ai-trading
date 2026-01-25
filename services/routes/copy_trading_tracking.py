@@ -10,6 +10,53 @@ logger = logging.getLogger(__name__)
 
 copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
+# Redis 客户端（延迟初始化）
+_redis_client = None
+
+
+def _get_redis_client():
+    """获取 Redis 客户端（延迟初始化）"""
+    global _redis_client
+    
+    if _redis_client is not None:
+        return _redis_client
+    
+    try:
+        import redis
+        from config.settings import settings
+        
+        _redis_client = redis.Redis(
+            host=settings.redis.host,
+            port=settings.redis.port,
+            password=settings.redis.password or None,
+            db=settings.redis.db,
+            decode_responses=True
+        )
+        _redis_client.ping()
+        logger.info("Redis 客户端已连接（用于跟单通知）")
+        return _redis_client
+    except Exception as e:
+        logger.warning(f"Redis 连接失败: {e}")
+        return None
+
+
+def _notify_open_position(tracking_id: int) -> bool:
+    """发送开仓通知到 Redis，机器人收到后立即开仓"""
+    redis_client = _get_redis_client()
+    
+    if redis_client is None:
+        return False
+    
+    try:
+        # 与 position_copy_trading_example.py 使用相同的频道
+        REDIS_OPEN_CHANNEL = "copy_trading:position:open"
+        redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+        logger.info(f"已发送开仓通知: tracking_id={tracking_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"发送开仓通知失败: {e}")
+        return False
+
 
 # ==================== 仓位级别跟单 API ====================
 
@@ -674,6 +721,267 @@ def quick_add_position_tracking():
         })
     except Exception as e:
         logger.error(f"快速添加仓位跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/quick-copy', methods=['POST'])
+def quick_copy_position():
+    """快速跟单仓位（支持自定义跟单比例）
+    
+    用于 APP 新仓位列表的一键跟单功能，支持用户选择跟单比例。
+    创建跟单后会自动发送 Redis 通知，触发跟单机器人立即开仓。
+    
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - target_address
+            - symbol
+          properties:
+            target_address:
+              type: string
+              description: 目标交易员地址
+            symbol:
+              type: string
+              description: 币种（如 BTC, ETH）
+            target_name:
+              type: string
+              description: 交易员名称（可选）
+            ratio:
+              type: number
+              description: 跟单比例（百分比，如 10、20、30，不传则使用默认配置）
+    responses:
+      200:
+        description: 跟单添加成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  description: 跟单记录ID
+                copy_ratio:
+                  type: number
+                  description: 实际使用的跟单比例（小数）
+                notified:
+                  type: boolean
+                  description: 是否成功发送了开仓通知
+            message:
+              type: string
+      400:
+        description: 参数错误
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            error:
+              type: string
+      409:
+        description: 已存在该仓位的活跃跟单
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            error:
+              type: string
+            exists:
+              type: boolean
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+
+        # 获取参数
+        target_address = data.get('target_address', '').strip()
+        symbol = data.get('symbol', '').strip()
+        target_name = data.get('target_name', '').strip()
+        ratio = data.get('ratio')  # 百分比，如 10, 20, 30
+
+        # 验证必需字段
+        if not target_address:
+            return jsonify({
+                'success': False,
+                'error': '目标地址不能为空'
+            }), 400
+
+        if not symbol:
+            return jsonify({
+                'success': False,
+                'error': '币种不能为空'
+            }), 400
+
+        # 验证地址格式
+        if not target_address.startswith('0x') or len(target_address) != 42:
+            return jsonify({
+                'success': False,
+                'error': '无效的以太坊地址格式'
+            }), 400
+
+        logger.info(f"[快速跟单] 请求跟单:")
+        logger.info(f"  - 交易员地址: {target_address}")
+        logger.info(f"  - 币种: {symbol}")
+        logger.info(f"  - 名称: {target_name}")
+        if ratio is not None:
+            logger.info(f"  - 跟单比例: {ratio}%")
+
+        # 检查是否已存在活跃的跟单
+        if db.check_position_tracking_exists(target_address, symbol):
+            return jsonify({
+                'success': False,
+                'error': f'已存在 {symbol} 的活跃跟单',
+                'exists': True
+            }), 409  # Conflict
+
+        # 获取默认跟单配置
+        default_config = db.get_default_copy_config()
+
+        # 计算跟单比例：优先使用传入的 ratio，否则使用默认配置
+        if ratio is not None:
+            try:
+                copy_ratio = float(ratio) / 100.0  # 传入的是百分比，转换为小数
+                # 限制范围 0.01 ~ 10.0 (1% ~ 1000%)
+                copy_ratio = max(0.01, min(10.0, copy_ratio))
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': f'无效的跟单比例: {ratio}'
+                }), 400
+        else:
+            copy_ratio = default_config.get('copy_ratio', 0.1)
+
+        # 构建跟单数据
+        tracking_data = {
+            'target_address': target_address,
+            'target_name': target_name or "",
+            'symbol': symbol,
+            'is_enabled': True,
+            'copy_ratio': copy_ratio,
+            'max_position_size_usd': default_config.get('max_position_size_usd', 500),
+            'min_position_size_usd': default_config.get('min_position_size_usd', 20),
+            'copy_leverage': default_config.get('copy_leverage', True),
+            'max_leverage': default_config.get('max_leverage', 10),
+            'default_leverage': default_config.get('default_leverage', 5),
+            'slippage': default_config.get('slippage', 0.01),
+            'status': 'pending',
+        }
+
+        # 保存到数据库
+        tracking_id = db.save_position_tracking(tracking_data)
+
+        if not tracking_id:
+            return jsonify({
+                'success': False,
+                'error': '保存跟单配置失败'
+            }), 500
+
+        trader_display = target_name if target_name else f"{target_address[:10]}..."
+        logger.info(f"[快速跟单] 添加成功: #{tracking_id} {symbol} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
+
+        # 发送 Redis 开仓通知，让机器人立即开仓
+        notified = _notify_open_position(tracking_id)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': tracking_id,
+                'copy_ratio': copy_ratio,
+                'notified': notified
+            },
+            'message': f'已添加 {symbol} 仓位跟单，跟单比例: {copy_ratio * 100:.0f}%' + ('，正在开仓...' if notified else '')
+        })
+    except Exception as e:
+        logger.error(f"快速跟单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/notify-open', methods=['POST'])
+def notify_tracking_open(tracking_id: int):
+    """手动触发开仓通知
+    
+    用于重新发送开仓通知到 Redis，让跟单机器人重新尝试开仓。
+    适用于之前开仓失败或需要重试的情况。
+    
+    ---
+    tags:
+      - Copy Trading - Tracking
+    parameters:
+      - name: tracking_id
+        in: path
+        type: integer
+        required: true
+        description: 跟单记录ID
+    responses:
+      200:
+        description: 通知发送成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+      404:
+        description: 跟单记录不存在
+      400:
+        description: 状态不允许发送通知
+      500:
+        description: 服务器错误
+    """
+    try:
+        # 检查记录是否存在
+        existing = db.get_position_tracking(tracking_id)
+        if not existing:
+            return jsonify({
+                'success': False,
+                'error': '跟单记录不存在'
+            }), 404
+
+        # 只有 pending 状态才允许发送开仓通知
+        if existing.get('status') != 'pending':
+            return jsonify({
+                'success': False,
+                'error': f"当前状态为 {existing.get('status')}，只有 pending 状态才能发送开仓通知"
+            }), 400
+
+        # 发送开仓通知
+        notified = _notify_open_position(tracking_id)
+
+        if notified:
+            return jsonify({
+                'success': True,
+                'message': f'开仓通知已发送，等待机器人处理'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Redis 连接失败，无法发送通知'
+            }), 500
+    except Exception as e:
+        logger.error(f"发送开仓通知失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
