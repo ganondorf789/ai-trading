@@ -156,28 +156,8 @@ class DatabaseMigrations:
                 )
             """)
 
-            # 创建交易记录索引
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_fills_address
-                ON trader_fills(address)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_fills_time
-                ON trader_fills(trade_time DESC)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_fills_coin
-                ON trader_fills(coin)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_fills_trade_type
-                ON trader_fills(trade_type)
-            """)
-            # 复合索引：用于按地址查询并按时间排序（关键性能索引）
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_fills_address_time
-                ON trader_fills(address, time ASC)
-            """)
+            # trader_fills 索引已通过 scripts/add_fills_index.py 单独创建
+            # 避免在初始化时创建大表索引导致超时
 
             # 创建持仓表
             cursor.execute("""
