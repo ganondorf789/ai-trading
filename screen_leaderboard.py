@@ -91,6 +91,10 @@ def analyze_single_trader_sync(
     Args:
         worker_index: worker 索引，用于分配固定代理
     """
+    import time
+    start_time = time.time()
+    short_addr = f"{address[:6]}...{address[-4:]}"
+    
     # 每个线程创建独立的配置和实例
     config = ScreenerConfig()
     config.data.lookback_days = lookback_days
@@ -106,19 +110,27 @@ def analyze_single_trader_sync(
     db = None
     
     try:
+        logger.debug(f"[{short_addr}] 开始分析...")
+        
         # 创建独立的 screener 和数据库连接，传入 worker_index 以分配固定代理
         screener = TraderScreener(config, cache_fills=False, worker_index=worker_index)
         db = TraderDatabase()
         
+        logger.debug(f"[{short_addr}] 初始化完成，耗时 {time.time() - start_time:.1f}s")
+        
         # 分析交易者
+        analyze_start = time.time()
         metrics = screener.analyze_trader(address, store_fills=True)
+        logger.debug(f"[{short_addr}] analyze_trader 完成，耗时 {time.time() - analyze_start:.1f}s")
         
         if metrics and metrics.total_trades > 0:
             # 提取 fills 用于保存到数据库
             fills = metrics.fills
             
             # 保存到数据库
+            save_start = time.time()
             _, fills_saved = db.save_trader_with_fills(metrics, fills)
+            logger.debug(f"[{short_addr}] 保存到数据库完成，耗时 {time.time() - save_start:.1f}s")
             
             result = AnalysisResult(
                 address=address,
@@ -135,6 +147,7 @@ def analyze_single_trader_sync(
                 metrics.asset_positions.clear()
                 metrics.asset_positions = []
             
+            logger.debug(f"[{short_addr}] 总耗时 {time.time() - start_time:.1f}s")
             return result
         else:
             return AnalysisResult(
@@ -212,21 +225,31 @@ async def analyze_traders_concurrent(
                 worker_index = available_worker_indices.pop(0) if available_worker_indices else index % max_workers
             
             try:
-                # 在线程池中运行同步分析函数
+                # 在线程池中运行同步分析函数，设置 5 分钟超时
                 loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(
-                    None,  # 使用默认线程池
-                    analyze_single_trader_sync,
-                    address,
-                    lookback_days,
-                    max_fills,
-                    index,
-                    total,
-                    resume_from,
-                    use_proxy,
-                    api_delay,
-                    worker_index
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,  # 使用默认线程池
+                            analyze_single_trader_sync,
+                            address,
+                            lookback_days,
+                            max_fills,
+                            index,
+                            total,
+                            resume_from,
+                            use_proxy,
+                            api_delay,
+                            worker_index
+                        ),
+                        timeout=300.0  # 5 分钟超时
+                    )
+                except asyncio.TimeoutError:
+                    result = AnalysisResult(
+                        address=address,
+                        success=False,
+                        error="任务超时（5分钟）"
+                    )
             finally:
                 # 归还 worker 索引
                 with worker_index_lock:
