@@ -599,6 +599,10 @@ def get_new_positions():
         in: query
         type: integer
         description: 游标ID，获取此ID之前的记录。为空则从最新记录开始
+      - name: after
+        in: query
+        type: integer
+        description: 游标ID，获取此ID之后的记录（用于获取更新的数据）
       - name: limit
         in: query
         type: integer
@@ -654,13 +658,17 @@ def get_new_positions():
               description: 是否还有更多数据
             next_before:
               type: integer
-              description: 下一页的游标ID
+              description: 下一页的游标ID（向前翻页用）
+            next_after:
+              type: integer
+              description: 下一页的游标ID（向后翻页用）
       500:
         description: 服务器错误
     """
     try:
         # 解析参数
         before = request.args.get('before', type=int)
+        after = request.args.get('after', type=int)
         limit = min(int(request.args.get('limit', 50)), 100)  # 最大100
         trader_address = request.args.get('trader_address')
         coin = request.args.get('coin')
@@ -675,6 +683,7 @@ def get_new_positions():
         positions = db.get_new_positions_cursor(
             limit=limit + 1,
             before=before,
+            after=after,
             trader_address=trader_address,
             coin=coin,
             direction=direction,
@@ -690,14 +699,16 @@ def get_new_positions():
         if has_more:
             positions = positions[:limit]
 
-        # 计算下一页游标
+        # 计算游标
         next_before = positions[-1]['id'] if positions else None
+        next_after = positions[0]['id'] if positions else None
 
         return jsonify({
             'success': True,
             'data': positions,
             'has_more': has_more,
-            'next_before': next_before
+            'next_before': next_before,
+            'next_after': next_after
         })
 
     except Exception as e:

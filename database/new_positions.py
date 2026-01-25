@@ -196,6 +196,7 @@ class NewPositionsOps:
         self,
         limit: int = 50,
         before: Optional[int] = None,
+        after: Optional[int] = None,
         trader_address: Optional[str] = None,
         coin: Optional[str] = None,
         direction: Optional[str] = None,
@@ -211,6 +212,7 @@ class NewPositionsOps:
         Args:
             limit: 返回数量限制
             before: 游标ID，获取此ID之前的记录（不包含此ID），为空则从最新记录开始
+            after: 游标ID，获取此ID之后的记录（不包含此ID），用于获取更新的数据
             trader_address: 按交易员地址过滤
             coin: 按币种过滤
             direction: 按方向过滤 ('long' 或 'short')
@@ -234,6 +236,11 @@ class NewPositionsOps:
             if before is not None:
                 conditions.append("id < %s")
                 params.append(before)
+            
+            # after 游标条件
+            if after is not None:
+                conditions.append("id > %s")
+                params.append(after)
             
             if trader_address:
                 conditions.append("trader_address = %s")
@@ -271,12 +278,23 @@ class NewPositionsOps:
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             
-            query = f"""
-                SELECT * FROM detected_new_positions
-                WHERE {where_clause}
-                ORDER BY id DESC
-                LIMIT %s
-            """
+            # 使用 after 时，先按 ASC 排序取最早的 N 条，然后反转为 DESC
+            if after is not None and before is None:
+                query = f"""
+                    SELECT * FROM (
+                        SELECT * FROM detected_new_positions
+                        WHERE {where_clause}
+                        ORDER BY id ASC
+                        LIMIT %s
+                    ) sub ORDER BY id DESC
+                """
+            else:
+                query = f"""
+                    SELECT * FROM detected_new_positions
+                    WHERE {where_clause}
+                    ORDER BY id DESC
+                    LIMIT %s
+                """
             params.append(limit)
             
             cursor.execute(query, params)
