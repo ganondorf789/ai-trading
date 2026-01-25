@@ -15,6 +15,47 @@ from utils import sanitize_float
 class TraderFillsOps:
     """交易记录相关操作"""
 
+    def _ensure_partition_exists(self, cursor, time_ms: int):
+        """
+        确保指定时间戳对应的分区存在（仅对分区表有效）
+        
+        Args:
+            cursor: 数据库游标
+            time_ms: 毫秒时间戳
+        """
+        try:
+            # 检查是否是分区表
+            cursor.execute("""
+                SELECT 1 FROM pg_partitioned_table pt
+                JOIN pg_class c ON pt.partrelid = c.oid
+                WHERE c.relname = 'trader_fills'
+            """)
+            if not cursor.fetchone():
+                return  # 不是分区表，无需创建分区
+            
+            # 计算分区名
+            dt = pendulum.from_timestamp(time_ms / 1000, tz=SHANGHAI_TZ)
+            partition_name = f"trader_fills_{dt.format('YYYY_MM')}"
+            
+            # 检查分区是否存在
+            cursor.execute("""
+                SELECT 1 FROM pg_class WHERE relname = %s
+            """, (partition_name,))
+            
+            if not cursor.fetchone():
+                # 创建分区
+                start_ts = int(dt.start_of('month').timestamp() * 1000)
+                end_ts = int(dt.add(months=1).start_of('month').timestamp() * 1000)
+                
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {partition_name}
+                    PARTITION OF trader_fills
+                    FOR VALUES FROM ({start_ts}) TO ({end_ts})
+                """)
+                logger.info(f"自动创建分区: {partition_name}")
+        except Exception as e:
+            logger.debug(f"检查/创建分区失败（可能不是分区表）: {e}")
+
     def save_fills(self, address: str, fills: List[Dict]) -> int:
         """
         保存交易者的交易记录
@@ -32,6 +73,14 @@ class TraderFillsOps:
         saved_count = 0
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            
+            # 检查是否是分区表，决定使用哪种 ON CONFLICT 语法
+            cursor.execute("""
+                SELECT 1 FROM pg_partitioned_table pt
+                JOIN pg_class c ON pt.partrelid = c.oid
+                WHERE c.relname = 'trader_fills'
+            """)
+            is_partitioned = cursor.fetchone() is not None
 
             for fill in fills:
                 try:
@@ -43,34 +92,71 @@ class TraderFillsOps:
                     start_pos = float(fill.get('startPosition', 0)) if fill.get('startPosition') else 0
                     trade_type = calculate_trade_type(dir_val, start_pos)
 
-                    cursor.execute("""
-                        INSERT INTO trader_fills (
-                            address, coin, side, px, sz, time, trade_time,
-                            closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT(address, tid) DO UPDATE SET
-                            closed_pnl = EXCLUDED.closed_pnl,
-                            px = EXCLUDED.px,
-                            sz = EXCLUDED.sz,
-                            trade_type = EXCLUDED.trade_type
-                    """, (
-                        address,
-                        fill.get('coin'),
-                        fill.get('side'),
-                        sanitize_float(fill.get('px', 0)),
-                        sanitize_float(fill.get('sz', 0)),
-                        time_ms,
-                        trade_time,
-                        sanitize_float(fill.get('closedPnl', 0)),
-                        fill.get('hash'),
-                        sanitize_float(start_pos) if start_pos else None,
-                        dir_val,
-                        fill.get('crossed'),
-                        sanitize_float(fill.get('fee', 0)),
-                        fill.get('oid'),
-                        fill.get('tid'),
-                        trade_type
-                    ))
+                    # 确保分区存在
+                    if is_partitioned and time_ms:
+                        self._ensure_partition_exists(cursor, time_ms)
+
+                    # 根据表类型选择 ON CONFLICT 语法
+                    if is_partitioned:
+                        # 分区表：唯一约束包含 time
+                        cursor.execute("""
+                            INSERT INTO trader_fills (
+                                address, coin, side, px, sz, time, trade_time,
+                                closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT(address, tid, time) DO UPDATE SET
+                                closed_pnl = EXCLUDED.closed_pnl,
+                                px = EXCLUDED.px,
+                                sz = EXCLUDED.sz,
+                                trade_type = EXCLUDED.trade_type
+                        """, (
+                            address,
+                            fill.get('coin'),
+                            fill.get('side'),
+                            sanitize_float(fill.get('px', 0)),
+                            sanitize_float(fill.get('sz', 0)),
+                            time_ms,
+                            trade_time,
+                            sanitize_float(fill.get('closedPnl', 0)),
+                            fill.get('hash'),
+                            sanitize_float(start_pos) if start_pos else None,
+                            dir_val,
+                            fill.get('crossed'),
+                            sanitize_float(fill.get('fee', 0)),
+                            fill.get('oid'),
+                            fill.get('tid'),
+                            trade_type
+                        ))
+                    else:
+                        # 普通表：原有语法
+                        cursor.execute("""
+                            INSERT INTO trader_fills (
+                                address, coin, side, px, sz, time, trade_time,
+                                closed_pnl, hash, start_position, dir, crossed, fee, oid, tid, trade_type
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT(address, tid) DO UPDATE SET
+                                closed_pnl = EXCLUDED.closed_pnl,
+                                px = EXCLUDED.px,
+                                sz = EXCLUDED.sz,
+                                trade_type = EXCLUDED.trade_type
+                        """, (
+                            address,
+                            fill.get('coin'),
+                            fill.get('side'),
+                            sanitize_float(fill.get('px', 0)),
+                            sanitize_float(fill.get('sz', 0)),
+                            time_ms,
+                            trade_time,
+                            sanitize_float(fill.get('closedPnl', 0)),
+                            fill.get('hash'),
+                            sanitize_float(start_pos) if start_pos else None,
+                            dir_val,
+                            fill.get('crossed'),
+                            sanitize_float(fill.get('fee', 0)),
+                            fill.get('oid'),
+                            fill.get('tid'),
+                            trade_type
+                        ))
                     saved_count += 1
                 except Exception as e:
                     logger.debug(f"保存交易记录失败: {e}")
