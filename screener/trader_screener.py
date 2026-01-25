@@ -101,7 +101,8 @@ class TraderScreener:
         config: Optional[ScreenerConfig] = None,
         cache_fills: bool = True,
         worker_index: Optional[int] = None,
-        redis_enabled: bool = False
+        redis_enabled: bool = False,
+        skip_position_history: bool = False
     ):
         """
         初始化筛选器
@@ -111,7 +112,9 @@ class TraderScreener:
             cache_fills: 是否缓存 fills 数据（批量处理时建议设为 False 以节省内存）
             worker_index: worker 索引，用于分配固定代理（None 则随机选择）
             redis_enabled: 是否启用 Redis 本地推送（检测到新仓位时推送到 Redis channel）
+            skip_position_history: 是否跳过重建历史仓位（批量处理时建议设为 True 以提高性能）
         """
+        self._skip_position_history = skip_position_history
         self.config = config or ScreenerConfig()
         
         # 初始化组件
@@ -357,8 +360,8 @@ class TraderScreener:
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
-            # 重建历史仓位记录
-            if self._db:
+            # 重建历史仓位记录（批量处理时可跳过以提高性能）
+            if self._db and not self._skip_position_history:
                 try:
                     history_count = self._db.rebuild_position_history(address)
                     logger.debug(f"已重建 {history_count} 条历史仓位记录: {short_address(address)}")

@@ -173,6 +173,11 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_fills_trade_type
                 ON trader_fills(trade_type)
             """)
+            # 复合索引：用于按地址查询并按时间排序（关键性能索引）
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_fills_address_time
+                ON trader_fills(address, time ASC)
+            """)
 
             # 创建持仓表
             cursor.execute("""
