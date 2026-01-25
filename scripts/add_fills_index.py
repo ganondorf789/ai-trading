@@ -13,20 +13,31 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import psycopg2
 from loguru import logger
-from database import TraderDatabase
+from config.settings import settings
+
+
+def get_connection():
+    """直接获取数据库连接（不使用连接池，无超时限制）"""
+    return psycopg2.connect(
+        host=settings.postgres.host,
+        port=settings.postgres.port,
+        user=settings.postgres.user,
+        password=settings.postgres.password,
+        database=settings.postgres.database
+    )
 
 
 def add_fills_index():
     """添加 trader_fills 表的复合索引"""
-    db = TraderDatabase()
+    conn = get_connection()
+    cursor = conn.cursor()
     
     logger.info("检查并添加 trader_fills 表的复合索引...")
     logger.info("注意: 对于大量数据，此操作可能需要几分钟")
     
-    with db._get_connection() as conn:
-        cursor = conn.cursor()
-        
+    try:
         # 检查索引是否已存在
         cursor.execute("""
             SELECT 1 FROM pg_indexes 
@@ -71,8 +82,11 @@ def add_fills_index():
             logger.info("索引创建成功！")
         finally:
             conn.autocommit = False
-    
-    logger.info("完成！")
+        
+        logger.info("完成！")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 if __name__ == "__main__":

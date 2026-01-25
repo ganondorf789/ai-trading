@@ -52,12 +52,13 @@ class DatabaseBase:
             logger.info("PostgreSQL 连接池已关闭")
 
     @contextmanager
-    def _get_connection(self, timeout: int = 60):
+    def _get_connection(self, timeout: int = 60, statement_timeout: str = '60s'):
         """
         获取数据库连接的上下文管理器
         
         Args:
             timeout: 获取连接的超时时间（秒），默认60秒
+            statement_timeout: SQL语句超时时间，默认60秒，设为 '0' 表示不限制
         """
         import time
         self._ensure_pool()
@@ -75,10 +76,11 @@ class DatabaseBase:
                 time.sleep(0.1)
         
         try:
-            # 设置语句超时（30秒），防止长时间查询阻塞
-            cursor = conn.cursor()
-            cursor.execute("SET statement_timeout = '30s'")
-            cursor.close()
+            # 设置语句超时，防止长时间查询阻塞
+            if statement_timeout and statement_timeout != '0':
+                cursor = conn.cursor()
+                cursor.execute(f"SET statement_timeout = '{statement_timeout}'")
+                cursor.close()
             
             # 使用 RealDictCursor 使结果可通过字典方式访问
             yield conn
