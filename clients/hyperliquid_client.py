@@ -4,10 +4,12 @@ Hyperliquid API 客户端
 """
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Optional, Dict, Any, Callable
 import eth_account
 from loguru import logger
+
+from screener.utils import now_shanghai, timestamp_to_pendulum
 
 from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
@@ -164,7 +166,7 @@ class HyperliquidClient:
             ask=best_ask,
             last=(best_bid + best_ask) / 2,
             volume_24h=volume_24h,
-            timestamp=datetime.now()
+            timestamp=now_shanghai()
         )
     
     def get_candles(
@@ -187,9 +189,9 @@ class HyperliquidClient:
             OHLCV 数据列表
         """
         if end_time is None:
-            end_time = datetime.now()
+            end_time = now_shanghai()
         if start_time is None:
-            start_time = end_time - timedelta(days=1)
+            start_time = end_time.subtract(days=1)
         
         start_ms = int(start_time.timestamp() * 1000)
         end_ms = int(end_time.timestamp() * 1000)
@@ -201,7 +203,7 @@ class HyperliquidClient:
         ohlcv_list = []
         for candle in candles:
             ohlcv = OHLCV(
-                timestamp=datetime.fromtimestamp(candle['t'] / 1000),
+                timestamp=timestamp_to_pendulum(candle['t']),
                 open=float(candle['o']),
                 high=float(candle['h']),
                 low=float(candle['l']),
@@ -386,7 +388,7 @@ class HyperliquidClient:
                 size=float(order_data.get('sz', 0)),
                 price=float(order_data.get('limitPx', 0)),
                 status=OrderStatus.OPEN,
-                created_at=datetime.fromtimestamp(order_data.get('timestamp', 0) / 1000)
+                created_at=timestamp_to_pendulum(order_data.get('timestamp', 0))
             ))
         
         return orders
@@ -416,7 +418,7 @@ class HyperliquidClient:
                 size=float(fill.get('sz', 0)),
                 pnl=float(fill.get('closedPnl', 0)),
                 fee=float(fill.get('fee', 0)),
-                timestamp=datetime.fromtimestamp(fill.get('time', 0) / 1000),
+                timestamp=timestamp_to_pendulum(fill.get('time', 0)),
                 order_id=str(fill.get('oid', ''))
             ))
         

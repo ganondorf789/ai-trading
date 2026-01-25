@@ -14,7 +14,6 @@ Hyperliquid 优质交易者筛选器
 import asyncio
 import json
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from tqdm import tqdm
@@ -336,8 +335,8 @@ class TraderScreener:
                                         if self._notifier:
                                             rating = metrics.rating.value if metrics else None
                                             score = metrics.overall_score if metrics else None
-                                            # 设置开仓时间为当前时间
-                                            pos['open_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        # 设置开仓时间为当前时间
+                                        pos['open_time'] = now_shanghai().format('YYYY-MM-DD HH:mm:ss')
                                             success = self._notifier.notify_new_position(
                                                 address, pos, rating=rating, score=score
                                             )

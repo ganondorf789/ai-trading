@@ -3,10 +3,11 @@
 包括：收藏、AI分析、历史图表、评级筛选
 """
 from flask import Blueprint, jsonify, request
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 
 from services.ai_analysis import generate_trader_analysis
+from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
 
 logger = logging.getLogger(__name__)
@@ -300,11 +301,11 @@ def get_trader_history(address: str):
         fills.sort(key=lambda x: x['time'])
 
         # 计算时间范围
-        now = datetime.now()
+        now = now_shanghai()
         if days > 0:
-            start_time = now - timedelta(days=days)
+            start_time = now.subtract(days=days)
             # 过滤时间范围内的交易
-            fills = [f for f in fills if datetime.fromtimestamp(f['time'] / 1000) >= start_time]
+            fills = [f for f in fills if timestamp_to_pendulum(f['time']) >= start_time]
 
         if not fills:
             return jsonify({
@@ -331,25 +332,25 @@ def get_trader_history(address: str):
         }
 
         # 添加起始点
-        first_time = datetime.fromtimestamp(fills[0]['time'] / 1000)
+        first_time = timestamp_to_pendulum(fills[0]['time'])
         chart_data['roi'].append({
-            'timestamp': first_time.isoformat(),
+            'timestamp': first_time.to_iso8601_string(),
             'value': 0
         })
         chart_data['pnl'].append({
-            'timestamp': first_time.isoformat(),
+            'timestamp': first_time.to_iso8601_string(),
             'value': 0
         })
         chart_data['equity'].append({
-            'timestamp': first_time.isoformat(),
+            'timestamp': first_time.to_iso8601_string(),
             'value': initial_equity
         })
 
         # 按天聚合数据（避免数据点过多）
         daily_data = {}
         for fill in fills:
-            trade_time = datetime.fromtimestamp(fill['time'] / 1000)
-            day_key = trade_time.strftime('%Y-%m-%d')
+            trade_time = timestamp_to_pendulum(fill['time'])
+            day_key = trade_time.format('YYYY-MM-DD')
 
             if day_key not in daily_data:
                 daily_data[day_key] = {
@@ -371,15 +372,15 @@ def get_trader_history(address: str):
             roi = (cumulative_pnl / initial_equity) if initial_equity > 0 else 0
 
             chart_data['roi'].append({
-                'timestamp': day_info['timestamp'].isoformat(),
+                'timestamp': day_info['timestamp'].to_iso8601_string(),
                 'value': roi
             })
             chart_data['pnl'].append({
-                'timestamp': day_info['timestamp'].isoformat(),
+                'timestamp': day_info['timestamp'].to_iso8601_string(),
                 'value': cumulative_pnl
             })
             chart_data['equity'].append({
-                'timestamp': day_info['timestamp'].isoformat(),
+                'timestamp': day_info['timestamp'].to_iso8601_string(),
                 'value': current_equity
             })
 

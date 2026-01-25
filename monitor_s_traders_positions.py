@@ -29,7 +29,7 @@ import time
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
-from datetime import datetime, timedelta
+from datetime import timedelta
 from collections import deque
 
 import redis
@@ -42,6 +42,7 @@ from database import TraderDatabase
 from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
+from screener.utils import now_shanghai
 
 # Redis 新仓位推送 channel
 REDIS_POSITION_CHANNEL = "new_positions"
@@ -122,7 +123,7 @@ class MarketActivityTracker:
     
     def add_positions(self, count: int) -> None:
         """记录新仓位"""
-        now = datetime.now()
+        now = now_shanghai()
         timestamp = now.timestamp()
         
         if self.redis_client:
@@ -146,8 +147,8 @@ class MarketActivityTracker:
     
     def _clean_old_positions(self) -> None:
         """清理超出时间窗口的记录"""
-        now = datetime.now()
-        cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
+        now = now_shanghai()
+        cutoff_timestamp = now.subtract(seconds=self.window_seconds).timestamp()
         
         if self.redis_client:
             try:
@@ -162,7 +163,7 @@ class MarketActivityTracker:
                 logger.debug(f"Redis _clean_old_positions 失败: {e}")
         
         # 本地备用
-        cutoff = now - timedelta(seconds=self.window_seconds)
+        cutoff = now.subtract(seconds=self.window_seconds)
         while self._local_position_timestamps and self._local_position_timestamps[0] < cutoff:
             self._local_position_timestamps.popleft()
     
@@ -172,8 +173,8 @@ class MarketActivityTracker:
         
         if self.redis_client:
             try:
-                now = datetime.now()
-                cutoff_timestamp = (now - timedelta(seconds=self.window_seconds)).timestamp()
+                now = now_shanghai()
+                cutoff_timestamp = now.subtract(seconds=self.window_seconds).timestamp()
                 # 统计在时间窗口内的记录数
                 count = self.redis_client.zcount(
                     self.REDIS_POSITION_TIMESTAMPS_KEY,
@@ -187,13 +188,14 @@ class MarketActivityTracker:
         # 本地备用
         return len(self._local_position_timestamps)
     
-    def _get_last_notification_time(self) -> Optional[datetime]:
+    def _get_last_notification_time(self):
         """获取上次通知时间"""
+        import pendulum
         if self.redis_client:
             try:
                 value = self.redis_client.get(self.REDIS_LAST_NOTIFICATION_KEY)
                 if value:
-                    return datetime.fromtimestamp(float(value))
+                    return pendulum.from_timestamp(float(value), tz="Asia/Shanghai")
                 return None
             except Exception as e:
                 logger.debug(f"Redis _get_last_notification_time 失败: {e}")
@@ -217,10 +219,10 @@ class MarketActivityTracker:
             return False
         
         # 检查冷却时间
-        now = datetime.now()
+        now = now_shanghai()
         last_notification = self._get_last_notification_time()
         if last_notification is not None:
-            time_since_last = (now - last_notification).total_seconds()
+            time_since_last = (now - last_notification).in_seconds()
             if time_since_last < self.cooldown_seconds:
                 return False
         
@@ -228,7 +230,7 @@ class MarketActivityTracker:
     
     def mark_notified(self) -> None:
         """标记已发送通知"""
-        now = datetime.now()
+        now = now_shanghai()
         
         if self.redis_client:
             try:
@@ -251,7 +253,7 @@ class MarketActivityTracker:
         if last_notification is None:
             return 0
         
-        elapsed = (datetime.now() - last_notification).total_seconds()
+        elapsed = (now_shanghai() - last_notification).in_seconds()
         remaining = self.cooldown_seconds - elapsed
         return max(0, int(remaining))
 
@@ -581,7 +583,7 @@ def process_trader_result(
         direction, _ = format_position_direction(szi)
         
         # 设置开仓时间为当前时间
-        pos['open_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        pos['open_time'] = now_shanghai().format('YYYY-MM-DD HH:mm:ss')
         
         # 获取原始仓位数据（包含杠杆等完整信息）
         raw_pos = raw_positions_map.get(coin, pos)
@@ -635,7 +637,7 @@ def process_trader_result(
                     'entry_px': entry_px_val,
                     'position_value': abs(szi_val) * entry_px_val,
                     'leverage': int(leverage_val or 1),
-                    'detected_at': datetime.now().isoformat(),
+                    'detected_at': now_shanghai().to_iso8601_string(),
                     'trade_url': f"https://app.hyperliquid.xyz/trade/{coin}"
                 }
                 redis_client.publish(REDIS_WS_CHANNEL, json.dumps(ws_data))
@@ -812,7 +814,7 @@ async def run_monitoring_cycle_async(
                     f"🔥 行情提醒\n\n"
                     f"检测到市场活动频繁！\n"
                     f"最近1分钟内发现 {recent_count} 个新仓位\n\n"
-                    f"⏰ 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"⏰ 时间: {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}\n"
                     f"📊 建议关注市场动态"
                 )
                 success = important_feishu.send_text(message)
@@ -918,7 +920,7 @@ async def main_async(args):
         while True:
             cycle_count += 1
             logger.info(f"{'='*60}")
-            logger.info(f"第 {cycle_count} 轮监控 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"第 {cycle_count} 轮监控 - {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}")
             logger.info(f"{'='*60}")
             
             await run_monitoring_cycle_async(

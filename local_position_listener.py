@@ -10,7 +10,13 @@
 """
 import argparse
 import webbrowser
-from datetime import datetime
+import sys
+from pathlib import Path
+
+# 添加项目根目录到路径
+sys.path.insert(0, str(Path(__file__).parent))
+
+from screener.utils import now_shanghai
 
 try:
     import redis
@@ -56,7 +62,7 @@ def listen(auto_open: bool = True):
         for msg in pubsub.listen():
             if msg['type'] == 'message':
                 url = msg['data']
-                ts = datetime.now().strftime('%H:%M:%S')
+                ts = now_shanghai().format('HH:mm:ss')
                 print(f"[{ts}] ⚡ {url}")
                 if auto_open:
                     webbrowser.open(url)

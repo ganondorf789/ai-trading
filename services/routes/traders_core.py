@@ -3,10 +3,11 @@
 包括：交易者列表、添加、详情、刷新、交易记录
 """
 from flask import Blueprint, jsonify, request
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 
 from screener import TraderScreener, ScreenerConfig
+from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
 
 logger = logging.getLogger(__name__)
@@ -216,14 +217,15 @@ def get_traders():
             all_traders = [t for t in all_traders if t.get('active_days', 0) <= max_active_days]
         # 最近活跃
         if has_recent_trade is not None:
-            cutoff = datetime.now() - timedelta(days=has_recent_trade)
+            cutoff = now_shanghai().subtract(days=has_recent_trade)
             def is_recent(t):
                 last_trade = t.get('last_trade_time')
                 if not last_trade:
                     return False
                 try:
-                    trade_time = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
-                    return trade_time.replace(tzinfo=None) >= cutoff
+                    import pendulum
+                    trade_time = pendulum.parse(last_trade)
+                    return trade_time >= cutoff
                 except:
                     return False
             all_traders = [t for t in all_traders if is_recent(t)]
