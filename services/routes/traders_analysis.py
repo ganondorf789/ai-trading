@@ -316,12 +316,14 @@ def get_trader_history(address: str):
                 }
             })
 
-        # 计算累积数据
-        initial_equity = trader.get('current_equity', 0) - trader.get('total_pnl', 0)
+        # 计算累积数据（显式转换为 float，避免 Decimal 类型问题）
+        current_equity_val = float(trader.get('current_equity', 0) or 0)
+        total_pnl_val = float(trader.get('total_pnl', 0) or 0)
+        initial_equity = current_equity_val - total_pnl_val
         if initial_equity <= 0:
-            initial_equity = 10000
+            initial_equity = 10000.0
 
-        cumulative_pnl = 0
+        cumulative_pnl = 0.0
         current_equity = initial_equity
 
         chart_data = {
@@ -354,12 +356,13 @@ def get_trader_history(address: str):
             if day_key not in daily_data:
                 daily_data[day_key] = {
                     'timestamp': trade_time,
-                    'pnl': 0,
-                    'fees': 0
+                    'pnl': 0.0,
+                    'fees': 0.0
                 }
 
-            daily_data[day_key]['pnl'] += fill.get('closed_pnl', 0)
-            daily_data[day_key]['fees'] += fill.get('fee', 0)
+            # 显式转换为 float，避免 Decimal 类型问题
+            daily_data[day_key]['pnl'] += float(fill.get('closed_pnl', 0) or 0)
+            daily_data[day_key]['fees'] += float(fill.get('fee', 0) or 0)
 
         # 生成每日累积数据
         for day_key in sorted(daily_data.keys()):
