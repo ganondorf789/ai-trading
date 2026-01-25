@@ -331,12 +331,13 @@ class TraderScreener:
                                     if pos['coin'] in new_coin_set:
                                         coin = pos.get('coin', 'Unknown')
                                         
+                                        # 设置开仓时间为当前时间
+                                        pos['open_time'] = now_shanghai().format('YYYY-MM-DD HH:mm:ss')
+                                        
                                         # 飞书通知
                                         if self._notifier:
                                             rating = metrics.rating.value if metrics else None
                                             score = metrics.overall_score if metrics else None
-                                        # 设置开仓时间为当前时间
-                                        pos['open_time'] = now_shanghai().format('YYYY-MM-DD HH:mm:ss')
                                             success = self._notifier.notify_new_position(
                                                 address, pos, rating=rating, score=score
                                             )
