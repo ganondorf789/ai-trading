@@ -9,7 +9,6 @@ export type {
   // Trader types
   Trader,
   TraderFill,
-  FillsSummary,
   AssetPosition,
   ChartDataPoint,
   TraderHistory,

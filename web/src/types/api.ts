@@ -92,16 +92,6 @@ export interface TraderFill {
   trade_type?: string;  // 交易类型：open_long, add_long, close_long, open_short, add_short, close_short
 }
 
-export interface FillsSummary {
-  total_fills: number;
-  total_pnl: number;
-  by_coin: Array<{
-    coin: string;
-    count: number;
-    total_pnl: number;
-  }>;
-}
-
 export interface AssetPosition {
   id: number;
   address: string;

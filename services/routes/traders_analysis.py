@@ -142,18 +142,13 @@ def ai_analyze_trader(address: str):
                 'error': 'Trader not found'
             }), 404
 
-        # 获取币种统计数据
-        fills_summary = db.get_fills_summary(address, exclude_user_perps=True)
-        coin_stats = fills_summary.get('by_coin', []) if fills_summary else []
-
         # 获取当前持仓数据
         positions = db.get_positions(address)
 
-        # 生成AI分析（传入币种统计和持仓数据）
+        # 生成AI分析（传入持仓数据）
         analysis = generate_trader_analysis(
             trader,
             provider=provider,
-            coin_stats=coin_stats,
             positions=positions
         )
 

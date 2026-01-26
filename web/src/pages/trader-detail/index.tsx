@@ -4,7 +4,7 @@ import type { SortDescriptor, DateValue, RangeValue } from '@heroui/react';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { addToast } from "@heroui/react";
-import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, FillsSummary, AssetPosition } from '@/services/api';
+import { traderApi, Trader, TraderFill, TraderHistory, FillsStats, AssetPosition } from '@/services/api';
 import { useTimeRange } from '@/components/TimeRangeFilter';
 import { TraderOverviewCard } from './components/TraderOverviewCard';
 import { PerformanceCharts } from './components/PerformanceCharts';
@@ -20,7 +20,6 @@ export default function TraderDetailPage() {
   const [trader, setTrader] = useState<Trader | null>(null);
   const [fills, setFills] = useState<TraderFill[]>([]);
   const [history, setHistory] = useState<TraderHistory | null>(null);
-  const [fillsSummary, setFillsSummary] = useState<FillsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('all');
@@ -122,9 +121,6 @@ export default function TraderDetailPage() {
 
         if (detailRes.success && detailRes.data) {
           setTrader(detailRes.data.trader);
-          if (detailRes.data.fills_summary) {
-            setFillsSummary(detailRes.data.fills_summary);
-          }
         }
 
         if (fillsRes.success && fillsRes.data) {
@@ -218,9 +214,6 @@ export default function TraderDetailPage() {
 
       if (res.success && res.data) {
         setTrader(res.data.trader);
-        if (res.data.fills_summary) {
-          setFillsSummary(res.data.fills_summary);
-        }
         const [fillsRes, historyRes, positionsRes, coinsRes] = await Promise.all([
           traderApi.getTraderFills(address, {
             page: 1,

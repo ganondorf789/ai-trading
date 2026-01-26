@@ -2,7 +2,6 @@ import axios from 'axios';
 import type {
   Trader,
   TraderFill,
-  FillsSummary,
   AssetPosition,
   TraderHistory,
   TraderAIAnalysis,
@@ -34,7 +33,6 @@ import type {
 export type {
   Trader,
   TraderFill,
-  FillsSummary,
   AssetPosition,
   TraderHistory,
   TraderAIAnalysis,
@@ -116,7 +114,7 @@ export const traderApi = {
 
   // 获取交易者详情
   getTraderDetail: (address: string) =>
-    api.get<any, ApiResponse<{ trader: Trader; fills_summary: FillsSummary }>>(`/traders/${address}`),
+    api.get<any, ApiResponse<{ trader: Trader }>>(`/traders/${address}`),
 
   // 获取交易记录（支持分页和排序）
   getTraderFills: (address: string, params?: {
@@ -183,7 +181,7 @@ export const traderApi = {
     lookback_days?: number;
     max_fills?: number;
   }) =>
-    api.post<any, ApiResponse<{ trader: Trader; fills_summary: FillsSummary; fills_saved: number }> & { message?: string }>(
+    api.post<any, ApiResponse<{ trader: Trader; fills_saved: number }> & { message?: string }>(
       `/traders/${address}/refresh`,
       null,
       { params, timeout: 120000 }  // 2分钟超时

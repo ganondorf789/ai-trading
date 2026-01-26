@@ -305,65 +305,6 @@ class TraderFillsOps:
             """, (address,))
             return [row['coin'] for row in cursor.fetchall()]
 
-    def get_fills_summary(
-        self,
-        address: str,
-        exclude_user_perps: bool = True
-    ) -> Dict[str, Any]:
-        """
-        获取交易者交易记录汇总
-
-        Args:
-            address: 交易者地址
-            exclude_user_perps: 是否排除用户创建的永续合约
-
-        Returns:
-            汇总信息字典
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-            # 总交易数
-            cursor.execute(
-                "SELECT COUNT(*) as count FROM trader_fills WHERE address = %s",
-                (address,)
-            )
-            total_fills = cursor.fetchone()['count']
-
-            # 按币种统计
-            cursor.execute("""
-                SELECT coin, COUNT(*) as count, SUM(closed_pnl) as total_pnl
-                FROM trader_fills
-                WHERE address = %s
-                GROUP BY coin
-                ORDER BY count DESC
-            """, (address,))
-
-            # 过滤 @数字 格式的用户永续合约
-            user_perp_pattern = re.compile(r'^@\d+$')
-            by_coin = []
-            for row in cursor.fetchall():
-                coin = row['coin']
-                if exclude_user_perps and coin and user_perp_pattern.match(coin):
-                    continue
-                by_coin.append(dict(row))
-
-            # 总盈亏
-            if exclude_user_perps:
-                total_pnl = sum(c['total_pnl'] or 0 for c in by_coin)
-            else:
-                cursor.execute(
-                    "SELECT SUM(closed_pnl) as total FROM trader_fills WHERE address = %s",
-                    (address,)
-                )
-                total_pnl = cursor.fetchone()['total'] or 0
-
-            return {
-                'total_fills': total_fills,
-                'total_pnl': total_pnl,
-                'by_coin': by_coin
-            }
-
     def get_latest_fill(self, address: str) -> Optional[Dict]:
         """
         获取交易者最新的一条交易记录

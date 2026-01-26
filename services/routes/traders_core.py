@@ -486,8 +486,6 @@ def get_trader_detail(address: str):
               properties:
                 trader:
                   type: object
-                fills_summary:
-                  type: object
       404:
         description: 交易者不存在
       500:
@@ -503,14 +501,10 @@ def get_trader_detail(address: str):
                 'error': 'Trader not found'
             }), 404
 
-        # 获取交易记录汇总
-        fills_summary = db.get_fills_summary(address)
-
         return jsonify({
             'success': True,
             'data': {
-                'trader': trader,
-                'fills_summary': fills_summary
+                'trader': trader
             }
         })
 
@@ -624,13 +618,11 @@ def refresh_trader(address: str):
 
         # 返回更新后的数据
         trader = db.get_trader_by_address(address)
-        fills_summary = db.get_fills_summary(address)
 
         return jsonify({
             'success': True,
             'data': {
                 'trader': trader,
-                'fills_summary': fills_summary,
                 'fills_saved': fills_saved,
                 'total_fills_in_db': len(all_fills)
             },
