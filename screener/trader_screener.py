@@ -44,23 +44,6 @@ from .exceptions import (
     InvalidAddressError,
 )
 
-# 飞书通知相关
-try:
-    from clients.feishu_client import FeishuClient, CopyTradingNotifier
-    from config.settings import settings
-    FEISHU_AVAILABLE = True
-except ImportError:
-    FEISHU_AVAILABLE = False
-
-# Redis 本地推送相关
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
-
-# Redis 新仓位推送 channel（与 monitor_s_traders_positions.py 一致）
-REDIS_POSITION_CHANNEL = "new_positions"
 
 
 class TraderScreener:
@@ -101,7 +84,6 @@ class TraderScreener:
         config: Optional[ScreenerConfig] = None,
         cache_fills: bool = True,
         worker_index: Optional[int] = None,
-        redis_enabled: bool = False,
         skip_position_history: bool = False
     ):
         """
@@ -111,7 +93,6 @@ class TraderScreener:
             config: 筛选器配置
             cache_fills: 是否缓存 fills 数据（批量处理时建议设为 False 以节省内存）
             worker_index: worker 索引，用于分配固定代理（None 则随机选择）
-            redis_enabled: 是否启用 Redis 本地推送（检测到新仓位时推送到 Redis channel）
             skip_position_history: 是否跳过重建历史仓位（批量处理时建议设为 True 以提高性能）
         """
         self._skip_position_history = skip_position_history
@@ -137,43 +118,6 @@ class TraderScreener:
             logger.debug("数据库连接已建立，将自动保存持仓数据")
         except Exception as e:
             logger.warning(f"无法连接数据库，持仓数据将不会保存: {e}")
-        
-        # 飞书通知器（用于新仓位通知，使用 FeishuPositionNotifySettings 配置）
-        self._notifier = None
-        if FEISHU_AVAILABLE:
-            try:
-                feishu = FeishuClient(
-                    app_id=settings.feishu_position.app_id,
-                    app_secret=settings.feishu_position.app_secret,
-                    default_user_id=settings.feishu_position.default_user_id
-                )
-                if feishu.app_id:
-                    self._notifier = CopyTradingNotifier(feishu)
-                    logger.debug("飞书仓位通知器已初始化（使用 FEISHU_POSITION_ 配置）")
-                else:
-                    logger.debug("飞书仓位通知未配置，新仓位通知功能已禁用")
-            except Exception as e:
-                logger.warning(f"飞书仓位通知器初始化失败: {e}")
-        
-        # Redis 客户端（用于本地推送）
-        self._redis_client = None
-        if redis_enabled and REDIS_AVAILABLE:
-            try:
-                self._redis_client = redis.Redis(
-                    host=settings.redis.host,
-                    port=settings.redis.port,
-                    password=settings.redis.password or None,
-                    db=settings.redis.db,
-                    decode_responses=True
-                )
-                self._redis_client.ping()
-                logger.info(f"Redis 已连接 ({settings.redis.host}:{settings.redis.port})，本地推送已启用")
-                logger.info(f"  本地监听: python local_position_listener.py")
-            except Exception as e:
-                logger.warning(f"Redis 连接失败: {e}，本地推送将不可用")
-                self._redis_client = None
-        elif redis_enabled and not REDIS_AVAILABLE:
-            logger.warning("Redis 库未安装，本地推送将不可用 (pip install redis)")
         
         api_url = (
             constants.TESTNET_API_URL 
@@ -298,65 +242,11 @@ class TraderScreener:
             # 计算评分
             metrics = self._scorer.calculate_scores(metrics)
             
-            # 保存持仓到数据库，并检测新仓位
+            # 保存持仓到数据库
             if self._db and metrics.asset_positions:
                 try:
-                    # 先获取旧持仓（用于检测新仓位）
-                    old_positions = self._db.get_positions(address)
-                    old_coins = {pos['coin'] for pos in old_positions}
-                    is_existing_trader = len(old_positions) > 0
-                    
-                    # 保存新持仓
                     saved_count = self._db.save_positions(address, metrics.asset_positions)
                     logger.debug(f"已保存 {saved_count} 个持仓记录到数据库: {short_address(address)}")
-                    
-                    # 如果是已存在的交易员（非新交易员），检测新仓位并发送通知
-                    if is_existing_trader:
-                        # 获取新保存的持仓
-                        new_positions = self._db.get_positions(address)
-                        new_coins = {pos['coin'] for pos in new_positions}
-                        
-                        # 检测新仓位
-                        new_coin_set = new_coins - old_coins
-                        if new_coin_set:
-                            logger.info(f"检测到 {len(new_coin_set)} 个新仓位: {short_address(address)}")
-                            
-                            # 只有 S 级交易员才发送通知
-                            is_s_tier = metrics and metrics.rating == QualityRating.S_TIER
-                            if not is_s_tier:
-                                logger.debug(f"跳过通知（非S级交易员，评级: {metrics.rating.value if metrics else 'N/A'}）: {short_address(address)}")
-                            # 检查交易员是否在跟单列表中，只有不在跟单列表中才发送通知
-                            elif self._db.get_copy_trading_address(address) is not None:
-                                logger.info(f"跳过通知（交易员在跟单列表中）: {short_address(address)}")
-                            else:
-                                # 发送飞书通知和 Redis 本地推送
-                                for pos in new_positions:
-                                    if pos['coin'] in new_coin_set:
-                                        coin = pos.get('coin', 'Unknown')
-                                        
-                                        # 设置开仓时间为当前时间
-                                        pos['open_time'] = now_shanghai().format('YYYY-MM-DD HH:mm:ss')
-                                        
-                                        # 飞书通知
-                                        if self._notifier:
-                                            rating = metrics.rating.value if metrics else None
-                                            score = metrics.overall_score if metrics else None
-                                            success = self._notifier.notify_new_position(
-                                                address, pos, rating=rating, score=score
-                                            )
-                                            if success:
-                                                logger.info(f"已发送飞书通知: {short_address(address)} - {coin}")
-                                        
-                                        # Redis 本地推送
-                                        if self._redis_client:
-                                            try:
-                                                self._redis_client.publish(
-                                                    REDIS_POSITION_CHANNEL,
-                                                    f"https://app.hyperliquid.xyz/trade/{coin}"
-                                                )
-                                                logger.info(f"已发送本地推送: {short_address(address)} - {coin}")
-                                            except Exception as e:
-                                                logger.debug(f"Redis 推送失败: {e}")
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
