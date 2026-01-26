@@ -141,6 +141,10 @@ class PositionCopyTradingBot:
         self._redis_client = redis_client
         # 正在处理中的 tracking_id（防止并发重复处理）
         self._processing_tracking_ids: set = set()
+        
+        # 飞书通知去重（避免重复发送相同通知）
+        self._recent_notifications: Dict[str, float] = {}  # notification_key -> timestamp
+        self._notification_cooldown: float = 10.0  # 10秒内相同通知不重复发送
 
     @property
     def db(self):
@@ -450,6 +454,25 @@ class PositionCopyTradingBot:
             order_lock = await self._get_order_lock(symbol)
             async with order_lock:
                 try:
+                    # 获取锁后重新检查仓位，防止并发问题
+                    self._update_my_account()
+                    my_pos = self.my_positions.get(symbol)
+                    if my_pos is None:
+                        logger.warning(f"[{action_name}] {symbol} 已无持仓，跳过")
+                        return
+                    
+                    # 重新计算当前仓位大小（可能已被其他操作修改）
+                    my_current_size = abs(my_pos.size)
+                    current_is_long = my_pos.side == PositionSide.LONG
+                    
+                    # 重新判断加仓还是减仓
+                    is_add = (order_is_long == current_is_long)
+                    action_name = "加仓" if is_add else "减仓"
+                    
+                    # 减仓时重新检查数量
+                    if not is_add and adjust_size > my_current_size:
+                        adjust_size = my_current_size
+                    
                     result = self.client.market_order(
                         symbol, order_is_long, adjust_size, slippage=state.slippage
                     )
@@ -595,6 +618,14 @@ class PositionCopyTradingBot:
             order_lock = await self._get_order_lock(target_symbol)
             async with order_lock:
                 try:
+                    # 获取锁后重新检查仓位，防止并发重复平仓
+                    self._update_my_account()
+                    my_pos = self.my_positions.get(target_symbol)
+                    if my_pos is None:
+                        logger.info(f"[立即平仓] {target_symbol} 已无持仓，跳过")
+                        return
+                    pnl = my_pos.unrealized_pnl  # 重新获取最新 pnl
+                    
                     result = self.client.close_position(target_symbol)
                     
                     if result is None:
@@ -636,9 +667,36 @@ class PositionCopyTradingBot:
             # 处理完成，移除标记
             self._processing_tracking_ids.discard(close_key)
 
+    def _should_notify(self, notification_key: str) -> bool:
+        """
+        检查是否应该发送通知（避免重复发送）
+        
+        Args:
+            notification_key: 通知唯一标识（如 "open:BTC:long" 或 "close:BTC"）
+            
+        Returns:
+            True 表示应该发送，False 表示应该跳过（冷却中）
+        """
+        import time
+        now = time.time()
+        last_time = self._recent_notifications.get(notification_key, 0)
+        if now - last_time < self._notification_cooldown:
+            logger.debug(f"跳过重复飞书通知: {notification_key} (冷却中)")
+            return False
+        self._recent_notifications[notification_key] = now
+        # 清理过期的通知记录（避免内存泄漏）
+        expired_keys = [k for k, t in self._recent_notifications.items() if now - t > 60]
+        for k in expired_keys:
+            del self._recent_notifications[k]
+        return True
+
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知"""
         if self._notifier:
+            # 去重检查：相同币种、方向的开仓通知在冷却时间内只发一次
+            notification_key = f"open:{symbol}:{side}"
+            if not self._should_notify(notification_key):
+                return
             try:
                 self._notifier.notify_copy_open(
                     target_address=target_address,
@@ -652,6 +710,10 @@ class PositionCopyTradingBot:
     def _notify_copy_close(self, target_address: str, symbol: str, pnl: float):
         """发送平仓通知"""
         if self._notifier:
+            # 去重检查：相同币种的平仓通知在冷却时间内只发一次
+            notification_key = f"close:{symbol}"
+            if not self._should_notify(notification_key):
+                return
             try:
                 self._notifier.notify_copy_close(
                     target_address=target_address,
@@ -664,6 +726,11 @@ class PositionCopyTradingBot:
     def _notify_copy_adjust(self, target_address: str, symbol: str, side: str, size: float, is_increase: bool):
         """发送调整仓位通知"""
         if self._notifier:
+            # 去重检查：相同币种、方向、加减仓类型的通知在冷却时间内只发一次
+            action = "increase" if is_increase else "decrease"
+            notification_key = f"adjust:{symbol}:{side}:{action}"
+            if not self._should_notify(notification_key):
+                return
             try:
                 self._notifier.notify_copy_adjust(
                     target_address=target_address,
@@ -1067,7 +1134,9 @@ class PositionCopyTradingBot:
             if my_current_size > 0:
                 size_diff_pct = abs(my_target_size - my_current_size) / my_current_size * 100
                 if size_diff_pct < 1.0:
-                    logger.debug(f"[{state.tracking_id}] 仓位变化 {size_diff_pct:.2f}% < 1%，跳过调整")
+                    msg = f"[{symbol}] 仓位变化 {size_diff_pct:.2f}% < 1%，跳过调整"
+                    logger.debug(f"[{state.tracking_id}] {msg}")
+                    self._notify_error(msg)
                     return True
             
             # 判断是加仓还是减仓
@@ -1206,12 +1275,16 @@ class PositionCopyTradingBot:
 
     async def _sync_tracking(self, state: TrackingState):
         """同步单个仓位跟单"""
-        # 如果正在被 Redis 开仓通知处理，跳过
-        if state.tracking_id in self._processing_tracking_ids:
-            return
-        
         symbol = state.symbol
         target_address = state.target_address
+        
+        # 如果正在被 Redis 通知处理，跳过（检查所有相关的 key）
+        if state.tracking_id in self._processing_tracking_ids:
+            return
+        if f"adjust_{state.tracking_id}" in self._processing_tracking_ids:
+            return
+        if f"close_{symbol}" in self._processing_tracking_ids:
+            return
         
         # 获取目标仓位
         target_pos = self._get_target_position(target_address, symbol)
