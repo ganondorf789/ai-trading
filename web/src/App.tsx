@@ -11,6 +11,8 @@ import PositionHistoryPage from "@/pages/position-history";
 import RiskControlPage from "@/pages/risk-control";
 import BestSTradersPage from "@/pages/best-s-traders";
 import PositionTrackingPage from "@/pages/position-tracking";
+import DefaultConfigRulesPage from "@/pages/default-config-rules";
+import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
       <Route element={<PositionHistoryPage />} path="/position-history" />
       <Route element={<RiskControlPage />} path="/risk-control" />
       <Route element={<PositionTrackingPage />} path="/position-tracking" />
+      <Route element={<DefaultConfigRulesPage />} path="/default-config-rules" />
+      <Route element={<ImmediateConfigRulesPage />} path="/immediate-config-rules" />
     </Routes>
   );
 }

@@ -39,6 +39,14 @@ export const siteConfig = {
     {
       label: "Risk Control",
       href: "/risk-control",
+    },
+    {
+      label: "Default Config Rules",
+      href: "/default-config-rules",
+    },
+    {
+      label: "Immediate Config Rules",
+      href: "/immediate-config-rules",
     }
   ],
   navMenuItems: [
