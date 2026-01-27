@@ -822,7 +822,33 @@ class PositionCopyTradingBot:
             'size': None,
             'pnl': None
         }
+
+        self._publish_notification(notification_data)
+
+    def _notify_balance_insufficient(self, action: str, required_margin: float, available_balance: float):
+        """发送余额不足通知（通过 Redis 发布）"""
+        # 去重检查：相同操作的余额不足通知在冷却时间内只发一次
+        notification_key = f"balance_insufficient:{action}"
+        if not self._should_notify(notification_key):
+            return
         
+        # 构建 Markdown 格式内容
+        content = f"**操作**: {action}\n"
+        content += f"**所需保证金**: ${required_margin:,.2f}\n"
+        content += f"**可用余额**: ${available_balance:,.2f}\n"
+        content += f"**缺口**: ${required_margin - available_balance:,.2f}"
+        
+        notification_data = {
+            'type': 'error',
+            'title': '💸 余额不足',
+            'content': content,
+            'target_address': None,
+            'symbol': None,
+            'side': None,
+            'size': None,
+            'pnl': None
+        }
+
         self._publish_notification(notification_data)
 
     @property
@@ -1050,6 +1076,8 @@ class PositionCopyTradingBot:
                 f"余额不足，无法{action}: 需要 {required_margin:.2f} USD, "
                 f"可用 {self.available_balance:.2f} USD"
             )
+            # 发送余额不足通知
+            self._notify_balance_insufficient(action, required_margin, self.available_balance)
             return False
         return True
 
