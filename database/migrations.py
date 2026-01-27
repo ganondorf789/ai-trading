@@ -377,6 +377,7 @@ class DatabaseMigrations:
                     target_initial_size REAL,
                     target_initial_side TEXT,
                     target_initial_entry_price REAL,
+                    target_initial_leverage REAL,
                     
                     -- 我方跟单状态
                     my_size REAL DEFAULT 0.0,
@@ -702,4 +703,9 @@ class DatabaseMigrations:
         # 添加 target_is_starred 字段到 copy_position_tracking 表
         self._migrate_add_column_if_not_exists(
             cursor, 'copy_position_tracking', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'
+        )
+
+        # 添加 target_initial_leverage 字段到 copy_position_tracking 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'target_initial_leverage', 'REAL'
         )

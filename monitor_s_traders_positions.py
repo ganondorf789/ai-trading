@@ -423,6 +423,7 @@ def create_position_tracking_for_copy(
         'target_initial_size': abs(szi),
         'target_initial_side': side,
         'target_initial_entry_price': entry_px,
+        'target_initial_leverage': leverage,
         'target_is_starred': trader.get('is_starred', False),
         'status': 'pending'
     }

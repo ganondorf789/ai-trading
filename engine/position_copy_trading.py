@@ -237,6 +237,7 @@ class PositionCopyTradingBot:
                 'target_initial_size': state.target_initial_size,
                 'target_initial_side': state.target_initial_side,
                 'target_initial_entry_price': state.target_initial_entry_price,
+                'target_initial_leverage': target_pos.get('leverage'),
                 'target_is_starred': state.target_is_starred,
                 'status': 'pending'
             })
@@ -1365,11 +1366,12 @@ class PositionCopyTradingBot:
                     'max_leverage': state.max_leverage,
                     'default_leverage': state.default_leverage,
                     'slippage': state.slippage,
-                    'target_initial_size': state.target_initial_size,
-                    'target_initial_side': state.target_initial_side,
-                    'target_initial_entry_price': state.target_initial_entry_price,
-                    'target_is_starred': state.target_is_starred,
-                    'status': 'pending'
+                'target_initial_size': state.target_initial_size,
+                'target_initial_side': state.target_initial_side,
+                'target_initial_entry_price': state.target_initial_entry_price,
+                'target_initial_leverage': target_pos.get('leverage'),
+                'target_is_starred': state.target_is_starred,
+                'status': 'pending'
                 })
                 
                 # 计算跟单仓位
