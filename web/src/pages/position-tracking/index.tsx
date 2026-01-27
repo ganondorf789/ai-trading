@@ -104,10 +104,10 @@ export default function PositionTrackingPage() {
   }, [loadStats]);
 
   // 打开编辑弹窗
-  const handleOpenEditModal = (tracking: PositionTracking) => {
+  const handleOpenEditModal = useCallback((tracking: PositionTracking) => {
     setEditingTracking(tracking);
     setIsFormModalOpen(true);
-  };
+  }, []);
 
   // 保存跟单配置
   const handleSaveTracking = async (data: Partial<PositionTracking>) => {
@@ -127,10 +127,10 @@ export default function PositionTrackingPage() {
   };
 
   // 打开删除确认弹窗
-  const handleOpenDeleteModal = (id: number) => {
+  const handleOpenDeleteModal = useCallback((id: number) => {
     setDeletingId(id);
     setIsDeleteModalOpen(true);
-  };
+  }, []);
 
   // 确认删除
   const handleConfirmDelete = async () => {
@@ -153,7 +153,7 @@ export default function PositionTrackingPage() {
   };
 
   // 处理启用/禁用
-  const handleToggle = async (id: number, isEnabled: boolean) => {
+  const handleToggle = useCallback(async (id: number, isEnabled: boolean) => {
     // 乐观更新
     setTrackings((prev) =>
       prev.map((t) => (t.id === id ? { ...t, is_enabled: isEnabled } : t))
@@ -169,10 +169,10 @@ export default function PositionTrackingPage() {
       console.error("Failed to toggle tracking:", error);
       addToast({ title: "操作失败", color: "danger" });
     }
-  };
+  }, []);
 
   // 处理停止跟单
-  const handleStop = async (id: number) => {
+  const handleStop = useCallback(async (id: number) => {
     try {
       await positionTrackingApi.stopTracking(id);
       addToast({ title: "已停止跟单", color: "success" });
@@ -186,7 +186,7 @@ export default function PositionTrackingPage() {
         color: "danger"
       });
     }
-  };
+  }, [loadTrackings, loadStats]);
 
   // 格式化地址
   const formatAddress = (address: string) => {
@@ -355,7 +355,7 @@ export default function PositionTrackingPage() {
           return null;
       }
     },
-    []
+    [handleToggle, handleOpenEditModal, handleStop, handleOpenDeleteModal]
   );
 
   return (
