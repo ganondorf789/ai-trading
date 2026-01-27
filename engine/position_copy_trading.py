@@ -1234,19 +1234,18 @@ class PositionCopyTradingBot:
             )
             my_current_size = abs(my_pos.size)
             
-            # 检查是否已经调整过（变化小于1%则跳过）
-            if my_current_size > 0:
-                size_diff_pct = abs(my_target_size - my_current_size) / my_current_size * 100
-                if size_diff_pct < 1.0:
-                    msg = f"[{symbol}] 仓位变化 {size_diff_pct:.2f}% < 1%，跳过调整"
-                    logger.debug(f"[{state.tracking_id}] {msg}")
-                    self._notify_error(msg)
-                    return True
-            
             # 判断是加仓还是减仓
             is_increase = my_target_size > my_current_size
             adjustment_size = abs(my_target_size - my_current_size)
             adjustment_size = self._round_size(symbol, adjustment_size)
+            
+            # 检查调整价值是否太小（小于10 USD则跳过）
+            adjustment_value = adjustment_size * current_price
+            if adjustment_value < 10:
+                msg = f"[{symbol}] 调整价值 ${adjustment_value:.2f} < $10，跳过调整"
+                logger.debug(f"[{state.tracking_id}] {msg}")
+                self._notify_error(msg)
+                return True
 
             is_long = my_pos.side == PositionSide.LONG
             action_type = "加仓" if is_increase else "减仓"
