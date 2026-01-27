@@ -1165,14 +1165,14 @@ class PositionCopyTradingBot:
             
             # 检查调整价值是否太小（小于10 USD则跳过）
             adjustment_value = adjustment_size * current_price
+            action_type = "加仓" if is_increase else "减仓"
             if adjustment_value < 10:
-                msg = f"[{symbol}] 调整价值 ${adjustment_value:.2f} < $10，跳过调整"
+                msg = f"[{symbol}] {action_type}调整价值 ${adjustment_value:.2f} < $10，跳过调整"
                 logger.debug(f"[{state.tracking_id}] {msg}")
                 self._notify_error(msg)
                 return True
 
             is_long = my_pos.side == PositionSide.LONG
-            action_type = "加仓" if is_increase else "减仓"
             
             # 加仓时检查余额是否足够
             if is_increase:
