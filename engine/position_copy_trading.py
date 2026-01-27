@@ -1370,6 +1370,13 @@ class PositionCopyTradingBot:
                 
         elif state.status == 'active':
             # 活跃跟单状态
+            # 检查我方仓位是否已不存在（可能被手动平仓或止损）
+            if my_pos is None:
+                logger.warning(f"[{state.tracking_id}] [{symbol}] 跟单状态为 active 但本地无持仓，标记为 closed")
+                state.status = 'closed'
+                self.db.update_tracking_status(state.tracking_id, 'closed', '本地仓位已不存在')
+                return
+            
             if target_pos is None:
                 # 目标已平仓，我们也平仓
                 logger.info(f"[{state.tracking_id}] 目标已平仓 {symbol}，执行平仓")
