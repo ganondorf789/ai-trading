@@ -733,6 +733,7 @@ def quick_copy_position():
     
     用于 APP 新仓位列表的一键跟单功能，支持用户选择跟单比例。
     创建跟单后会自动发送 Redis 通知，触发跟单机器人立即开仓。
+    根据传入的杠杆值匹配对应的配置规则。
     
     ---
     tags:
@@ -756,9 +757,12 @@ def quick_copy_position():
             target_name:
               type: string
               description: 交易员名称（可选）
+            leverage:
+              type: number
+              description: 目标仓位杠杆倍数（用于匹配配置规则，不传则默认为1）
             ratio:
               type: number
-              description: 跟单比例（百分比，如 10、20、30，不传则使用默认配置）
+              description: 跟单比例（百分比，如 10、20、30，不传则使用匹配规则的配置）
     responses:
       200:
         description: 跟单添加成功
@@ -816,6 +820,7 @@ def quick_copy_position():
         target_address = data.get('target_address', '').strip()
         symbol = data.get('symbol', '').strip()
         target_name = data.get('target_name', '').strip()
+        leverage = data.get('leverage', 1)  # 目标仓位杠杆，用于匹配配置规则
         ratio = data.get('ratio')  # 百分比，如 10, 20, 30
 
         # 验证必需字段
@@ -838,10 +843,17 @@ def quick_copy_position():
                 'error': '无效的以太坊地址格式'
             }), 400
 
+        # 转换杠杆值
+        try:
+            leverage = float(leverage or 1)
+        except (ValueError, TypeError):
+            leverage = 1.0
+
         logger.info(f"[快速跟单] 请求跟单:")
         logger.info(f"  - 交易员地址: {target_address}")
         logger.info(f"  - 币种: {symbol}")
         logger.info(f"  - 名称: {target_name}")
+        logger.info(f"  - 杠杆: {leverage}x")
         if ratio is not None:
             logger.info(f"  - 跟单比例: {ratio}%")
 
@@ -853,10 +865,16 @@ def quick_copy_position():
                 'exists': True
             }), 409  # Conflict
 
-        # 获取默认跟单配置
-        default_config = db.get_default_copy_config()
+        # 根据杠杆匹配配置规则
+        matched_config = db.get_copy_config_by_leverage('default', leverage)
+        matched_rule_name = matched_config.get('_matched_rule_name')
+        
+        if matched_rule_name:
+            logger.info(f"  - 匹配规则: {matched_rule_name}")
+        else:
+            logger.info(f"  - 使用默认配置（无匹配规则）")
 
-        # 计算跟单比例：优先使用传入的 ratio，否则使用默认配置
+        # 计算跟单比例：优先使用传入的 ratio，否则使用匹配规则的配置
         if ratio is not None:
             try:
                 copy_ratio = float(ratio) / 100.0  # 传入的是百分比，转换为小数
@@ -868,21 +886,21 @@ def quick_copy_position():
                     'error': f'无效的跟单比例: {ratio}'
                 }), 400
         else:
-            copy_ratio = default_config.get('copy_ratio', 0.1)
+            copy_ratio = matched_config.get('copy_ratio', 0.1)
 
-        # 构建跟单数据
+        # 构建跟单数据（使用匹配的配置）
         tracking_data = {
             'target_address': target_address,
             'target_name': target_name or "",
             'symbol': symbol,
             'is_enabled': True,
             'copy_ratio': copy_ratio,
-            'max_position_size_usd': default_config.get('max_position_size_usd', 500),
-            'min_position_size_usd': default_config.get('min_position_size_usd', 20),
-            'copy_leverage': default_config.get('copy_leverage', True),
-            'max_leverage': default_config.get('max_leverage', 10),
-            'default_leverage': default_config.get('default_leverage', 5),
-            'slippage': default_config.get('slippage', 0.01),
+            'max_position_size_usd': matched_config.get('max_position_size_usd', 500),
+            'min_position_size_usd': matched_config.get('min_position_size_usd', 20),
+            'copy_leverage': matched_config.get('copy_leverage', False),
+            'max_leverage': matched_config.get('max_leverage', 10),
+            'default_leverage': matched_config.get('default_leverage', 3),
+            'slippage': matched_config.get('slippage', 0.001),
             'status': 'pending',
         }
 
