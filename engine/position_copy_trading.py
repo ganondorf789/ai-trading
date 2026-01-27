@@ -1234,9 +1234,20 @@ class PositionCopyTradingBot:
             adjustment_size = abs(my_target_size - my_current_size)
             adjustment_size = self._round_size(symbol, adjustment_size)
             
-            # 检查调整价值是否太小（小于10 USD则跳过）
+            # 检查调整价值
             adjustment_value = adjustment_size * current_price
             action_type = "加仓" if is_increase else "减仓"
+            
+            # 加仓时限制单次补仓价值不超过 max_position_size_usd
+            if is_increase and adjustment_value > state.max_position_size_usd:
+                logger.info(
+                    f"[{state.tracking_id}] [{symbol}] 补仓价值 ${adjustment_value:.2f} "
+                    f"超过限制 ${state.max_position_size_usd:.2f}，限制为 ${state.max_position_size_usd:.2f}"
+                )
+                adjustment_value = state.max_position_size_usd
+                adjustment_size = self._round_size(symbol, adjustment_value / current_price)
+            
+            # 检查调整价值是否太小（小于10 USD则跳过）
             if adjustment_value < 10:
                 msg = f"[{symbol}] {action_type}调整价值 ${adjustment_value:.2f} < $10，跳过调整"
                 logger.debug(f"[{state.tracking_id}] {msg}")
