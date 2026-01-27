@@ -428,6 +428,338 @@ def get_position(symbol: str):
         }), 500
 
 
+# ==================== 补仓 API ====================
+
+@trading_bp.route('/api/trading/positions/<symbol>/add', methods=['POST'])
+def add_position(symbol: str):
+    """市价补仓
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            size:
+              type: number
+              description: 补仓数量（与 amount 二选一）
+            amount:
+              type: number
+              description: 补仓金额 USDC（与 size 二选一，会按当前价格计算数量）
+            slippage:
+              type: number
+              default: 0.01
+              description: 滑点容忍度
+            leverage:
+              type: integer
+              description: 杠杆倍数（可选，不提供则使用当前杠杆）
+            is_cross:
+              type: boolean
+              default: true
+              description: 是否全仓模式（仅在设置杠杆时生效）
+    responses:
+      200:
+        description: 补仓成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            position:
+              type: object
+              description: 补仓前的仓位信息
+            added_size:
+              type: number
+              description: 实际补仓数量
+      400:
+        description: 参数错误
+      404:
+        description: 仓位不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        client = get_client()
+        
+        # 获取当前仓位
+        position = client.get_position(symbol)
+        if position is None:
+            return jsonify({
+                'success': False,
+                'error': f'未找到 {symbol} 的仓位，无法补仓'
+            }), 404
+        
+        data = request.get_json() or {}
+        slippage = data.get('slippage', 0.01)
+        leverage = data.get('leverage')
+        is_cross = data.get('is_cross', True)
+        
+        # 计算补仓数量
+        size = data.get('size')
+        amount = data.get('amount')
+        
+        if size is None and amount is None:
+            return jsonify({
+                'success': False,
+                'error': '必须提供 size（补仓数量）或 amount（补仓金额）'
+            }), 400
+        
+        if size is not None and amount is not None:
+            return jsonify({
+                'success': False,
+                'error': 'size 和 amount 只能二选一'
+            }), 400
+        
+        # 如果提供的是金额，按当前价格计算数量
+        if amount is not None:
+            all_mids = client.get_all_mids()
+            current_price = float(all_mids.get(symbol, 0))
+            if current_price <= 0:
+                return jsonify({
+                    'success': False,
+                    'error': f'无法获取 {symbol} 的当前价格'
+                }), 400
+            size = float(amount) / current_price
+        else:
+            size = float(size)
+        
+        if size <= 0:
+            return jsonify({
+                'success': False,
+                'error': '补仓数量必须大于 0'
+            }), 400
+        
+        # 如果提供了杠杆，先设置杠杆
+        leverage_result = None
+        if leverage is not None:
+            leverage = int(leverage)
+            if leverage < 1:
+                return jsonify({
+                    'success': False,
+                    'error': '杠杆倍数必须大于等于 1'
+                }), 400
+            leverage_result = client.set_leverage(symbol, leverage, is_cross)
+        
+        # 根据仓位方向决定买卖方向
+        # 多仓(long)补仓 -> 买入, 空仓(short)补仓 -> 卖出
+        is_buy = position.side.value == 'long'
+        
+        # 执行市价单补仓
+        result = client.market_order(
+            symbol=symbol,
+            is_buy=is_buy,
+            size=size,
+            slippage=slippage
+        )
+        
+        response_data = {
+            'success': True,
+            'data': _extract_order_data(result),
+            'position': {
+                'symbol': position.symbol,
+                'side': position.side.value,
+                'size_before': position.size,
+                'entry_price': position.entry_price,
+                'leverage_before': position.leverage
+            },
+            'added_size': size,
+            'message': f'{symbol} 市价补仓成功，补仓数量: {size}'
+        }
+        
+        if leverage_result is not None:
+            response_data['leverage'] = leverage
+            response_data['leverage_result'] = leverage_result
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"市价补仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@trading_bp.route('/api/trading/positions/<symbol>/add-limit', methods=['POST'])
+def add_position_limit(symbol: str):
+    """限价补仓
+    ---
+    tags:
+      - Trading - Positions
+    parameters:
+      - name: symbol
+        in: path
+        type: string
+        required: true
+        description: 交易对符号
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - price
+          properties:
+            price:
+              type: number
+              description: 限价
+            size:
+              type: number
+              description: 补仓数量（与 amount 二选一）
+            amount:
+              type: number
+              description: 补仓金额 USDC（与 size 二选一，会按提供的 price 计算数量）
+            post_only:
+              type: boolean
+              default: false
+              description: 是否只做 maker
+            leverage:
+              type: integer
+              description: 杠杆倍数（可选，不提供则使用当前杠杆）
+            is_cross:
+              type: boolean
+              default: true
+              description: 是否全仓模式（仅在设置杠杆时生效）
+    responses:
+      200:
+        description: 补仓订单已提交
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+            position:
+              type: object
+              description: 补仓前的仓位信息
+            added_size:
+              type: number
+              description: 补仓数量
+            price:
+              type: number
+              description: 限价
+      400:
+        description: 参数错误
+      404:
+        description: 仓位不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        client = get_client()
+        
+        # 获取当前仓位
+        position = client.get_position(symbol)
+        if position is None:
+            return jsonify({
+                'success': False,
+                'error': f'未找到 {symbol} 的仓位，无法补仓'
+            }), 404
+        
+        data = request.get_json()
+        if not data or 'price' not in data:
+            return jsonify({
+                'success': False,
+                'error': '缺少必填参数 price'
+            }), 400
+        
+        price = float(data['price'])
+        post_only = data.get('post_only', False)
+        leverage = data.get('leverage')
+        is_cross = data.get('is_cross', True)
+        
+        # 计算补仓数量
+        size = data.get('size')
+        amount = data.get('amount')
+        
+        if size is None and amount is None:
+            return jsonify({
+                'success': False,
+                'error': '必须提供 size（补仓数量）或 amount（补仓金额）'
+            }), 400
+        
+        if size is not None and amount is not None:
+            return jsonify({
+                'success': False,
+                'error': 'size 和 amount 只能二选一'
+            }), 400
+        
+        # 如果提供的是金额，按限价计算数量
+        if amount is not None:
+            size = float(amount) / price
+        else:
+            size = float(size)
+        
+        if size <= 0:
+            return jsonify({
+                'success': False,
+                'error': '补仓数量必须大于 0'
+            }), 400
+        
+        # 如果提供了杠杆，先设置杠杆
+        leverage_result = None
+        if leverage is not None:
+            leverage = int(leverage)
+            if leverage < 1:
+                return jsonify({
+                    'success': False,
+                    'error': '杠杆倍数必须大于等于 1'
+                }), 400
+            leverage_result = client.set_leverage(symbol, leverage, is_cross)
+        
+        # 根据仓位方向决定买卖方向
+        is_buy = position.side.value == 'long'
+        
+        # 执行限价单补仓
+        result = client.limit_order(
+            symbol=symbol,
+            is_buy=is_buy,
+            size=size,
+            price=price,
+            reduce_only=False,
+            post_only=post_only
+        )
+        
+        response_data = {
+            'success': True,
+            'data': _extract_order_data(result),
+            'position': {
+                'symbol': position.symbol,
+                'side': position.side.value,
+                'size_before': position.size,
+                'entry_price': position.entry_price,
+                'leverage_before': position.leverage
+            },
+            'added_size': size,
+            'price': price,
+            'message': f'{symbol} 限价补仓订单已提交，数量: {size}，价格: {price}'
+        }
+        
+        if leverage_result is not None:
+            response_data['leverage'] = leverage
+            response_data['leverage_result'] = leverage_result
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"限价补仓失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # ==================== 平仓 API ====================
 
 @trading_bp.route('/api/trading/positions/<symbol>/close', methods=['POST'])
