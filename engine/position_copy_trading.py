@@ -18,7 +18,6 @@ from hyperliquid.info import Info
 
 from core.models import Position, PositionSide
 from clients.hyperliquid_client import HyperliquidClient
-from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from config.settings import settings
 
 # Redis 开仓通知 channel
@@ -88,7 +87,6 @@ class PositionCopyTradingBot:
         client: HyperliquidClient,
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
-        enable_feishu_notify: bool = True,
         redis_client = None
     ):
         """
@@ -98,7 +96,6 @@ class PositionCopyTradingBot:
             client: Hyperliquid 客户端（需要已初始化钱包）
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
-            enable_feishu_notify: 是否启用飞书通知
             redis_client: Redis 客户端（用于接收开仓通知，立即执行开仓）
         """
         self.client = client
@@ -138,17 +135,12 @@ class PositionCopyTradingBot:
         # 延迟加载数据库
         self._db = None
         
-        # 飞书通知器（使用 FeishuSettings 配置）
-        self._notifier: Optional[CopyTradingNotifier] = None
-        if enable_feishu_notify:
-            self._init_feishu_notifier()
-        
         # Redis 开仓通知（外部传入）
         self._redis_client = redis_client
         # 正在处理中的 tracking_id（防止并发重复处理）
         self._processing_tracking_ids: set = set()
         
-        # 飞书通知去重（避免重复发送相同通知）
+        # 通知去重（避免重复发送相同通知）
         self._recent_notifications: Dict[str, float] = {}  # notification_key -> timestamp
         self._notification_cooldown: float = 10.0  # 10秒内相同通知不重复发送
 
@@ -159,24 +151,6 @@ class PositionCopyTradingBot:
             from database import TraderDatabase
             self._db = TraderDatabase()
         return self._db
-
-    def _init_feishu_notifier(self):
-        """初始化飞书通知器（使用 FeishuSettings 配置）"""
-        try:
-            if not settings.feishu.app_id:
-                logger.warning("飞书未配置，通知功能将不可用")
-                return
-            
-            feishu_client = FeishuClient(
-                app_id=settings.feishu.app_id,
-                app_secret=settings.feishu.app_secret,
-                default_user_id=settings.feishu.default_user_id
-            )
-            self._notifier = CopyTradingNotifier(feishu_client)
-            logger.info("飞书通知器初始化成功")
-        except Exception as e:
-            logger.warning(f"飞书通知器初始化失败: {e}")
-            self._notifier = None
 
     async def _listen_redis_open(self):
         """监听 Redis 开仓通知，收到后立即执行开仓"""
@@ -506,7 +480,7 @@ class PositionCopyTradingBot:
                             state.status = 'closed'
                             self.db.update_tracking_status(state.tracking_id, 'closed')
                         
-                        # 发送飞书通知
+                        # 发送通知
                         side = 'long' if order_is_long else 'short'
                         self._notify_copy_adjust(state.target_address, symbol, side, adjust_size, is_add)
                         
@@ -650,7 +624,7 @@ class PositionCopyTradingBot:
                                 state.tracking_id, 'closed', '手动平仓', pnl
                             )
                         
-                        # 发送飞书通知
+                        # 发送通知
                         target_address = state.target_address if state else ""
                         self._notify_copy_close(target_address, target_symbol, pnl)
                         
@@ -1026,7 +1000,7 @@ class PositionCopyTradingBot:
             self.my_positions = {pos.symbol: pos for pos in account_info.positions}
             logger.debug(f"账户可用余额: {self.available_balance:.2f} USD, 持仓数: {len(self.my_positions)}")
             
-            # 写入 Redis 缓存（供飞书回调等外部使用）
+            # 写入 Redis 缓存（供外部使用）
             if self._redis_client:
                 try:
                     import json
@@ -1181,7 +1155,7 @@ class PositionCopyTradingBot:
                         state.tracking_id, size, side, price
                     )
                     
-                    # 发送飞书通知
+                    # 发送通知
                     self._notify_copy_open(state.target_address, symbol, side, size)
                     
                     if self._on_copy:
@@ -1283,7 +1257,7 @@ class PositionCopyTradingBot:
                         state.tracking_id, my_target_size, state.my_side, state.my_entry_price
                     )
                     
-                    # 发送飞书通知
+                    # 发送通知
                     side = 'long' if is_long else 'short'
                     self._notify_copy_adjust(state.target_address, symbol, side, adjustment_size, is_increase)
                     
@@ -1356,7 +1330,7 @@ class PositionCopyTradingBot:
                         state.tracking_id, 'closed', reason, pnl
                     )
                     
-                    # 发送飞书通知
+                    # 发送通知
                     self._notify_copy_close(state.target_address, symbol, pnl)
                     
                     if self._on_close:

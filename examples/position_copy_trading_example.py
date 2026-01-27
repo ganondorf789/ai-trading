@@ -14,7 +14,6 @@ VERSION = "1.0.0"
 import asyncio
 import os
 import sys
-import threading
 import pendulum
 
 # 添加项目根目录到路径
@@ -22,9 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
-from clients.feishu_client import (
-    FeishuClient, CopyTradingNotifier, FeishuCallbackClient, CardActionEvent
-)
 from engine.position_copy_trading import PositionCopyTradingBot
 from config.settings import settings
 from database import TraderDatabase
@@ -36,8 +32,6 @@ try:
 except ImportError:
     REDIS_AVAILABLE = False
 
-# 全局通知器
-notifier: CopyTradingNotifier = None
 # 全局数据库
 db: TraderDatabase = None
 # 全局 Redis 客户端（用于发送开仓通知）
@@ -59,23 +53,6 @@ def setup_logging():
         rotation="1 day",
         level="DEBUG"
     )
-
-
-def setup_feishu_notifier() -> CopyTradingNotifier:
-    """初始化飞书通知器"""
-    feishu_client = FeishuClient(
-        app_id=settings.feishu.app_id,
-        app_secret=settings.feishu.app_secret,
-        default_user_id=settings.feishu.default_user_id
-    )
-
-    # 检查是否配置了飞书
-    if settings.feishu.app_id and settings.feishu.app_secret:
-        logger.info("飞书应用已配置")
-    else:
-        logger.warning("飞书未配置，将不会发送通知")
-
-    return CopyTradingNotifier(feishu_client)
 
 
 def setup_redis_client():
@@ -107,46 +84,16 @@ def on_copy_callback(tracking_id: int, target: str, symbol: str, side: str, size
     """复制交易回调"""
     logger.success(f"[#{tracking_id}] 开仓成功: {symbol} {side.upper()} {size} (目标: {target[:8]}...)")
 
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_open(
-                target_address=target,
-                symbol=symbol,
-                side=side,
-                size=size
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
 
 def on_close_callback(tracking_id: int, target: str, symbol: str, pnl: float):
     """平仓回调"""
     emoji = "+" if pnl >= 0 else ""
     logger.info(f"[#{tracking_id}] 平仓: {symbol} PnL: ${emoji}{pnl:.2f} (目标: {target[:8]}...)")
 
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_close(
-                target_address=target,
-                symbol=symbol,
-                pnl=pnl
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
 
 def on_error_callback(error: Exception):
     """错误回调"""
     logger.error(f"错误: {error}")
-
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_error(str(error))
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
 
 
 def on_adjust_callback(tracking_id: int, target: str, symbol: str, side: str, size: float, is_increase: bool):
@@ -154,56 +101,10 @@ def on_adjust_callback(tracking_id: int, target: str, symbol: str, side: str, si
     action = "加仓" if is_increase else "减仓"
     logger.info(f"[#{tracking_id}] {action}: {symbol} {side.upper()} {size} (目标: {target[:8]}...)")
 
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_adjust(
-                target_address=target,
-                symbol=symbol,
-                side=side,
-                size=size,
-                is_increase=is_increase
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
-
-def start_callback_server():
-    """启动飞书长连接回调服务（使用新仓位推送专用配置）"""
-    # 检查配置（使用 feishu_position 配置）
-    if not settings.feishu_position.app_id or not settings.feishu_position.app_secret:
-        logger.error("错误: 请配置飞书新仓位推送 FEISHU_POSITION_APP_ID 和 FEISHU_POSITION_APP_SECRET")
-        return
-    
-    # 创建回调客户端（使用 feishu_position 配置）
-    callback_client = FeishuCallbackClient(
-        app_id=settings.feishu_position.app_id,
-        app_secret=settings.feishu_position.app_secret,
-        push_url=settings.feishu_position.callback_push_url,
-        log_level=settings.feishu_position.callback_log_level
-    )
-    
-    # 注册全局日志处理器
-    def log_all_events(event: CardActionEvent):
-        logger.debug(f"[事件日志] action={event.action_tag}, user={event.user_id}, value={event.action_value}")
-        return None
-    
-    callback_client.register_global_handler(log_all_events)
-    
-    # 启动长连接（阻塞模式）
-    logger.info("=" * 50)
-    logger.info("飞书长连接回调服务（新仓位推送）")
-    logger.info("=" * 50)
-    logger.info(f"APP_ID: {settings.feishu_position.app_id[:8]}...")
-    logger.info("-" * 50)
-    logger.info("正在启动长连接...")
-    
-    callback_client.start()
-
 
 async def run():
     """运行仓位跟单机器人"""
-    global notifier, db
+    global db
 
     setup_logging()
 
@@ -214,20 +115,9 @@ async def run():
 
     # 初始化数据库
     db = TraderDatabase()
-
-    # 初始化飞书通知器
-    notifier = setup_feishu_notifier()
     
     # 初始化 Redis（用于发送/接收开仓通知）
     setup_redis_client()
-
-    # 在后台线程启动飞书回调服务（使用 feishu_position 配置）
-    if settings.feishu_position.app_id and settings.feishu_position.app_secret:
-        logger.info("启动飞书回调服务...")
-        callback_thread = threading.Thread(target=start_callback_server, daemon=True)
-        callback_thread.start()
-    else:
-        logger.warning("飞书新仓位推送未配置，跳过回调服务")
 
     # 初始化客户端
     if not settings.hyperliquid.private_key:
@@ -256,7 +146,6 @@ async def run():
 
     logger.info("启动仓位跟单机器人...")
     logger.info("在 Web 持仓页面点击'跟单此仓位'按钮添加跟单")
-    logger.info("或通过飞书消息卡片点击'跟单此仓位'按钮")
     logger.info("按 Ctrl+C 停止\n")
 
     try:

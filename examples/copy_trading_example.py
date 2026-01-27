@@ -17,13 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
-from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from engine.copy_trading import MultiTargetCopyTradingBot
 from config.settings import settings
-
-
-# 全局通知器
-notifier: CopyTradingNotifier = None
 
 
 def setup_logging():
@@ -41,38 +36,9 @@ def setup_logging():
     )
 
 
-def setup_feishu_notifier() -> CopyTradingNotifier:
-    """初始化飞书通知器"""
-    feishu_client = FeishuClient(
-        app_id=settings.feishu.app_id,
-        app_secret=settings.feishu.app_secret,
-        default_user_id=settings.feishu.default_user_id
-    )
-
-    # 检查是否配置了飞书
-    if settings.feishu.app_id and settings.feishu.app_secret:
-        logger.info("飞书应用已配置")
-    else:
-        logger.warning("飞书未配置，将不会发送通知")
-
-    return CopyTradingNotifier(feishu_client)
-
-
 def on_copy_callback(target: str, symbol: str, side: str, size: float):
     """复制交易回调"""
     logger.success(f"[{target[:8]}] 复制成功: {symbol} {side.upper()} {size}")
-
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_open(
-                target_address=target,
-                symbol=symbol,
-                side=side,
-                size=size
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
 
 
 def on_close_callback(target: str, symbol: str, pnl: float):
@@ -80,28 +46,10 @@ def on_close_callback(target: str, symbol: str, pnl: float):
     emoji = "+" if pnl >= 0 else ""
     logger.info(f"[{target[:8]}] 平仓: {symbol} PnL: ${emoji}{pnl:.2f}")
 
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_close(
-                target_address=target,
-                symbol=symbol,
-                pnl=pnl
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
 
 def on_error_callback(error: Exception):
     """错误回调"""
     logger.error(f"错误: {error}")
-
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_error(str(error))
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
 
 
 def on_adjust_callback(target: str, symbol: str, side: str, size: float, is_increase: bool):
@@ -109,32 +57,14 @@ def on_adjust_callback(target: str, symbol: str, side: str, size: float, is_incr
     action = "加仓" if is_increase else "减仓"
     logger.info(f"[{target[:8]}] {action}: {symbol} {side.upper()} {size}")
 
-    # 发送飞书通知
-    if notifier:
-        try:
-            notifier.notify_copy_adjust(
-                target_address=target,
-                symbol=symbol,
-                side=side,
-                size=size,
-                is_increase=is_increase
-            )
-        except Exception as e:
-            logger.warning(f"飞书通知失败: {e}")
-
 
 async def run():
     """运行多目标跟单机器人"""
-    global notifier
-
     setup_logging()
 
     logger.info("=" * 60)
     logger.info(f"Hyperliquid 跟单机器人 v{VERSION}")
     logger.info("=" * 60)
-
-    # 初始化飞书通知器
-    notifier = setup_feishu_notifier()
 
     # 初始化客户端
     if not settings.hyperliquid.private_key:
