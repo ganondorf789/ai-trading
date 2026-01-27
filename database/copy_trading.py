@@ -954,18 +954,15 @@ class CopyTradingOps:
 
     def get_copy_config_by_leverage(self, config_type: str, leverage: float) -> Dict:
         """
-        根据杠杆获取跟单配置（整合规则匹配和老配置兼容）
-        
-        优先使用规则匹配，如果没有规则则回退到老的单一配置
+        根据杠杆获取跟单配置
         
         Args:
             config_type: 配置类型 ('default' 或 'immediate')
             leverage: 杠杆倍数
             
         Returns:
-            配置字典
+            配置字典，如果没有匹配规则则返回空字典
         """
-        # 先尝试匹配规则
         rule = self.match_copy_config_rule(config_type, leverage)
         
         if rule:
@@ -974,8 +971,4 @@ class CopyTradingOps:
             config['_matched_rule_name'] = rule.get('name')
             return config
         
-        # 回退到老的单一配置
-        if config_type == 'default':
-            return self.get_default_copy_config()
-        else:
-            return self.get_immediate_copy_config()
+        return {}
