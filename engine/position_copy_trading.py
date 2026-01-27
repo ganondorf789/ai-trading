@@ -414,7 +414,7 @@ class PositionCopyTradingBot:
                 notional_value = adjust_size * current_price
                 leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
                 required_margin = notional_value / leverage
-                if not self._check_balance_sufficient(required_margin, f"加仓 {symbol}"):
+                if not self._check_balance_sufficient(required_margin, "加仓", symbol):
                     return
             
             order_direction = "做多" if order_is_long else "做空"
@@ -772,15 +772,16 @@ class PositionCopyTradingBot:
 
         self._publish_notification(notification_data)
 
-    def _notify_balance_insufficient(self, action: str, required_margin: float, available_balance: float):
+    def _notify_balance_insufficient(self, action: str, required_margin: float, available_balance: float, symbol: str = ""):
         """发送余额不足通知（通过 Redis 发布）"""
         # 去重检查：相同操作的余额不足通知在冷却时间内只发一次
-        notification_key = f"balance_insufficient:{action}"
+        notification_key = f"balance_insufficient:{symbol}:{action}" if symbol else f"balance_insufficient:{action}"
         if not self._should_notify(notification_key):
             return
         
         # 构建 Markdown 格式内容
-        content = f"**操作**: {action}\n"
+        content = f"**币种**: {symbol}\n" if symbol else ""
+        content += f"**操作**: {action}\n"
         content += f"**所需保证金**: ${required_margin:,.2f}\n"
         content += f"**可用余额**: ${available_balance:,.2f}\n"
         content += f"**缺口**: ${required_margin - available_balance:,.2f}"
@@ -790,7 +791,7 @@ class PositionCopyTradingBot:
             'title': '💸 余额不足',
             'content': content,
             'target_address': None,
-            'symbol': None,
+            'symbol': symbol if symbol else None,
             'side': None,
             'size': None,
             'pnl': None
@@ -989,24 +990,26 @@ class PositionCopyTradingBot:
         except Exception as e:
             logger.error(f"获取账户信息失败: {e}")
 
-    def _check_balance_sufficient(self, required_margin: float, action: str = "开仓") -> bool:
+    def _check_balance_sufficient(self, required_margin: float, action: str = "开仓", symbol: str = "") -> bool:
         """
         检查余额是否足够
         
         Args:
             required_margin: 所需保证金
             action: 操作类型（用于日志）
+            symbol: 币种（用于日志）
             
         Returns:
             余额是否足够
         """
         if self.available_balance < required_margin:
+            symbol_info = f"[{symbol}] " if symbol else ""
             logger.warning(
-                f"余额不足，无法{action}: 需要 {required_margin:.2f} USD, "
+                f"{symbol_info}余额不足，无法{action}: 需要 {required_margin:.2f} USD, "
                 f"可用 {self.available_balance:.2f} USD"
             )
             # 发送余额不足通知
-            self._notify_balance_insufficient(action, required_margin, self.available_balance)
+            self._notify_balance_insufficient(action, required_margin, self.available_balance, symbol)
             return False
         return True
 
@@ -1079,7 +1082,7 @@ class PositionCopyTradingBot:
             # 检查余额是否足够
             notional_value = size * price
             required_margin = notional_value / leverage
-            if not self._check_balance_sufficient(required_margin, f"开仓 {symbol}"):
+            if not self._check_balance_sufficient(required_margin, "开仓", symbol):
                 return False
 
             try:
@@ -1177,7 +1180,7 @@ class PositionCopyTradingBot:
                 # 获取当前仓位的杠杆
                 leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
                 required_margin = notional_value / leverage
-                if not self._check_balance_sufficient(required_margin, f"加仓 {symbol}"):
+                if not self._check_balance_sufficient(required_margin, "加仓", symbol):
                     return False
 
             try:
