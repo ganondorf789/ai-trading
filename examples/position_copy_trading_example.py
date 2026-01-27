@@ -80,28 +80,6 @@ def setup_redis_client():
         return None
 
 
-def on_copy_callback(tracking_id: int, target: str, symbol: str, side: str, size: float):
-    """复制交易回调"""
-    logger.success(f"[#{tracking_id}] 开仓成功: {symbol} {side.upper()} {size} (目标: {target[:8]}...)")
-
-
-def on_close_callback(tracking_id: int, target: str, symbol: str, pnl: float):
-    """平仓回调"""
-    emoji = "+" if pnl >= 0 else ""
-    logger.info(f"[#{tracking_id}] 平仓: {symbol} PnL: ${emoji}{pnl:.2f} (目标: {target[:8]}...)")
-
-
-def on_error_callback(error: Exception):
-    """错误回调"""
-    logger.error(f"错误: {error}")
-
-
-def on_adjust_callback(tracking_id: int, target: str, symbol: str, side: str, size: float, is_increase: bool):
-    """调整仓位回调（加仓/减仓）"""
-    action = "加仓" if is_increase else "减仓"
-    logger.info(f"[#{tracking_id}] {action}: {symbol} {side.upper()} {size} (目标: {target[:8]}...)")
-
-
 async def run():
     """运行仓位跟单机器人"""
     global db
@@ -137,12 +115,6 @@ async def run():
         reload_interval=60.0,  # 配置重载间隔（秒）
         redis_client=redis_client,  # 接收开仓通知
     )
-
-    # 设置回调
-    bot.set_on_copy(on_copy_callback)
-    bot.set_on_close(on_close_callback)
-    bot.set_on_adjust(on_adjust_callback)
-    bot.set_on_error(on_error_callback)
 
     logger.info("启动仓位跟单机器人...")
     logger.info("在 Web 持仓页面点击'跟单此仓位'按钮添加跟单")

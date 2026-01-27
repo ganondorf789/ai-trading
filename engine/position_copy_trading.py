@@ -9,7 +9,7 @@
 import asyncio
 import json
 from asyncio import Lock
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from loguru import logger
 import pendulum
@@ -125,12 +125,6 @@ class PositionCopyTradingBot:
         self._meta_cache: Optional[Dict] = None
         self._meta_cache_time: Optional[pendulum.DateTime] = None
         self._symbol_decimals: Dict[str, int] = {}
-        
-        # 回调
-        self._on_copy: Optional[Callable[[int, str, str, str, float], None]] = None
-        self._on_close: Optional[Callable[[int, str, str, float], None]] = None
-        self._on_adjust: Optional[Callable[[int, str, str, str, float, bool], None]] = None
-        self._on_error: Optional[Callable[[Exception], None]] = None
         
         # 延迟加载数据库
         self._db = None
@@ -282,8 +276,6 @@ class PositionCopyTradingBot:
                 
         except Exception as e:
             logger.error(f"[立即开仓] 处理 tracking_id={tracking_id} 失败: {e}")
-            if self._on_error:
-                self._on_error(e)
         finally:
             # 处理完成，移除标记
             self._processing_tracking_ids.discard(tracking_id)
@@ -483,24 +475,14 @@ class PositionCopyTradingBot:
                         # 发送通知
                         side = 'long' if order_is_long else 'short'
                         self._notify_copy_adjust(state.target_address, symbol, side, adjust_size, is_add)
-                        
-                        if self._on_adjust:
-                            self._on_adjust(
-                                state.tracking_id, state.target_address,
-                                symbol, side, adjust_size, is_add
-                            )
                     else:
                         logger.error(f"[{action_name}] 失败: {result}")
                         
                 except Exception as e:
                     logger.error(f"[{action_name}] 下单异常: {e}")
-                    if self._on_error:
-                        self._on_error(e)
                         
         except Exception as e:
             logger.error(f"[调仓] 处理 tracking_id={tracking_id} 失败: {e}")
-            if self._on_error:
-                self._on_error(e)
         finally:
             # 处理完成，移除标记
             self._processing_tracking_ids.discard(adjust_key)
@@ -627,23 +609,14 @@ class PositionCopyTradingBot:
                         # 发送通知
                         target_address = state.target_address if state else ""
                         self._notify_copy_close(target_address, target_symbol, pnl)
-                        
-                        if self._on_close and state:
-                            self._on_close(
-                                state.tracking_id, state.target_address, target_symbol, pnl
-                            )
                     else:
                         logger.error(f"[立即平仓] 失败: {result}")
                         
                 except Exception as e:
                     logger.error(f"[立即平仓] 下单异常: {e}")
-                    if self._on_error:
-                        self._on_error(e)
                         
         except Exception as e:
             logger.error(f"[立即平仓] 处理 {target_symbol} 失败: {e}")
-            if self._on_error:
-                self._on_error(e)
         finally:
             # 处理完成，移除标记
             self._processing_tracking_ids.discard(close_key)
@@ -831,24 +804,6 @@ class PositionCopyTradingBot:
         if self._info_client is None:
             self._info_client = Info(self.client.api_url, skip_ws=True)
         return self._info_client
-
-    # ==================== 回调设置 ====================
-
-    def set_on_copy(self, callback: Callable[[int, str, str, str, float], None]):
-        """设置复制成功回调 (tracking_id, target_address, symbol, side, size)"""
-        self._on_copy = callback
-
-    def set_on_close(self, callback: Callable[[int, str, str, float], None]):
-        """设置平仓回调 (tracking_id, target_address, symbol, pnl)"""
-        self._on_close = callback
-
-    def set_on_adjust(self, callback: Callable[[int, str, str, str, float, bool], None]):
-        """设置调整仓位回调 (tracking_id, target_address, symbol, side, size, is_increase)"""
-        self._on_adjust = callback
-
-    def set_on_error(self, callback: Callable[[Exception], None]):
-        """设置错误回调"""
-        self._on_error = callback
 
     # ==================== 缓存和工具方法 ====================
 
@@ -1157,12 +1112,6 @@ class PositionCopyTradingBot:
                     
                     # 发送通知
                     self._notify_copy_open(state.target_address, symbol, side, size)
-                    
-                    if self._on_copy:
-                        self._on_copy(
-                            state.tracking_id, state.target_address,
-                            symbol, side, size
-                        )
                     return True
                 else:
                     logger.error(f"[{state.tracking_id}] 开仓失败: {result}")
@@ -1170,8 +1119,6 @@ class PositionCopyTradingBot:
 
             except Exception as e:
                 logger.error(f"[{state.tracking_id}] 开仓异常: {e}")
-                if self._on_error:
-                    self._on_error(e)
                 return False
 
     async def _adjust_position(
@@ -1260,12 +1207,6 @@ class PositionCopyTradingBot:
                     # 发送通知
                     side = 'long' if is_long else 'short'
                     self._notify_copy_adjust(state.target_address, symbol, side, adjustment_size, is_increase)
-                    
-                    if self._on_adjust:
-                        self._on_adjust(
-                            state.tracking_id, state.target_address,
-                            symbol, side, adjustment_size, is_increase
-                        )
                     return True
                 else:
                     logger.error(f"[{state.tracking_id}] {action_type}失败: {result}")
@@ -1273,8 +1214,6 @@ class PositionCopyTradingBot:
 
             except Exception as e:
                 logger.error(f"[{state.tracking_id}] {action_type}异常: {e}")
-                if self._on_error:
-                    self._on_error(e)
                 return False
 
     async def _close_position(
@@ -1332,11 +1271,6 @@ class PositionCopyTradingBot:
                     
                     # 发送通知
                     self._notify_copy_close(state.target_address, symbol, pnl)
-                    
-                    if self._on_close:
-                        self._on_close(
-                            state.tracking_id, state.target_address, symbol, pnl
-                        )
                     return True
                 else:
                     logger.error(f"[{state.tracking_id}] 平仓失败: {result}")
@@ -1344,8 +1278,6 @@ class PositionCopyTradingBot:
 
             except Exception as e:
                 logger.error(f"[{state.tracking_id}] 平仓异常: {e}")
-                if self._on_error:
-                    self._on_error(e)
                 return False
 
     # ==================== 同步逻辑 ====================
@@ -1494,8 +1426,6 @@ class PositionCopyTradingBot:
                     await self._sync_tracking(state)
                 except Exception as e:
                     logger.error(f"同步仓位跟单 {state.tracking_id} 失败: {e}")
-                    if self._on_error:
-                        self._on_error(e)
             
             await asyncio.gather(*[
                 sync_with_error_handling(state) for state in active_trackings
@@ -1547,8 +1477,6 @@ class PositionCopyTradingBot:
                     raise
                 except Exception as e:
                     logger.warning(f"同步时遇到错误，将在下一周期重试: {e}")
-                    if self._on_error:
-                        self._on_error(e)
 
                 await asyncio.sleep(self.check_interval)
 
