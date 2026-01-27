@@ -637,6 +637,208 @@ function NotificationBell() {
 
 
 ================================================================================
+                           补仓 API (REST)
+================================================================================
+
+概述
+----
+补仓 API 用于在现有仓位基础上增加持仓量。系统会自动检测当前仓位方向，
+并以相同方向下单。支持市价补仓和限价补仓两种方式。
+
+
+--------------------------------------------------------------------------------
+1. 市价补仓
+--------------------------------------------------------------------------------
+POST /api/trading/positions/{symbol}/add
+
+描述: 以市价对指定交易对的现有仓位进行补仓
+
+路径参数:
+  - symbol (string, 必填): 交易对符号，如 BTC, ETH
+
+请求体:
+{
+    "size": number,           // 补仓数量（与 amount 二选一）
+    "amount": number,         // 补仓金额 USDC（与 size 二选一，按当前价格计算数量）
+    "slippage": number,       // 滑点容忍度，默认 0.01 (1%)
+    "leverage": number,       // 杠杆倍数（可选，不提供则使用当前杠杆）
+    "is_cross": boolean       // 是否全仓模式，默认 true（仅在设置杠杆时生效）
+}
+
+请求示例:
+  # 按数量补仓 0.1 BTC
+  POST /api/trading/positions/BTC/add
+  { "size": 0.1 }
+
+  # 按金额补仓 $500 USDC
+  POST /api/trading/positions/BTC/add
+  { "amount": 500 }
+
+  # 补仓并调整杠杆到 20x
+  POST /api/trading/positions/ETH/add
+  { "size": 1.0, "leverage": 20 }
+
+  # 补仓 $1000，滑点 0.5%
+  POST /api/trading/positions/BTC/add
+  { "amount": 1000, "slippage": 0.005 }
+
+响应类型:
+{
+    success: boolean;
+    data: object;              // 订单执行结果
+    position: {                // 补仓前的仓位信息
+        symbol: string;
+        side: 'long' | 'short';
+        size_before: number;
+        entry_price: number;
+        leverage_before: number;
+    };
+    added_size: number;        // 实际补仓数量
+    leverage?: number;         // 设置的新杠杆（如果有）
+    leverage_result?: object;  // 杠杆设置结果（如果有）
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "statuses": [
+            {
+                "resting": {
+                    "oid": 123456789
+                }
+            }
+        ]
+    },
+    "position": {
+        "symbol": "BTC",
+        "side": "long",
+        "size_before": 0.5,
+        "entry_price": 42000.0,
+        "leverage_before": 10
+    },
+    "added_size": 0.1,
+    "message": "BTC 市价补仓成功，补仓数量: 0.1"
+}
+
+状态码:
+  200 - 补仓成功
+  400 - 参数错误（size/amount 必须提供一个且仅一个，数量必须大于0）
+  404 - 仓位不存在
+  500 - 服务器错误
+
+
+--------------------------------------------------------------------------------
+2. 限价补仓
+--------------------------------------------------------------------------------
+POST /api/trading/positions/{symbol}/add-limit
+
+描述: 以限价对指定交易对的现有仓位进行补仓（挂单）
+
+路径参数:
+  - symbol (string, 必填): 交易对符号，如 BTC, ETH
+
+请求体:
+{
+    "price": number,          // 限价（必填）
+    "size": number,           // 补仓数量（与 amount 二选一）
+    "amount": number,         // 补仓金额 USDC（与 size 二选一，按 price 计算数量）
+    "post_only": boolean,     // 是否只做 maker，默认 false
+    "leverage": number,       // 杠杆倍数（可选，不提供则使用当前杠杆）
+    "is_cross": boolean       // 是否全仓模式，默认 true（仅在设置杠杆时生效）
+}
+
+请求示例:
+  # 以 $41000 限价补仓 0.2 BTC
+  POST /api/trading/positions/BTC/add-limit
+  { "price": 41000, "size": 0.2 }
+
+  # 以 $2200 限价补仓 $1000 USDC 的 ETH（约 0.45 ETH）
+  POST /api/trading/positions/ETH/add-limit
+  { "price": 2200, "amount": 1000 }
+
+  # 限价补仓，只做 maker，杠杆 15x
+  POST /api/trading/positions/BTC/add-limit
+  { "price": 40000, "size": 0.5, "post_only": true, "leverage": 15 }
+
+响应类型:
+{
+    success: boolean;
+    data: object;              // 订单执行结果
+    position: {                // 补仓前的仓位信息
+        symbol: string;
+        side: 'long' | 'short';
+        size_before: number;
+        entry_price: number;
+        leverage_before: number;
+    };
+    added_size: number;        // 补仓数量
+    price: number;             // 限价
+    leverage?: number;         // 设置的新杠杆（如果有）
+    leverage_result?: object;  // 杠杆设置结果（如果有）
+    message: string;
+}
+
+响应示例:
+{
+    "success": true,
+    "data": {
+        "statuses": [
+            {
+                "resting": {
+                    "oid": 123456790
+                }
+            }
+        ]
+    },
+    "position": {
+        "symbol": "BTC",
+        "side": "long",
+        "size_before": 0.5,
+        "entry_price": 42000.0,
+        "leverage_before": 10
+    },
+    "added_size": 0.2,
+    "price": 41000,
+    "leverage": 15,
+    "leverage_result": { "status": "ok" },
+    "message": "BTC 限价补仓订单已提交，数量: 0.2，价格: 41000"
+}
+
+状态码:
+  200 - 订单提交成功
+  400 - 参数错误（缺少 price，size/amount 必须提供一个且仅一个）
+  404 - 仓位不存在
+  500 - 服务器错误
+
+
+--------------------------------------------------------------------------------
+补仓逻辑说明
+--------------------------------------------------------------------------------
+
+1. 方向自动判断:
+   - 系统自动获取当前仓位方向
+   - 多仓 (long) 补仓 → 买入
+   - 空仓 (short) 补仓 → 卖出
+
+2. 数量计算:
+   - 提供 size: 直接使用该数量
+   - 提供 amount: 
+     - 市价补仓: amount / 当前市场价格
+     - 限价补仓: amount / 限价
+
+3. 杠杆设置:
+   - 如果提供 leverage 参数，会在下单前先设置杠杆
+   - 不提供则保持当前杠杆不变
+   - 杠杆设置会影响该交易对的后续所有订单
+
+4. 前置检查:
+   - 必须已有该交易对的仓位才能补仓
+   - 如果没有仓位，返回 404 错误
+
+
+================================================================================
                            TypeScript 类型定义
 ================================================================================
 
@@ -767,6 +969,54 @@ export interface NotificationEvent {
     size: number | null;
     pnl: number | null;
     timestamp: string;
+}
+
+// ==================== 补仓 ====================
+
+export interface AddPositionRequest {
+    size?: number;            // 补仓数量（与 amount 二选一）
+    amount?: number;          // 补仓金额 USDC（与 size 二选一）
+    slippage?: number;        // 滑点容忍度，默认 0.01
+    leverage?: number;        // 杠杆倍数（可选）
+    is_cross?: boolean;       // 是否全仓模式，默认 true
+}
+
+export interface AddPositionLimitRequest {
+    price: number;            // 限价（必填）
+    size?: number;            // 补仓数量（与 amount 二选一）
+    amount?: number;          // 补仓金额 USDC（与 size 二选一）
+    post_only?: boolean;      // 是否只做 maker，默认 false
+    leverage?: number;        // 杠杆倍数（可选）
+    is_cross?: boolean;       // 是否全仓模式，默认 true
+}
+
+export interface PositionInfo {
+    symbol: string;
+    side: 'long' | 'short';
+    size_before: number;
+    entry_price: number;
+    leverage_before: number;
+}
+
+export interface AddPositionResponse {
+    success: boolean;
+    data: object;             // 订单执行结果
+    position: PositionInfo;   // 补仓前的仓位信息
+    added_size: number;       // 实际补仓数量
+    leverage?: number;        // 设置的新杠杆（如果有）
+    leverage_result?: object; // 杠杆设置结果（如果有）
+    message: string;
+}
+
+export interface AddPositionLimitResponse {
+    success: boolean;
+    data: object;             // 订单执行结果
+    position: PositionInfo;   // 补仓前的仓位信息
+    added_size: number;       // 补仓数量
+    price: number;            // 限价
+    leverage?: number;        // 设置的新杠杆（如果有）
+    leverage_result?: object; // 杠杆设置结果（如果有）
+    message: string;
 }
 
 
