@@ -58,6 +58,23 @@ def _notify_open_position(tracking_id: int) -> bool:
         return False
 
 
+def _notify_config_changed() -> bool:
+    """发送配置变更通知到 Redis，机器人收到后立即重载配置"""
+    redis_client = _get_redis_client()
+    
+    if redis_client is None:
+        return False
+    
+    try:
+        REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
+        redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, "reload")
+        logger.info("已发送配置重载通知")
+        return True
+    except Exception as e:
+        logger.warning(f"发送配置重载通知失败: {e}")
+        return False
+
+
 # ==================== 仓位级别跟单 API ====================
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking', methods=['GET'])
@@ -337,6 +354,9 @@ def create_position_tracking():
         # 保存到数据库
         tracking_id = db.save_position_tracking(tracking_data)
 
+        # 通知引擎重载配置
+        _notify_config_changed()
+
         return jsonify({
             'success': True,
             'data': {'id': tracking_id},
@@ -423,6 +443,9 @@ def update_position_tracking(tracking_id: int):
 
         db.save_position_tracking(update_data)
 
+        # 通知引擎重载配置
+        _notify_config_changed()
+
         return jsonify({
             'success': True,
             'message': '更新成功'
@@ -475,6 +498,9 @@ def delete_position_tracking(tracking_id: int):
 
         success = db.delete_position_tracking(tracking_id)
         if success:
+            # 通知引擎重载配置
+            _notify_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '删除成功'
@@ -536,6 +562,9 @@ def toggle_position_tracking(tracking_id: int):
         success = db.toggle_position_tracking(tracking_id, is_enabled)
 
         if success:
+            # 通知引擎重载配置
+            _notify_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '已启用' if is_enabled else '已禁用'
@@ -599,6 +628,9 @@ def stop_position_tracking(tracking_id: int):
         success = db.update_tracking_status(tracking_id, 'stopped', '手动停止')
 
         if success:
+            # 通知引擎重载配置
+            _notify_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '已停止跟单'
@@ -711,6 +743,9 @@ def quick_add_position_tracking():
 
         # 保存到数据库
         tracking_id = db.save_position_tracking(tracking_data)
+
+        # 通知引擎重载配置
+        _notify_config_changed()
 
         trader_display = data.get('target_name') or f"{target_address[:10]}..."
 

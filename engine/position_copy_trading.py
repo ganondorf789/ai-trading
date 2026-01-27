@@ -26,6 +26,8 @@ REDIS_OPEN_CHANNEL = "position_tracking_open"
 REDIS_ADJUST_CHANNEL = "position_tracking_adjust"
 # Redis 平仓通知 channel
 REDIS_CLOSE_CHANNEL = "position_tracking_close"
+# Redis 配置重载通知 channel
+REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
 # Redis 通知 channel（用于 WebSocket 推送和数据库保存）
 REDIS_NOTIFICATIONS_CHANNEL = "notifications"
 # Redis 账户缓存 key
@@ -520,6 +522,35 @@ class PositionCopyTradingBot:
                 
         except Exception as e:
             logger.error(f"Redis 平仓监听异常: {e}")
+        finally:
+            try:
+                pubsub.close()
+            except:
+                pass
+
+    async def _listen_redis_config_reload(self):
+        """监听 Redis 配置重载通知，收到后立即重载配置"""
+        if not self._redis_client:
+            return
+        
+        try:
+            pubsub = self._redis_client.pubsub()
+            pubsub.subscribe(REDIS_CONFIG_RELOAD_CHANNEL)
+            logger.info(f"开始监听配置重载通知 (channel: {REDIS_CONFIG_RELOAD_CHANNEL})")
+            
+            while self.is_running:
+                try:
+                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                    if message and message['type'] == 'message':
+                        logger.info(f"收到配置重载通知，立即重载配置...")
+                        self.reload_configs()
+                except Exception as e:
+                    logger.warning(f"Redis 配置重载监听错误: {e}")
+                
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Redis 配置重载监听异常: {e}")
         finally:
             try:
                 pubsub.close()
@@ -1459,14 +1490,16 @@ class PositionCopyTradingBot:
         if not self.trackings:
             logger.warning("没有启用的仓位跟单，等待添加...")
 
-        # 启动 Redis 开仓通知监听任务（如果启用）
+        # 启动 Redis 通知监听任务（如果启用）
         redis_open_task = None
         redis_adjust_task = None
         redis_close_task = None
+        redis_config_reload_task = None
         if self._redis_client:
             redis_open_task = asyncio.create_task(self._listen_redis_open())
             redis_adjust_task = asyncio.create_task(self._listen_redis_adjust())
             redis_close_task = asyncio.create_task(self._listen_redis_close())
+            redis_config_reload_task = asyncio.create_task(self._listen_redis_config_reload())
 
         try:
             while self.is_running:
@@ -1492,7 +1525,7 @@ class PositionCopyTradingBot:
         finally:
             self.is_running = False
             # 清理 Redis 任务
-            for task in [redis_open_task, redis_adjust_task, redis_close_task]:
+            for task in [redis_open_task, redis_adjust_task, redis_close_task, redis_config_reload_task]:
                 if task:
                     task.cancel()
                     try:
