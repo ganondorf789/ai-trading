@@ -20,6 +20,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { positionTrackingApi, PositionTracking, PositionTrackingStats, PaginationInfo } from "@/services/api";
 import { TablePagination } from "@/components/TablePagination";
+import TrackingFormModal from "./components/TrackingFormModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import StatsCards from "./components/StatsCards";
 
@@ -51,8 +52,10 @@ export default function PositionTrackingPage() {
   const [enabledFilter, setEnabledFilter] = useState<string>("all");
 
   // Modal 状态
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editingTracking, setEditingTracking] = useState<PositionTracking | null>(null);
 
   // 加载数据
   const loadTrackings = useCallback(async () => {
@@ -100,6 +103,29 @@ export default function PositionTrackingPage() {
     loadStats();
   }, [loadStats]);
 
+  // 打开编辑弹窗
+  const handleOpenEditModal = (tracking: PositionTracking) => {
+    setEditingTracking(tracking);
+    setIsFormModalOpen(true);
+  };
+
+  // 保存跟单配置
+  const handleSaveTracking = async (data: Partial<PositionTracking>) => {
+    try {
+      if (editingTracking) {
+        await positionTrackingApi.updateTracking(editingTracking.id, data);
+        addToast({ title: "更新成功", color: "success" });
+      }
+      setIsFormModalOpen(false);
+      setEditingTracking(null);
+      loadTrackings();
+      loadStats();
+    } catch (error) {
+      console.error("Failed to save tracking:", error);
+      addToast({ title: "保存失败", color: "danger" });
+    }
+  };
+
   // 打开删除确认弹窗
   const handleOpenDeleteModal = (id: number) => {
     setDeletingId(id);
@@ -118,10 +144,10 @@ export default function PositionTrackingPage() {
       loadStats();
     } catch (error: any) {
       console.error("Failed to delete tracking:", error);
-      addToast({ 
-        title: "删除失败", 
+      addToast({
+        title: "删除失败",
         description: error?.response?.data?.error || "操作失败",
-        color: "danger" 
+        color: "danger"
       });
     }
   };
@@ -154,10 +180,10 @@ export default function PositionTrackingPage() {
       loadStats();
     } catch (error: any) {
       console.error("Failed to stop tracking:", error);
-      addToast({ 
-        title: "停止失败", 
+      addToast({
+        title: "停止失败",
         description: error?.response?.data?.error || "操作失败",
-        color: "danger" 
+        color: "danger"
       });
     }
   };
@@ -287,6 +313,17 @@ export default function PositionTrackingPage() {
         case "actions":
           return (
             <div className="flex gap-1">
+              <Tooltip content="编辑配置">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="light"
+                  onPress={() => handleOpenEditModal(item)}
+                  isDisabled={item.status === "closed" || item.status === "stopped"}
+                >
+                  <Icon icon="lucide:edit" width={16} />
+                </Button>
+              </Tooltip>
               {(item.status === "pending" || item.status === "active") && (
                 <Tooltip content="停止跟单">
                   <Button
@@ -329,7 +366,7 @@ export default function PositionTrackingPage() {
           <div>
             <h1 className="text-2xl font-bold">仓位跟单管理</h1>
             <p className="text-default-500 text-sm mt-1">
-              跟单特定交易员的特定仓位
+              第二种跟单模式：跟单特定交易员的特定仓位
             </p>
           </div>
           <Button
@@ -425,6 +462,16 @@ export default function PositionTrackingPage() {
         )}
 
         {/* Modals */}
+        <TrackingFormModal
+          isOpen={isFormModalOpen}
+          onClose={() => {
+            setIsFormModalOpen(false);
+            setEditingTracking(null);
+          }}
+          tracking={editingTracking}
+          onSave={handleSaveTracking}
+        />
+
         <DeleteConfirmModal
           isOpen={isDeleteModalOpen}
           onClose={() => {
