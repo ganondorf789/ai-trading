@@ -24,6 +24,12 @@ import {
 } from '@heroui/table';
 import { Icon } from '@iconify/react';
 import { TraderFill, FillsStats } from '@/services/api';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // 表格列配置
 type ColumnKey = 'trade_time' | 'coin' | 'side' | 'trade_type' | 'px' | 'sz' | 'start_position' | 'value' | 'closed_pnl' | 'roi' | 'fee';
@@ -135,17 +141,12 @@ export function TradeHistory({
   const renderCell = useCallback((fill: TraderFill, columnKey: ColumnKey) => {
     switch (columnKey) {
       case 'trade_time': {
-        const date = new Date(fill.trade_time);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
+        // 将UTC时间转换为上海时区 (UTC+8)
+        const shanghaiTime = dayjs.utc(fill.trade_time).tz('Asia/Shanghai');
         return (
           <div className="flex flex-col">
-            <span className="text-xs">{`${year}-${month}-${day}`}</span>
-            <span className="text-xs text-gray-500">{`${hours}:${minutes}:${seconds}`}</span>
+            <span className="text-xs">{shanghaiTime.format('YYYY-MM-DD')}</span>
+            <span className="text-xs text-gray-500">{shanghaiTime.format('HH:mm:ss')}</span>
           </div>
         );
       }
