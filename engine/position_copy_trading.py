@@ -761,7 +761,7 @@ class PositionCopyTradingBot:
         
         notification_data = {
             'type': 'error',
-            'title': '⚠️ 跟单错误',
+            'title': '跟单错误',
             'content': content,
             'target_address': None,
             'symbol': None,
@@ -788,7 +788,7 @@ class PositionCopyTradingBot:
         
         notification_data = {
             'type': 'error',
-            'title': '💸 余额不足',
+            'title': '余额不足',
             'content': content,
             'target_address': None,
             'symbol': symbol if symbol else None,
