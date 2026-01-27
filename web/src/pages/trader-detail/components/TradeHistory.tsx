@@ -134,13 +134,21 @@ export function TradeHistory({
   // 单元格渲染
   const renderCell = useCallback((fill: TraderFill, columnKey: ColumnKey) => {
     switch (columnKey) {
-      case 'trade_time':
+      case 'trade_time': {
+        const date = new Date(fill.trade_time);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
         return (
           <div className="flex flex-col">
-            <span className="text-xs">{new Date(fill.trade_time).toLocaleDateString()}</span>
-            <span className="text-xs text-gray-500">{new Date(fill.trade_time).toLocaleTimeString()}</span>
+            <span className="text-xs">{`${year}-${month}-${day}`}</span>
+            <span className="text-xs text-gray-500">{`${hours}:${minutes}:${seconds}`}</span>
           </div>
         );
+      }
       case 'coin':
         return <span className="font-bold">{fill.coin}</span>;
       case 'side':

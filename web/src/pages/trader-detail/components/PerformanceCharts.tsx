@@ -39,10 +39,16 @@ export function PerformanceCharts({
   };
 
   const formatChartData = (data: { timestamp: string; value: number }[]) => {
-    return data.map((item) => ({
-      ...item,
-      date: new Date(item.timestamp).toLocaleDateString(),
-    }));
+    return data.map((item) => {
+      const date = new Date(item.timestamp);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return {
+        ...item,
+        date: `${year}-${month}-${day}`,
+      };
+    });
   };
 
   return (
