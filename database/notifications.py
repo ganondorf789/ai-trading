@@ -266,3 +266,85 @@ class NotificationsOps:
                 'error_count': 0,
                 'latest_notification_at': None
             }
+
+    def get_notifications_cursor(
+        self,
+        limit: int = 50,
+        before: Optional[int] = None,
+        after: Optional[int] = None,
+        notification_type: Optional[str] = None,
+        is_read: Optional[bool] = None,
+        symbol: Optional[str] = None,
+        target_address: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        使用游标分页查询通知记录
+
+        Args:
+            limit: 返回数量限制
+            before: 游标ID，获取此ID之前的记录（不包含此ID），为空则从最新记录开始
+            after: 游标ID，获取此ID之后的记录（不包含此ID），用于获取更新的数据
+            notification_type: 按通知类型过滤 ('open' | 'close' | 'adjust' | 'error')
+            is_read: 按已读状态过滤
+            symbol: 按交易对过滤
+            target_address: 按目标交易员地址过滤
+
+        Returns:
+            通知记录列表（按 id 降序排列）
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            # 构建查询条件
+            conditions = []
+            params = []
+            
+            # before 游标条件
+            if before is not None:
+                conditions.append("id < %s")
+                params.append(before)
+            
+            # after 游标条件
+            if after is not None:
+                conditions.append("id > %s")
+                params.append(after)
+            
+            if notification_type:
+                conditions.append("type = %s")
+                params.append(notification_type)
+            
+            if is_read is not None:
+                conditions.append("is_read = %s")
+                params.append(is_read)
+            
+            if symbol:
+                conditions.append("symbol = %s")
+                params.append(symbol)
+            
+            if target_address:
+                conditions.append("target_address = %s")
+                params.append(target_address)
+            
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            
+            # 使用 after 时，先按 ASC 排序取最早的 N 条，然后反转为 DESC
+            if after is not None and before is None:
+                query = f"""
+                    SELECT * FROM (
+                        SELECT * FROM notifications
+                        WHERE {where_clause}
+                        ORDER BY id ASC
+                        LIMIT %s
+                    ) sub ORDER BY id DESC
+                """
+            else:
+                query = f"""
+                    SELECT * FROM notifications
+                    WHERE {where_clause}
+                    ORDER BY id DESC
+                    LIMIT %s
+                """
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]

@@ -36,3 +36,7 @@ def register_routes(app):
     # C端交易 API 路由
     from .trading import trading_bp
     app.register_blueprint(trading_bp)
+    
+    # 通知路由
+    from .notifications import notifications_bp
+    app.register_blueprint(notifications_bp)
