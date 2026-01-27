@@ -589,6 +589,48 @@ class DatabaseMigrations:
                 ON detected_new_positions(direction)
             """)
 
+            # 创建通知表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id SERIAL PRIMARY KEY,
+                    
+                    -- 通知类型和内容
+                    type TEXT NOT NULL,                    -- 'open' | 'close' | 'adjust' | 'error'
+                    title TEXT NOT NULL,                   -- 通知标题
+                    content TEXT NOT NULL,                 -- Markdown 格式内容
+                    
+                    -- 关联信息
+                    target_address TEXT,                   -- 目标交易员地址
+                    symbol TEXT,                           -- 交易对
+                    side TEXT,                             -- 'long' | 'short'
+                    size REAL,                             -- 仓位大小
+                    pnl REAL,                              -- 盈亏（平仓时）
+                    
+                    -- 状态
+                    is_read BOOLEAN DEFAULT FALSE,         -- 是否已读
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_type
+                ON notifications(type)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_is_read
+                ON notifications(is_read)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_created_at
+                ON notifications(created_at DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_target_address
+                ON notifications(target_address)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

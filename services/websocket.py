@@ -1,6 +1,6 @@
 """
 WebSocket 模块
-通过 Redis Pub/Sub 接收新仓位通知并广播给连接的客户端
+通过 Redis Pub/Sub 接收新仓位通知和跟单通知并广播给连接的客户端
 """
 import json
 import logging
@@ -17,11 +17,26 @@ logger = logging.getLogger(__name__)
 # Redis 新仓位广播 channel（与 monitor_s_traders_positions.py 一致）
 REDIS_WS_CHANNEL = "ws_new_positions"
 
+# Redis 通知 channel（跟单通知）
+REDIS_NOTIFICATIONS_CHANNEL = "notifications"
+
 # SocketIO 实例
 socketio: Optional[SocketIO] = None
 
 # Redis 订阅状态
 _redis_running = False
+
+# 数据库实例（延迟加载）
+_db = None
+
+
+def _get_db():
+    """延迟加载数据库实例"""
+    global _db
+    if _db is None:
+        from database import TraderDatabase
+        _db = TraderDatabase()
+    return _db
 
 
 def init_socketio(app: Flask) -> SocketIO:
@@ -82,7 +97,7 @@ def start_redis_listener():
     """
     启动 Redis 订阅监听
     使用 socketio.start_background_task 确保在 eventlet 上下文中运行
-    监听新仓位消息并广播给所有 WebSocket 客户端
+    监听新仓位消息和通知消息并广播给所有 WebSocket 客户端
     """
     global _redis_running
     
@@ -97,7 +112,7 @@ def start_redis_listener():
     _redis_running = True
     # 使用 socketio.start_background_task 启动，确保在正确的 async 上下文中运行
     socketio.start_background_task(_redis_listener_loop)
-    logger.info(f"Redis 订阅监听已启动 (channel: {REDIS_WS_CHANNEL})")
+    logger.info(f"Redis 订阅监听已启动 (channels: {REDIS_WS_CHANNEL}, {REDIS_NOTIFICATIONS_CHANNEL})")
 
 
 def stop_redis_listener():
@@ -131,17 +146,24 @@ def _redis_listener_loop():
             )
             
             pubsub = redis_client.pubsub()
-            pubsub.subscribe(REDIS_WS_CHANNEL)
+            # 订阅多个频道
+            pubsub.subscribe(REDIS_WS_CHANNEL, REDIS_NOTIFICATIONS_CHANNEL)
             
-            logger.info(f"已订阅 Redis channel: {REDIS_WS_CHANNEL}")
+            logger.info(f"已订阅 Redis channels: {REDIS_WS_CHANNEL}, {REDIS_NOTIFICATIONS_CHANNEL}")
             
             # 使用非阻塞方式获取消息，配合 sleep 实现协作式调度
             while _redis_running:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
                 if message is not None and message['type'] == 'message':
                     try:
+                        channel = message['channel']
                         data = json.loads(message['data'])
-                        _broadcast_new_position(data)
+                        
+                        # 根据频道分发消息
+                        if channel == REDIS_WS_CHANNEL:
+                            _broadcast_new_position(data)
+                        elif channel == REDIS_NOTIFICATIONS_CHANNEL:
+                            _handle_notification(data)
                     except json.JSONDecodeError:
                         logger.warning(f"无效的 JSON 消息: {message['data']}")
                     except Exception as e:
@@ -178,6 +200,46 @@ def _broadcast_new_position(data: dict):
         logger.info(f"已广播新仓位: {data.get('coin', 'unknown')} - {data.get('direction', 'unknown')}")
     except Exception as e:
         logger.error(f"广播消息失败: {e}")
+
+
+def _handle_notification(data: dict):
+    """
+    处理通知消息：保存到数据库并广播给 WebSocket 客户端
+    
+    Args:
+        data: 通知数据，包含:
+            - type: 通知类型 ('open' | 'close' | 'adjust' | 'error')
+            - title: 通知标题
+            - content: Markdown 格式内容
+            - target_address: 目标交易员地址
+            - symbol: 交易对
+            - side: 方向
+            - size: 仓位大小
+            - pnl: 盈亏
+            - timestamp: 时间戳
+    """
+    global socketio
+    
+    # 1. 保存通知到数据库
+    try:
+        db = _get_db()
+        notification_id = db.save_notification(data)
+        if notification_id:
+            data['id'] = notification_id
+            logger.info(f"通知已保存: id={notification_id}, type={data.get('type')}, symbol={data.get('symbol')}")
+    except Exception as e:
+        logger.error(f"保存通知到数据库失败: {e}")
+    
+    # 2. 广播通知给 WebSocket 客户端
+    if socketio is None:
+        logger.warning("SocketIO 未初始化，无法广播通知")
+        return
+    
+    try:
+        socketio.emit('notification', data, namespace='/')
+        logger.info(f"已广播通知: {data.get('type')} - {data.get('title')}")
+    except Exception as e:
+        logger.error(f"广播通知失败: {e}")
 
 
 def broadcast_message(event: str, data: dict):

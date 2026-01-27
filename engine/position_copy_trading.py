@@ -7,6 +7,7 @@
 - 第二种：只跟单交易员的特定仓位（本模块）
 """
 import asyncio
+import json
 from asyncio import Lock
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass, field
@@ -26,6 +27,8 @@ REDIS_OPEN_CHANNEL = "position_tracking_open"
 REDIS_ADJUST_CHANNEL = "position_tracking_adjust"
 # Redis 平仓通知 channel
 REDIS_CLOSE_CHANNEL = "position_tracking_close"
+# Redis 通知 channel（用于 WebSocket 推送和数据库保存）
+REDIS_NOTIFICATIONS_CHANNEL = "notifications"
 # Redis 账户缓存 key
 REDIS_MY_POSITIONS_KEY = "copy_trading:my_positions"
 REDIS_MY_BALANCE_KEY = "copy_trading:my_balance"
@@ -685,7 +688,7 @@ class PositionCopyTradingBot:
         now = time.time()
         last_time = self._recent_notifications.get(notification_key, 0)
         if now - last_time < self._notification_cooldown:
-            logger.debug(f"跳过重复飞书通知: {notification_key} (冷却中)")
+            logger.debug(f"跳过重复通知: {notification_key} (冷却中)")
             return False
         self._recent_notifications[notification_key] = now
         # 清理过期的通知记录（避免内存泄漏）
@@ -694,65 +697,133 @@ class PositionCopyTradingBot:
             del self._recent_notifications[k]
         return True
 
+    def _publish_notification(self, notification_data: Dict[str, Any]):
+        """
+        发布通知到 Redis（用于 WebSocket 推送和数据库保存）
+        
+        Args:
+            notification_data: 通知数据，包含 type, title, content, target_address, symbol 等字段
+        """
+        if not self._redis_client:
+            logger.debug("Redis 客户端未初始化，跳过通知发布")
+            return
+        
+        try:
+            # 添加时间戳
+            notification_data['timestamp'] = pendulum.now().to_iso8601_string()
+            
+            self._redis_client.publish(
+                REDIS_NOTIFICATIONS_CHANNEL,
+                json.dumps(notification_data, ensure_ascii=False)
+            )
+            logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}")
+        except Exception as e:
+            logger.warning(f"发布通知失败: {e}")
+
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
-        """发送开仓通知"""
-        if self._notifier:
-            # 去重检查：相同币种、方向的开仓通知在冷却时间内只发一次
-            notification_key = f"open:{symbol}:{side}"
-            if not self._should_notify(notification_key):
-                return
-            try:
-                self._notifier.notify_copy_open(
-                    target_address=target_address,
-                    symbol=symbol,
-                    side=side,
-                    size=size
-                )
-            except Exception as e:
-                logger.warning(f"飞书通知失败: {e}")
+        """发送开仓通知（通过 Redis 发布）"""
+        # 去重检查：相同币种、方向的开仓通知在冷却时间内只发一次
+        notification_key = f"open:{symbol}:{side}"
+        if not self._should_notify(notification_key):
+            return
+        
+        side_emoji = "🟢" if side.lower() == "long" else "🔴"
+        side_cn = "做多" if side.lower() == "long" else "做空"
+        
+        # 构建 Markdown 格式内容
+        content = f"**目标**: {target_address[:10]}...\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**数量**: {size}"
+        
+        notification_data = {
+            'type': 'open',
+            'title': f'{side_emoji} 复制开仓',
+            'content': content,
+            'target_address': target_address,
+            'symbol': symbol,
+            'side': side,
+            'size': size,
+            'pnl': None
+        }
+        
+        self._publish_notification(notification_data)
 
     def _notify_copy_close(self, target_address: str, symbol: str, pnl: float):
-        """发送平仓通知"""
-        if self._notifier:
-            # 去重检查：相同币种的平仓通知在冷却时间内只发一次
-            notification_key = f"close:{symbol}"
-            if not self._should_notify(notification_key):
-                return
-            try:
-                self._notifier.notify_copy_close(
-                    target_address=target_address,
-                    symbol=symbol,
-                    pnl=pnl
-                )
-            except Exception as e:
-                logger.warning(f"飞书通知失败: {e}")
+        """发送平仓通知（通过 Redis 发布）"""
+        # 去重检查：相同币种的平仓通知在冷却时间内只发一次
+        notification_key = f"close:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        pnl_emoji = "💰" if pnl >= 0 else "💸"
+        
+        # 构建 Markdown 格式内容
+        content = f"**目标**: {target_address[:10]}...\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**盈亏**: ${pnl:+,.2f}"
+        
+        notification_data = {
+            'type': 'close',
+            'title': f'{pnl_emoji} 平仓',
+            'content': content,
+            'target_address': target_address,
+            'symbol': symbol,
+            'side': None,
+            'size': None,
+            'pnl': pnl
+        }
+        
+        self._publish_notification(notification_data)
 
     def _notify_copy_adjust(self, target_address: str, symbol: str, side: str, size: float, is_increase: bool):
-        """发送调整仓位通知"""
-        if self._notifier:
-            # 去重检查：相同币种、方向、加减仓类型的通知在冷却时间内只发一次
-            action = "increase" if is_increase else "decrease"
-            notification_key = f"adjust:{symbol}:{side}:{action}"
-            if not self._should_notify(notification_key):
-                return
-            try:
-                self._notifier.notify_copy_adjust(
-                    target_address=target_address,
-                    symbol=symbol,
-                    side=side,
-                    size=size,
-                    is_increase=is_increase
-                )
-            except Exception as e:
-                logger.warning(f"飞书通知失败: {e}")
+        """发送调整仓位通知（通过 Redis 发布）"""
+        # 去重检查：相同币种、方向、加减仓类型的通知在冷却时间内只发一次
+        action = "increase" if is_increase else "decrease"
+        notification_key = f"adjust:{symbol}:{side}:{action}"
+        if not self._should_notify(notification_key):
+            return
+        
+        action_cn = "加仓" if is_increase else "减仓"
+        action_emoji = "📈" if is_increase else "📉"
+        side_cn = "做多" if side.lower() == "long" else "做空"
+        
+        # 构建 Markdown 格式内容
+        content = f"**目标**: {target_address[:10]}...\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**数量**: {size}"
+        
+        notification_data = {
+            'type': 'adjust',
+            'title': f'{action_emoji} {action_cn}',
+            'content': content,
+            'target_address': target_address,
+            'symbol': symbol,
+            'side': side,
+            'size': size,
+            'pnl': None
+        }
+        
+        self._publish_notification(notification_data)
 
     def _notify_error(self, error: str):
-        """发送错误通知"""
-        if self._notifier:
-            try:
-                self._notifier.notify_error(error)
-            except Exception as e:
-                logger.warning(f"飞书通知失败: {e}")
+        """发送错误通知（通过 Redis 发布）"""
+        # 构建 Markdown 格式内容
+        content = f"**错误**: {error}"
+        
+        notification_data = {
+            'type': 'error',
+            'title': '⚠️ 跟单错误',
+            'content': content,
+            'target_address': None,
+            'symbol': None,
+            'side': None,
+            'size': None,
+            'pnl': None
+        }
+        
+        self._publish_notification(notification_data)
 
     @property
     def info_client(self) -> Info:

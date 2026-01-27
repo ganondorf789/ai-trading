@@ -17,6 +17,7 @@ from .ai_analysis import AIAnalysisOps
 from .position_history import PositionHistoryOps
 from .position_tracking import PositionTrackingOps
 from .new_positions import NewPositionsOps
+from .notifications import NotificationsOps
 
 
 class TraderDatabase(
@@ -31,7 +32,8 @@ class TraderDatabase(
     AIAnalysisOps,
     PositionHistoryOps,
     PositionTrackingOps,
-    NewPositionsOps
+    NewPositionsOps,
+    NotificationsOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)
@@ -46,6 +48,7 @@ class TraderDatabase(
     - AI 分析管理
     - 仓位级别跟单管理
     - 新仓位检测记录
+    - 通知管理
     """
 
     def __init__(self):
