@@ -1053,12 +1053,24 @@ class PositionCopyTradingBot:
         self,
         state: TrackingState,
         target_notional: float,
-        current_price: float
+        current_price: float,
+        is_opening: bool = True
     ) -> float:
-        """计算跟单仓位大小"""
+        """
+        计算跟单仓位大小
+        
+        Args:
+            state: 跟单状态
+            target_notional: 目标的 notional 价值
+            current_price: 当前价格
+            is_opening: 是否是开仓操作（开仓时应用 max_position_size_usd 限制，补仓时不限制）
+        """
         copy_notional = target_notional * state.copy_ratio
         copy_notional = max(copy_notional, state.min_position_size_usd)
-        copy_notional = min(copy_notional, state.max_position_size_usd)
+        
+        # 只在开仓时应用最大仓位限制，补仓时不限制
+        if is_opening:
+            copy_notional = min(copy_notional, state.max_position_size_usd)
         
         size = copy_notional / current_price
         return self._round_size(state.symbol, size)
@@ -1193,7 +1205,7 @@ class PositionCopyTradingBot:
             current_price = self.client.get_mid_price(symbol)
             target_notional = target_position['notional']
             my_target_size = self._calculate_copy_size(
-                state, target_notional, current_price
+                state, target_notional, current_price, is_opening=False
             )
             my_current_size = abs(my_pos.size)
             
