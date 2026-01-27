@@ -60,6 +60,7 @@ class TrackingState:
     # 当前目标仓位
     target_current_size: Optional[float] = None
     target_current_side: Optional[str] = None
+    target_current_notional: Optional[float] = None  # 目标的当前 notional
     
     # 我方仓位
     my_size: float = 0.0
@@ -927,6 +928,7 @@ class PositionCopyTradingBot:
                 old_state = self.trackings[tracking_id]
                 state.target_current_size = old_state.target_current_size
                 state.target_current_side = old_state.target_current_side
+                state.target_current_notional = old_state.target_current_notional
                 state.last_sync = old_state.last_sync
                 state.last_failed_adjust_target_size = old_state.last_failed_adjust_target_size
                 
@@ -1099,6 +1101,8 @@ class PositionCopyTradingBot:
                     state.my_size = abs(my_pos.size)
                     state.my_side = 'long' if existing_is_long else 'short'
                     state.my_entry_price = my_pos.entry_price
+                    # 记录目标的 notional，用于后续判断是否需要减仓
+                    state.target_current_notional = target_position.get('notional')
                     self.db.update_tracking_status(state.tracking_id, 'active')
                     self.db.update_tracking_position(
                         state.tracking_id, state.my_size, state.my_side, state.my_entry_price
@@ -1138,6 +1142,8 @@ class PositionCopyTradingBot:
                     state.my_side = side
                     state.my_entry_price = price
                     state.status = 'active'
+                    # 记录目标的 notional，用于后续判断是否需要减仓
+                    state.target_current_notional = target_position.get('notional')
                     
                     # 更新数据库
                     self.db.update_tracking_status(state.tracking_id, 'active')
@@ -1185,13 +1191,34 @@ class PositionCopyTradingBot:
 
             # 计算目标仓位
             current_price = self.client.get_mid_price(symbol)
+            target_notional = target_position['notional']
             my_target_size = self._calculate_copy_size(
-                state, target_position['notional'], current_price
+                state, target_notional, current_price
             )
             my_current_size = abs(my_pos.size)
             
             # 判断是加仓还是减仓
             is_increase = my_target_size > my_current_size
+            
+            # 如果需要减仓，检查目标交易员是否真的减仓了
+            # 避免因为手动补仓超过 max_position_size_usd 而被自动减仓
+            if not is_increase:
+                prev_target_notional = state.target_current_notional
+                if prev_target_notional is not None and target_notional >= prev_target_notional:
+                    # 目标交易员没有减仓（notional 没有减少），但本地仓位超过了计算的目标
+                    # 这通常是因为手动补仓超过了 max_position_size_usd，不应自动减仓
+                    logger.debug(
+                        f"[{state.tracking_id}] [{symbol}] 本地仓位 ${my_current_size * current_price:.2f} "
+                        f"超过计算目标 ${my_target_size * current_price:.2f}，但目标未减仓 "
+                        f"(notional: {prev_target_notional:.2f} -> {target_notional:.2f})，跳过自动减仓"
+                    )
+                    # 更新目标 notional 记录
+                    state.target_current_notional = target_notional
+                    return True
+            
+            # 更新目标 notional 记录
+            state.target_current_notional = target_notional
+            
             adjustment_size = abs(my_target_size - my_current_size)
             adjustment_size = self._round_size(symbol, adjustment_size)
             
@@ -1351,6 +1378,7 @@ class PositionCopyTradingBot:
                 state.target_initial_entry_price = target_pos['entry_price']
                 state.target_current_size = abs(target_pos['size'])
                 state.target_current_side = target_pos['side']
+                state.target_current_notional = target_pos.get('notional')
                 
                 # 保存初始快照到数据库（保留原有配置参数，避免被默认值覆盖）
                 self.db.save_position_tracking({
@@ -1389,6 +1417,8 @@ class PositionCopyTradingBot:
                     state.my_size = abs(my_pos.size)
                     state.my_side = 'long' if my_pos.side == PositionSide.LONG else 'short'
                     state.my_entry_price = my_pos.entry_price
+                    # 记录目标的 notional，用于后续判断是否需要减仓
+                    state.target_current_notional = target_pos.get('notional')
                     self.db.update_tracking_status(state.tracking_id, 'active')
                     self.db.update_tracking_position(
                         state.tracking_id, state.my_size, state.my_side, state.my_entry_price
