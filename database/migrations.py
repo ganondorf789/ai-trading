@@ -631,6 +631,47 @@ class DatabaseMigrations:
                 ON notifications(target_address)
             """)
 
+            # 创建跟单配置规则表（支持按杠杆区间分配不同配置）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS copy_config_rules (
+                    id SERIAL PRIMARY KEY,
+                    
+                    -- 规则类型和名称
+                    config_type TEXT NOT NULL,          -- 'default' 或 'immediate'
+                    name TEXT NOT NULL,                 -- 规则名称
+                    description TEXT DEFAULT '',        -- 规则描述
+                    
+                    -- 杠杆区间（左开右闭: leverage_min < leverage <= leverage_max）
+                    leverage_min REAL DEFAULT 0,        -- 杠杆下限（不包含），0表示从最小开始
+                    leverage_max REAL DEFAULT 100,      -- 杠杆上限（包含），100表示无上限
+                    
+                    -- 配置数据（JSON格式）
+                    config_data JSONB NOT NULL,
+                    
+                    -- 优先级和状态
+                    priority INTEGER DEFAULT 0,         -- 优先级，数字越小优先级越高
+                    is_enabled BOOLEAN DEFAULT TRUE,    -- 是否启用
+                    is_default BOOLEAN DEFAULT FALSE,   -- 是否为默认配置（兜底规则）
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_copy_config_rules_type
+                ON copy_config_rules(config_type)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_copy_config_rules_enabled
+                ON copy_config_rules(is_enabled)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_copy_config_rules_priority
+                ON copy_config_rules(config_type, priority)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

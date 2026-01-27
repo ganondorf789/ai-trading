@@ -300,7 +300,7 @@ def update_risk_control_config():
             'success': False,
             'error': str(e)
         }), 500
-
+ 
 
 # ==================== 默认跟单配置 API ====================
 
@@ -538,6 +538,676 @@ def update_immediate_copy_config():
             }), 500
     except Exception as e:
         logger.error(f"更新立即跟单配置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 跟单配置规则 API（多配置支持） ====================
+
+def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]:
+    """
+    验证并处理配置规则数据
+    
+    Args:
+        data: 请求数据
+        config_type: 配置类型 ('default' 或 'immediate')
+        
+    Returns:
+        (处理后的数据, 错误信息) - 错误信息为空表示验证通过
+    """
+    if not data.get('name'):
+        return None, '规则名称不能为空'
+    
+    # 验证杠杆区间
+    leverage_min = float(data.get('leverage_min', 0))
+    leverage_max = float(data.get('leverage_max', 100))
+    
+    if leverage_min < 0:
+        leverage_min = 0
+    if leverage_max < leverage_min:
+        return None, '杠杆上限不能小于下限'
+    
+    # 验证 config_data
+    config_data = data.get('config_data', {})
+    if not isinstance(config_data, dict):
+        return None, 'config_data 必须是对象'
+    
+    # 根据配置类型验证 config_data 字段
+    if config_type == 'default':
+        valid_fields = {
+            'copy_ratio': (float, 0.01, 10.0),
+            'max_position_size_usd': (float, 1, 1000000),
+            'min_position_size_usd': (float, 1, 100000),
+            'max_leverage': (int, 1, 100),
+            'default_leverage': (int, 1, 100),
+            'slippage': (float, 0.0001, 0.1),
+            'copy_leverage': (bool, None, None),
+            'sync_position': (bool, None, None),
+            'dry_run': (bool, None, None),
+        }
+    else:  # immediate
+        valid_fields = {
+            'copy_ratio': (float, 0.01, 10.0),
+            'max_position_size_usd': (float, 1, 1000000),
+            'min_position_size_usd': (float, 1, 100000),
+            'max_leverage': (int, 1, 100),
+            'default_leverage': (int, 1, 100),
+            'slippage': (float, 0.0001, 0.1),
+            'copy_leverage': (bool, None, None),
+            'min_trader_overall_score': (float, 0, 100),
+            'min_trader_leverage': (float, 0, 100),
+            'min_position_value_usd': (float, 0, 10000000),
+            'max_position_value_usd': (float, 0, 10000000),
+        }
+    
+    validated_config = {}
+    for field, (field_type, min_val, max_val) in valid_fields.items():
+        if field in config_data:
+            value = config_data[field]
+            try:
+                if field_type == int:
+                    value = int(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == float:
+                    value = float(value)
+                    if min_val is not None and max_val is not None:
+                        value = max(min_val, min(max_val, value))
+                elif field_type == bool:
+                    value = bool(value)
+                validated_config[field] = value
+            except (ValueError, TypeError):
+                pass  # 跳过无效值
+    
+    # 处理数组字段
+    if 'symbols_whitelist' in config_data:
+        validated_config['symbols_whitelist'] = config_data['symbols_whitelist'] if isinstance(config_data['symbols_whitelist'], list) else []
+    if 'symbols_blacklist' in config_data:
+        validated_config['symbols_blacklist'] = config_data['symbols_blacklist'] if isinstance(config_data['symbols_blacklist'], list) else []
+    if config_type == 'default' and 'sync_position_symbols' in config_data:
+        validated_config['sync_position_symbols'] = config_data['sync_position_symbols'] if isinstance(config_data['sync_position_symbols'], list) else []
+    
+    result = {
+        'name': data.get('name', '').strip(),
+        'description': data.get('description', '').strip(),
+        'leverage_min': leverage_min,
+        'leverage_max': leverage_max,
+        'config_data': validated_config,
+        'priority': int(data.get('priority', 0)),
+        'is_enabled': bool(data.get('is_enabled', True)),
+        'is_default': bool(data.get('is_default', False)),
+        'config_type': config_type,
+    }
+    
+    if data.get('id'):
+        result['id'] = int(data['id'])
+    
+    return result, ''
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config-rules', methods=['GET'])
+def get_default_config_rules():
+    """获取所有默认跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: enabled_only
+        in: query
+        type: boolean
+        default: false
+        description: 是否只返回启用的规则
+    responses:
+      200:
+        description: 配置规则列表
+    """
+    try:
+        enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
+        rules = db.get_copy_config_rules('default', enabled_only=enabled_only)
+        return jsonify({
+            'success': True,
+            'data': rules
+        })
+    except Exception as e:
+        logger.error(f"获取默认配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config-rules', methods=['POST'])
+def create_default_config_rule():
+    """创建默认跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: 规则名称
+            description:
+              type: string
+              description: 规则描述
+            leverage_min:
+              type: number
+              description: 杠杆下限（不包含）
+            leverage_max:
+              type: number
+              description: 杠杆上限（包含）
+            config_data:
+              type: object
+              description: 配置数据
+            priority:
+              type: integer
+              description: 优先级
+            is_enabled:
+              type: boolean
+            is_default:
+              type: boolean
+    responses:
+      200:
+        description: 创建成功
+      400:
+        description: 请求参数错误
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+        
+        validated_data, error = _validate_config_rule_data(data, 'default')
+        if error:
+            return jsonify({
+                'success': False,
+                'error': error
+            }), 400
+        
+        rule_id = db.save_copy_config_rule(validated_data)
+        if rule_id:
+            rule = db.get_copy_config_rule_by_id(rule_id)
+            return jsonify({
+                'success': True,
+                'data': rule,
+                'message': '配置规则创建成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '创建配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"创建默认配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['GET'])
+def get_default_config_rule(rule_id: int):
+    """获取单个默认跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: 配置规则详情
+      404:
+        description: 规则不存在
+    """
+    try:
+        rule = db.get_copy_config_rule_by_id(rule_id)
+        if rule and rule.get('config_type') == 'default':
+            return jsonify({
+                'success': True,
+                'data': rule
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+    except Exception as e:
+        logger.error(f"获取默认配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['PUT'])
+def update_default_config_rule(rule_id: int):
+    """更新默认跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      404:
+        description: 规则不存在
+    """
+    try:
+        # 检查规则是否存在
+        existing = db.get_copy_config_rule_by_id(rule_id)
+        if not existing or existing.get('config_type') != 'default':
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+        
+        data['id'] = rule_id
+        validated_data, error = _validate_config_rule_data(data, 'default')
+        if error:
+            return jsonify({
+                'success': False,
+                'error': error
+            }), 400
+        
+        result_id = db.save_copy_config_rule(validated_data)
+        if result_id:
+            rule = db.get_copy_config_rule_by_id(result_id)
+            return jsonify({
+                'success': True,
+                'data': rule,
+                'message': '配置规则更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '更新配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新默认配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['DELETE'])
+def delete_default_config_rule(rule_id: int):
+    """删除默认跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: 删除成功
+      404:
+        description: 规则不存在
+    """
+    try:
+        existing = db.get_copy_config_rule_by_id(rule_id)
+        if not existing or existing.get('config_type') != 'default':
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+        
+        success = db.delete_copy_config_rule(rule_id)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '配置规则删除成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '删除配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"删除默认配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 立即跟单配置规则 API ====================
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules', methods=['GET'])
+def get_immediate_config_rules():
+    """获取所有立即跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: enabled_only
+        in: query
+        type: boolean
+        default: false
+        description: 是否只返回启用的规则
+    responses:
+      200:
+        description: 配置规则列表
+    """
+    try:
+        enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
+        rules = db.get_copy_config_rules('immediate', enabled_only=enabled_only)
+        return jsonify({
+            'success': True,
+            'data': rules
+        })
+    except Exception as e:
+        logger.error(f"获取立即跟单配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules', methods=['POST'])
+def create_immediate_config_rule():
+    """创建立即跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: 规则名称
+            description:
+              type: string
+              description: 规则描述
+            leverage_min:
+              type: number
+              description: 杠杆下限（不包含）
+            leverage_max:
+              type: number
+              description: 杠杆上限（包含）
+            config_data:
+              type: object
+              description: 配置数据
+            priority:
+              type: integer
+              description: 优先级
+            is_enabled:
+              type: boolean
+            is_default:
+              type: boolean
+    responses:
+      200:
+        description: 创建成功
+      400:
+        description: 请求参数错误
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+        
+        validated_data, error = _validate_config_rule_data(data, 'immediate')
+        if error:
+            return jsonify({
+                'success': False,
+                'error': error
+            }), 400
+        
+        rule_id = db.save_copy_config_rule(validated_data)
+        if rule_id:
+            rule = db.get_copy_config_rule_by_id(rule_id)
+            return jsonify({
+                'success': True,
+                'data': rule,
+                'message': '配置规则创建成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '创建配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"创建立即跟单配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['GET'])
+def get_immediate_config_rule(rule_id: int):
+    """获取单个立即跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: 配置规则详情
+      404:
+        description: 规则不存在
+    """
+    try:
+        rule = db.get_copy_config_rule_by_id(rule_id)
+        if rule and rule.get('config_type') == 'immediate':
+            return jsonify({
+                'success': True,
+                'data': rule
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+    except Exception as e:
+        logger.error(f"获取立即跟单配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['PUT'])
+def update_immediate_config_rule(rule_id: int):
+    """更新立即跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      404:
+        description: 规则不存在
+    """
+    try:
+        # 检查规则是否存在
+        existing = db.get_copy_config_rule_by_id(rule_id)
+        if not existing or existing.get('config_type') != 'immediate':
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求数据不能为空'
+            }), 400
+        
+        data['id'] = rule_id
+        validated_data, error = _validate_config_rule_data(data, 'immediate')
+        if error:
+            return jsonify({
+                'success': False,
+                'error': error
+            }), 400
+        
+        result_id = db.save_copy_config_rule(validated_data)
+        if result_id:
+            rule = db.get_copy_config_rule_by_id(result_id)
+            return jsonify({
+                'success': True,
+                'data': rule,
+                'message': '配置规则更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '更新配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"更新立即跟单配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['DELETE'])
+def delete_immediate_config_rule(rule_id: int):
+    """删除立即跟单配置规则
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: rule_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: 删除成功
+      404:
+        description: 规则不存在
+    """
+    try:
+        existing = db.get_copy_config_rule_by_id(rule_id)
+        if not existing or existing.get('config_type') != 'immediate':
+            return jsonify({
+                'success': False,
+                'error': '配置规则不存在'
+            }), 404
+        
+        success = db.delete_copy_config_rule(rule_id)
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '配置规则删除成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '删除配置规则失败'
+            }), 500
+    except Exception as e:
+        logger.error(f"删除立即跟单配置规则失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@copy_trading_positions_bp.route('/api/copy-trading/config-rules/match', methods=['GET'])
+def match_config_rule():
+    """根据杠杆匹配配置规则（用于测试/预览）
+    ---
+    tags:
+      - Copy Trading - Config Rules
+    parameters:
+      - name: config_type
+        in: query
+        type: string
+        required: true
+        description: 配置类型 ('default' 或 'immediate')
+      - name: leverage
+        in: query
+        type: number
+        required: true
+        description: 杠杆倍数
+    responses:
+      200:
+        description: 匹配结果
+    """
+    try:
+        config_type = request.args.get('config_type', 'immediate')
+        leverage = float(request.args.get('leverage', 1))
+        
+        if config_type not in ('default', 'immediate'):
+            return jsonify({
+                'success': False,
+                'error': 'config_type 必须是 default 或 immediate'
+            }), 400
+        
+        rule = db.match_copy_config_rule(config_type, leverage)
+        config = db.get_copy_config_by_leverage(config_type, leverage)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'matched_rule': rule,
+                'effective_config': config
+            }
+        })
+    except Exception as e:
+        logger.error(f"匹配配置规则失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

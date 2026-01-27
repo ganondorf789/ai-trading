@@ -560,3 +560,47 @@ export interface ImmediateCopyConfig {
   min_position_value_usd: number;  // 目标仓位最小价值
   max_position_value_usd: number;  // 目标仓位最大价值，0表示不限制
 }
+
+// ==================== 跟单配置规则类型（多配置支持） ====================
+
+export interface CopyConfigRuleBase {
+  id?: number;
+  config_type: 'default' | 'immediate';
+  name: string;
+  description?: string;
+  leverage_min: number;  // 杠杆下限（不包含）
+  leverage_max: number;  // 杠杆上限（包含）
+  priority: number;      // 优先级，数字越小优先级越高
+  is_enabled: boolean;
+  is_default: boolean;   // 是否为默认配置（兜底规则）
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DefaultCopyConfigRule extends CopyConfigRuleBase {
+  config_type: 'default';
+  config_data: Partial<DefaultCopyTradingConfig>;
+}
+
+export interface ImmediateCopyConfigRule extends CopyConfigRuleBase {
+  config_type: 'immediate';
+  config_data: Partial<ImmediateCopyConfig>;
+}
+
+export type CopyConfigRule = DefaultCopyConfigRule | ImmediateCopyConfigRule;
+
+export interface CopyConfigRuleCreateData {
+  name: string;
+  description?: string;
+  leverage_min: number;
+  leverage_max: number;
+  config_data: Partial<DefaultCopyTradingConfig> | Partial<ImmediateCopyConfig>;
+  priority?: number;
+  is_enabled?: boolean;
+  is_default?: boolean;
+}
+
+export interface ConfigRuleMatchResult {
+  matched_rule: CopyConfigRule | null;
+  effective_config: Partial<DefaultCopyTradingConfig> | Partial<ImmediateCopyConfig>;
+}

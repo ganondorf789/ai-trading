@@ -419,9 +419,13 @@ def create_position_tracking_for_copy(
     """
     为符合条件的仓位创建跟单记录并发送 Redis 通知
     
+    会根据仓位杠杆匹配对应的配置规则：
+    - 如果有匹配的立即跟单配置规则，使用规则中的参数
+    - 否则使用传入的默认配置
+    
     Args:
         db: 数据库实例
-        config: 立即跟单配置
+        config: 立即跟单配置（作为默认回退）
         trader: 交易员信息
         position: 仓位信息
         redis_client: Redis 客户端
@@ -443,20 +447,30 @@ def create_position_tracking_for_copy(
     leverage = float(position.get('leverage', 1) or 1)
     side = 'long' if szi > 0 else 'short'
     
+    # 根据杠杆匹配配置规则
+    matched_config = db.get_copy_config_by_leverage('immediate', leverage)
+    matched_rule_name = matched_config.get('_matched_rule_name')
+    
+    # 合并配置：规则配置优先，默认配置兜底
+    effective_config = {**config, **matched_config}
+    
+    if matched_rule_name:
+        logger.info(f"    → 杠杆 {leverage}x 匹配规则: {matched_rule_name}")
+    
     # 创建跟单记录
     tracking_data = {
         'target_address': address,
         'target_name': trader.get('name', '') or address[:10] + '...',
         'symbol': coin,
         'is_enabled': True,
-        # 从立即跟单配置获取跟单参数
-        'copy_ratio': config.get('copy_ratio', 0.1),
-        'max_position_size_usd': config.get('max_position_size_usd', 500.0),
-        'min_position_size_usd': config.get('min_position_size_usd', 20.0),
-        'copy_leverage': config.get('copy_leverage', False),
-        'max_leverage': config.get('max_leverage', 10),
-        'default_leverage': config.get('default_leverage', 3),
-        'slippage': config.get('slippage', 0.001),
+        # 从匹配的配置获取跟单参数
+        'copy_ratio': effective_config.get('copy_ratio', 0.1),
+        'max_position_size_usd': effective_config.get('max_position_size_usd', 500.0),
+        'min_position_size_usd': effective_config.get('min_position_size_usd', 20.0),
+        'copy_leverage': effective_config.get('copy_leverage', False),
+        'max_leverage': effective_config.get('max_leverage', 10),
+        'default_leverage': effective_config.get('default_leverage', 3),
+        'slippage': effective_config.get('slippage', 0.001),
         # 目标仓位快照
         'target_initial_size': abs(szi),
         'target_initial_side': side,

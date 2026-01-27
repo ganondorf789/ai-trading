@@ -715,3 +715,267 @@ class CopyTradingOps:
         except Exception as e:
             logger.error(f"保存立即跟单配置失败: {e}")
             return False
+
+    # ==================== 跟单配置规则管理（多配置支持） ====================
+
+    def get_copy_config_rules(self, config_type: str, enabled_only: bool = False) -> List[Dict]:
+        """
+        获取跟单配置规则列表
+        
+        Args:
+            config_type: 配置类型 ('default' 或 'immediate')
+            enabled_only: 是否只返回启用的规则
+            
+        Returns:
+            配置规则列表，按优先级排序
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                
+                sql = """
+                    SELECT id, config_type, name, description, 
+                           leverage_min, leverage_max, config_data,
+                           priority, is_enabled, is_default,
+                           created_at, updated_at
+                    FROM copy_config_rules
+                    WHERE config_type = %s
+                """
+                params = [config_type]
+                
+                if enabled_only:
+                    sql += " AND is_enabled = TRUE"
+                
+                sql += " ORDER BY priority ASC, id ASC"
+                
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+                
+                result = []
+                for row in rows:
+                    item = dict(row)
+                    # 解析 JSON 数据
+                    if item.get('config_data'):
+                        if isinstance(item['config_data'], str):
+                            item['config_data'] = json.loads(item['config_data'])
+                    result.append(item)
+                
+                return result
+        except Exception as e:
+            logger.error(f"获取跟单配置规则失败: {e}")
+            return []
+
+    def get_copy_config_rule_by_id(self, rule_id: int) -> Optional[Dict]:
+        """
+        根据ID获取单个配置规则
+        
+        Args:
+            rule_id: 规则ID
+            
+        Returns:
+            配置规则字典或 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                cursor.execute("""
+                    SELECT id, config_type, name, description,
+                           leverage_min, leverage_max, config_data,
+                           priority, is_enabled, is_default,
+                           created_at, updated_at
+                    FROM copy_config_rules
+                    WHERE id = %s
+                """, (rule_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    item = dict(row)
+                    if item.get('config_data') and isinstance(item['config_data'], str):
+                        item['config_data'] = json.loads(item['config_data'])
+                    return item
+                return None
+        except Exception as e:
+            logger.error(f"获取配置规则失败 (id={rule_id}): {e}")
+            return None
+
+    def save_copy_config_rule(self, data: Dict) -> Optional[int]:
+        """
+        保存或更新跟单配置规则
+        
+        Args:
+            data: 规则数据，包含 config_type, name, leverage_min, leverage_max, config_data 等
+            
+        Returns:
+            规则ID，失败返回 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                config_data = data.get('config_data', {})
+                if isinstance(config_data, dict):
+                    config_data = json.dumps(config_data)
+                
+                if data.get('id'):
+                    # 更新
+                    cursor.execute("""
+                        UPDATE copy_config_rules
+                        SET name = %s, description = %s,
+                            leverage_min = %s, leverage_max = %s,
+                            config_data = %s, priority = %s,
+                            is_enabled = %s, is_default = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                        RETURNING id
+                    """, (
+                        data.get('name', ''),
+                        data.get('description', ''),
+                        data.get('leverage_min', 0),
+                        data.get('leverage_max', 100),
+                        config_data,
+                        data.get('priority', 0),
+                        data.get('is_enabled', True),
+                        data.get('is_default', False),
+                        data['id']
+                    ))
+                    result = cursor.fetchone()
+                    logger.info(f"更新跟单配置规则: id={data['id']}, name={data.get('name')}")
+                    return result[0] if result else None
+                else:
+                    # 插入
+                    cursor.execute("""
+                        INSERT INTO copy_config_rules 
+                        (config_type, name, description, leverage_min, leverage_max, 
+                         config_data, priority, is_enabled, is_default)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, (
+                        data.get('config_type', 'default'),
+                        data.get('name', ''),
+                        data.get('description', ''),
+                        data.get('leverage_min', 0),
+                        data.get('leverage_max', 100),
+                        config_data,
+                        data.get('priority', 0),
+                        data.get('is_enabled', True),
+                        data.get('is_default', False)
+                    ))
+                    rule_id = cursor.fetchone()[0]
+                    logger.info(f"创建跟单配置规则: id={rule_id}, name={data.get('name')}")
+                    return rule_id
+        except Exception as e:
+            logger.error(f"保存跟单配置规则失败: {e}")
+            return None
+
+    def delete_copy_config_rule(self, rule_id: int) -> bool:
+        """
+        删除跟单配置规则
+        
+        Args:
+            rule_id: 规则ID
+            
+        Returns:
+            是否删除成功
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM copy_config_rules WHERE id = %s", (rule_id,))
+                deleted = cursor.rowcount > 0
+                if deleted:
+                    logger.info(f"删除跟单配置规则: id={rule_id}")
+                return deleted
+        except Exception as e:
+            logger.error(f"删除跟单配置规则失败 (id={rule_id}): {e}")
+            return False
+
+    def match_copy_config_rule(self, config_type: str, leverage: float) -> Optional[Dict]:
+        """
+        根据杠杆匹配最合适的配置规则
+        
+        匹配逻辑：
+        1. 按优先级排序，找到第一个杠杆区间匹配的启用规则
+        2. 区间判断: leverage_min < leverage <= leverage_max
+        3. 如果没有匹配的，返回 is_default=True 的规则
+        4. 如果还是没有，返回 None
+        
+        Args:
+            config_type: 配置类型 ('default' 或 'immediate')
+            leverage: 杠杆倍数
+            
+        Returns:
+            匹配的配置规则，或 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                
+                # 先尝试匹配杠杆区间
+                cursor.execute("""
+                    SELECT id, config_type, name, description,
+                           leverage_min, leverage_max, config_data,
+                           priority, is_enabled, is_default
+                    FROM copy_config_rules
+                    WHERE config_type = %s 
+                      AND is_enabled = TRUE
+                      AND leverage_min < %s 
+                      AND leverage_max >= %s
+                    ORDER BY priority ASC, id ASC
+                    LIMIT 1
+                """, (config_type, leverage, leverage))
+                
+                row = cursor.fetchone()
+                
+                # 如果没有匹配的，尝试获取默认规则
+                if not row:
+                    cursor.execute("""
+                        SELECT id, config_type, name, description,
+                               leverage_min, leverage_max, config_data,
+                               priority, is_enabled, is_default
+                        FROM copy_config_rules
+                        WHERE config_type = %s 
+                          AND is_enabled = TRUE
+                          AND is_default = TRUE
+                        ORDER BY priority ASC
+                        LIMIT 1
+                    """, (config_type,))
+                    row = cursor.fetchone()
+                
+                if row:
+                    item = dict(row)
+                    if item.get('config_data') and isinstance(item['config_data'], str):
+                        item['config_data'] = json.loads(item['config_data'])
+                    return item
+                
+                return None
+        except Exception as e:
+            logger.error(f"匹配跟单配置规则失败: {e}")
+            return None
+
+    def get_copy_config_by_leverage(self, config_type: str, leverage: float) -> Dict:
+        """
+        根据杠杆获取跟单配置（整合规则匹配和老配置兼容）
+        
+        优先使用规则匹配，如果没有规则则回退到老的单一配置
+        
+        Args:
+            config_type: 配置类型 ('default' 或 'immediate')
+            leverage: 杠杆倍数
+            
+        Returns:
+            配置字典
+        """
+        # 先尝试匹配规则
+        rule = self.match_copy_config_rule(config_type, leverage)
+        
+        if rule:
+            config = rule.get('config_data', {})
+            config['_matched_rule_id'] = rule.get('id')
+            config['_matched_rule_name'] = rule.get('name')
+            return config
+        
+        # 回退到老的单一配置
+        if config_type == 'default':
+            return self.get_default_copy_config()
+        else:
+            return self.get_immediate_copy_config()

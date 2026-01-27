@@ -27,6 +27,11 @@ import type {
   GlobalPositionHistoryRecord,
   GlobalPositionHistoryStats,
   PositionsAIAnalysis,
+  DefaultCopyConfigRule,
+  ImmediateCopyConfigRule,
+  CopyConfigRule,
+  CopyConfigRuleCreateData,
+  ConfigRuleMatchResult,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -58,6 +63,11 @@ export type {
   GlobalPositionHistoryRecord,
   GlobalPositionHistoryStats,
   PositionsAIAnalysis,
+  DefaultCopyConfigRule,
+  ImmediateCopyConfigRule,
+  CopyConfigRule,
+  CopyConfigRuleCreateData,
+  ConfigRuleMatchResult,
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -626,6 +636,62 @@ export const riskControlApi = {
   // 更新立即跟单配置
   updateImmediateCopyConfig: (data: Partial<ImmediateCopyConfig>) =>
     api.put<any, ApiResponse<ImmediateCopyConfig> & { message?: string }>('/copy-trading/immediate-config', data),
+
+  // ==================== 默认跟单配置规则 ====================
+  
+  // 获取所有默认跟单配置规则
+  getDefaultConfigRules: (enabledOnly?: boolean) =>
+    api.get<any, ApiResponse<DefaultCopyConfigRule[]>>('/copy-trading/default-config-rules', {
+      params: { enabled_only: enabledOnly },
+    }),
+
+  // 获取单个默认跟单配置规则
+  getDefaultConfigRule: (ruleId: number) =>
+    api.get<any, ApiResponse<DefaultCopyConfigRule>>(`/copy-trading/default-config-rules/${ruleId}`),
+
+  // 创建默认跟单配置规则
+  createDefaultConfigRule: (data: CopyConfigRuleCreateData) =>
+    api.post<any, ApiResponse<DefaultCopyConfigRule> & { message?: string }>('/copy-trading/default-config-rules', data),
+
+  // 更新默认跟单配置规则
+  updateDefaultConfigRule: (ruleId: number, data: Partial<CopyConfigRuleCreateData> & { id?: number }) =>
+    api.put<any, ApiResponse<DefaultCopyConfigRule> & { message?: string }>(`/copy-trading/default-config-rules/${ruleId}`, data),
+
+  // 删除默认跟单配置规则
+  deleteDefaultConfigRule: (ruleId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/default-config-rules/${ruleId}`),
+
+  // ==================== 立即跟单配置规则 ====================
+  
+  // 获取所有立即跟单配置规则
+  getImmediateConfigRules: (enabledOnly?: boolean) =>
+    api.get<any, ApiResponse<ImmediateCopyConfigRule[]>>('/copy-trading/immediate-config-rules', {
+      params: { enabled_only: enabledOnly },
+    }),
+
+  // 获取单个立即跟单配置规则
+  getImmediateConfigRule: (ruleId: number) =>
+    api.get<any, ApiResponse<ImmediateCopyConfigRule>>(`/copy-trading/immediate-config-rules/${ruleId}`),
+
+  // 创建立即跟单配置规则
+  createImmediateConfigRule: (data: CopyConfigRuleCreateData) =>
+    api.post<any, ApiResponse<ImmediateCopyConfigRule> & { message?: string }>('/copy-trading/immediate-config-rules', data),
+
+  // 更新立即跟单配置规则
+  updateImmediateConfigRule: (ruleId: number, data: Partial<CopyConfigRuleCreateData> & { id?: number }) =>
+    api.put<any, ApiResponse<ImmediateCopyConfigRule> & { message?: string }>(`/copy-trading/immediate-config-rules/${ruleId}`, data),
+
+  // 删除立即跟单配置规则
+  deleteImmediateConfigRule: (ruleId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/immediate-config-rules/${ruleId}`),
+
+  // ==================== 配置规则匹配测试 ====================
+  
+  // 根据杠杆匹配配置规则（测试/预览）
+  matchConfigRule: (configType: 'default' | 'immediate', leverage: number) =>
+    api.get<any, ApiResponse<ConfigRuleMatchResult>>('/copy-trading/config-rules/match', {
+      params: { config_type: configType, leverage },
+    }),
 };
 
 // ==================== S级优选筛选 API ====================
