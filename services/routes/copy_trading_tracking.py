@@ -5,44 +5,16 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
-# Redis 客户端（延迟初始化）
-_redis_client = None
-
-
-def _get_redis_client():
-    """获取 Redis 客户端（延迟初始化）"""
-    global _redis_client
-    
-    if _redis_client is not None:
-        return _redis_client
-    
-    try:
-        import redis
-        from config.settings import settings
-        
-        _redis_client = redis.Redis(
-            host=settings.redis.host,
-            port=settings.redis.port,
-            password=settings.redis.password or None,
-            db=settings.redis.db,
-            decode_responses=True
-        )
-        _redis_client.ping()
-        logger.info("Redis 客户端已连接（用于跟单通知）")
-        return _redis_client
-    except Exception as e:
-        logger.warning(f"Redis 连接失败: {e}")
-        return None
-
 
 def _notify_open_position(tracking_id: int) -> bool:
     """发送开仓通知到 Redis，机器人收到后立即开仓"""
-    redis_client = _get_redis_client()
+    redis_client = get_redis_client()
     
     if redis_client is None:
         return False
@@ -60,7 +32,7 @@ def _notify_open_position(tracking_id: int) -> bool:
 
 def _notify_config_changed() -> bool:
     """发送配置变更通知到 Redis，机器人收到后立即重载配置"""
-    redis_client = _get_redis_client()
+    redis_client = get_redis_client()
     
     if redis_client is None:
         return False

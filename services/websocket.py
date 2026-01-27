@@ -11,6 +11,7 @@ from flask import Flask
 from flask_socketio import SocketIO, emit
 
 from config.settings import settings
+from .shared import get_redis_client, reset_redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -136,14 +137,13 @@ def _redis_listener_loop():
     
     while _redis_running:
         try:
-            # 创建新的 Redis 连接用于订阅
-            redis_client = redis.Redis(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                password=settings.redis.password or None,
-                db=settings.redis.db,
-                decode_responses=True
-            )
+            # 使用共享的 Redis 客户端
+            redis_client = get_redis_client()
+            
+            if redis_client is None:
+                logger.error("无法获取 Redis 客户端，5秒后重试...")
+                sleep(5)
+                continue
             
             pubsub = redis_client.pubsub()
             # 订阅多个频道
@@ -172,10 +172,10 @@ def _redis_listener_loop():
                 sleep(0.01)
             
             pubsub.close()
-            redis_client.close()
             
         except redis.ConnectionError as e:
-            logger.error(f"Redis 连接失败: {e}，5秒后重试...")
+            logger.error(f"Redis 连接失败: {e}，重置客户端并5秒后重试...")
+            reset_redis_client()
             sleep(5)
         except Exception as e:
             logger.error(f"Redis 监听异常: {e}，5秒后重试...")
