@@ -4,8 +4,8 @@ S级交易员仓位监控脚本
 功能说明：
 1. 获取所有S级的交易员
 2. 异步更新交易员的当前仓位并保存到数据库
-3. 如果发现有新仓位，通过飞书通知
-4. 如果1分钟内新仓位>=10个，发送行情通知（10分钟内只推送一次）
+3. 如果发现有新仓位，通过 Redis WebSocket 通知
+4. 如果1分钟内新仓位>=阈值，发送行情通知（通过 Redis WebSocket 广播，10分钟内只推送一次）
 
 运行模式：无限循环执行
 
@@ -39,7 +39,6 @@ from loguru import logger
 sys.path.insert(0, str(Path(__file__).parent))
 
 from database import TraderDatabase
-from clients.feishu_client import FeishuClient, CopyTradingNotifier
 from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
 from screener.utils import now_shanghai
@@ -50,6 +49,8 @@ REDIS_POSITION_CHANNEL = "new_positions"
 REDIS_OPEN_CHANNEL = "position_tracking_open"
 # Redis WebSocket 广播 channel（供 WebSocket 服务接收并广播给客户端）
 REDIS_WS_CHANNEL = "ws_new_positions"
+# Redis 通知 channel（行情提醒等通知，与 services/websocket.py 一致）
+REDIS_NOTIFICATIONS_CHANNEL = "notifications"
 
 # 行情检测配置
 MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
@@ -477,7 +478,6 @@ async def fetch_user_state_async(
 
 def process_trader_result(
     db: TraderDatabase,
-    notifier: CopyTradingNotifier,
     trader: Dict,
     user_state: Optional[Dict],
     old_positions: Dict[str, Dict],
@@ -488,7 +488,6 @@ def process_trader_result(
     
     Args:
         db: 数据库实例
-        notifier: 飞书通知器
         trader: 交易员信息
         user_state: 从API获取的用户状态
         old_positions: 更新前的持仓
@@ -550,14 +549,6 @@ def process_trader_result(
         # 获取原始仓位数据（包含杠杆等完整信息）
         raw_pos = raw_positions_map.get(coin, pos)
         
-        success = notifier.notify_new_position(
-            address, pos, rating=rating, score=score
-        )
-        if success:
-            logger.success(f"    ✓ 已通知: {coin} {direction}")
-        else:
-            logger.error(f"    ✗ 通知失败: {coin}")
-        
         # 保存新仓位记录到数据库
         record_id = db.save_new_position(
             trader_address=address,
@@ -565,7 +556,7 @@ def process_trader_result(
             trader_name=trader.get('name'),
             trader_rating=rating,
             trader_score=score,
-            notified=success,
+            notified=True,  # 通过 Redis WebSocket 通知
             target_is_starred=trader.get('is_starred', False)
         )
         if record_id:
@@ -621,28 +612,24 @@ def process_trader_result(
 
 async def run_monitoring_cycle_async(
     db: TraderDatabase,
-    notifier: CopyTradingNotifier,
     hl_client: HyperliquidClient,
     rate: float = 10.0,
     limit: int = 0,
     offset: int = 0,
     redis_client: redis.Redis = None,
-    activity_tracker: MarketActivityTracker = None,
-    important_feishu: FeishuClient = None
+    activity_tracker: MarketActivityTracker = None
 ) -> Dict:
     """
     异步运行一次监控周期
     
     Args:
         db: 数据库实例
-        notifier: 飞书通知器
         hl_client: HyperliquidClient 实例
         rate: 每秒请求数
         limit: 限制处理的交易员数量，0表示不限制
         offset: 跳过前N个交易员，0表示不跳过
         redis_client: Redis 客户端
         activity_tracker: 行情活动追踪器
-        important_feishu: 重要通知飞书客户端
     
     Returns:
         统计信息
@@ -697,7 +684,7 @@ async def run_monitoring_cycle_async(
         # 处理结果
         try:
             new_count = process_trader_result(
-                db, notifier, trader, user_state, old_positions,
+                db, trader, user_state, old_positions,
                 redis_client=redis_client
             )
             if new_count > 0:
@@ -742,25 +729,31 @@ async def run_monitoring_cycle_async(
         activity_tracker.add_positions(total_stats['new_positions_total'])
         
         # 检查是否需要发送行情通知
-        if activity_tracker.should_notify() and important_feishu:
+        if activity_tracker.should_notify() and redis_client:
             recent_count = activity_tracker.get_recent_count()
             logger.warning(f"🔥 检测到行情活动: 1分钟内 {recent_count} 个新仓位!")
             
-            # 发送重要通知
+            # 通过 Redis notifications channel 广播行情通知
             try:
-                message = (
-                    f"🔥 行情提醒\n\n"
-                    f"检测到市场活动频繁！\n"
-                    f"最近1分钟内发现 {recent_count} 个新仓位\n\n"
+                content = (
+                    f"**检测到市场活动频繁！**\n\n"
+                    f"最近1分钟内发现 **{recent_count}** 个新仓位\n\n"
                     f"⏰ 时间: {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}\n"
                     f"📊 建议关注市场动态"
                 )
-                success = important_feishu.send_text(message)
-                if success:
-                    activity_tracker.mark_notified()
-                    logger.success("✓ 行情通知已发送（10分钟内不再重复）")
-                else:
-                    logger.error("✗ 行情通知发送失败")
+                market_alert_data = {
+                    'type': 'market_alert',
+                    'title': '🔥 行情提醒',
+                    'content': content,
+                    'target_address': None,
+                    'symbol': None,
+                    'side': None,
+                    'size': None,
+                    'pnl': None
+                }
+                redis_client.publish(REDIS_NOTIFICATIONS_CHANNEL, json.dumps(market_alert_data))
+                activity_tracker.mark_notified()
+                logger.success("✓ 行情通知已发送（10分钟内不再重复）")
             except Exception as e:
                 logger.error(f"发送行情通知异常: {e}")
     
@@ -797,35 +790,7 @@ async def main_async(args):
     db = TraderDatabase()
     logger.success("✓ 数据库连接成功")
     
-    # 初始化飞书通知器（使用新仓位推送专用配置）
-    logger.info("初始化飞书通知器（新仓位推送）...")
-    feishu = FeishuClient(
-        app_id=settings.feishu_position.app_id,
-        app_secret=settings.feishu_position.app_secret,
-        default_user_id=settings.feishu_position.default_user_id
-    )
-    notifier = CopyTradingNotifier(feishu)
-    
-    if not feishu.app_id:
-        logger.warning("⚠ 飞书新仓位推送未配置，通知功能将不可用")
-    else:
-        logger.success("✓ 飞书通知器初始化成功（新仓位推送）")
-    
-    # 初始化飞书重要通知客户端（行情提醒）
-    logger.info("初始化飞书通知器（重要通知）...")
-    important_feishu = FeishuClient(
-        app_id=settings.feishu_important.app_id,
-        app_secret=settings.feishu_important.app_secret,
-        default_user_id=settings.feishu_important.default_user_id
-    )
-    
-    if not important_feishu.app_id:
-        logger.warning("⚠ 飞书重要通知未配置，行情提醒功能将不可用")
-        important_feishu = None
-    else:
-        logger.success("✓ 飞书通知器初始化成功（重要通知）")
-    
-    # 初始化 Redis（用于本地推送和行情追踪共享状态）
+    # 初始化 Redis（用于本地推送、WebSocket 广播和行情追踪共享状态）
     logger.info("初始化 Redis 连接...")
     redis_client = None
     try:
@@ -862,13 +827,12 @@ async def main_async(args):
             logger.info(f"{'='*60}")
             
             await run_monitoring_cycle_async(
-                db, notifier, hl_client,
+                db, hl_client,
                 rate=args.rate,
                 limit=args.limit,
                 offset=args.offset,
-                redis_client=redis_client if args.redis else None,  # 仅用于位置推送
-                activity_tracker=activity_tracker,
-                important_feishu=important_feishu
+                redis_client=redis_client if args.redis else None,  # 用于位置推送和 WebSocket 广播
+                activity_tracker=activity_tracker
             )
             
     except KeyboardInterrupt:
