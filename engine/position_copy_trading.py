@@ -1441,9 +1441,6 @@ class PositionCopyTradingBot:
         logger.info("仓位级别跟单机器人启动")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
-        logger.info(f"Redis 开仓通知: {'已启用' if self._redis_client else '未启用'}")
-        logger.info(f"Redis 补仓通知: {'已启用' if self._redis_client else '未启用'}")
-        logger.info(f"Redis 平仓通知: {'已启用' if self._redis_client else '未启用'}")
         logger.info("=" * 60)
 
         # 加载初始配置
