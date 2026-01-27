@@ -21,7 +21,8 @@ class NewPositionsOps:
         trader_name: Optional[str] = None,
         trader_rating: Optional[str] = None,
         trader_score: Optional[float] = None,
-        notified: bool = False
+        notified: bool = False,
+        target_is_starred: bool = False
     ) -> Optional[int]:
         """
         保存检测到的新仓位记录
@@ -33,6 +34,7 @@ class NewPositionsOps:
             trader_rating: 交易员评级
             trader_score: 交易员评分
             notified: 是否已发送通知
+            target_is_starred: 目标交易员是否被标记
 
         Returns:
             新记录的 ID，失败返回 None
@@ -56,8 +58,8 @@ class NewPositionsOps:
                     INSERT INTO detected_new_positions (
                         trader_address, trader_name, trader_rating, trader_score,
                         coin, direction, szi, entry_px, position_value, leverage,
-                        detected_at, notified
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        detected_at, notified, target_is_starred
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     trader_address,
@@ -71,7 +73,8 @@ class NewPositionsOps:
                     position_value,
                     leverage,
                     pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
-                    notified
+                    notified,
+                    target_is_starred
                 ))
                 
                 row = cursor.fetchone()
@@ -85,7 +88,8 @@ class NewPositionsOps:
         self,
         trader: Dict,
         positions: List[Dict],
-        notified: bool = False
+        notified: bool = False,
+        target_is_starred: bool = False
     ) -> int:
         """
         批量保存检测到的新仓位记录
@@ -94,6 +98,7 @@ class NewPositionsOps:
             trader: 交易员信息（包含 address, name, rating, overall_score）
             positions: 仓位列表
             notified: 是否已发送通知
+            target_is_starred: 目标交易员是否被标记
 
         Returns:
             保存成功的记录数
@@ -114,7 +119,8 @@ class NewPositionsOps:
                 trader_name=trader_name,
                 trader_rating=trader_rating,
                 trader_score=trader_score,
-                notified=notified
+                notified=notified,
+                target_is_starred=target_is_starred
             )
             if result:
                 saved_count += 1

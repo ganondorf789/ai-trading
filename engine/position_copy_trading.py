@@ -68,6 +68,9 @@ class TrackingState:
     
     # 上次补仓失败时的目标仓位大小（用于避免重复尝试）
     last_failed_adjust_target_size: Optional[float] = None
+    
+    # 交易员标记
+    target_is_starred: bool = False
 
 
 class PositionCopyTradingBot:
@@ -261,6 +264,7 @@ class PositionCopyTradingBot:
                 'target_initial_size': state.target_initial_size,
                 'target_initial_side': state.target_initial_side,
                 'target_initial_entry_price': state.target_initial_entry_price,
+                'target_is_starred': state.target_is_starred,
                 'status': 'pending'
             })
             
@@ -844,7 +848,8 @@ class PositionCopyTradingBot:
             my_size=data.get('my_size', 0.0),
             my_side=data.get('my_side'),
             my_entry_price=data.get('my_entry_price'),
-            status=data.get('status', 'pending')
+            status=data.get('status', 'pending'),
+            target_is_starred=data.get('target_is_starred', False)
         )
 
     def reload_configs(self):
@@ -1325,6 +1330,7 @@ class PositionCopyTradingBot:
                     'target_initial_size': state.target_initial_size,
                     'target_initial_side': state.target_initial_side,
                     'target_initial_entry_price': state.target_initial_entry_price,
+                    'target_is_starred': state.target_is_starred,
                     'status': 'pending'
                 })
                 

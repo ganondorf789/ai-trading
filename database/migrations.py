@@ -388,6 +388,9 @@ class DatabaseMigrations:
                     closed_pnl REAL,
                     close_reason TEXT,
                     
+                    -- 交易员标记
+                    target_is_starred BOOLEAN DEFAULT FALSE,  -- 目标交易员是否被标记
+                    
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     started_at TIMESTAMP,
@@ -557,6 +560,9 @@ class DatabaseMigrations:
                     -- 可选：跟单相关
                     copy_tracking_id INTEGER,         -- 关联的跟单记录ID
                     
+                    -- 交易员标记
+                    target_is_starred BOOLEAN DEFAULT FALSE,  -- 目标交易员是否被标记
+                    
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -603,4 +609,14 @@ class DatabaseMigrations:
         # 添加 sync_position_symbols 字段到 copy_trading_addresses 表（同步仓位的币种列表）
         self._migrate_add_column_if_not_exists(
             cursor, 'copy_trading_addresses', 'sync_position_symbols', "TEXT DEFAULT '[]'"
+        )
+
+        # 添加 target_is_starred 字段到 detected_new_positions 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'detected_new_positions', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'
+        )
+
+        # 添加 target_is_starred 字段到 copy_position_tracking 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'
         )

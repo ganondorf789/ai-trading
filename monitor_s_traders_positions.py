@@ -461,6 +461,7 @@ def create_position_tracking_for_copy(
         'target_initial_size': abs(szi),
         'target_initial_side': side,
         'target_initial_entry_price': entry_px,
+        'target_is_starred': trader.get('is_starred', False),
         'status': 'pending'
     }
     
@@ -603,7 +604,8 @@ def process_trader_result(
             trader_name=trader.get('name'),
             trader_rating=rating,
             trader_score=score,
-            notified=success
+            notified=success,
+            target_is_starred=trader.get('is_starred', False)
         )
         if record_id:
             logger.debug(f"    ✓ 已保存新仓位记录: id={record_id}")
@@ -631,6 +633,7 @@ def process_trader_result(
                     'trader_name': trader.get('name', ''),
                     'trader_rating': rating,
                     'trader_score': score,
+                    'target_is_starred': trader.get('is_starred', False),
                     'coin': coin,
                     'direction': 'long' if szi_val > 0 else 'short',
                     'szi': abs(szi_val),
