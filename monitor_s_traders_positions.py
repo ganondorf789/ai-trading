@@ -354,64 +354,8 @@ def format_position_direction(szi: float) -> tuple[str, str]:
         return "做空", "🔴"
 
 
-def check_immediate_copy_conditions(
-    config: Dict,
-    trader: Dict,
-    position: Dict
-) -> tuple[bool, str]:
-    """
-    检查仓位是否符合立即跟单条件
-    
-    Args:
-        config: 立即跟单配置（来自 db.get_immediate_copy_config()）
-        trader: 交易员信息（包含 overall_score 等）
-        position: 仓位信息（包含 coin, szi, leverage, entry_px 等）
-    
-    Returns:
-        (是否符合条件, 原因说明)
-    """
-    # 1. 检查交易员评分
-    min_score = config.get('min_trader_overall_score', 0)
-    trader_score = trader.get('overall_score', 0) or 0
-    if min_score > 0 and trader_score < min_score:
-        return False, f"交易员评分 {trader_score} < 最低要求 {min_score}"
-    
-    # 2. 检查币种白名单（只有在白名单中的币种才会跟单）
-    coin = position.get('coin', '')
-    whitelist = config.get('symbols_whitelist', []) or []
-    
-    if not whitelist:
-        return False, "白名单为空，不跟单任何币种"
-    
-    if coin not in whitelist:
-        return False, f"币种 {coin} 不在白名单中"
-    
-    # 3. 检查目标交易员杠杆（只跟单杠杆 >= min_trader_leverage 的仓位）
-    min_trader_leverage = config.get('min_trader_leverage', 0)
-    position_leverage = float(position.get('leverage', 1) or 1)
-    if position_leverage < min_trader_leverage:
-        return False, f"目标杠杆 {position_leverage}x < 最小要求 {min_trader_leverage}x"
-    
-    # 4. 检查仓位价值
-    szi = float(position.get('szi', 0) or 0)
-    entry_px = float(position.get('entry_px', 0) or 0)
-    position_value = abs(szi) * entry_px
-    
-    min_value = config.get('min_position_value_usd', 0) or 0
-    max_value = config.get('max_position_value_usd', 0) or 0
-    
-    if min_value > 0 and position_value < min_value:
-        return False, f"仓位价值 ${position_value:.2f} < 最小要求 ${min_value}"
-    
-    if max_value > 0 and position_value > max_value:
-        return False, f"仓位价值 ${position_value:.2f} > 最大限制 ${max_value}"
-    
-    return True, "符合所有条件"
-
-
 def create_position_tracking_for_copy(
     db: TraderDatabase,
-    config: Dict,
     trader: Dict,
     position: Dict,
     redis_client: redis.Redis = None
@@ -420,26 +364,20 @@ def create_position_tracking_for_copy(
     为符合条件的仓位创建跟单记录并发送 Redis 通知
     
     会根据仓位杠杆匹配对应的配置规则：
-    - 如果有匹配的立即跟单配置规则，使用规则中的参数
-    - 否则使用传入的默认配置
+    - 如果有匹配的立即跟单配置规则，使用规则中的参数创建跟单记录
+    - 如果没有匹配的规则，则不创建跟单记录
     
     Args:
         db: 数据库实例
-        config: 立即跟单配置（作为默认回退）
         trader: 交易员信息
         position: 仓位信息
         redis_client: Redis 客户端
     
     Returns:
-        创建的 tracking_id，如果已存在或创建失败则返回 None
+        创建的 tracking_id，如果没有匹配规则/已存在/创建失败则返回 None
     """
     address = trader['address']
     coin = position.get('coin', '')
-    
-    # 检查是否已存在活跃的跟单记录
-    if db.check_position_tracking_exists(address, coin):
-        logger.debug(f"    跳过立即跟单: {coin} 已有活跃跟单记录")
-        return None
     
     # 获取仓位详情
     szi = float(position.get('szi', 0) or 0)
@@ -451,8 +389,18 @@ def create_position_tracking_for_copy(
     matched_config = db.get_copy_config_by_leverage('immediate', leverage)
     matched_rule_name = matched_config.get('_matched_rule_name')
     
-    # 合并配置：规则配置优先，默认配置兜底
-    effective_config = {**config, **matched_config}
+    # 如果没有匹配的规则，不创建跟单记录
+    if not matched_rule_name:
+        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x 无匹配规则")
+        return None
+    
+    # 检查是否已存在活跃的跟单记录
+    if db.check_position_tracking_exists(address, coin):
+        logger.debug(f"    跳过立即跟单: {coin} 已有活跃跟单记录")
+        return None
+    
+    # 使用匹配的配置
+    effective_config = matched_config
     
     if matched_rule_name:
         logger.info(f"    → 杠杆 {leverage}x 匹配规则: {matched_rule_name}")
@@ -532,8 +480,7 @@ def process_trader_result(
     trader: Dict,
     user_state: Optional[Dict],
     old_positions: Dict[str, Dict],
-    redis_client: redis.Redis = None,
-    immediate_copy_config: Optional[Dict] = None
+    redis_client: redis.Redis = None
 ) -> int:
     """
     处理单个交易员的持仓结果
@@ -545,7 +492,6 @@ def process_trader_result(
         user_state: 从API获取的用户状态
         old_positions: 更新前的持仓
         redis_client: Redis 客户端
-        immediate_copy_config: 立即跟单配置（如果提供，则检查条件并触发跟单）
     
     Returns:
         新仓位数量
@@ -662,24 +608,12 @@ def process_trader_result(
             except Exception as e:
                 logger.debug(f"    WebSocket 广播失败: {e}")
         
-        # 立即跟单条件检查
-        if immediate_copy_config and redis_client:
-            # 获取原始仓位数据（包含杠杆等信息）
-            raw_pos = raw_positions_map.get(coin, pos)
-            
-            # 检查是否符合立即跟单条件
-            is_match, reason = check_immediate_copy_conditions(
-                immediate_copy_config, trader, raw_pos
+        # 立即跟单：根据杠杆匹配配置规则
+        if redis_client:
+            # 尝试创建跟单记录（内部会根据杠杆匹配规则）
+            create_position_tracking_for_copy(
+                db, trader, raw_pos, redis_client
             )
-            
-            if is_match:
-                logger.info(f"    → 符合立即跟单条件")
-                # 创建跟单记录并发送通知
-                create_position_tracking_for_copy(
-                    db, immediate_copy_config, trader, raw_pos, redis_client
-                )
-            else:
-                logger.debug(f"    → 不符合立即跟单条件: {reason}")
     
     return len(new_position_list)
 
@@ -717,19 +651,6 @@ async def run_monitoring_cycle_async(
         'new_positions_total': 0,
         'errors': 0
     }
-    
-    # 获取立即跟单配置（每个循环获取一次，确保使用最新配置）
-    immediate_copy_config = None
-    if redis_client:
-        try:
-            immediate_copy_config = db.get_immediate_copy_config()
-            min_score = immediate_copy_config.get('min_trader_overall_score', 0)
-            logger.info(f"立即跟单已启用: 最低评分={min_score}, "
-                       f"跟单比例={immediate_copy_config.get('copy_ratio', 0.1)}, "
-                       f"最大仓位=${immediate_copy_config.get('max_position_size_usd', 500)}")
-        except Exception as e:
-            logger.warning(f"获取立即跟单配置失败: {e}")
-            immediate_copy_config = None
     
     # 获取S级交易员（按评分排序，可限制数量和偏移）
     traders = get_s_rated_traders(db, limit=limit, offset=offset)
@@ -776,8 +697,7 @@ async def run_monitoring_cycle_async(
         try:
             new_count = process_trader_result(
                 db, notifier, trader, user_state, old_positions,
-                redis_client=redis_client,
-                immediate_copy_config=immediate_copy_config
+                redis_client=redis_client
             )
             if new_count > 0:
                 logger.success(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... 仓位: {positions_count}, 新增: {new_count}")
