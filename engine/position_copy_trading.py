@@ -1460,21 +1460,18 @@ class PositionCopyTradingBot:
                 
                 # 检查仓位大小变化
                 if prev_size > 0:
-                    size_change_pct = (new_size - prev_size) / prev_size * 100
-                    
-                    if abs(size_change_pct) >= 1.0:  # 变化超过1%才调整
-                        # 检查是否和上次失败时的目标仓位一样（避免重复尝试）
-                        if (state.last_failed_adjust_target_size is not None and 
-                            abs(new_size - state.last_failed_adjust_target_size) < 0.0001):
-                            logger.debug(f"[{state.tracking_id}] 目标仓位未变化，跳过补仓重试")
+                    # 检查是否和上次失败时的目标仓位一样（避免重复尝试）
+                    if (state.last_failed_adjust_target_size is not None and 
+                        abs(new_size - state.last_failed_adjust_target_size) < 0.0001):
+                        logger.debug(f"[{state.tracking_id}] 目标仓位未变化，跳过补仓重试")
+                    else:
+                        success = await self._adjust_position(state, target_pos)
+                        if success:
+                            # 补仓成功，清除失败记录
+                            state.last_failed_adjust_target_size = None
                         else:
-                            success = await self._adjust_position(state, target_pos)
-                            if success:
-                                # 补仓成功，清除失败记录
-                                state.last_failed_adjust_target_size = None
-                            else:
-                                # 补仓失败，记录当前目标仓位大小
-                                state.last_failed_adjust_target_size = new_size
+                            # 补仓失败，记录当前目标仓位大小
+                            state.last_failed_adjust_target_size = new_size
         
         state.last_sync = pendulum.now()
 
