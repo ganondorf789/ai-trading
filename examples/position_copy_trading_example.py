@@ -10,7 +10,7 @@
 python examples/position_copy_trading_example.py
 """
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 import asyncio
 import os
 import sys
