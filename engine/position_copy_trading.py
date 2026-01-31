@@ -250,7 +250,9 @@ class PositionCopyTradingBot:
             is_long = target_pos['side'] == 'long'
             
             # 更新自己的持仓和余额
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[立即开仓] 获取账户信息失败，跳过")
+                return
             my_pos = self.my_positions.get(state.symbol)
             
             # 检查是否已有仓位
@@ -369,7 +371,9 @@ class PositionCopyTradingBot:
             symbol = state.symbol
             
             # 更新自己的持仓和余额
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[调仓] 获取账户信息失败，跳过")
+                return
             my_pos = self.my_positions.get(symbol)
             
             if my_pos is None:
@@ -432,7 +436,9 @@ class PositionCopyTradingBot:
             async with order_lock:
                 try:
                     # 获取锁后重新检查仓位，防止并发问题
-                    self._update_my_account()
+                    if not self._update_my_account():
+                        logger.warning(f"[{action_name}] 获取账户信息失败，跳过")
+                        return
                     my_pos = self.my_positions.get(symbol)
                     if my_pos is None:
                         logger.warning(f"[{action_name}] {symbol} 已无持仓，跳过")
@@ -599,7 +605,9 @@ class PositionCopyTradingBot:
         self._processing_tracking_ids.add(close_key)
         try:
             # 更新自己的持仓
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[立即平仓] 获取账户信息失败，跳过")
+                return
             my_pos = self.my_positions.get(target_symbol)
             
             if my_pos is None:
@@ -615,7 +623,9 @@ class PositionCopyTradingBot:
             async with order_lock:
                 try:
                     # 获取锁后重新检查仓位，防止并发重复平仓
-                    self._update_my_account()
+                    if not self._update_my_account():
+                        logger.warning(f"[立即平仓] 获取账户信息失败，跳过")
+                        return
                     my_pos = self.my_positions.get(target_symbol)
                     if my_pos is None:
                         logger.info(f"[立即平仓] {target_symbol} 已无持仓，跳过")
@@ -980,8 +990,13 @@ class PositionCopyTradingBot:
             logger.error(f"获取目标持仓失败 {address[:10]}... {symbol}: {e}")
             return None
 
-    def _update_my_account(self):
-        """更新自己的持仓和余额（单次 API 调用），并缓存到 Redis"""
+    def _update_my_account(self) -> bool:
+        """
+        更新自己的持仓和余额（单次 API 调用），并缓存到 Redis
+        
+        Returns:
+            是否更新成功
+        """
         try:
             account_info = self.client.get_account_info()
             # 更新余额
@@ -1021,8 +1036,10 @@ class PositionCopyTradingBot:
                     )
                 except Exception as e:
                     logger.debug(f"写入 Redis 缓存失败: {e}")
+            return True
         except Exception as e:
             logger.error(f"获取账户信息失败: {e}")
+            return False
 
     def _check_balance_sufficient(self, required_margin: float, action: str = "开仓", symbol: str = "") -> bool:
         """
@@ -1101,7 +1118,9 @@ class PositionCopyTradingBot:
                 return False
             
             # 重新获取持仓信息，检查是否已有仓位
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[{state.tracking_id}] 获取账户信息失败，跳过开仓")
+                return False
             my_pos = self.my_positions.get(symbol)
             if my_pos is not None:
                 existing_is_long = my_pos.side == PositionSide.LONG
@@ -1194,7 +1213,9 @@ class PositionCopyTradingBot:
         order_lock = await self._get_order_lock(symbol)
         async with order_lock:
             # 获取锁后重新获取持仓信息，防止并发重复调整
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[{state.tracking_id}] 获取账户信息失败，跳过调仓")
+                return False
             my_pos = self.my_positions.get(symbol)
 
             if my_pos is None:
@@ -1316,7 +1337,9 @@ class PositionCopyTradingBot:
                 return False
             
             # 重新获取持仓信息
-            self._update_my_account()
+            if not self._update_my_account():
+                logger.warning(f"[{state.tracking_id}] 获取账户信息失败，跳过平仓")
+                return False
             my_pos = self.my_positions.get(symbol)
             
             # 如果已经没有仓位，直接标记为关闭（不发送通知，因为可能已经发过了）
@@ -1508,7 +1531,10 @@ class PositionCopyTradingBot:
         """同步所有仓位跟单"""
         async with self._sync_lock:
             # 更新自己的持仓和余额
-            self._update_my_account()
+            if not self._update_my_account():
+                # 获取账户信息失败，跳过本轮同步，避免基于过期数据做出错误决策
+                logger.warning("获取账户信息失败，跳过本轮同步")
+                return
             
             # 过滤出活跃的跟单
             active_trackings = [
