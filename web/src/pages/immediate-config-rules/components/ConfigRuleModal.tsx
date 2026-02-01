@@ -8,8 +8,9 @@ import {
   Input,
   Button,
   Switch,
-  Chip,
   Divider,
+  Autocomplete,
+  AutocompleteItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { ImmediateCopyConfigRule, ImmediateCopyConfig, hyperliquidApi } from "@/services/api";
@@ -20,6 +21,7 @@ interface ConfigRuleModalProps {
   onSave: (data: Partial<ImmediateCopyConfigRule>) => void;
   editingRule: ImmediateCopyConfigRule | null;
   isSaving: boolean;
+  existingSymbols?: string[];  // 已存在配置的币种列表
 }
 
 const defaultConfigData: Partial<ImmediateCopyConfig> = {
@@ -33,10 +35,16 @@ const defaultConfigData: Partial<ImmediateCopyConfig> = {
   // 跟单条件
   min_trader_overall_score: 0,
   min_trader_leverage: 0,
+  max_trader_leverage: 0,
   min_position_value_usd: 0,
   max_position_value_usd: 0,
-  symbols_whitelist: [],
-  symbols_blacklist: [],
+  min_coin_price: 0,
+  max_coin_price: 0,
+  // 自动补仓
+  auto_replenish: false,
+  replenish_ratio: 0.5,
+  replenish_min_value_usd: 10,
+  replenish_max_value_usd: 100,
 };
 
 export default function ConfigRuleModal({
@@ -45,25 +53,18 @@ export default function ConfigRuleModal({
   onSave,
   editingRule,
   isSaving,
+  existingSymbols = [],
 }: ConfigRuleModalProps) {
   // 基本信息
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [leverageMin, setLeverageMin] = useState(0);
-  const [leverageMax, setLeverageMax] = useState(100);
-  const [priority, setPriority] = useState(0);
+  const [symbol, setSymbol] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
-  const [isDefault, setIsDefault] = useState(false);
 
   // 配置数据
   const [configData, setConfigData] = useState<Partial<ImmediateCopyConfig>>(defaultConfigData);
 
   // 币种选择
   const [availableCoins, setAvailableCoins] = useState<string[]>([]);
-  const [whitelistInput, setWhitelistInput] = useState("");
-  const [blacklistInput, setBlacklistInput] = useState("");
-  const [whitelistHighlightIndex, setWhitelistHighlightIndex] = useState(-1);
-  const [blacklistHighlightIndex, setBlacklistHighlightIndex] = useState(-1);
 
   // 加载币种列表
   useEffect(() => {
@@ -86,163 +87,29 @@ export default function ConfigRuleModal({
   useEffect(() => {
     if (editingRule) {
       setName(editingRule.name);
-      setDescription(editingRule.description || "");
-      setLeverageMin(editingRule.leverage_min);
-      setLeverageMax(editingRule.leverage_max);
-      setPriority(editingRule.priority);
+      setSymbol(editingRule.symbol || "");
       setIsEnabled(editingRule.is_enabled);
-      setIsDefault(editingRule.is_default);
       setConfigData({ ...defaultConfigData, ...editingRule.config_data });
     } else {
       setName("");
-      setDescription("");
-      setLeverageMin(0);
-      setLeverageMax(100);
-      setPriority(0);
+      setSymbol("");
       setIsEnabled(true);
-      setIsDefault(false);
       setConfigData(defaultConfigData);
     }
-    setWhitelistInput("");
-    setBlacklistInput("");
   }, [editingRule, isOpen]);
 
-  // 过滤可用币种
-  const filteredWhitelistCoins = useMemo(() => {
-    const input = whitelistInput.trim().toUpperCase();
-    const existing = configData.symbols_whitelist || [];
-    return availableCoins
-      .filter((coin) => !existing.includes(coin))
-      .filter((coin) => !input || coin.includes(input))
-      .slice(0, 10);
-  }, [availableCoins, whitelistInput, configData.symbols_whitelist]);
-
-  const filteredBlacklistCoins = useMemo(() => {
-    const input = blacklistInput.trim().toUpperCase();
-    const existing = configData.symbols_blacklist || [];
-    return availableCoins
-      .filter((coin) => !existing.includes(coin))
-      .filter((coin) => !input || coin.includes(input))
-      .slice(0, 10);
-  }, [availableCoins, blacklistInput, configData.symbols_blacklist]);
-
-  // 白名单操作
-  const handleAddWhitelist = (coin?: string) => {
-    const symbol = (coin || whitelistInput.trim()).toUpperCase();
-    if (symbol && !configData.symbols_whitelist?.includes(symbol)) {
-      setConfigData({
-        ...configData,
-        symbols_whitelist: [...(configData.symbols_whitelist || []), symbol],
-      });
-      setWhitelistInput("");
-      setWhitelistHighlightIndex(-1);
-    }
-  };
-
-  const handleRemoveWhitelist = (symbol: string) => {
-    setConfigData({
-      ...configData,
-      symbols_whitelist: configData.symbols_whitelist?.filter((s) => s !== symbol) || [],
-    });
-  };
-
-  const handleWhitelistKeyDown = (e: React.KeyboardEvent) => {
-    if (!whitelistInput || filteredWhitelistCoins.length === 0) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAddWhitelist();
-      }
-      return;
-    }
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setWhitelistHighlightIndex((prev) =>
-          prev < filteredWhitelistCoins.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setWhitelistHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (whitelistHighlightIndex >= 0) {
-          handleAddWhitelist(filteredWhitelistCoins[whitelistHighlightIndex]);
-        } else {
-          handleAddWhitelist();
-        }
-        break;
-      case "Escape":
-        setWhitelistInput("");
-        setWhitelistHighlightIndex(-1);
-        break;
-    }
-  };
-
-  // 黑名单操作
-  const handleAddBlacklist = (coin?: string) => {
-    const symbol = (coin || blacklistInput.trim()).toUpperCase();
-    if (symbol && !configData.symbols_blacklist?.includes(symbol)) {
-      setConfigData({
-        ...configData,
-        symbols_blacklist: [...(configData.symbols_blacklist || []), symbol],
-      });
-      setBlacklistInput("");
-      setBlacklistHighlightIndex(-1);
-    }
-  };
-
-  const handleRemoveBlacklist = (symbol: string) => {
-    setConfigData({
-      ...configData,
-      symbols_blacklist: configData.symbols_blacklist?.filter((s) => s !== symbol) || [],
-    });
-  };
-
-  const handleBlacklistKeyDown = (e: React.KeyboardEvent) => {
-    if (!blacklistInput || filteredBlacklistCoins.length === 0) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAddBlacklist();
-      }
-      return;
-    }
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setBlacklistHighlightIndex((prev) =>
-          prev < filteredBlacklistCoins.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setBlacklistHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (blacklistHighlightIndex >= 0) {
-          handleAddBlacklist(filteredBlacklistCoins[blacklistHighlightIndex]);
-        } else {
-          handleAddBlacklist();
-        }
-        break;
-      case "Escape":
-        setBlacklistInput("");
-        setBlacklistHighlightIndex(-1);
-        break;
-    }
-  };
+  // 过滤可选的币种（排除已存在配置的币种，但编辑时允许选择当前币种）
+  const selectableCoins = useMemo(() => {
+    return availableCoins.filter(
+      (coin) => !existingSymbols.includes(coin) || coin === editingRule?.symbol
+    );
+  }, [availableCoins, existingSymbols, editingRule?.symbol]);
 
   const handleSave = () => {
     const data: Partial<ImmediateCopyConfigRule> = {
       name,
-      description,
-      leverage_min: leverageMin,
-      leverage_max: leverageMax,
-      priority,
+      symbol,
       is_enabled: isEnabled,
-      is_default: isDefault,
       config_data: configData,
     };
     if (editingRule?.id) {
@@ -251,7 +118,11 @@ export default function ConfigRuleModal({
     onSave(data);
   };
 
-  const isValid = name.trim().length > 0;
+  // 验证：名称和币种都必须填写
+  const isValid = name.trim().length > 0 && symbol.trim().length > 0;
+
+  // 检查币种是否已存在配置
+  const isSymbolDuplicate = Boolean(symbol && existingSymbols.includes(symbol) && symbol !== editingRule?.symbol);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="2xl" scrollBehavior="inside">
@@ -269,52 +140,27 @@ export default function ConfigRuleModal({
             <div className="grid gap-4 md:grid-cols-2">
               <Input
                 label="规则名称"
-                placeholder="例如：低杠杆配置"
+                placeholder="例如：BTC 跟单配置"
                 value={name}
                 onValueChange={setName}
                 isRequired
               />
-              <Input
-                label="规则描述"
-                placeholder="可选描述"
-                value={description}
-                onValueChange={setDescription}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Input
-                type="number"
-                label="杠杆下限"
-                description="不包含此值"
-                value={String(leverageMin)}
-                onValueChange={(v) => setLeverageMin(parseFloat(v) || 0)}
-                endContent={<span className="text-default-400 text-sm">x</span>}
-              />
-              <Input
-                type="number"
-                label="杠杆上限"
-                description="包含此值"
-                value={String(leverageMax)}
-                onValueChange={(v) => setLeverageMax(parseFloat(v) || 100)}
-                endContent={<span className="text-default-400 text-sm">x</span>}
-              />
-              <Input
-                type="number"
-                label="优先级"
-                description="数字越小优先级越高"
-                value={String(priority)}
-                onValueChange={(v) => setPriority(parseInt(v) || 0)}
-              />
-            </div>
-            <div className="flex gap-6">
-              <div className="flex items-center gap-2">
-                <Switch size="sm" isSelected={isEnabled} onValueChange={setIsEnabled} />
-                <span className="text-sm">启用规则</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch size="sm" isSelected={isDefault} onValueChange={setIsDefault} />
-                <span className="text-sm">设为默认（兜底配置）</span>
-              </div>
+              <Autocomplete
+                label="币种"
+                placeholder="选择币种"
+                selectedKey={symbol}
+                onSelectionChange={(key) => setSymbol(key as string || "")}
+                isRequired
+                isInvalid={isSymbolDuplicate}
+                errorMessage={isSymbolDuplicate ? "该币种已存在配置" : undefined}
+                description="每个币种最多只能有一个配置"
+              >
+                {selectableCoins.map((coin) => (
+                  <AutocompleteItem key={coin}>
+                    {coin}
+                  </AutocompleteItem>
+                ))}
+              </Autocomplete>
             </div>
           </div>
 
@@ -347,6 +193,14 @@ export default function ConfigRuleModal({
               />
               <Input
                 type="number"
+                label="目标最大杠杆"
+                description="目标交易员杠杆<=此值时才跟单（0=不限制）"
+                value={String(configData.max_trader_leverage || 0)}
+                onValueChange={(v) => setConfigData({ ...configData, max_trader_leverage: parseFloat(v) || 0 })}
+                endContent={<span className="text-default-400 text-sm">x</span>}
+              />
+              <Input
+                type="number"
                 label="最小仓位价值"
                 description="目标仓位价值低于此值时不跟单（0=不限制）"
                 value={String(configData.min_position_value_usd || 0)}
@@ -359,6 +213,22 @@ export default function ConfigRuleModal({
                 description="目标仓位价值高于此值时不跟单（0=不限制）"
                 value={String(configData.max_position_value_usd || 0)}
                 onValueChange={(v) => setConfigData({ ...configData, max_position_value_usd: parseFloat(v) || 0 })}
+                startContent={<span className="text-default-400 text-sm">$</span>}
+              />
+              <Input
+                type="number"
+                label="币种最低价格"
+                description="币种价格低于此值时不跟单（0=不限制）"
+                value={String(configData.min_coin_price || 0)}
+                onValueChange={(v) => setConfigData({ ...configData, min_coin_price: parseFloat(v) || 0 })}
+                startContent={<span className="text-default-400 text-sm">$</span>}
+              />
+              <Input
+                type="number"
+                label="币种最高价格"
+                description="币种价格高于此值时不跟单（0=不限制）"
+                value={String(configData.max_coin_price || 0)}
+                onValueChange={(v) => setConfigData({ ...configData, max_coin_price: parseFloat(v) || 0 })}
                 startContent={<span className="text-default-400 text-sm">$</span>}
               />
             </div>
@@ -390,16 +260,16 @@ export default function ConfigRuleModal({
               />
               <Input
                 type="number"
-                label="最大仓位"
-                value={String(configData.max_position_size_usd || 500)}
-                onValueChange={(v) => setConfigData({ ...configData, max_position_size_usd: parseFloat(v) || 500 })}
+                label="最小仓位"
+                value={String(configData.min_position_size_usd || 20)}
+                onValueChange={(v) => setConfigData({ ...configData, min_position_size_usd: parseFloat(v) || 20 })}
                 startContent={<span className="text-default-400 text-sm">$</span>}
               />
               <Input
                 type="number"
-                label="最小仓位"
-                value={String(configData.min_position_size_usd || 20)}
-                onValueChange={(v) => setConfigData({ ...configData, min_position_size_usd: parseFloat(v) || 20 })}
+                label="最大仓位"
+                value={String(configData.max_position_size_usd || 500)}
+                onValueChange={(v) => setConfigData({ ...configData, max_position_size_usd: parseFloat(v) || 500 })}
                 startContent={<span className="text-default-400 text-sm">$</span>}
               />
               <Input
@@ -417,150 +287,74 @@ export default function ConfigRuleModal({
                 endContent={<span className="text-default-400 text-sm">x</span>}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                size="sm"
-                isSelected={configData.copy_leverage || false}
-                onValueChange={(v) => setConfigData({ ...configData, copy_leverage: v })}
-              />
-              <span className="text-sm">复制杠杆</span>
-            </div>
           </div>
 
           <Divider />
 
-          {/* 币种限制 */}
+          {/* 自动补仓配置 */}
           <div className="space-y-4">
             <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
-              <Icon icon="lucide:coins" width={16} />
-              币种限制
+              <Icon icon="lucide:refresh-cw" width={16} />
+              自动补仓
             </h4>
-
-            {/* 白名单 */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-success font-medium w-16">白名单</span>
-                <div className="flex-1 relative">
-                  <Input
-                    size="sm"
-                    placeholder="输入搜索币种..."
-                    value={whitelistInput}
-                    onValueChange={(v) => {
-                      setWhitelistInput(v);
-                      setWhitelistHighlightIndex(-1);
-                    }}
-                    onKeyDown={handleWhitelistKeyDown}
-                  />
-                  {whitelistInput && filteredWhitelistCoins.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
-                      {filteredWhitelistCoins.map((coin, index) => (
-                        <div
-                          key={coin}
-                          className={`px-3 py-2 cursor-pointer text-sm ${
-                            index === whitelistHighlightIndex
-                              ? "bg-primary-100 text-primary"
-                              : "hover:bg-default-100"
-                          }`}
-                          onClick={() => handleAddWhitelist(coin)}
-                          onMouseEnter={() => setWhitelistHighlightIndex(index)}
-                        >
-                          {coin}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  color="success"
-                  variant="flat"
-                  isIconOnly
-                  onPress={() => handleAddWhitelist()}
-                  isDisabled={!whitelistInput.trim()}
-                >
-                  <Icon icon="lucide:plus" width={16} />
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-1 min-h-[32px]">
-                {(configData.symbols_whitelist?.length || 0) === 0 ? (
-                  <span className="text-xs text-default-400">不限制</span>
-                ) : (
-                  configData.symbols_whitelist?.map((symbol) => (
-                    <Chip
-                      key={symbol}
-                      size="sm"
-                      color="success"
-                      variant="flat"
-                      onClose={() => handleRemoveWhitelist(symbol)}
-                    >
-                      {symbol}
-                    </Chip>
-                  ))
-                )}
-              </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                size="sm"
+                isSelected={configData.auto_replenish || false}
+                onValueChange={(v) => setConfigData({ ...configData, auto_replenish: v })}
+              />
+              <span className="text-sm">启用自动补仓（当目标加仓时自动跟随补仓）</span>
             </div>
-
-            {/* 黑名单 */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-danger font-medium w-16">黑名单</span>
-                <div className="flex-1 relative">
-                  <Input
-                    size="sm"
-                    placeholder="输入搜索币种..."
-                    value={blacklistInput}
-                    onValueChange={(v) => {
-                      setBlacklistInput(v);
-                      setBlacklistHighlightIndex(-1);
-                    }}
-                    onKeyDown={handleBlacklistKeyDown}
-                  />
-                  {blacklistInput && filteredBlacklistCoins.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
-                      {filteredBlacklistCoins.map((coin, index) => (
-                        <div
-                          key={coin}
-                          className={`px-3 py-2 cursor-pointer text-sm ${
-                            index === blacklistHighlightIndex
-                              ? "bg-primary-100 text-primary"
-                              : "hover:bg-default-100"
-                          }`}
-                          onClick={() => handleAddBlacklist(coin)}
-                          onMouseEnter={() => setBlacklistHighlightIndex(index)}
-                        >
-                          {coin}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  color="danger"
-                  variant="flat"
-                  isIconOnly
-                  onPress={() => handleAddBlacklist()}
-                  isDisabled={!blacklistInput.trim()}
-                >
-                  <Icon icon="lucide:plus" width={16} />
-                </Button>
+            {configData.auto_replenish && (
+              <div className="grid gap-4 md:grid-cols-3">
+                <Input
+                  type="number"
+                  label="补仓比例"
+                  description="按目标补仓量的比例"
+                  value={String(((configData.replenish_ratio || 0.5) * 100).toFixed(0))}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_ratio: (parseFloat(v) || 50) / 100 })}
+                  endContent={<span className="text-default-400 text-sm">%</span>}
+                />
+                <Input
+                  type="number"
+                  label="补仓最小价值"
+                  description="单次补仓最小金额"
+                  value={String(configData.replenish_min_value_usd || 10)}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_min_value_usd: parseFloat(v) || 10 })}
+                  startContent={<span className="text-default-400 text-sm">$</span>}
+                />
+                <Input
+                  type="number"
+                  label="补仓最大价值"
+                  description="单次补仓最大金额"
+                  value={String(configData.replenish_max_value_usd || 100)}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_max_value_usd: parseFloat(v) || 100 })}
+                  startContent={<span className="text-default-400 text-sm">$</span>}
+                />
               </div>
-              <div className="flex flex-wrap gap-1 min-h-[32px]">
-                {(configData.symbols_blacklist?.length || 0) === 0 ? (
-                  <span className="text-xs text-default-400">无黑名单</span>
-                ) : (
-                  configData.symbols_blacklist?.map((symbol) => (
-                    <Chip
-                      key={symbol}
-                      size="sm"
-                      color="danger"
-                      variant="flat"
-                      onClose={() => handleRemoveBlacklist(symbol)}
-                    >
-                      {symbol}
-                    </Chip>
-                  ))
-                )}
+            )}
+          </div>
+
+          <Divider />
+
+          {/* 开关选项 */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
+              <Icon icon="lucide:toggle-left" width={16} />
+              开关选项
+            </h4>
+            <div className="flex flex-wrap gap-6">
+              <div className="flex items-center gap-2">
+                <Switch size="sm" isSelected={isEnabled} onValueChange={setIsEnabled} />
+                <span className="text-sm">启用规则</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={configData.copy_leverage || false}
+                  onValueChange={(v) => setConfigData({ ...configData, copy_leverage: v })}
+                />
+                <span className="text-sm">复制杠杆</span>
               </div>
             </div>
           </div>
@@ -569,7 +363,12 @@ export default function ConfigRuleModal({
           <Button variant="flat" onPress={onClose} isDisabled={isSaving}>
             取消
           </Button>
-          <Button color="primary" onPress={handleSave} isLoading={isSaving} isDisabled={!isValid}>
+          <Button 
+            color="primary" 
+            onPress={handleSave} 
+            isLoading={isSaving} 
+            isDisabled={!isValid || isSymbolDuplicate}
+          >
             保存
           </Button>
         </ModalFooter>

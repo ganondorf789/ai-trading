@@ -29,25 +29,47 @@ export default function ConfigRulesTable({
   onDelete,
   onToggleEnabled,
 }: ConfigRulesTableProps) {
-  const formatLeverageRange = (rule: ImmediateCopyConfigRule) => {
-    if (rule.is_default) {
-      return <Chip size="sm" color="secondary" variant="flat">兜底配置</Chip>;
-    }
-    return `${rule.leverage_min}x - ${rule.leverage_max}x`;
-  };
-
-  const formatConfigParams = (rule: ImmediateCopyConfigRule) => {
+  const formatConditions = (rule: ImmediateCopyConfigRule) => {
     const config = rule.config_data;
     const parts = [];
     
-    if (config.max_position_size_usd) {
-      parts.push(`最大$${config.max_position_size_usd}`);
+    if (config.min_trader_overall_score) {
+      parts.push(`评分≥${config.min_trader_overall_score}`);
     }
+    if (config.min_trader_leverage) {
+      parts.push(`杠杆≥${config.min_trader_leverage}x`);
+    }
+    if (config.max_trader_leverage) {
+      parts.push(`杠杆≤${config.max_trader_leverage}x`);
+    }
+    if (config.min_position_value_usd) {
+      parts.push(`仓位≥$${config.min_position_value_usd}`);
+    }
+    if (config.max_position_value_usd) {
+      parts.push(`仓位≤$${config.max_position_value_usd}`);
+    }
+    if (config.min_coin_price) {
+      parts.push(`价格≥$${config.min_coin_price}`);
+    }
+    if (config.max_coin_price) {
+      parts.push(`价格≤$${config.max_coin_price}`);
+    }
+    
+    return parts.length > 0 ? parts.join(', ') : '无条件限制';
+  };
+
+  const formatParams = (rule: ImmediateCopyConfigRule) => {
+    const config = rule.config_data;
+    const parts = [];
+    
     if (config.copy_ratio) {
       parts.push(`比例${(config.copy_ratio * 100).toFixed(0)}%`);
     }
-    if (config.min_trader_overall_score) {
-      parts.push(`评分≥${config.min_trader_overall_score}`);
+    if (config.max_position_size_usd) {
+      parts.push(`最大$${config.max_position_size_usd}`);
+    }
+    if (config.max_leverage) {
+      parts.push(`${config.max_leverage}x`);
     }
     
     return parts.join(', ') || '-';
@@ -57,9 +79,9 @@ export default function ConfigRulesTable({
     <Table aria-label="Immediate config rules table">
       <TableHeader>
         <TableColumn>名称</TableColumn>
-        <TableColumn>杠杆区间</TableColumn>
-        <TableColumn>优先级</TableColumn>
-        <TableColumn>关键参数</TableColumn>
+        <TableColumn>币种</TableColumn>
+        <TableColumn>跟单条件</TableColumn>
+        <TableColumn>跟单参数</TableColumn>
         <TableColumn>状态</TableColumn>
         <TableColumn>操作</TableColumn>
       </TableHeader>
@@ -76,16 +98,18 @@ export default function ConfigRulesTable({
               </Tooltip>
             </TableCell>
             <TableCell>
-              <span className="font-mono text-sm">
-                {formatLeverageRange(rule)}
-              </span>
-            </TableCell>
-            <TableCell>
-              <Chip size="sm" variant="flat">{rule.priority}</Chip>
+              <Chip size="sm" color="primary" variant="flat">
+                {rule.symbol || '-'}
+              </Chip>
             </TableCell>
             <TableCell>
               <span className="text-sm text-default-600">
-                {formatConfigParams(rule)}
+                {formatConditions(rule)}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span className="text-sm text-default-600">
+                {formatParams(rule)}
               </span>
             </TableCell>
             <TableCell>

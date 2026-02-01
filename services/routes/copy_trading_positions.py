@@ -560,22 +560,22 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
     if not data.get('name'):
         return None, '规则名称不能为空'
     
-    # 验证杠杆区间
-    leverage_min = float(data.get('leverage_min', 0))
-    leverage_max = float(data.get('leverage_max', 100))
-    
-    if leverage_min < 0:
-        leverage_min = 0
-    if leverage_max < leverage_min:
-        return None, '杠杆上限不能小于下限'
-    
     # 验证 config_data
     config_data = data.get('config_data', {})
     if not isinstance(config_data, dict):
         return None, 'config_data 必须是对象'
     
-    # 根据配置类型验证 config_data 字段
+    # 根据配置类型验证
     if config_type == 'default':
+        # 默认跟单配置：使用杠杆区间匹配
+        leverage_min = float(data.get('leverage_min', 0))
+        leverage_max = float(data.get('leverage_max', 100))
+        
+        if leverage_min < 0:
+            leverage_min = 0
+        if leverage_max < leverage_min:
+            return None, '杠杆上限不能小于下限'
+        
         valid_fields = {
             'copy_ratio': (float, 0.01, 10.0),
             'max_position_size_usd': (float, 1, 1000000),
@@ -592,7 +592,34 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'replenish_min_value_usd': (float, 1, 100000),
             'replenish_max_value_usd': (float, 1, 1000000),
         }
-    else:  # immediate
+        
+        validated_config = _validate_config_fields(config_data, valid_fields)
+        
+        # 处理数组字段
+        if 'symbols_whitelist' in config_data:
+            validated_config['symbols_whitelist'] = config_data['symbols_whitelist'] if isinstance(config_data['symbols_whitelist'], list) else []
+        if 'symbols_blacklist' in config_data:
+            validated_config['symbols_blacklist'] = config_data['symbols_blacklist'] if isinstance(config_data['symbols_blacklist'], list) else []
+        if 'sync_position_symbols' in config_data:
+            validated_config['sync_position_symbols'] = config_data['sync_position_symbols'] if isinstance(config_data['sync_position_symbols'], list) else []
+        
+        result = {
+            'name': data.get('name', '').strip(),
+            'description': data.get('description', '').strip(),
+            'leverage_min': leverage_min,
+            'leverage_max': leverage_max,
+            'config_data': validated_config,
+            'priority': int(data.get('priority', 0)),
+            'is_enabled': bool(data.get('is_enabled', True)),
+            'is_default': bool(data.get('is_default', False)),
+            'config_type': config_type,
+        }
+    else:
+        # 立即跟单配置：按币种配置，每个币种最多一个配置
+        symbol = data.get('symbol', '').strip().upper()
+        if not symbol:
+            return None, '币种不能为空'
+        
         valid_fields = {
             'copy_ratio': (float, 0.01, 10.0),
             'max_position_size_usd': (float, 1, 1000000),
@@ -601,17 +628,45 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'default_leverage': (int, 1, 100),
             'slippage': (float, 0.0001, 0.1),
             'copy_leverage': (bool, None, None),
+            # 跟单条件
             'min_trader_overall_score': (float, 0, 100),
             'min_trader_leverage': (float, 0, 100),
+            'max_trader_leverage': (float, 0, 100),  # 新增：目标最大杠杆
             'min_position_value_usd': (float, 0, 10000000),
             'max_position_value_usd': (float, 0, 10000000),
+            'min_coin_price': (float, 0, 10000000),  # 新增：币种最低价格
+            'max_coin_price': (float, 0, 10000000),  # 新增：币种最高价格
             # 自动补仓配置
             'auto_replenish': (bool, None, None),
             'replenish_ratio': (float, 0.01, 10.0),
             'replenish_min_value_usd': (float, 1, 100000),
             'replenish_max_value_usd': (float, 1, 1000000),
         }
+        
+        validated_config = _validate_config_fields(config_data, valid_fields)
+        
+        result = {
+            'name': data.get('name', '').strip(),
+            'description': data.get('description', '').strip(),
+            'symbol': symbol,
+            'config_data': validated_config,
+            'is_enabled': bool(data.get('is_enabled', True)),
+            'config_type': config_type,
+            # 立即跟单不再使用以下字段，但数据库需要
+            'leverage_min': 0,
+            'leverage_max': 100,
+            'priority': 0,
+            'is_default': False,
+        }
     
+    if data.get('id'):
+        result['id'] = int(data['id'])
+    
+    return result, ''
+
+
+def _validate_config_fields(config_data: dict, valid_fields: dict) -> dict:
+    """验证并转换配置字段"""
     validated_config = {}
     for field, (field_type, min_val, max_val) in valid_fields.items():
         if field in config_data:
@@ -630,31 +685,7 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
                 validated_config[field] = value
             except (ValueError, TypeError):
                 pass  # 跳过无效值
-    
-    # 处理数组字段
-    if 'symbols_whitelist' in config_data:
-        validated_config['symbols_whitelist'] = config_data['symbols_whitelist'] if isinstance(config_data['symbols_whitelist'], list) else []
-    if 'symbols_blacklist' in config_data:
-        validated_config['symbols_blacklist'] = config_data['symbols_blacklist'] if isinstance(config_data['symbols_blacklist'], list) else []
-    if config_type == 'default' and 'sync_position_symbols' in config_data:
-        validated_config['sync_position_symbols'] = config_data['sync_position_symbols'] if isinstance(config_data['sync_position_symbols'], list) else []
-    
-    result = {
-        'name': data.get('name', '').strip(),
-        'description': data.get('description', '').strip(),
-        'leverage_min': leverage_min,
-        'leverage_max': leverage_max,
-        'config_data': validated_config,
-        'priority': int(data.get('priority', 0)),
-        'is_enabled': bool(data.get('is_enabled', True)),
-        'is_default': bool(data.get('is_default', False)),
-        'config_type': config_type,
-    }
-    
-    if data.get('id'):
-        result['id'] = int(data['id'])
-    
-    return result, ''
+    return validated_config
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules', methods=['GET'])
@@ -950,7 +981,7 @@ def get_immediate_config_rules():
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules', methods=['POST'])
 def create_immediate_config_rule():
-    """创建立即跟单配置规则
+    """创建立即跟单配置规则（按币种配置，每个币种最多一个配置）
     ---
     tags:
       - Copy Trading - Config Rules
@@ -967,21 +998,13 @@ def create_immediate_config_rule():
             description:
               type: string
               description: 规则描述
-            leverage_min:
-              type: number
-              description: 杠杆下限（不包含）
-            leverage_max:
-              type: number
-              description: 杠杆上限（包含）
+            symbol:
+              type: string
+              description: 币种（每个币种最多一个配置）
             config_data:
               type: object
               description: 配置数据
-            priority:
-              type: integer
-              description: 优先级
             is_enabled:
-              type: boolean
-            is_default:
               type: boolean
     responses:
       200:
@@ -1003,6 +1026,16 @@ def create_immediate_config_rule():
                 'success': False,
                 'error': error
             }), 400
+        
+        # 检查币种唯一性
+        symbol = validated_data.get('symbol')
+        if symbol:
+            existing = db.get_immediate_config_rule_by_symbol(symbol)
+            if existing:
+                return jsonify({
+                    'success': False,
+                    'error': f'币种 {symbol} 已存在配置规则'
+                }), 400
         
         rule_id = db.save_copy_config_rule(validated_data)
         if rule_id:
@@ -1109,6 +1142,17 @@ def update_immediate_config_rule(rule_id: int):
                 'success': False,
                 'error': error
             }), 400
+        
+        # 检查币种唯一性（如果币种变更了）
+        new_symbol = validated_data.get('symbol')
+        old_symbol = existing.get('symbol')
+        if new_symbol and new_symbol != old_symbol:
+            existing_by_symbol = db.get_immediate_config_rule_by_symbol(new_symbol)
+            if existing_by_symbol:
+                return jsonify({
+                    'success': False,
+                    'error': f'币种 {new_symbol} 已存在配置规则'
+                }), 400
         
         result_id = db.save_copy_config_rule(validated_data)
         if result_id:

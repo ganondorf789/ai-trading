@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, addToast } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
@@ -19,6 +19,11 @@ export default function ImmediateConfigRulesPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingRule, setDeletingRule] = useState<ImmediateCopyConfigRule | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // 已存在配置的币种列表
+  const existingSymbols = useMemo(() => {
+    return rules.map((rule) => rule.symbol).filter(Boolean);
+  }, [rules]);
 
   // 加载规则列表
   const loadRules = useCallback(async () => {
@@ -63,12 +68,9 @@ export default function ImmediateConfigRulesPage() {
         response = await riskControlApi.createImmediateConfigRule({
           name: data.name || "",
           description: data.description,
-          leverage_min: data.leverage_min || 0,
-          leverage_max: data.leverage_max || 100,
+          symbol: data.symbol || "",
           config_data: data.config_data || {},
-          priority: data.priority,
           is_enabled: data.is_enabled,
-          is_default: data.is_default,
         });
       }
       
@@ -147,7 +149,7 @@ export default function ImmediateConfigRulesPage() {
               立即跟单配置规则
             </h1>
             <p className="text-default-500 mt-1">
-              根据目标杠杆匹配不同的立即跟单配置，优先级数字越小越先匹配
+              为不同币种设置独立的跟单配置，每个币种最多一个配置
             </p>
           </div>
           <Button
@@ -175,6 +177,7 @@ export default function ImmediateConfigRulesPage() {
           onSave={handleSave}
           editingRule={editingRule}
           isSaving={isSaving}
+          existingSymbols={existingSymbols}
         />
 
         {/* 删除确认弹窗 */}

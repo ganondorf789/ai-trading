@@ -723,3 +723,15 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'copy_position_tracking', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
         )
+
+        # 添加 symbol 字段到 copy_config_rules 表（立即跟单按币种配置）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_config_rules', 'symbol', 'TEXT'
+        )
+        
+        # 创建立即跟单配置规则的币种唯一索引（每个币种最多一个配置）
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_immediate_symbol
+            ON copy_config_rules(config_type, symbol)
+            WHERE config_type = 'immediate' AND symbol IS NOT NULL
+        """)

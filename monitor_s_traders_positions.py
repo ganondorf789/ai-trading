@@ -364,9 +364,10 @@ def create_position_tracking_for_copy(
     """
     为符合条件的仓位创建跟单记录并发送 Redis 通知
     
-    会根据仓位杠杆匹配对应的配置规则：
-    - 如果有匹配的立即跟单配置规则，使用规则中的参数创建跟单记录
-    - 如果没有匹配的规则，则不创建跟单记录
+    会根据币种匹配对应的配置规则：
+    - 如果有匹配的立即跟单配置规则，检查所有跟单条件后使用规则中的参数创建跟单记录
+    - 跟单条件包括：交易员评分、目标杠杆范围、仓位价值范围、币种价格范围
+    - 如果没有匹配的规则或不满足条件，则不创建跟单记录
     
     Args:
         db: 数据库实例
@@ -375,7 +376,7 @@ def create_position_tracking_for_copy(
         redis_client: Redis 客户端
     
     Returns:
-        创建的 tracking_id，如果没有匹配规则/已存在/创建失败则返回 None
+        创建的 tracking_id，如果没有匹配规则/不满足条件/已存在/创建失败则返回 None
     """
     address = trader['address']
     coin = position.get('coin', '')
@@ -386,13 +387,52 @@ def create_position_tracking_for_copy(
     leverage = float(position.get('leverage', 1) or 1)
     side = 'long' if szi > 0 else 'short'
     
-    # 根据杠杆匹配配置规则
-    matched_config = db.get_copy_config_by_leverage('immediate', leverage)
+    # 根据币种匹配配置规则
+    matched_config = db.get_immediate_config_by_symbol(coin)
     matched_rule_name = matched_config.get('_matched_rule_name')
     
     # 如果没有匹配的规则，不创建跟单记录
     if not matched_rule_name:
-        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x 无匹配规则")
+        logger.debug(f"    跳过立即跟单: {coin} 无匹配规则")
+        return None
+    
+    # 检查跟单条件
+    # 1. 检查交易员最低评分
+    min_score = matched_config.get('min_trader_overall_score', 0)
+    trader_score = trader.get('overall_score', 0) or 0
+    if min_score > 0 and trader_score < min_score:
+        logger.debug(f"    跳过立即跟单: {coin} 交易员评分 {trader_score} < 要求 {min_score}")
+        return None
+    
+    # 2. 检查目标杠杆范围
+    min_leverage = matched_config.get('min_trader_leverage', 0)
+    max_leverage_cond = matched_config.get('max_trader_leverage', 0)
+    if min_leverage > 0 and leverage < min_leverage:
+        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x < 最小 {min_leverage}x")
+        return None
+    if max_leverage_cond > 0 and leverage > max_leverage_cond:
+        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x > 最大 {max_leverage_cond}x")
+        return None
+    
+    # 3. 检查仓位价值范围
+    position_value = abs(szi) * entry_px
+    min_position_value = matched_config.get('min_position_value_usd', 0)
+    max_position_value = matched_config.get('max_position_value_usd', 0)
+    if min_position_value > 0 and position_value < min_position_value:
+        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} < 最小 ${min_position_value}")
+        return None
+    if max_position_value > 0 and position_value > max_position_value:
+        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} > 最大 ${max_position_value}")
+        return None
+    
+    # 4. 检查币种价格范围（使用入场价作为参考）
+    min_coin_price = matched_config.get('min_coin_price', 0)
+    max_coin_price = matched_config.get('max_coin_price', 0)
+    if min_coin_price > 0 and entry_px < min_coin_price:
+        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} < 最小 ${min_coin_price}")
+        return None
+    if max_coin_price > 0 and entry_px > max_coin_price:
+        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} > 最大 ${max_coin_price}")
         return None
     
     # 检查是否已存在活跃的跟单记录
@@ -404,7 +444,7 @@ def create_position_tracking_for_copy(
     effective_config = matched_config
     
     if matched_rule_name:
-        logger.info(f"    → 杠杆 {leverage}x 匹配规则: {matched_rule_name}")
+        logger.info(f"    → 币种 {coin} 匹配规则: {matched_rule_name}")
     
     # 创建跟单记录
     tracking_data = {

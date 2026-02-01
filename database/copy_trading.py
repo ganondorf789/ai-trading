@@ -727,7 +727,7 @@ class CopyTradingOps:
             enabled_only: 是否只返回启用的规则
             
         Returns:
-            配置规则列表，按优先级排序
+            配置规则列表，按优先级/币种排序
         """
         try:
             with self._get_connection() as conn:
@@ -736,7 +736,7 @@ class CopyTradingOps:
                 sql = """
                     SELECT id, config_type, name, description, 
                            leverage_min, leverage_max, config_data,
-                           priority, is_enabled, is_default,
+                           priority, is_enabled, is_default, symbol,
                            created_at, updated_at
                     FROM copy_config_rules
                     WHERE config_type = %s
@@ -746,7 +746,11 @@ class CopyTradingOps:
                 if enabled_only:
                     sql += " AND is_enabled = TRUE"
                 
-                sql += " ORDER BY priority ASC, id ASC"
+                # 立即跟单按币种排序，默认跟单按优先级排序
+                if config_type == 'immediate':
+                    sql += " ORDER BY symbol ASC, id ASC"
+                else:
+                    sql += " ORDER BY priority ASC, id ASC"
                 
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
@@ -781,7 +785,7 @@ class CopyTradingOps:
                 cursor.execute("""
                     SELECT id, config_type, name, description,
                            leverage_min, leverage_max, config_data,
-                           priority, is_enabled, is_default,
+                           priority, is_enabled, is_default, symbol,
                            created_at, updated_at
                     FROM copy_config_rules
                     WHERE id = %s
@@ -798,12 +802,46 @@ class CopyTradingOps:
             logger.error(f"获取配置规则失败 (id={rule_id}): {e}")
             return None
 
+    def get_immediate_config_rule_by_symbol(self, symbol: str) -> Optional[Dict]:
+        """
+        根据币种获取立即跟单配置规则（每个币种最多一个配置）
+        
+        Args:
+            symbol: 币种名称
+            
+        Returns:
+            配置规则字典或 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                cursor.execute("""
+                    SELECT id, config_type, name, description,
+                           leverage_min, leverage_max, config_data,
+                           priority, is_enabled, is_default, symbol,
+                           created_at, updated_at
+                    FROM copy_config_rules
+                    WHERE config_type = 'immediate' AND symbol = %s
+                    LIMIT 1
+                """, (symbol.upper(),))
+                
+                row = cursor.fetchone()
+                if row:
+                    item = dict(row)
+                    if item.get('config_data') and isinstance(item['config_data'], str):
+                        item['config_data'] = json.loads(item['config_data'])
+                    return item
+                return None
+        except Exception as e:
+            logger.error(f"获取立即跟单配置规则失败 (symbol={symbol}): {e}")
+            return None
+
     def save_copy_config_rule(self, data: Dict) -> Optional[int]:
         """
         保存或更新跟单配置规则
         
         Args:
-            data: 规则数据，包含 config_type, name, leverage_min, leverage_max, config_data 等
+            data: 规则数据，包含 config_type, name, leverage_min, leverage_max, config_data, symbol 等
             
         Returns:
             规则ID，失败返回 None
@@ -823,7 +861,7 @@ class CopyTradingOps:
                         SET name = %s, description = %s,
                             leverage_min = %s, leverage_max = %s,
                             config_data = %s, priority = %s,
-                            is_enabled = %s, is_default = %s,
+                            is_enabled = %s, is_default = %s, symbol = %s,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = %s
                         RETURNING id
@@ -836,18 +874,19 @@ class CopyTradingOps:
                         data.get('priority', 0),
                         data.get('is_enabled', True),
                         data.get('is_default', False),
+                        data.get('symbol'),
                         data['id']
                     ))
                     result = cursor.fetchone()
-                    logger.info(f"更新跟单配置规则: id={data['id']}, name={data.get('name')}")
+                    logger.info(f"更新跟单配置规则: id={data['id']}, name={data.get('name')}, symbol={data.get('symbol')}")
                     return result[0] if result else None
                 else:
                     # 插入
                     cursor.execute("""
                         INSERT INTO copy_config_rules 
                         (config_type, name, description, leverage_min, leverage_max, 
-                         config_data, priority, is_enabled, is_default)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         config_data, priority, is_enabled, is_default, symbol)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
                         data.get('config_type', 'default'),
@@ -858,10 +897,11 @@ class CopyTradingOps:
                         config_data,
                         data.get('priority', 0),
                         data.get('is_enabled', True),
-                        data.get('is_default', False)
+                        data.get('is_default', False),
+                        data.get('symbol')
                     ))
                     rule_id = cursor.fetchone()[0]
-                    logger.info(f"创建跟单配置规则: id={rule_id}, name={data.get('name')}")
+                    logger.info(f"创建跟单配置规则: id={rule_id}, name={data.get('name')}, symbol={data.get('symbol')}")
                     return rule_id
         except Exception as e:
             logger.error(f"保存跟单配置规则失败: {e}")
@@ -952,9 +992,30 @@ class CopyTradingOps:
             logger.error(f"匹配跟单配置规则失败: {e}")
             return None
 
+    def get_immediate_config_by_symbol(self, symbol: str) -> Dict:
+        """
+        根据币种获取立即跟单配置
+        
+        Args:
+            symbol: 币种名称
+            
+        Returns:
+            配置字典，如果没有匹配规则则返回空字典
+        """
+        rule = self.get_immediate_config_rule_by_symbol(symbol)
+        
+        if rule and rule.get('is_enabled'):
+            config = rule.get('config_data', {})
+            config['_matched_rule_name'] = rule.get('name')
+            config['_matched_rule_id'] = rule.get('id')
+            config['_matched_symbol'] = rule.get('symbol')
+            return config
+        
+        return {}
+
     def get_copy_config_by_leverage(self, config_type: str, leverage: float) -> Dict:
         """
-        根据杠杆获取跟单配置
+        根据杠杆获取跟单配置（仅用于默认跟单）
         
         Args:
             config_type: 配置类型 ('default' 或 'immediate')

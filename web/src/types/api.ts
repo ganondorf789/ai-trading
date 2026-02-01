@@ -561,10 +561,17 @@ export interface ImmediateCopyConfig {
   // 跟单条件
   min_trader_overall_score: number;  // 最低评分 0-100，0表示不限制
   min_trader_leverage: number;  // 目标交易员最小杠杆，>=此值才跟单
-  symbols_whitelist: string[];
-  symbols_blacklist: string[];
+  max_trader_leverage: number;  // 目标交易员最大杠杆，<=此值才跟单，0表示不限制
   min_position_value_usd: number;  // 目标仓位最小价值
   max_position_value_usd: number;  // 目标仓位最大价值，0表示不限制
+  min_coin_price: number;  // 币种最低价格，0表示不限制
+  max_coin_price: number;  // 币种最高价格，0表示不限制
+  
+  // 自动补仓配置
+  auto_replenish: boolean;
+  replenish_ratio: number;
+  replenish_min_value_usd: number;
+  replenish_max_value_usd: number;
 }
 
 // ==================== 跟单配置规则类型（多配置支持） ====================
@@ -588,9 +595,17 @@ export interface DefaultCopyConfigRule extends CopyConfigRuleBase {
   config_data: Partial<DefaultCopyTradingConfig>;
 }
 
-export interface ImmediateCopyConfigRule extends CopyConfigRuleBase {
+// 立即跟单配置规则（按币种配置，每个币种最多一个配置）
+export interface ImmediateCopyConfigRule {
+  id?: number;
   config_type: 'immediate';
+  name: string;
+  description?: string;
+  symbol: string;  // 币种，每个币种最多一个配置
+  is_enabled: boolean;
   config_data: Partial<ImmediateCopyConfig>;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type CopyConfigRule = DefaultCopyConfigRule | ImmediateCopyConfigRule;
@@ -598,8 +613,9 @@ export type CopyConfigRule = DefaultCopyConfigRule | ImmediateCopyConfigRule;
 export interface CopyConfigRuleCreateData {
   name: string;
   description?: string;
-  leverage_min: number;
-  leverage_max: number;
+  leverage_min?: number;  // 默认跟单用
+  leverage_max?: number;  // 默认跟单用
+  symbol?: string;  // 立即跟单用
   config_data: Partial<DefaultCopyTradingConfig> | Partial<ImmediateCopyConfig>;
   priority?: number;
   is_enabled?: boolean;
