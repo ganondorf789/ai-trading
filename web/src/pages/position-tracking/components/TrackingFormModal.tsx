@@ -203,7 +203,7 @@ export default function TrackingFormModal({
             </div>
 
             {formData.auto_replenish && (
-              <div className="space-y-4 pl-4 border-l-2 border-primary-200">
+              <div className="space-y-4">
                 <Input
                   type="number"
                   label="补仓比例"
