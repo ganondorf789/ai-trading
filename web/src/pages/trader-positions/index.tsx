@@ -1,22 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, addToast, Spinner, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
+import { Button, addToast, Spinner } from "@heroui/react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
 import {
   traderPositionsApi,
-  copyTradingApi,
   traderApi,
   TraderPosition,
   TraderPositionsStats,
-  CopyTradingGroup,
-  PositionsAIAnalysis,
 } from "@/services/api";
-import { MetricFilterConfig, emptyMetricFilters } from "@/components/filters";
 import { useTimeRange } from "@/components/TimeRangeFilter";
 
-import { StatsCards, PositionFilters, PositionsTable, CoinSummary, PositionsAIAnalysisModal } from "./components";
+import { StatsCards, PositionFilters, PositionsTable, CoinSummary } from "./components";
 import { INITIAL_VISIBLE_COLUMNS } from "./components/PositionFilters";
 
 // 扩展 TraderPosition 类型，包含交易员指标
@@ -28,20 +24,16 @@ export default function TraderPositionsPage() {
   // 数据状态
   const [positions, setPositions] = useState<TraderPositionWithMetrics[]>([]);
   const [stats, setStats] = useState<TraderPositionsStats | null>(null);
-  const [groups, setGroups] = useState<CopyTradingGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // 筛选状态
   const [search, setSearch] = useState("");
   const [sideFilter, setSideFilter] = useState<string>("all");
-  const [traderFilter, setTraderFilter] = useState<string>("all");
   const [coinFilter, setCoinFilter] = useState<string>("all");
-  const [groupFilter, setGroupFilter] = useState<string>("all");
   const [starFilter, setStarFilter] = useState<string>("all");
   const [pnlFilter, setPnlFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
-  const [metricFilters, setMetricFilters] = useState<MetricFilterConfig>(emptyMetricFilters);
   // 开仓时间筛选状态
   const [openTimeFilter, setOpenTimeFilter] = useState<string>("all");
   const [openTimeDateRange, setOpenTimeDateRange] = useState<RangeValue<DateValue> | null>(null);
@@ -54,79 +46,11 @@ export default function TraderPositionsPage() {
   });
   const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
-  // 加载分组数据
-  const fetchGroups = useCallback(async () => {
-    try {
-      const response = await copyTradingApi.getGroups();
-      if (response.success && response.data) {
-        setGroups(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch groups:", error);
-    }
-  }, []);
-
   // 加载持仓数据
   const fetchPositions = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = {};
-
-      if (groupFilter !== "all") {
-        params.group_id = parseInt(groupFilter);
-      }
-
-      // 添加指标筛选参数
-      if (metricFilters.minWinRate !== undefined) {
-        params.min_win_rate = metricFilters.minWinRate;
-      }
-      if (metricFilters.maxWinRate !== undefined) {
-        params.max_win_rate = metricFilters.maxWinRate;
-      }
-      if (metricFilters.minProfitFactor !== undefined) {
-        params.min_profit_factor = metricFilters.minProfitFactor;
-      }
-      if (metricFilters.maxProfitFactor !== undefined) {
-        params.max_profit_factor = metricFilters.maxProfitFactor;
-      }
-      if (metricFilters.minPnl !== undefined) {
-        params.min_pnl = metricFilters.minPnl;
-      }
-      if (metricFilters.maxPnl !== undefined) {
-        params.max_pnl = metricFilters.maxPnl;
-      }
-      if (metricFilters.minDrawdown !== undefined) {
-        params.min_drawdown = metricFilters.minDrawdown;
-      }
-      if (metricFilters.maxDrawdown !== undefined) {
-        params.max_drawdown = metricFilters.maxDrawdown;
-      }
-      if (metricFilters.minSharpe !== undefined) {
-        params.min_sharpe = metricFilters.minSharpe;
-      }
-      if (metricFilters.maxSharpe !== undefined) {
-        params.max_sharpe = metricFilters.maxSharpe;
-      }
-      if (metricFilters.minSortino !== undefined) {
-        params.min_sortino = metricFilters.minSortino;
-      }
-      if (metricFilters.maxSortino !== undefined) {
-        params.max_sortino = metricFilters.maxSortino;
-      }
-      if (metricFilters.minTrades !== undefined) {
-        params.min_trades = metricFilters.minTrades;
-      }
-      if (metricFilters.maxTrades !== undefined) {
-        params.max_trades = metricFilters.maxTrades;
-      }
-      if (metricFilters.minScore !== undefined) {
-        params.min_score = metricFilters.minScore;
-      }
-      if (metricFilters.maxScore !== undefined) {
-        params.max_score = metricFilters.maxScore;
-      }
-
-      const response = await traderPositionsApi.getPositions(params);
+      const response = await traderPositionsApi.getPositions();
 
       if (response.success && response.data) {
         setPositions(response.data);
@@ -144,7 +68,7 @@ export default function TraderPositionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [groupFilter, metricFilters]);
+  }, []);
 
   // 刷新持仓数据（从 Hyperliquid API）
   const handleRefresh = async () => {
@@ -216,25 +140,13 @@ export default function TraderPositionsPage() {
   const handleReset = () => {
     setSearch("");
     setSideFilter("all");
-    setTraderFilter("all");
     setCoinFilter("all");
-    setGroupFilter("all");
     setStarFilter("all");
     setPnlFilter("all");
     setScoreFilter("all");
-    setMetricFilters(emptyMetricFilters);
     setOpenTimeFilter("all");
     setOpenTimeDateRange(null);
   };
-
-  // ==================== AI 分析状态 ====================
-  const [aiAnalysisOpen, setAiAnalysisOpen] = useState(false);
-  const [aiAnalyzing, setAiAnalyzing] = useState(false);
-  const [aiAnalysisData, setAiAnalysisData] = useState<PositionsAIAnalysis | null>(null);
-  const [aiAnalysisType, setAiAnalysisType] = useState<'overall' | 'coin' | 'single'>('overall');
-  const [aiAnalysisCoin, setAiAnalysisCoin] = useState<string>('');
-  const [aiAnalysisCached, setAiAnalysisCached] = useState(false);  // 是否是缓存的结果
-  const [aiAnalysisTime, setAiAnalysisTime] = useState<string | undefined>();  // 分析时间
 
   // 应用本地筛选
   const filteredPositions = useMemo(() => {
@@ -256,11 +168,6 @@ export default function TraderPositionsPage() {
       filtered = filtered.filter((p) =>
         sideFilter === "long" ? p.szi > 0 : p.szi < 0
       );
-    }
-
-    // 交易员筛选
-    if (traderFilter !== "all") {
-      filtered = filtered.filter((p) => p.address === traderFilter);
     }
 
     // 币种筛选
@@ -303,7 +210,7 @@ export default function TraderPositionsPage() {
     }
 
     return filtered;
-  }, [positions, search, sideFilter, traderFilter, coinFilter, starFilter, pnlFilter, scoreFilter, openTimeRange]);
+  }, [positions, search, sideFilter, coinFilter, starFilter, pnlFilter, scoreFilter, openTimeRange]);
 
   // 根据筛选后的数据计算统计信息
   const filteredStats = useMemo((): TraderPositionsStats | null => {
@@ -388,176 +295,9 @@ export default function TraderPositionsPage() {
     };
   }, [filteredPositions]);
 
-  // ==================== AI 分析函数 ====================
-
-  // 整体持仓 AI 分析
-  const handleAIAnalyzeAll = useCallback(async (forceRefresh: boolean = false) => {
-    if (filteredPositions.length === 0) {
-      addToast({
-        title: "无法分析",
-        description: "当前没有持仓数据",
-        color: "warning",
-      });
-      return;
-    }
-
-    setAiAnalysisType('overall');
-    setAiAnalysisData(null);
-    setAiAnalysisCached(false);
-    setAiAnalysisTime(undefined);
-    setAiAnalysisOpen(true);
-    setAiAnalyzing(true);
-
-    try {
-      const response = await traderPositionsApi.aiAnalyzeAll({
-        positions: filteredPositions,
-        stats: filteredStats || undefined,
-        force_refresh: forceRefresh,
-      });
-
-      if (response.success && response.data) {
-        setAiAnalysisData(response.data);
-        setAiAnalysisCached(response.cached || false);
-        setAiAnalysisTime(response.analyzed_at);
-        addToast({
-          title: response.cached ? "加载完成" : "分析完成",
-          description: response.message || (response.cached ? "已加载历史分析结果" : "AI 分析已完成"),
-          color: "success",
-        });
-      } else {
-        addToast({
-          title: "分析失败",
-          description: response.error || "未知错误",
-          color: "danger",
-        });
-      }
-    } catch (error: any) {
-      console.error("AI analysis failed:", error);
-      addToast({
-        title: "分析失败",
-        description: error.message || "AI 分析请求失败",
-        color: "danger",
-      });
-    } finally {
-      setAiAnalyzing(false);
-    }
-  }, [filteredPositions, filteredStats]);
-
-  // 币种持仓 AI 分析
-  const handleAIAnalyzeCoin = useCallback(async (coin: string, forceRefresh: boolean = false) => {
-    const coinPositions = filteredPositions.filter(p => p.coin === coin);
-    if (coinPositions.length === 0) {
-      addToast({
-        title: "无法分析",
-        description: `没有 ${coin} 的持仓数据`,
-        color: "warning",
-      });
-      return;
-    }
-
-    setAiAnalysisType('coin');
-    setAiAnalysisCoin(coin);
-    setAiAnalysisData(null);
-    setAiAnalysisCached(false);
-    setAiAnalysisTime(undefined);
-    setAiAnalysisOpen(true);
-    setAiAnalyzing(true);
-
-    try {
-      const response = await traderPositionsApi.aiAnalyzeCoin({
-        coin,
-        positions: coinPositions,
-        force_refresh: forceRefresh,
-      });
-
-      if (response.success && response.data) {
-        setAiAnalysisData(response.data);
-        setAiAnalysisCached(response.cached || false);
-        setAiAnalysisTime(response.analyzed_at);
-        addToast({
-          title: response.cached ? "加载完成" : "分析完成",
-          description: response.message || (response.cached ? `已加载 ${coin} 历史分析结果` : `${coin} AI 分析已完成`),
-          color: "success",
-        });
-      } else {
-        addToast({
-          title: "分析失败",
-          description: response.error || "未知错误",
-          color: "danger",
-        });
-      }
-    } catch (error: any) {
-      console.error("AI analysis failed:", error);
-      addToast({
-        title: "分析失败",
-        description: error.message || "AI 分析请求失败",
-        color: "danger",
-      });
-    } finally {
-      setAiAnalyzing(false);
-    }
-  }, [filteredPositions]);
-
-  // 单仓位 AI 分析
-  const handleAIAnalyzeSingle = useCallback(async (position: TraderPosition, forceRefresh: boolean = false) => {
-    setAiAnalysisType('single');
-    setAiAnalysisCoin(position.coin);
-    setAiAnalysisData(null);
-    setAiAnalysisCached(false);
-    setAiAnalysisTime(undefined);
-    setAiAnalysisOpen(true);
-    setAiAnalyzing(true);
-
-    try {
-      const response = await traderPositionsApi.aiAnalyzeSingle({
-        position,
-        force_refresh: forceRefresh,
-      });
-
-      if (response.success && response.data) {
-        setAiAnalysisData(response.data);
-        setAiAnalysisCached(response.cached || false);
-        setAiAnalysisTime(response.analyzed_at);
-        addToast({
-          title: response.cached ? "加载完成" : "分析完成",
-          description: response.message || (response.cached ? "已加载历史分析结果" : "仓位风险分析已完成"),
-          color: "success",
-        });
-      } else {
-        addToast({
-          title: "分析失败",
-          description: response.error || "未知错误",
-          color: "danger",
-        });
-      }
-    } catch (error: any) {
-      console.error("AI analysis failed:", error);
-      addToast({
-        title: "分析失败",
-        description: error.message || "AI 分析请求失败",
-        color: "danger",
-      });
-    } finally {
-      setAiAnalyzing(false);
-    }
-  }, []);
-
-  // 当前分析的单仓位（用于重新分析）
-  const [currentSinglePosition, setCurrentSinglePosition] = useState<TraderPosition | null>(null);
-
-  // 包装单仓位分析以保存当前位置
-  const handleAIAnalyzeSingleWrapper = useCallback(async (position: TraderPosition, forceRefresh: boolean = false) => {
-    setCurrentSinglePosition(position);
-    await handleAIAnalyzeSingle(position, forceRefresh);
-  }, [handleAIAnalyzeSingle]);
-
   useEffect(() => {
     fetchPositions();
   }, [fetchPositions]);
-
-  useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
 
   return (
     <DefaultLayout>
@@ -573,49 +313,6 @@ export default function TraderPositionsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Dropdown>
-              <DropdownTrigger>
-                <Button
-                  color="secondary"
-                  variant="flat"
-                  startContent={<Icon icon="solar:magic-stick-2-bold-duotone" width={18} />}
-                  isDisabled={loading || filteredPositions.length === 0}
-                >
-                  AI 分析
-                </Button>
-              </DropdownTrigger>
-              <DropdownMenu aria-label="AI分析选项">
-                <DropdownItem
-                  key="overall"
-                  startContent={<Icon icon="solar:chart-2-bold-duotone" width={18} />}
-                  description={`分析当前 ${filteredPositions.length} 个持仓的整体情况`}
-                  onPress={() => handleAIAnalyzeAll(false)}
-                >
-                  整体持仓分析
-                </DropdownItem>
-                <DropdownItem
-                  key="coin"
-                  startContent={<Icon icon="solar:dollar-bold-duotone" width={18} />}
-                  description="选择一个币种进行深度分析"
-                  onPress={() => {
-                    // 获取当前筛选后的币种列表
-                    const coins = [...new Set(filteredPositions.map(p => p.coin))];
-                    if (coins.length === 0) {
-                      addToast({ title: "无法分析", description: "当前没有持仓数据", color: "warning" });
-                      return;
-                    }
-                    // 默认分析持仓最多的币种
-                    const coinCounts = coins.map(c => ({
-                      coin: c,
-                      count: filteredPositions.filter(p => p.coin === c).length
-                    })).sort((a, b) => b.count - a.count);
-                    handleAIAnalyzeCoin(coinCounts[0].coin);
-                  }}
-                >
-                  币种深度分析
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
             <Button
               color="primary"
               variant="flat"
@@ -638,7 +335,7 @@ export default function TraderPositionsPage() {
         <StatsCards stats={filteredStats} loading={loading && positions.length === 0} />
 
         {/* Coin Summary */}
-        <CoinSummary stats={filteredStats} onAIAnalyzeCoin={handleAIAnalyzeCoin} />
+        <CoinSummary stats={filteredStats} />
 
         {/* Filters */}
         <PositionFilters
@@ -646,16 +343,8 @@ export default function TraderPositionsPage() {
           onSearchChange={setSearch}
           sideFilter={sideFilter}
           onSideFilterChange={setSideFilter}
-          traderFilter={traderFilter}
-          onTraderFilterChange={setTraderFilter}
           coinFilter={coinFilter}
           onCoinFilterChange={setCoinFilter}
-          groupFilter={groupFilter}
-          onGroupFilterChange={(value) => {
-            setGroupFilter(value);
-            // 重置其他筛选
-            setTraderFilter("all");
-          }}
           starFilter={starFilter}
           onStarFilterChange={setStarFilter}
           pnlFilter={pnlFilter}
@@ -667,9 +356,6 @@ export default function TraderPositionsPage() {
           openTimeDateRange={openTimeDateRange}
           onOpenTimeDateRangeChange={setOpenTimeDateRange}
           stats={stats}
-          groups={groups}
-          metricFilters={metricFilters}
-          onMetricFiltersChange={setMetricFilters}
           onReset={handleReset}
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}
@@ -684,36 +370,11 @@ export default function TraderPositionsPage() {
           onRefreshTrader={handleRefreshTrader}
           onToggleStar={handleToggleStar}
           starLoadingAddresses={starLoadingAddresses}
-          onAIAnalyze={handleAIAnalyzeSingleWrapper}
           visibleColumns={visibleColumns}
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}
         />
       </div>
-
-      {/* AI 分析弹窗 */}
-      <PositionsAIAnalysisModal
-        isOpen={aiAnalysisOpen}
-        analysisData={aiAnalysisData}
-        analyzing={aiAnalyzing}
-        analysisType={aiAnalysisType}
-        coinName={aiAnalysisCoin}
-        onClose={() => {
-          setAiAnalysisOpen(false);
-          setCurrentSinglePosition(null);
-        }}
-        onReanalyze={
-          aiAnalysisType === 'overall' 
-            ? () => handleAIAnalyzeAll(true) 
-            : aiAnalysisType === 'coin' 
-              ? () => handleAIAnalyzeCoin(aiAnalysisCoin, true)
-              : currentSinglePosition 
-                ? () => handleAIAnalyzeSingleWrapper(currentSinglePosition, true)
-                : undefined
-        }
-        cached={aiAnalysisCached}
-        analyzedAt={aiAnalysisTime}
-      />
     </DefaultLayout>
   );
 }
