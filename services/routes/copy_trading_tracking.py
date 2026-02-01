@@ -320,6 +320,10 @@ def create_position_tracking():
             'max_leverage': data.get('max_leverage', default_config.get('max_leverage', 10)),
             'default_leverage': data.get('default_leverage', default_config.get('default_leverage', 5)),
             'slippage': data.get('slippage', default_config.get('slippage', 0.01)),
+            'auto_replenish': data.get('auto_replenish', False),
+            'replenish_ratio': data.get('replenish_ratio', 0.5),
+            'replenish_min_value_usd': data.get('replenish_min_value_usd', 10.0),
+            'replenish_max_value_usd': data.get('replenish_max_value_usd', 100.0),
             'status': 'pending',
         }
 
@@ -399,6 +403,10 @@ def update_position_tracking(tracking_id: int):
             'max_leverage': data.get('max_leverage', existing.get('max_leverage', 10)),
             'default_leverage': data.get('default_leverage', existing.get('default_leverage', 5)),
             'slippage': data.get('slippage', existing.get('slippage', 0.01)),
+            'auto_replenish': data.get('auto_replenish', existing.get('auto_replenish', False)),
+            'replenish_ratio': data.get('replenish_ratio', existing.get('replenish_ratio', 0.5)),
+            'replenish_min_value_usd': data.get('replenish_min_value_usd', existing.get('replenish_min_value_usd', 10.0)),
+            'replenish_max_value_usd': data.get('replenish_max_value_usd', existing.get('replenish_max_value_usd', 100.0)),
             'status': existing.get('status', 'pending'),
             # 保留现有的仓位状态
             'target_initial_size': existing.get('target_initial_size'),
@@ -710,6 +718,10 @@ def quick_add_position_tracking():
             'max_leverage': default_config.get('max_leverage', 10),
             'default_leverage': default_config.get('default_leverage', 5),
             'slippage': default_config.get('slippage', 0.01),
+            'auto_replenish': False,
+            'replenish_ratio': 0.5,
+            'replenish_min_value_usd': 10.0,
+            'replenish_max_value_usd': 100.0,
             'status': 'pending',
         }
 
@@ -908,6 +920,10 @@ def quick_copy_position():
             'max_leverage': matched_config.get('max_leverage', 10),
             'default_leverage': matched_config.get('default_leverage', 3),
             'slippage': matched_config.get('slippage', 0.001),
+            'auto_replenish': False,
+            'replenish_ratio': 0.5,
+            'replenish_min_value_usd': 10.0,
+            'replenish_max_value_usd': 100.0,
             'status': 'pending',
         }
 

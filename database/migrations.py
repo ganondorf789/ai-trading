@@ -709,3 +709,17 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'copy_position_tracking', 'target_initial_leverage', 'REAL'
         )
+
+        # 添加自动补仓相关字段到 copy_position_tracking 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'auto_replenish', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'replenish_ratio', 'REAL DEFAULT 0.5'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'replenish_min_value_usd', 'REAL DEFAULT 10.0'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
+        )

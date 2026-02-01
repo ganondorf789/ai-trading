@@ -527,6 +527,12 @@ export interface PositionTracking {
   max_leverage: number;
   default_leverage: number;
   slippage: number;
+  // 自动补仓配置
+  auto_replenish: boolean;
+  replenish_ratio: number;
+  replenish_min_value_usd: number;
+  replenish_max_value_usd: number;
+  // 目标仓位快照
   target_initial_size: number | null;
   target_initial_side: string | null;
   target_initial_entry_price: number | null;
