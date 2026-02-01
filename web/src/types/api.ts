@@ -538,6 +538,12 @@ export interface DefaultCopyTradingConfig {
   
   // 功能开关
   copy_leverage: boolean;
+  
+  // 自动补仓配置
+  auto_replenish: boolean;
+  replenish_ratio: number;
+  replenish_min_value_usd: number;
+  replenish_max_value_usd: number;
 }
 
 // ==================== 立即跟单配置类型 ====================

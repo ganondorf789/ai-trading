@@ -586,6 +586,11 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'copy_leverage': (bool, None, None),
             'sync_position': (bool, None, None),
             'dry_run': (bool, None, None),
+            # 自动补仓配置
+            'auto_replenish': (bool, None, None),
+            'replenish_ratio': (float, 0.01, 10.0),
+            'replenish_min_value_usd': (float, 1, 100000),
+            'replenish_max_value_usd': (float, 1, 1000000),
         }
     else:  # immediate
         valid_fields = {
@@ -600,6 +605,11 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'min_trader_leverage': (float, 0, 100),
             'min_position_value_usd': (float, 0, 10000000),
             'max_position_value_usd': (float, 0, 10000000),
+            # 自动补仓配置
+            'auto_replenish': (bool, None, None),
+            'replenish_ratio': (float, 0.01, 10.0),
+            'replenish_min_value_usd': (float, 1, 100000),
+            'replenish_max_value_usd': (float, 1, 1000000),
         }
     
     validated_config = {}

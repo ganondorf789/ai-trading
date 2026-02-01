@@ -32,6 +32,10 @@ const defaultConfigData: Partial<DefaultCopyTradingConfig> = {
   copy_leverage: false,
   symbols_whitelist: [],
   symbols_blacklist: [],
+  auto_replenish: false,
+  replenish_ratio: 0.5,
+  replenish_min_value_usd: 10,
+  replenish_max_value_usd: 100,
 };
 
 export default function ConfigRuleModal({
@@ -43,7 +47,6 @@ export default function ConfigRuleModal({
 }: ConfigRuleModalProps) {
   // 基本信息
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [leverageMin, setLeverageMin] = useState(0);
   const [leverageMax, setLeverageMax] = useState(100);
   const [priority, setPriority] = useState(0);
@@ -81,7 +84,6 @@ export default function ConfigRuleModal({
   useEffect(() => {
     if (editingRule) {
       setName(editingRule.name);
-      setDescription(editingRule.description || "");
       setLeverageMin(editingRule.leverage_min);
       setLeverageMax(editingRule.leverage_max);
       setPriority(editingRule.priority);
@@ -90,7 +92,6 @@ export default function ConfigRuleModal({
       setConfigData({ ...defaultConfigData, ...editingRule.config_data });
     } else {
       setName("");
-      setDescription("");
       setLeverageMin(0);
       setLeverageMax(100);
       setPriority(0);
@@ -232,7 +233,6 @@ export default function ConfigRuleModal({
   const handleSave = () => {
     const data: Partial<DefaultCopyConfigRule> = {
       name,
-      description,
       leverage_min: leverageMin,
       leverage_max: leverageMax,
       priority,
@@ -261,21 +261,13 @@ export default function ConfigRuleModal({
               <Icon icon="lucide:info" width={16} />
               基本信息
             </h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Input
-                label="规则名称"
-                placeholder="例如：低杠杆配置"
-                value={name}
-                onValueChange={setName}
-                isRequired
-              />
-              <Input
-                label="规则描述"
-                placeholder="可选描述"
-                value={description}
-                onValueChange={setDescription}
-              />
-            </div>
+            <Input
+              label="规则名称"
+              placeholder="例如：低杠杆配置"
+              value={name}
+              onValueChange={setName}
+              isRequired
+            />
             <div className="grid gap-4 md:grid-cols-3">
               <Input
                 type="number"
@@ -300,16 +292,6 @@ export default function ConfigRuleModal({
                 value={String(priority)}
                 onValueChange={(v) => setPriority(parseInt(v) || 0)}
               />
-            </div>
-            <div className="flex gap-6">
-              <div className="flex items-center gap-2">
-                <Switch size="sm" isSelected={isEnabled} onValueChange={setIsEnabled} />
-                <span className="text-sm">启用规则</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch size="sm" isSelected={isDefault} onValueChange={setIsDefault} />
-                <span className="text-sm">设为默认（兜底配置）</span>
-              </div>
             </div>
           </div>
 
@@ -339,16 +321,16 @@ export default function ConfigRuleModal({
               />
               <Input
                 type="number"
-                label="最大仓位"
-                value={String(configData.max_position_size_usd || 500)}
-                onValueChange={(v) => setConfigData({ ...configData, max_position_size_usd: parseFloat(v) || 500 })}
+                label="最小仓位"
+                value={String(configData.min_position_size_usd || 20)}
+                onValueChange={(v) => setConfigData({ ...configData, min_position_size_usd: parseFloat(v) || 20 })}
                 startContent={<span className="text-default-400 text-sm">$</span>}
               />
               <Input
                 type="number"
-                label="最小仓位"
-                value={String(configData.min_position_size_usd || 20)}
-                onValueChange={(v) => setConfigData({ ...configData, min_position_size_usd: parseFloat(v) || 20 })}
+                label="最大仓位"
+                value={String(configData.max_position_size_usd || 500)}
+                onValueChange={(v) => setConfigData({ ...configData, max_position_size_usd: parseFloat(v) || 500 })}
                 startContent={<span className="text-default-400 text-sm">$</span>}
               />
               <Input
@@ -366,14 +348,52 @@ export default function ConfigRuleModal({
                 endContent={<span className="text-default-400 text-sm">x</span>}
               />
             </div>
+          </div>
+
+          <Divider />
+
+          {/* 自动补仓配置 */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
+              <Icon icon="lucide:refresh-cw" width={16} />
+              自动补仓
+            </h4>
             <div className="flex items-center gap-2">
               <Switch
                 size="sm"
-                isSelected={configData.copy_leverage || false}
-                onValueChange={(v) => setConfigData({ ...configData, copy_leverage: v })}
+                isSelected={configData.auto_replenish || false}
+                onValueChange={(v) => setConfigData({ ...configData, auto_replenish: v })}
               />
-              <span className="text-sm">复制杠杆</span>
+              <span className="text-sm">启用自动补仓（当目标加仓时自动跟随补仓）</span>
             </div>
+            {configData.auto_replenish && (
+              <div className="grid gap-4 md:grid-cols-3 pl-4 border-l-2 border-primary-200">
+                <Input
+                  type="number"
+                  label="补仓比例"
+                  description="按目标补仓量的比例"
+                  value={String(((configData.replenish_ratio || 0.5) * 100).toFixed(0))}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_ratio: (parseFloat(v) || 50) / 100 })}
+                  endContent={<span className="text-default-400 text-sm">%</span>}
+                />
+                <Input
+                  type="number"
+                  label="补仓最小价值"
+                  description="单次补仓最小金额"
+                  value={String(configData.replenish_min_value_usd || 10)}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_min_value_usd: parseFloat(v) || 10 })}
+                  startContent={<span className="text-default-400 text-sm">$</span>}
+                />
+                <Input
+                  type="number"
+                  label="补仓最大价值"
+                  description="单次补仓最大金额"
+                  value={String(configData.replenish_max_value_usd || 100)}
+                  onValueChange={(v) => setConfigData({ ...configData, replenish_max_value_usd: parseFloat(v) || 100 })}
+                  startContent={<span className="text-default-400 text-sm">$</span>}
+                />
+              </div>
+            )}
           </div>
 
           <Divider />
@@ -510,6 +530,34 @@ export default function ConfigRuleModal({
                     </Chip>
                   ))
                 )}
+              </div>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* 开关选项 */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
+              <Icon icon="lucide:toggle-left" width={16} />
+              开关选项
+            </h4>
+            <div className="flex flex-wrap gap-6">
+              <div className="flex items-center gap-2">
+                <Switch size="sm" isSelected={isEnabled} onValueChange={setIsEnabled} />
+                <span className="text-sm">启用规则</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch size="sm" isSelected={isDefault} onValueChange={setIsDefault} />
+                <span className="text-sm">设为默认（兜底配置）</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={configData.copy_leverage || false}
+                  onValueChange={(v) => setConfigData({ ...configData, copy_leverage: v })}
+                />
+                <span className="text-sm">复制杠杆</span>
               </div>
             </div>
           </div>
