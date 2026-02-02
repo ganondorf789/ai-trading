@@ -111,6 +111,16 @@ class AIModelSettings(BaseSettings):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="生成温度")
 
 
+class EncryptionSettings(BaseSettings):
+    """加密配置"""
+    model_config = SettingsConfigDict(env_prefix='ENCRYPTION_')
+
+    secret_key: str = Field(
+        default="your-encryption-secret-key-change-this-in-production",
+        description="加密密钥（用于加密敏感数据如 api_wallet）"
+    )
+
+
 class SystemSettings(BaseSettings):
     """系统配置"""
     model_config = SettingsConfigDict(env_prefix='')
@@ -141,6 +151,7 @@ class Settings:
         self.hyperliquid = HyperliquidSettings()
         self.ai_model = AIModelSettings()
         self.system = SystemSettings()
+        self.encryption = EncryptionSettings()
     
     @property
     def hyperliquid_api_url(self) -> str:

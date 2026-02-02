@@ -5,9 +5,13 @@
 from typing import Optional, Dict, List
 import hashlib
 import secrets
+import base64
 from datetime import datetime, timedelta
 from psycopg2 import extras
 from loguru import logger
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
 class UsersOps:
@@ -20,6 +24,71 @@ class UsersOps:
     ROLE_ADMIN = 'admin'        # 超级管理员
     
     VALID_ROLES = [ROLE_USER, ROLE_MEMBER, ROLE_ADMIN]
+
+    # ==================== 加密处理 ====================
+
+    def _get_fernet(self) -> Fernet:
+        """
+        获取 Fernet 加密器实例
+        使用 PBKDF2 从密钥派生出合适的加密密钥
+        """
+        from config.settings import settings
+        
+        # 使用 PBKDF2 从配置的密钥派生出 Fernet 兼容的密钥
+        secret_key = settings.encryption.secret_key.encode()
+        salt = b'auto-trading-salt-v1'  # 固定盐值，确保加密一致性
+        
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(secret_key))
+        return Fernet(key)
+
+    def _encrypt_api_wallet(self, api_wallet: str) -> str:
+        """
+        加密 API 钱包私钥
+        
+        Args:
+            api_wallet: 原始 API 钱包私钥
+            
+        Returns:
+            加密后的字符串
+        """
+        if not api_wallet:
+            return api_wallet
+        
+        try:
+            fernet = self._get_fernet()
+            encrypted = fernet.encrypt(api_wallet.encode())
+            return encrypted.decode()
+        except Exception as e:
+            logger.error(f"加密 api_wallet 失败: {e}")
+            raise
+
+    def _decrypt_api_wallet(self, encrypted_wallet: str) -> str:
+        """
+        解密 API 钱包私钥
+        
+        Args:
+            encrypted_wallet: 加密后的 API 钱包私钥
+            
+        Returns:
+            解密后的原始字符串
+        """
+        if not encrypted_wallet:
+            return encrypted_wallet
+        
+        try:
+            fernet = self._get_fernet()
+            decrypted = fernet.decrypt(encrypted_wallet.encode())
+            return decrypted.decode()
+        except Exception as e:
+            logger.error(f"解密 api_wallet 失败: {e}")
+            # 如果解密失败，可能是旧数据未加密，直接返回原值
+            return encrypted_wallet
 
     # ==================== 密码处理 ====================
 
@@ -170,6 +239,10 @@ class UsersOps:
                 result = dict(user)
                 del result['password_hash']
                 
+                # 解密 api_wallet 后返回
+                if result.get('api_wallet'):
+                    result['api_wallet'] = self._decrypt_api_wallet(result['api_wallet'])
+                
                 logger.info(f"用户登录成功: {account}, 身份: {result.get('role', 'user')}")
                 return result
                 
@@ -245,11 +318,11 @@ class UsersOps:
 
         Args:
             user_id: 用户 ID
-            api_wallet: API 钱包地址
+            api_wallet: API 钱包私钥（将被加密存储）
             wallet_address: 钱包地址
 
         Returns:
-            更新后的用户信息，失败返回 None
+            更新后的用户信息（api_wallet 已解密），失败返回 None
         """
         try:
             with self._get_connection() as conn:
@@ -260,8 +333,10 @@ class UsersOps:
                 params = []
                 
                 if api_wallet is not None:
+                    # 加密 api_wallet 后存储
+                    encrypted_wallet = self._encrypt_api_wallet(api_wallet) if api_wallet else ''
                     updates.append("api_wallet = %s")
-                    params.append(api_wallet)
+                    params.append(encrypted_wallet)
                 
                 if wallet_address is not None:
                     updates.append("wallet_address = %s")
@@ -285,7 +360,11 @@ class UsersOps:
                 user = cursor.fetchone()
                 if user:
                     logger.info(f"Hyperliquid 设置更新成功: user_id={user_id}")
-                    return dict(user)
+                    result = dict(user)
+                    # 解密 api_wallet 后返回
+                    if result.get('api_wallet'):
+                        result['api_wallet'] = self._decrypt_api_wallet(result['api_wallet'])
+                    return result
                 return None
                 
         except Exception as e:
@@ -300,7 +379,7 @@ class UsersOps:
             user_id: 用户 ID
 
         Returns:
-            Hyperliquid 设置信息
+            Hyperliquid 设置信息（api_wallet 已解密）
         """
         try:
             with self._get_connection() as conn:
@@ -313,7 +392,13 @@ class UsersOps:
                 """, (user_id,))
                 
                 result = cursor.fetchone()
-                return dict(result) if result else None
+                if result:
+                    data = dict(result)
+                    # 解密 api_wallet 后返回
+                    if data.get('api_wallet'):
+                        data['api_wallet'] = self._decrypt_api_wallet(data['api_wallet'])
+                    return data
+                return None
                 
         except Exception as e:
             logger.error(f"获取 Hyperliquid 设置失败: {e}")
@@ -329,7 +414,7 @@ class UsersOps:
             user_id: 用户 ID
 
         Returns:
-            用户信息（不含密码）
+            用户信息（不含密码，api_wallet 已解密）
         """
         try:
             with self._get_connection() as conn:
@@ -343,7 +428,13 @@ class UsersOps:
                 """, (user_id,))
                 
                 user = cursor.fetchone()
-                return dict(user) if user else None
+                if user:
+                    result = dict(user)
+                    # 解密 api_wallet 后返回
+                    if result.get('api_wallet'):
+                        result['api_wallet'] = self._decrypt_api_wallet(result['api_wallet'])
+                    return result
+                return None
                 
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
@@ -357,7 +448,7 @@ class UsersOps:
             account: 账号
 
         Returns:
-            用户信息（不含密码）
+            用户信息（不含密码，api_wallet 已解密）
         """
         try:
             with self._get_connection() as conn:
@@ -371,7 +462,13 @@ class UsersOps:
                 """, (account,))
                 
                 user = cursor.fetchone()
-                return dict(user) if user else None
+                if user:
+                    result = dict(user)
+                    # 解密 api_wallet 后返回
+                    if result.get('api_wallet'):
+                        result['api_wallet'] = self._decrypt_api_wallet(result['api_wallet'])
+                    return result
+                return None
                 
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
@@ -563,7 +660,14 @@ class UsersOps:
                     LIMIT %s OFFSET %s
                 """, params + [limit, offset])
                 
-                return [dict(row) for row in cursor.fetchall()]
+                users = []
+                for row in cursor.fetchall():
+                    user = dict(row)
+                    # 解密 api_wallet 后返回
+                    if user.get('api_wallet'):
+                        user['api_wallet'] = self._decrypt_api_wallet(user['api_wallet'])
+                    users.append(user)
+                return users
                 
         except Exception as e:
             logger.error(f"获取用户列表失败: {e}")
