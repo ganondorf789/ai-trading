@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Button, addToast } from "@heroui/react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
@@ -296,7 +296,11 @@ export default function TraderPositionsPage() {
   // 根据筛选后的数据计算统计信息
   const filteredStats = useMemo(() => computeStats(filteredPositions), [filteredPositions, computeStats]);
 
+  // 防止 React StrictMode 下重复请求
+  const hasFetched = useRef(false);
   useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
     fetchPositions();
   }, [fetchPositions]);
 
