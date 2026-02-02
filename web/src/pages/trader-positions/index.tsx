@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, addToast, Spinner } from "@heroui/react";
+import { Button, addToast } from "@heroui/react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
@@ -8,8 +8,8 @@ import {
   traderPositionsApi,
   traderApi,
   TraderPosition,
-  TraderPositionsStats,
 } from "@/services/api";
+import type { TraderPositionsStats } from "@/types/api";
 import { useTimeRange } from "@/components/TimeRangeFilter";
 
 import { StatsCards, PositionFilters, PositionsTable, CoinSummary } from "./components";
@@ -23,9 +23,7 @@ interface TraderPositionWithMetrics extends TraderPosition {
 export default function TraderPositionsPage() {
   // 数据状态
   const [positions, setPositions] = useState<TraderPositionWithMetrics[]>([]);
-  const [stats, setStats] = useState<TraderPositionsStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   // 筛选状态
   const [search, setSearch] = useState("");
@@ -46,17 +44,14 @@ export default function TraderPositionsPage() {
   });
   const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
-  // 加载持仓数据
+  // 加载持仓数据（获取最近10分钟内更新的数据）
   const fetchPositions = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await traderPositionsApi.getPositions();
+      const response = await traderPositionsApi.getPositions({ minutes: 10 });
 
       if (response.success && response.data) {
         setPositions(response.data);
-        if (response.stats) {
-          setStats(response.stats);
-        }
       }
     } catch (error) {
       console.error("Failed to fetch positions:", error);
@@ -212,9 +207,9 @@ export default function TraderPositionsPage() {
     return filtered;
   }, [positions, search, sideFilter, coinFilter, starFilter, pnlFilter, scoreFilter, openTimeRange]);
 
-  // 根据筛选后的数据计算统计信息
-  const filteredStats = useMemo((): TraderPositionsStats | null => {
-    if (filteredPositions.length === 0) {
+  // 计算统计信息的通用函数
+  const computeStats = useCallback((positionList: TraderPositionWithMetrics[]): TraderPositionsStats => {
+    if (positionList.length === 0) {
       return {
         total_positions: 0,
         total_traders: 0,
@@ -234,20 +229,20 @@ export default function TraderPositionsPage() {
     }
 
     // 计算基础统计
-    const uniqueTraders = new Set(filteredPositions.map(p => p.address));
-    const longPositions = filteredPositions.filter(p => p.szi > 0);
-    const shortPositions = filteredPositions.filter(p => p.szi < 0);
+    const uniqueTraders = new Set(positionList.map(p => p.address));
+    const longPositions = positionList.filter(p => p.szi > 0);
+    const shortPositions = positionList.filter(p => p.szi < 0);
 
     // 计算盈亏统计
-    const profitPositions = filteredPositions.filter(p => (p.unrealized_pnl || 0) > 0);
-    const lossPositions = filteredPositions.filter(p => (p.unrealized_pnl || 0) < 0);
-    const totalUnrealizedPnl = filteredPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+    const profitPositions = positionList.filter(p => (p.unrealized_pnl || 0) > 0);
+    const lossPositions = positionList.filter(p => (p.unrealized_pnl || 0) < 0);
+    const totalUnrealizedPnl = positionList.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
     const profitPnl = profitPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
     const lossPnl = lossPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
 
     // 按币种分组统计
     const coinMap = new Map<string, { count: number; notional: number; long: number; short: number }>();
-    filteredPositions.forEach(p => {
+    positionList.forEach(p => {
       const existing = coinMap.get(p.coin) || { count: 0, notional: 0, long: 0, short: 0 };
       existing.count += 1;
       existing.notional += p.position_value || 0;
@@ -261,7 +256,7 @@ export default function TraderPositionsPage() {
 
     // 按交易员分组统计
     const traderMap = new Map<string, { name: string | null; count: number; notional: number }>();
-    filteredPositions.forEach(p => {
+    positionList.forEach(p => {
       const existing = traderMap.get(p.address) || { name: p.trader_name, count: 0, notional: 0 };
       existing.count += 1;
       existing.notional += p.position_value || 0;
@@ -278,9 +273,9 @@ export default function TraderPositionsPage() {
       .sort((a, b) => b.notional - a.notional);
 
     return {
-      total_positions: filteredPositions.length,
+      total_positions: positionList.length,
       total_traders: uniqueTraders.size,
-      total_notional: filteredPositions.reduce((sum, p) => sum + (p.position_value || 0), 0),
+      total_notional: positionList.reduce((sum, p) => sum + (p.position_value || 0), 0),
       long_count: longPositions.length,
       short_count: shortPositions.length,
       long_notional: longPositions.reduce((sum, p) => sum + (p.position_value || 0), 0),
@@ -293,7 +288,13 @@ export default function TraderPositionsPage() {
       by_coin: byCoin,
       by_trader: byTrader,
     };
-  }, [filteredPositions]);
+  }, []);
+
+  // 全部数据的统计信息（用于筛选选项）
+  const allStats = useMemo(() => computeStats(positions), [positions, computeStats]);
+
+  // 根据筛选后的数据计算统计信息
+  const filteredStats = useMemo(() => computeStats(filteredPositions), [filteredPositions, computeStats]);
 
   useEffect(() => {
     fetchPositions();
@@ -316,17 +317,10 @@ export default function TraderPositionsPage() {
             <Button
               color="primary"
               variant="flat"
-              startContent={
-                refreshing ? (
-                  <Spinner size="sm" color="current" />
-                ) : (
-                  <Icon icon="solar:refresh-bold-duotone" width={18} />
-                )
-              }
+              startContent={<Icon icon="solar:refresh-bold-duotone" width={18} />}
               onPress={handleRefresh}
-              isDisabled={refreshing}
             >
-              {refreshing ? "刷新中..." : "刷新数据"}
+              刷新数据
             </Button>
           </div>
         </div>
@@ -355,7 +349,7 @@ export default function TraderPositionsPage() {
           onOpenTimeFilterChange={setOpenTimeFilter}
           openTimeDateRange={openTimeDateRange}
           onOpenTimeDateRangeChange={setOpenTimeDateRange}
-          stats={stats}
+          stats={allStats}
           onReset={handleReset}
           sortDescriptor={sortDescriptor}
           onSortChange={setSortDescriptor}

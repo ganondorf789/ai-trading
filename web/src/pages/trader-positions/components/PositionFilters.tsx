@@ -1,7 +1,7 @@
 import { Select, SelectItem, Button, Autocomplete, AutocompleteItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { TraderPositionsStats } from "@/services/api";
+import type { TraderPositionsStats } from "@/types/api";
 import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 
 // 表格列配置
