@@ -431,7 +431,7 @@ export const traderPositionsApi = {
   getPositions: (params?: {
     minutes?: number;  // 获取最近N分钟内更新的数据，默认10分钟
   }) =>
-    api.get<any, ApiResponse<TraderPosition[]>>('/copy-trading/trader-positions', { params: { minutes: params?.minutes ?? 10 } }),
+    api.get<any, ApiResponse<TraderPosition[]> & { cached?: boolean }>('/copy-trading/trader-positions', { params: { minutes: params?.minutes ?? 10 } }),
 
   // 刷新所有跟单交易员的持仓数据
   refresh: (enabledOnly: boolean = true) =>

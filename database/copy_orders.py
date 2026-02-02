@@ -650,3 +650,39 @@ class CopyOrdersOps:
             ]
 
             return positions, stats
+
+    def get_trader_positions_recent(self, minutes: int = 10) -> list:
+        """
+        获取最近N分钟内更新的所有交易员持仓
+        
+        纯数据获取，不做后端筛选和统计计算（由前端实现）
+
+        Args:
+            minutes: 获取最近N分钟内更新的数据，默认10分钟
+
+        Returns:
+            持仓列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT ap.*, 
+                       cta.name as trader_name, 
+                       cta.group_id, 
+                       ctg.name as group_name, 
+                       ctg.color as group_color,
+                       tm.is_starred,
+                       tm.overall_score,
+                       tm.rating,
+                       tm.total_pnl as trader_pnl
+                FROM asset_positions ap
+                LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
+                LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
+                LEFT JOIN trader_metrics tm ON ap.address = tm.address
+                WHERE ap.updated_at >= NOW() - INTERVAL '%s minutes'
+                ORDER BY ABS(ap.position_value) DESC
+            """, (minutes,))
+
+            positions = [dict(row) for row in cursor.fetchall()]
+            return positions

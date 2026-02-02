@@ -6,8 +6,12 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from database.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# 持仓数据缓存 TTL（秒）
+POSITIONS_CACHE_TTL = 60  # 1分钟
 
 copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
 
@@ -16,36 +20,16 @@ copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions', methods=['GET'])
 def get_all_trader_positions():
-    """获取所有跟单交易员当前持仓
+    """获取最近N分钟内更新的所有跟单交易员当前持仓（纯前端筛选，后端仅返回数据）
     ---
     tags:
       - Copy Trading - Positions
     parameters:
-      - name: enabled_only
-        in: query
-        type: boolean
-        default: true
-        description: 是否只显示已启用的跟单地址
-      - name: group_id
+      - name: minutes
         in: query
         type: integer
-        description: 按分组筛选
-      - name: min_win_rate
-        in: query
-        type: number
-        description: 最小胜率
-      - name: max_win_rate
-        in: query
-        type: number
-        description: 最大胜率
-      - name: min_score
-        in: query
-        type: number
-        description: 最小综合评分
-      - name: max_score
-        in: query
-        type: number
-        description: 最大综合评分
+        default: 10
+        description: 获取最近N分钟内更新的数据
     responses:
       200:
         description: 持仓列表
@@ -58,45 +42,38 @@ def get_all_trader_positions():
               type: array
               items:
                 type: object
-            stats:
-              type: object
       500:
         description: 服务器错误
     """
     try:
-        enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
-        group_id = request.args.get('group_id', type=int)
-
-        # 构建指标筛选条件
-        metric_filters = {
-            'min_win_rate': request.args.get('min_win_rate', type=float),
-            'max_win_rate': request.args.get('max_win_rate', type=float),
-            'min_profit_factor': request.args.get('min_profit_factor', type=float),
-            'max_profit_factor': request.args.get('max_profit_factor', type=float),
-            'min_pnl': request.args.get('min_pnl', type=float),
-            'max_pnl': request.args.get('max_pnl', type=float),
-            'min_drawdown': request.args.get('min_drawdown', type=float),
-            'max_drawdown': request.args.get('max_drawdown', type=float),
-            'min_sharpe': request.args.get('min_sharpe', type=float),
-            'max_sharpe': request.args.get('max_sharpe', type=float),
-            'min_sortino': request.args.get('min_sortino', type=float),
-            'max_sortino': request.args.get('max_sortino', type=float),
-            'min_trades': request.args.get('min_trades', type=int),
-            'max_trades': request.args.get('max_trades', type=int),
-            'min_score': request.args.get('min_score', type=float),
-            'max_score': request.args.get('max_score', type=float),
-        }
-
-        positions, stats = db.get_trader_positions_with_filters(
-            enabled_only=enabled_only,
-            group_id=group_id,
-            metric_filters=metric_filters
-        )
+        minutes = request.args.get('minutes', 10, type=int)
+        # 限制 minutes 范围：1-60
+        minutes = max(1, min(60, minutes))
+        
+        # 构建缓存键
+        cache_key = f"trader_positions:minutes_{minutes}"
+        
+        # 尝试从缓存获取
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            logger.debug(f"从缓存获取持仓数据: {cache_key}")
+            return jsonify({
+                'success': True,
+                'data': cached_data,
+                'cached': True
+            })
+        
+        # 缓存未命中，从数据库获取
+        positions = db.get_trader_positions_recent(minutes=minutes)
+        
+        # 写入缓存（1分钟过期）
+        cache.set(cache_key, positions, ttl=POSITIONS_CACHE_TTL)
+        logger.debug(f"持仓数据已缓存: {cache_key}, 共 {len(positions)} 条")
 
         return jsonify({
             'success': True,
             'data': positions,
-            'stats': stats
+            'cached': False
         })
     except Exception as e:
         logger.error(f"获取跟单交易员持仓失败: {e}")
