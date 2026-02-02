@@ -13,6 +13,8 @@ import BestSTradersPage from "@/pages/best-s-traders";
 import PositionTrackingPage from "@/pages/position-tracking";
 import DefaultConfigRulesPage from "@/pages/default-config-rules";
 import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
+import UsersPage from "@/pages/users";
+import SecretKeysPage from "@/pages/secret-keys";
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
       <Route element={<PositionTrackingPage />} path="/position-tracking" />
       <Route element={<DefaultConfigRulesPage />} path="/default-config-rules" />
       <Route element={<ImmediateConfigRulesPage />} path="/immediate-config-rules" />
+      <Route element={<UsersPage />} path="/users" />
+      <Route element={<SecretKeysPage />} path="/secret-keys" />
     </Routes>
   );
 }

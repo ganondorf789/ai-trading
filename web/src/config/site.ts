@@ -47,6 +47,14 @@ export const siteConfig = {
     {
       label: "Immediate Config Rules",
       href: "/immediate-config-rules",
+    },
+    {
+      label: "Users",
+      href: "/users",
+    },
+    {
+      label: "Secret Keys",
+      href: "/secret-keys",
     }
   ],
   navMenuItems: [

@@ -682,6 +682,125 @@ export const riskControlApi = {
     }),
 };
 
+// ==================== 用户认证 API ====================
+
+export interface User {
+  id: number;
+  account: string;
+  role: 'user' | 'member' | 'admin';
+  api_wallet: string;
+  wallet_address: string;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface SecretKey {
+  id: number;
+  key_value: string;
+  key_name: string;
+  user_role: 'user' | 'member' | 'admin';
+  expires_days: number;
+  is_used: boolean;
+  used_by_user_id: number | null;
+  is_active: boolean;
+  expires_at: string | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface UserStats {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  user_count: number;
+  member_count: number;
+  admin_count: number;
+  expired_count: number;
+}
+
+export interface SecretKeyStats {
+  total_count: number;
+  active_count: number;
+  inactive_count: number;
+  used_count: number;
+  available_count: number;
+  user_role_count: number;
+  member_role_count: number;
+  admin_role_count: number;
+}
+
+export const authApi = {
+  // 用户登录
+  login: (data: { account: string; password: string }) =>
+    api.post<any, ApiResponse<User> & { message?: string }>('/auth/login', data),
+
+  // 用户注册
+  register: (data: { account: string; password: string; secret_key: string }) =>
+    api.post<any, ApiResponse<{ id: number; account: string; role: string }> & { message?: string }>('/auth/register', data),
+
+  // 修改密码
+  changePassword: (data: { user_id: number; old_password: string; new_password: string }) =>
+    api.post<any, ApiResponse<void> & { message?: string }>('/auth/change-password', data),
+
+  // 获取用户信息
+  getUserInfo: (userId: number) =>
+    api.get<any, ApiResponse<User>>(`/auth/user/${userId}`),
+
+  // 获取 Hyperliquid 设置
+  getHyperliquidSettings: (userId: number) =>
+    api.get<any, ApiResponse<{ api_wallet: string; wallet_address: string }>>('/auth/hyperliquid-settings', { params: { user_id: userId } }),
+
+  // 更新 Hyperliquid 设置
+  updateHyperliquidSettings: (data: { user_id: number; api_wallet?: string; wallet_address?: string }) =>
+    api.post<any, ApiResponse<{ api_wallet: string; wallet_address: string }> & { message?: string }>('/auth/hyperliquid-settings', data),
+};
+
+export const userManagementApi = {
+  // 获取用户列表（管理员）
+  getUsers: (params: { user_id: number; role?: string; is_active?: boolean; limit?: number; offset?: number }) =>
+    api.get<any, ApiResponse<User[]>>('/auth/users', { params }),
+
+  // 更新用户身份（管理员）
+  updateUserRole: (targetUserId: number, data: { user_id: number; role: string }) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/role`, data),
+
+  // 获取用户统计（管理员）
+  getUserStats: (userId: number) =>
+    api.get<any, ApiResponse<UserStats>>('/auth/users/stats', { params: { user_id: userId } }),
+};
+
+export const secretKeyApi = {
+  // 获取秘钥列表（管理员）
+  getSecretKeys: (params: { user_id: number; is_active?: boolean; is_used?: boolean; user_role?: string; limit?: number; offset?: number }) =>
+    api.get<any, ApiResponse<SecretKey[]>>('/auth/secret-keys', { params }),
+
+  // 创建秘钥（管理员）
+  createSecretKey: (data: { user_id: number; key_name?: string; user_role?: string; expires_days?: number; key_value?: string }) =>
+    api.post<any, ApiResponse<SecretKey> & { message?: string }>('/auth/secret-keys', data),
+
+  // 批量创建秘钥（管理员）
+  batchCreateSecretKeys: (data: { user_id: number; count: number; key_name_prefix?: string; user_role?: string; expires_days?: number }) =>
+    api.post<any, ApiResponse<SecretKey[]> & { message?: string }>('/auth/secret-keys/batch', data),
+
+  // 获取秘钥详情（管理员）
+  getSecretKey: (keyId: number, userId: number) =>
+    api.get<any, ApiResponse<SecretKey>>(`/auth/secret-keys/${keyId}`, { params: { user_id: userId } }),
+
+  // 更新秘钥（管理员）
+  updateSecretKey: (keyId: number, data: { user_id: number; key_name?: string; user_role?: string; expires_days?: number; is_active?: boolean }) =>
+    api.put<any, ApiResponse<SecretKey> & { message?: string }>(`/auth/secret-keys/${keyId}`, data),
+
+  // 删除秘钥（管理员）
+  deleteSecretKey: (keyId: number, userId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/auth/secret-keys/${keyId}`, { params: { user_id: userId } }),
+
+  // 获取秘钥统计（管理员）
+  getSecretKeyStats: (userId: number) =>
+    api.get<any, ApiResponse<SecretKeyStats>>('/auth/secret-keys/stats', { params: { user_id: userId } }),
+};
+
 // ==================== S级优选筛选 API ====================
 
 export interface BestSTraderParams {
