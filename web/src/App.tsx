@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 
 import IndexPage from "@/pages/index";
+import LoginPage from "@/pages/login";
 import TradersPage from "@/pages/traders";
 import TraderDetailPage from "@/pages/trader-detail";
 import CopyTradingPage from "@/pages/copy-trading";
@@ -19,6 +20,7 @@ import SecretKeysPage from "@/pages/secret-keys";
 function App() {
   return (
     <Routes>
+      <Route element={<LoginPage />} path="/login" />
       <Route element={<IndexPage />} path="/" />
       <Route element={<TradersPage />} path="/traders" />
       <Route element={<TraderDetailPage />} path="/traders/:address" />
