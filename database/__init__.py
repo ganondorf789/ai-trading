@@ -18,6 +18,8 @@ from .position_history import PositionHistoryOps
 from .position_tracking import PositionTrackingOps
 from .new_positions import NewPositionsOps
 from .notifications import NotificationsOps
+from .users import UsersOps
+from .secret_keys import SecretKeysOps
 
 
 class TraderDatabase(
@@ -33,7 +35,9 @@ class TraderDatabase(
     PositionHistoryOps,
     PositionTrackingOps,
     NewPositionsOps,
-    NotificationsOps
+    NotificationsOps,
+    UsersOps,
+    SecretKeysOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

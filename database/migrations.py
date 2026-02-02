@@ -632,6 +632,83 @@ class DatabaseMigrations:
                 ON notifications(target_address)
             """)
 
+            # 创建秘钥表（用于注册验证）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS secret_keys (
+                    id SERIAL PRIMARY KEY,
+                    key_value TEXT NOT NULL UNIQUE,              -- 秘钥值（唯一）
+                    key_name TEXT DEFAULT '',                    -- 秘钥名称/备注
+                    
+                    -- 秘钥配置
+                    user_role TEXT DEFAULT 'user',               -- 使用此秘钥注册的用户身份: user/member/admin
+                    expires_days INTEGER DEFAULT 30,             -- 注册用户的有效天数（0表示永不过期）
+                    is_used BOOLEAN DEFAULT FALSE,               -- 是否已使用
+                    used_by_user_id INTEGER,                     -- 使用此秘钥的用户ID
+                    
+                    -- 状态
+                    is_active BOOLEAN DEFAULT TRUE,              -- 是否启用
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP,                        -- 秘钥过期时间（NULL表示永不过期）
+                    created_by INTEGER                           -- 创建者用户ID
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_secret_keys_value
+                ON secret_keys(key_value)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_secret_keys_is_active
+                ON secret_keys(is_active)
+            """)
+
+            # 创建用户表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    account TEXT NOT NULL UNIQUE,                -- 账号（唯一）
+                    password_hash TEXT NOT NULL,                 -- 密码哈希
+                    secret_key_id INTEGER,                       -- 关联的秘钥ID
+                    
+                    -- 用户身份: user(普通用户) / member(会员) / admin(超级管理员)
+                    role TEXT DEFAULT 'user',
+                    
+                    -- Hyperliquid API 设置
+                    api_wallet TEXT DEFAULT '',                  -- API 钱包地址
+                    wallet_address TEXT DEFAULT '',              -- 钱包地址
+                    
+                    -- 账户状态
+                    expires_at TIMESTAMP,                        -- 过期时间（NULL表示永不过期）
+                    is_active BOOLEAN DEFAULT TRUE,              -- 账户是否激活
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TIMESTAMP,                     -- 最后登录时间
+                    
+                    FOREIGN KEY (secret_key_id) REFERENCES secret_keys(id) ON DELETE SET NULL
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_account
+                ON users(account)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_is_active
+                ON users(is_active)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_expires_at
+                ON users(expires_at)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_users_role
+                ON users(role)
+            """)
+
             # 创建跟单配置规则表（支持按杠杆区间分配不同配置）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_config_rules (
@@ -735,3 +812,23 @@ class DatabaseMigrations:
             ON copy_config_rules(config_type, symbol)
             WHERE config_type = 'immediate' AND symbol IS NOT NULL
         """)
+
+        # 添加 role 字段到 users 表（用户身份）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'users', 'role', "TEXT DEFAULT 'user'"
+        )
+        
+        # 添加 secret_key_id 字段到 users 表（关联秘钥）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'users', 'secret_key_id', 'INTEGER'
+        )
+        
+        # 添加 is_used 字段到 secret_keys 表（是否已使用）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'secret_keys', 'is_used', 'BOOLEAN DEFAULT FALSE'
+        )
+        
+        # 添加 used_by_user_id 字段到 secret_keys 表（使用秘钥的用户ID）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'secret_keys', 'used_by_user_id', 'INTEGER'
+        )

@@ -1,0 +1,1561 @@
+"""
+用户认证相关路由
+包括：注册、登录、修改密码、Hyperliquid 设置、秘钥管理
+"""
+from flask import Blueprint, jsonify, request
+import logging
+from datetime import datetime, timedelta
+
+from config.settings import settings
+from .db import db
+
+logger = logging.getLogger(__name__)
+
+auth_bp = Blueprint('auth', __name__)
+
+# 用户身份常量
+ROLE_USER = 'user'
+ROLE_MEMBER = 'member'
+ROLE_ADMIN = 'admin'
+
+
+@auth_bp.route('/api/auth/register', methods=['POST'])
+def register():
+    """用户注册
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - account
+            - password
+            - secret_key
+          properties:
+            account:
+              type: string
+              description: 账号
+              example: "user123"
+            password:
+              type: string
+              description: 密码
+              example: "password123"
+            secret_key:
+              type: string
+              description: 注册秘钥
+              example: "your-secret-key"
+    responses:
+      200:
+        description: 注册成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                role:
+                  type: string
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      409:
+        description: 账号已存在
+      403:
+        description: 秘钥验证失败
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        account = data.get('account', '').strip()
+        password = data.get('password', '')
+        secret_key = data.get('secret_key', '').strip()
+        
+        if not account:
+            return jsonify({
+                'success': False,
+                'error': '账号不能为空'
+            }), 400
+        
+        if not password:
+            return jsonify({
+                'success': False,
+                'error': '密码不能为空'
+            }), 400
+        
+        if not secret_key:
+            return jsonify({
+                'success': False,
+                'error': '秘钥不能为空'
+            }), 400
+        
+        # 验证账号格式（字母、数字、下划线，4-32位）
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]{4,32}$', account):
+            return jsonify({
+                'success': False,
+                'error': '账号格式不正确（4-32位字母、数字或下划线）'
+            }), 400
+        
+        # 验证密码长度
+        if len(password) < 6 or len(password) > 64:
+            return jsonify({
+                'success': False,
+                'error': '密码长度必须在6-64位之间'
+            }), 400
+        
+        # 验证秘钥（从秘钥表验证）
+        secret_key_info = db.validate_secret_key(secret_key)
+        if not secret_key_info:
+            logger.warning(f"注册失败: 秘钥验证失败 - account={account}")
+            return jsonify({
+                'success': False,
+                'error': '秘钥无效或已过期'
+            }), 403
+        
+        # 根据秘钥配置计算用户过期时间
+        expires_at = None
+        if secret_key_info['expires_days'] > 0:
+            expires_at = datetime.now() + timedelta(days=secret_key_info['expires_days'])
+        
+        # 创建用户
+        user = db.create_user(
+            account=account,
+            password=password,
+            secret_key_id=secret_key_info['id'],
+            role=secret_key_info['user_role'],
+            expires_at=expires_at
+        )
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '账号已存在'
+            }), 409
+        
+        # 更新秘钥使用次数并记录用户ID
+        db.use_secret_key(secret_key_info['id'], user['id'])
+        
+        logger.info(f"用户注册成功: {account}, 身份: {secret_key_info['user_role']}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': user['id'],
+                'account': user['account'],
+                'role': user['role']
+            },
+            'message': '注册成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"用户注册失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/login', methods=['POST'])
+def login():
+    """用户登录
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - account
+            - password
+          properties:
+            account:
+              type: string
+              description: 账号
+              example: "user123"
+            password:
+              type: string
+              description: 密码
+              example: "password123"
+    responses:
+      200:
+        description: 登录成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      401:
+        description: 账号或密码错误
+      403:
+        description: 账户未激活或已过期
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        account = data.get('account', '').strip()
+        password = data.get('password', '')
+        
+        if not account:
+            return jsonify({
+                'success': False,
+                'error': '账号不能为空'
+            }), 400
+        
+        if not password:
+            return jsonify({
+                'success': False,
+                'error': '密码不能为空'
+            }), 400
+        
+        # 验证用户
+        user = db.authenticate_user(account, password)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '账号或密码错误'
+            }), 401
+        
+        logger.info(f"用户登录成功: {account}")
+        
+        # 格式化返回数据
+        response_data = {
+            'id': user['id'],
+            'account': user['account'],
+            'role': user.get('role', 'user'),
+            'api_wallet': user.get('api_wallet', ''),
+            'wallet_address': user.get('wallet_address', ''),
+            'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
+            'is_active': user.get('is_active', True),
+            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': response_data,
+            'message': '登录成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"用户登录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/change-password', methods=['POST'])
+def change_password():
+    """修改密码
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+            - old_password
+            - new_password
+          properties:
+            user_id:
+              type: integer
+              description: 用户 ID
+              example: 1
+            old_password:
+              type: string
+              description: 原密码
+              example: "old_password123"
+            new_password:
+              type: string
+              description: 新密码
+              example: "new_password456"
+    responses:
+      200:
+        description: 修改成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      401:
+        description: 原密码错误
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        old_password = data.get('old_password', '')
+        new_password = data.get('new_password', '')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        if not old_password:
+            return jsonify({
+                'success': False,
+                'error': '原密码不能为空'
+            }), 400
+        
+        if not new_password:
+            return jsonify({
+                'success': False,
+                'error': '新密码不能为空'
+            }), 400
+        
+        # 验证新密码长度
+        if len(new_password) < 6 or len(new_password) > 64:
+            return jsonify({
+                'success': False,
+                'error': '新密码长度必须在6-64位之间'
+            }), 400
+        
+        # 检查用户是否存在
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        # 修改密码
+        success = db.change_password(user_id, old_password, new_password)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': '原密码错误'
+            }), 401
+        
+        logger.info(f"用户密码修改成功: user_id={user_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': '密码修改成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"修改密码失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/hyperliquid-settings', methods=['GET'])
+def get_hyperliquid_settings():
+    """获取 Hyperliquid API 设置
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 用户 ID
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+      400:
+        description: 请求参数错误
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 获取设置
+        settings_data = db.get_hyperliquid_settings(user_id)
+        
+        if settings_data is None:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': settings_data
+        })
+        
+    except Exception as e:
+        logger.error(f"获取 Hyperliquid 设置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/hyperliquid-settings', methods=['POST'])
+def update_hyperliquid_settings():
+    """更新 Hyperliquid API 设置
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+          properties:
+            user_id:
+              type: integer
+              description: 用户 ID
+              example: 1
+            api_wallet:
+              type: string
+              description: API 钱包地址
+              example: "0x1234567890abcdef1234567890abcdef12345678"
+            wallet_address:
+              type: string
+              description: 钱包地址
+              example: "0xabcdef1234567890abcdef1234567890abcdef12"
+    responses:
+      200:
+        description: 更新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        api_wallet = data.get('api_wallet')
+        wallet_address = data.get('wallet_address')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        if api_wallet is None and wallet_address is None:
+            return jsonify({
+                'success': False,
+                'error': '至少需要提供 api_wallet 或 wallet_address'
+            }), 400
+        
+        # 验证地址格式（如果提供）
+        import re
+        eth_address_pattern = r'^0x[a-fA-F0-9]{40}$'
+        
+        if api_wallet and api_wallet.strip():
+            api_wallet = api_wallet.strip()
+            if not re.match(eth_address_pattern, api_wallet):
+                return jsonify({
+                    'success': False,
+                    'error': 'API 钱包地址格式不正确'
+                }), 400
+        
+        if wallet_address and wallet_address.strip():
+            wallet_address = wallet_address.strip()
+            if not re.match(eth_address_pattern, wallet_address):
+                return jsonify({
+                    'success': False,
+                    'error': '钱包地址格式不正确'
+                }), 400
+        
+        # 检查用户是否存在
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        # 更新设置
+        updated_user = db.update_hyperliquid_settings(
+            user_id=user_id,
+            api_wallet=api_wallet,
+            wallet_address=wallet_address
+        )
+        
+        if not updated_user:
+            return jsonify({
+                'success': False,
+                'error': '更新失败'
+            }), 500
+        
+        logger.info(f"Hyperliquid 设置更新成功: user_id={user_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'api_wallet': updated_user.get('api_wallet', ''),
+                'wallet_address': updated_user.get('wallet_address', '')
+            },
+            'message': '设置更新成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"更新 Hyperliquid 设置失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/user/<int:user_id>', methods=['GET'])
+def get_user_info(user_id: int):
+    """获取用户信息
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: user_id
+        in: path
+        type: integer
+        required: true
+        description: 用户 ID
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+                is_active:
+                  type: boolean
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        user = db.get_user_by_id(user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        # 格式化返回数据
+        response_data = {
+            'id': user['id'],
+            'account': user['account'],
+            'role': user.get('role', 'user'),
+            'api_wallet': user.get('api_wallet', ''),
+            'wallet_address': user.get('wallet_address', ''),
+            'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
+            'is_active': user.get('is_active', True),
+            'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
+            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户信息失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 秘钥管理 API ====================
+
+@auth_bp.route('/api/auth/secret-keys', methods=['GET'])
+def get_secret_keys():
+    """获取秘钥列表（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID（需要管理员权限）
+      - name: is_active
+        in: query
+        type: boolean
+        description: 是否启用筛选
+      - name: is_used
+        in: query
+        type: boolean
+        description: 是否已使用筛选
+      - name: user_role
+        in: query
+        type: string
+        enum: [user, member, admin]
+        description: 用户身份筛选
+      - name: limit
+        in: query
+        type: integer
+        default: 100
+        description: 每页数量
+      - name: offset
+        in: query
+        type: integer
+        default: 0
+        description: 偏移量
+    responses:
+      200:
+        description: 获取成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        is_active = request.args.get('is_active')
+        if is_active is not None:
+            is_active = is_active.lower() == 'true'
+        
+        is_used = request.args.get('is_used')
+        if is_used is not None:
+            is_used = is_used.lower() == 'true'
+        
+        user_role = request.args.get('user_role')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        keys = db.get_secret_keys(
+            is_active=is_active,
+            is_used=is_used,
+            user_role=user_role,
+            limit=limit,
+            offset=offset
+        )
+        
+        # 格式化返回数据
+        result = []
+        for key in keys:
+            result.append({
+                'id': key['id'],
+                'key_value': key['key_value'],
+                'key_name': key.get('key_name', ''),
+                'user_role': key['user_role'],
+                'expires_days': key['expires_days'],
+                'is_used': key.get('is_used', False),
+                'used_by_user_id': key.get('used_by_user_id'),
+                'is_active': key['is_active'],
+                'expires_at': key['expires_at'].isoformat() if key.get('expires_at') else None,
+                'created_at': key['created_at'].isoformat() if key.get('created_at') else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+        
+    except Exception as e:
+        logger.error(f"获取秘钥列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys', methods=['POST'])
+def create_secret_key():
+    """创建秘钥（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+          properties:
+            user_id:
+              type: integer
+              description: 操作者用户 ID（需要管理员权限）
+            key_name:
+              type: string
+              description: 秘钥名称/备注
+            user_role:
+              type: string
+              enum: [user, member, admin]
+              default: user
+              description: 使用此秘钥注册的用户身份
+            expires_days:
+              type: integer
+              default: 30
+              description: 注册用户的有效天数（0表示永不过期）
+            key_value:
+              type: string
+              description: 指定秘钥值（可选，不指定则自动生成）
+    responses:
+      200:
+        description: 创建成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        key_name = data.get('key_name', '')
+        user_role = data.get('user_role', 'user')
+        expires_days = data.get('expires_days', 30)
+        key_value = data.get('key_value')
+        
+        # 验证用户身份
+        if user_role not in [ROLE_USER, ROLE_MEMBER, ROLE_ADMIN]:
+            return jsonify({
+                'success': False,
+                'error': '无效的用户身份'
+            }), 400
+        
+        key = db.create_secret_key(
+            key_name=key_name,
+            user_role=user_role,
+            expires_days=expires_days,
+            created_by=user_id,
+            key_value=key_value
+        )
+        
+        if not key:
+            return jsonify({
+                'success': False,
+                'error': '创建失败，秘钥可能已存在'
+            }), 400
+        
+        logger.info(f"秘钥创建成功: {key_name or key['key_value'][:8]}...")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': key['id'],
+                'key_value': key['key_value'],
+                'key_name': key.get('key_name', ''),
+                'user_role': key['user_role'],
+                'expires_days': key['expires_days'],
+                'is_used': key.get('is_used', False),
+                'is_active': key['is_active']
+            },
+            'message': '秘钥创建成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"创建秘钥失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys/batch', methods=['POST'])
+def batch_create_secret_keys():
+    """批量创建秘钥（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+            - count
+          properties:
+            user_id:
+              type: integer
+              description: 操作者用户 ID（需要管理员权限）
+            count:
+              type: integer
+              description: 创建数量
+            key_name_prefix:
+              type: string
+              description: 名称前缀
+            user_role:
+              type: string
+              enum: [user, member, admin]
+              default: user
+            expires_days:
+              type: integer
+              default: 30
+    responses:
+      200:
+        description: 批量创建成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        count = data.get('count')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        if not count or count < 1:
+            return jsonify({
+                'success': False,
+                'error': '创建数量必须大于0'
+            }), 400
+        
+        if count > 100:
+            return jsonify({
+                'success': False,
+                'error': '单次创建数量不能超过100'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        keys = db.batch_create_secret_keys(
+            count=count,
+            key_name_prefix=data.get('key_name_prefix', ''),
+            user_role=data.get('user_role', 'user'),
+            expires_days=data.get('expires_days', 30),
+            created_by=user_id
+        )
+        
+        logger.info(f"批量创建秘钥成功: {len(keys)}/{count}")
+        
+        return jsonify({
+            'success': True,
+            'data': [{
+                'id': k['id'],
+                'key_value': k['key_value'],
+                'key_name': k.get('key_name', ''),
+                'user_role': k['user_role']
+            } for k in keys],
+            'message': f'成功创建 {len(keys)} 个秘钥'
+        })
+        
+    except Exception as e:
+        logger.error(f"批量创建秘钥失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['GET'])
+def get_secret_key(key_id: int):
+    """获取秘钥详情（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: key_id
+        in: path
+        type: integer
+        required: true
+        description: 秘钥 ID
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID
+    responses:
+      200:
+        description: 获取成功
+      403:
+        description: 无权限
+      404:
+        description: 秘钥不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        key = db.get_secret_key(key_id)
+        
+        if not key:
+            return jsonify({
+                'success': False,
+                'error': '秘钥不存在'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': key['id'],
+                'key_value': key['key_value'],
+                'key_name': key.get('key_name', ''),
+                'user_role': key['user_role'],
+                'expires_days': key['expires_days'],
+                'is_used': key.get('is_used', False),
+                'used_by_user_id': key.get('used_by_user_id'),
+                'is_active': key['is_active'],
+                'expires_at': key['expires_at'].isoformat() if key.get('expires_at') else None,
+                'created_by': key.get('created_by'),
+                'created_at': key['created_at'].isoformat() if key.get('created_at') else None
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"获取秘钥详情失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['PUT'])
+def update_secret_key(key_id: int):
+    """更新秘钥（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: key_id
+        in: path
+        type: integer
+        required: true
+        description: 秘钥 ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+          properties:
+            user_id:
+              type: integer
+              description: 操作者用户 ID
+            key_name:
+              type: string
+            user_role:
+              type: string
+              enum: [user, member, admin]
+            expires_days:
+              type: integer
+            is_active:
+              type: boolean
+    responses:
+      200:
+        description: 更新成功
+      403:
+        description: 无权限
+      404:
+        description: 秘钥不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        key = db.update_secret_key(
+            key_id=key_id,
+            key_name=data.get('key_name'),
+            user_role=data.get('user_role'),
+            expires_days=data.get('expires_days'),
+            is_active=data.get('is_active')
+        )
+        
+        if not key:
+            return jsonify({
+                'success': False,
+                'error': '秘钥不存在或更新失败'
+            }), 404
+        
+        logger.info(f"秘钥更新成功: id={key_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': key['id'],
+                'key_value': key['key_value'],
+                'key_name': key.get('key_name', ''),
+                'user_role': key['user_role'],
+                'expires_days': key['expires_days'],
+                'is_used': key.get('is_used', False),
+                'used_by_user_id': key.get('used_by_user_id'),
+                'is_active': key['is_active']
+            },
+            'message': '更新成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"更新秘钥失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['DELETE'])
+def delete_secret_key(key_id: int):
+    """删除秘钥（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: key_id
+        in: path
+        type: integer
+        required: true
+        description: 秘钥 ID
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID
+    responses:
+      200:
+        description: 删除成功
+      403:
+        description: 无权限
+      404:
+        description: 秘钥不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        success = db.delete_secret_key(key_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': '秘钥不存在'
+            }), 404
+        
+        logger.info(f"秘钥删除成功: id={key_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': '删除成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"删除秘钥失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/secret-keys/stats', methods=['GET'])
+def get_secret_key_stats():
+    """获取秘钥统计信息（管理员权限）
+    ---
+    tags:
+      - SecretKeys
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID
+    responses:
+      200:
+        description: 获取成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        stats = db.get_secret_key_stats()
+        
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"获取秘钥统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 用户管理 API（管理员） ====================
+
+@auth_bp.route('/api/auth/users', methods=['GET'])
+def get_users():
+    """获取用户列表（管理员权限）
+    ---
+    tags:
+      - UserManagement
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID
+      - name: role
+        in: query
+        type: string
+        enum: [user, member, admin]
+        description: 身份筛选
+      - name: is_active
+        in: query
+        type: boolean
+        description: 激活状态筛选
+      - name: limit
+        in: query
+        type: integer
+        default: 100
+      - name: offset
+        in: query
+        type: integer
+        default: 0
+    responses:
+      200:
+        description: 获取成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        is_active = request.args.get('is_active')
+        if is_active is not None:
+            is_active = is_active.lower() == 'true'
+        
+        role = request.args.get('role')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        users = db.get_users(
+            role=role,
+            is_active=is_active,
+            limit=limit,
+            offset=offset
+        )
+        
+        # 格式化返回数据
+        result = []
+        for u in users:
+            result.append({
+                'id': u['id'],
+                'account': u['account'],
+                'role': u.get('role', 'user'),
+                'api_wallet': u.get('api_wallet', ''),
+                'wallet_address': u.get('wallet_address', ''),
+                'expires_at': u['expires_at'].isoformat() if u.get('expires_at') else None,
+                'is_active': u.get('is_active', True),
+                'created_at': u['created_at'].isoformat() if u.get('created_at') else None,
+                'last_login_at': u['last_login_at'].isoformat() if u.get('last_login_at') else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': result
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户列表失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/users/<int:target_user_id>/role', methods=['PUT'])
+def update_user_role(target_user_id: int):
+    """更新用户身份（管理员权限）
+    ---
+    tags:
+      - UserManagement
+    parameters:
+      - name: target_user_id
+        in: path
+        type: integer
+        required: true
+        description: 目标用户 ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_id
+            - role
+          properties:
+            user_id:
+              type: integer
+              description: 操作者用户 ID
+            role:
+              type: string
+              enum: [user, member, admin]
+              description: 新身份
+    responses:
+      200:
+        description: 更新成功
+      403:
+        description: 无权限
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        user_id = data.get('user_id')
+        role = data.get('role')
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '操作者用户 ID 不能为空'
+            }), 400
+        
+        if not role:
+            return jsonify({
+                'success': False,
+                'error': '角色不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        success = db.update_user_role(target_user_id, role)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在或更新失败'
+            }), 404
+        
+        logger.info(f"用户身份更新成功: user_id={target_user_id}, role={role}")
+        
+        return jsonify({
+            'success': True,
+            'message': '用户身份更新成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"更新用户身份失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/users/stats', methods=['GET'])
+def get_user_stats():
+    """获取用户统计信息（管理员权限）
+    ---
+    tags:
+      - UserManagement
+    parameters:
+      - name: user_id
+        in: query
+        type: integer
+        required: true
+        description: 操作者用户 ID
+    responses:
+      200:
+        description: 获取成功
+      403:
+        description: 无权限
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = request.args.get('user_id', type=int)
+        
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'error': '用户 ID 不能为空'
+            }), 400
+        
+        # 验证管理员权限
+        if not db.is_admin(user_id):
+            return jsonify({
+                'success': False,
+                'error': '无权限，需要管理员身份'
+            }), 403
+        
+        stats = db.get_user_stats()
+        
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

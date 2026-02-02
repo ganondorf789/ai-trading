@@ -11,6 +11,10 @@ def register_routes(app):
     from .system import system_bp
     app.register_blueprint(system_bp)
     
+    # 用户认证路由
+    from .auth import auth_bp
+    app.register_blueprint(auth_bp)
+    
     # 交易者管理路由（拆分后）
     from .traders_core import traders_core_bp
     from .traders_positions import traders_positions_bp
