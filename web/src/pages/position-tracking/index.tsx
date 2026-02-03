@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Table,
   TableHeader,
@@ -18,11 +18,10 @@ import {
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { positionTrackingApi, PositionTracking, PositionTrackingStats, PaginationInfo } from "@/services/api";
+import { positionTrackingApi, PositionTracking, PaginationInfo } from "@/services/api";
 import { TablePagination } from "@/components/TablePagination";
 import TrackingFormModal from "./components/TrackingFormModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
-import StatsCards from "./components/StatsCards";
 
 // 状态颜色映射
 const statusColors: Record<string, "success" | "primary" | "warning" | "danger" | "default"> = {
@@ -42,7 +41,6 @@ const statusLabels: Record<string, string> = {
 export default function PositionTrackingPage() {
   // 数据状态
   const [trackings, setTrackings] = useState<PositionTracking[]>([]);
-  const [stats, setStats] = useState<PositionTrackingStats | null>(null);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -84,24 +82,9 @@ export default function PositionTrackingPage() {
     }
   }, [page, statusFilter, enabledFilter]);
 
-  const loadStats = useCallback(async () => {
-    try {
-      const response = await positionTrackingApi.getStats();
-      if (response.success && response.data) {
-        setStats(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to load stats:", error);
-    }
-  }, []);
-
   useEffect(() => {
     loadTrackings();
   }, [loadTrackings]);
-
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
 
   // 打开编辑弹窗
   const handleOpenEditModal = useCallback((tracking: PositionTracking) => {
@@ -119,7 +102,6 @@ export default function PositionTrackingPage() {
       setIsFormModalOpen(false);
       setEditingTracking(null);
       loadTrackings();
-      loadStats();
     } catch (error) {
       console.error("Failed to save tracking:", error);
       addToast({ title: "保存失败", color: "danger" });
@@ -141,7 +123,6 @@ export default function PositionTrackingPage() {
       setIsDeleteModalOpen(false);
       setDeletingId(null);
       loadTrackings();
-      loadStats();
     } catch (error: any) {
       console.error("Failed to delete tracking:", error);
       addToast({
@@ -177,7 +158,6 @@ export default function PositionTrackingPage() {
       await positionTrackingApi.stopTracking(id);
       addToast({ title: "已停止跟单", color: "success" });
       loadTrackings();
-      loadStats();
     } catch (error: any) {
       console.error("Failed to stop tracking:", error);
       addToast({
@@ -186,7 +166,7 @@ export default function PositionTrackingPage() {
         color: "danger"
       });
     }
-  }, [loadTrackings, loadStats]);
+  }, [loadTrackings]);
 
   // 格式化地址
   const formatAddress = (address: string) => {
@@ -373,17 +353,11 @@ export default function PositionTrackingPage() {
             color="primary"
             variant="flat"
             startContent={<Icon icon="lucide:refresh-cw" width={18} />}
-            onPress={() => {
-              loadTrackings();
-              loadStats();
-            }}
+            onPress={() => loadTrackings()}
           >
             刷新
           </Button>
         </div>
-
-        {/* 统计卡片 */}
-        {stats && <StatsCards stats={stats} />}
 
         {/* 筛选工具栏 */}
         <div className="flex flex-wrap gap-3 items-center">
