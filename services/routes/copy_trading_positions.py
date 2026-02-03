@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 from database.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ copy_trading_positions_bp = Blueprint('copy_trading_positions', __name__)
 # ==================== 跟单交易员实时持仓 API ====================
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions', methods=['GET'])
+@login_required
 def get_all_trader_positions():
     """获取最近N分钟内更新的所有跟单交易员当前持仓（纯前端筛选，后端仅返回数据）
     ---
@@ -84,6 +86,7 @@ def get_all_trader_positions():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/refresh', methods=['POST'])
+@login_required
 def refresh_all_trader_positions():
     """刷新所有跟单交易员持仓
     ---
@@ -174,6 +177,7 @@ def refresh_all_trader_positions():
 # ==================== 风控配置 API ====================
 
 @copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['GET'])
+@login_required
 def get_risk_control_config():
     """获取风控配置
     ---
@@ -207,6 +211,7 @@ def get_risk_control_config():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/risk-control', methods=['PUT'])
+@login_required
 def update_risk_control_config():
     """更新风控配置
     ---
@@ -282,6 +287,7 @@ def update_risk_control_config():
 # ==================== 默认跟单配置 API ====================
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['GET'])
+@login_required
 def get_default_copy_config():
     """获取默认跟单配置
     ---
@@ -315,6 +321,7 @@ def get_default_copy_config():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config', methods=['PUT'])
+@login_required
 def update_default_copy_config():
     """更新默认跟单配置
     ---
@@ -402,6 +409,7 @@ def update_default_copy_config():
 # ==================== 立即跟单配置 API ====================
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['GET'])
+@login_required
 def get_immediate_copy_config():
     """获取立即跟单配置
     ---
@@ -435,6 +443,7 @@ def get_immediate_copy_config():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config', methods=['PUT'])
+@login_required
 def update_immediate_copy_config():
     """更新立即跟单配置
     ---
@@ -666,6 +675,7 @@ def _validate_config_fields(config_data: dict, valid_fields: dict) -> dict:
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules', methods=['GET'])
+@login_required
 def get_default_config_rules():
     """获取所有默认跟单配置规则
     ---
@@ -697,6 +707,7 @@ def get_default_config_rules():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules', methods=['POST'])
+@login_required
 def create_default_config_rule():
     """创建默认跟单配置规则
     ---
@@ -774,6 +785,7 @@ def create_default_config_rule():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['GET'])
+@login_required
 def get_default_config_rule(rule_id: int):
     """获取单个默认跟单配置规则
     ---
@@ -811,6 +823,7 @@ def get_default_config_rule(rule_id: int):
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['PUT'])
+@login_required
 def update_default_config_rule(rule_id: int):
     """更新默认跟单配置规则
     ---
@@ -880,6 +893,7 @@ def update_default_config_rule(rule_id: int):
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/default-config-rules/<int:rule_id>', methods=['DELETE'])
+@login_required
 def delete_default_config_rule(rule_id: int):
     """删除默认跟单配置规则
     ---
@@ -926,6 +940,7 @@ def delete_default_config_rule(rule_id: int):
 # ==================== 立即跟单配置规则 API ====================
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules', methods=['GET'])
+@login_required
 def get_immediate_config_rules():
     """获取所有立即跟单配置规则
     ---
@@ -957,6 +972,7 @@ def get_immediate_config_rules():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules', methods=['POST'])
+@login_required
 def create_immediate_config_rule():
     """创建立即跟单配置规则（按币种配置，每个币种最多一个配置）
     ---
@@ -1036,6 +1052,7 @@ def create_immediate_config_rule():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['GET'])
+@login_required
 def get_immediate_config_rule(rule_id: int):
     """获取单个立即跟单配置规则
     ---
@@ -1073,6 +1090,7 @@ def get_immediate_config_rule(rule_id: int):
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['PUT'])
+@login_required
 def update_immediate_config_rule(rule_id: int):
     """更新立即跟单配置规则
     ---
@@ -1153,6 +1171,7 @@ def update_immediate_config_rule(rule_id: int):
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/immediate-config-rules/<int:rule_id>', methods=['DELETE'])
+@login_required
 def delete_immediate_config_rule(rule_id: int):
     """删除立即跟单配置规则
     ---
@@ -1197,6 +1216,7 @@ def delete_immediate_config_rule(rule_id: int):
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/config-rules/match', methods=['GET'])
+@login_required
 def match_config_rule():
     """根据杠杆匹配配置规则（用于测试/预览）
     ---
@@ -1349,6 +1369,7 @@ def _build_coin_stats(positions: list) -> dict:
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis', methods=['POST'])
+@login_required
 def ai_analyze_all_positions():
     """AI分析所有持仓
     ---
@@ -1482,6 +1503,7 @@ def ai_analyze_all_positions():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/coin', methods=['POST'])
+@login_required
 def ai_analyze_coin_positions():
     """AI分析单个币种持仓
     ---
@@ -1590,6 +1612,7 @@ def ai_analyze_coin_positions():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/single', methods=['POST'])
+@login_required
 def ai_analyze_single_position():
     """AI分析单个仓位
     ---
@@ -1691,6 +1714,7 @@ def ai_analyze_single_position():
 
 
 @copy_trading_positions_bp.route('/api/copy-trading/trader-positions/ai-analysis/check', methods=['POST'])
+@login_required
 def check_positions_ai_analysis():
     """检查是否已有持仓AI分析结果
     ---

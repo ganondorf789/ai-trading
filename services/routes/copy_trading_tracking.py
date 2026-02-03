@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ def _notify_config_changed() -> bool:
 # ==================== 仓位级别跟单 API ====================
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking', methods=['GET'])
+@login_required
 def get_position_trackings():
     """获取仓位跟单列表
     ---
@@ -145,6 +147,7 @@ def get_position_trackings():
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/stats', methods=['GET'])
+@login_required
 def get_position_tracking_stats():
     """获取仓位跟单统计
     ---
@@ -178,6 +181,7 @@ def get_position_tracking_stats():
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['GET'])
+@login_required
 def get_position_tracking(tracking_id: int):
     """获取仓位跟单详情
     ---
@@ -225,6 +229,7 @@ def get_position_tracking(tracking_id: int):
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking', methods=['POST'])
+@login_required
 def create_position_tracking():
     """创建仓位跟单
     ---
@@ -347,6 +352,7 @@ def create_position_tracking():
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['PUT'])
+@login_required
 def update_position_tracking(tracking_id: int):
     """更新仓位跟单配置
     ---
@@ -439,6 +445,7 @@ def update_position_tracking(tracking_id: int):
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['DELETE'])
+@login_required
 def delete_position_tracking(tracking_id: int):
     """删除仓位跟单记录
     ---
@@ -499,6 +506,7 @@ def delete_position_tracking(tracking_id: int):
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/toggle', methods=['POST'])
+@login_required
 def toggle_position_tracking(tracking_id: int):
     """启用/禁用仓位跟单
     ---
@@ -563,6 +571,7 @@ def toggle_position_tracking(tracking_id: int):
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/stop', methods=['POST'])
+@login_required
 def stop_position_tracking(tracking_id: int):
     """停止仓位跟单
     ---
@@ -629,6 +638,7 @@ def stop_position_tracking(tracking_id: int):
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/quick-add', methods=['POST'])
+@login_required
 def quick_add_position_tracking():
     """快速添加仓位跟单
     ---
@@ -747,6 +757,7 @@ def quick_add_position_tracking():
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/quick-copy', methods=['POST'])
+@login_required
 def quick_copy_position():
     """快速跟单仓位（支持自定义跟单比例）
     
@@ -960,6 +971,7 @@ def quick_copy_position():
 
 
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/notify-open', methods=['POST'])
+@login_required
 def notify_tracking_open(tracking_id: int):
     """手动触发开仓通知
     

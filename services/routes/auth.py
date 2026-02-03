@@ -2,12 +2,13 @@
 用户认证相关路由
 包括：注册、登录、修改密码、Hyperliquid 设置、秘钥管理
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 import logging
 from datetime import datetime, timedelta
 
 from config.settings import settings
 from .db import db
+from .middleware import generate_tokens, verify_token, login_required, admin_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +269,13 @@ def login():
         
         logger.info(f"用户登录成功: {account}")
         
+        # 生成 JWT 令牌
+        access_token, refresh_token = generate_tokens(
+            user_id=user['id'],
+            account=user['account'],
+            role=user.get('role', 'user')
+        )
+        
         # 格式化返回数据
         response_data = {
             'id': user['id'],
@@ -277,7 +285,9 @@ def login():
             'wallet_address': user.get('wallet_address', ''),
             'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
             'is_active': user.get('is_active', True),
-            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None
+            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None,
+            'access_token': access_token,
+            'refresh_token': refresh_token
         }
         
         return jsonify({
@@ -294,9 +304,9 @@ def login():
         }), 500
 
 
-@auth_bp.route('/api/auth/change-password', methods=['POST'])
-def change_password():
-    """修改密码
+@auth_bp.route('/api/auth/refresh-token', methods=['POST'])
+def refresh_token():
+    """刷新访问令牌
     ---
     tags:
       - Auth
@@ -307,14 +317,198 @@ def change_password():
         schema:
           type: object
           required:
-            - user_id
+            - refresh_token
+          properties:
+            refresh_token:
+              type: string
+              description: 刷新令牌
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                access_token:
+                  type: string
+                refresh_token:
+                  type: string
+      400:
+        description: 请求参数错误
+      401:
+        description: 刷新令牌无效或已过期
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('refresh_token'):
+            return jsonify({
+                'success': False,
+                'error': '刷新令牌不能为空'
+            }), 400
+        
+        # 验证刷新令牌
+        payload = verify_token(data['refresh_token'], 'refresh')
+        
+        if not payload:
+            return jsonify({
+                'success': False,
+                'error': '刷新令牌无效或已过期',
+                'code': 'TOKEN_INVALID'
+            }), 401
+        
+        user_id = payload.get('user_id')
+        
+        # 获取用户信息
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 401
+        
+        # 检查用户状态
+        if not db.check_user_active(user_id):
+            return jsonify({
+                'success': False,
+                'error': '用户账户已禁用或已过期',
+                'code': 'USER_INACTIVE'
+            }), 403
+        
+        # 生成新的令牌
+        access_token, new_refresh_token = generate_tokens(
+            user_id=user['id'],
+            account=user['account'],
+            role=user.get('role', 'user')
+        )
+        
+        logger.info(f"Token 刷新成功: user_id={user_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'access_token': access_token,
+                'refresh_token': new_refresh_token
+            },
+            'message': 'Token 刷新成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"Token 刷新失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/verify-token', methods=['GET'])
+def verify_token_endpoint():
+    """验证访问令牌是否有效
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+    responses:
+      200:
+        description: 令牌有效
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                account:
+                  type: string
+                role:
+                  type: string
+      401:
+        description: 令牌无效或已过期
+    """
+    from .middleware import get_token_from_request
+    
+    try:
+        token = get_token_from_request()
+        
+        if not token:
+            return jsonify({
+                'success': False,
+                'error': '未提供认证令牌',
+                'code': 'TOKEN_MISSING'
+            }), 401
+        
+        payload = verify_token(token, 'access')
+        
+        if not payload:
+            return jsonify({
+                'success': False,
+                'error': '认证令牌无效或已过期',
+                'code': 'TOKEN_INVALID'
+            }), 401
+        
+        user_id = payload.get('user_id')
+        
+        # 检查用户状态
+        if not db.check_user_active(user_id):
+            return jsonify({
+                'success': False,
+                'error': '用户账户已禁用或已过期',
+                'code': 'USER_INACTIVE'
+            }), 403
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'user_id': payload.get('user_id'),
+                'account': payload.get('account'),
+                'role': payload.get('role')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Token 验证失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """修改密码
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
             - old_password
             - new_password
           properties:
-            user_id:
-              type: integer
-              description: 用户 ID
-              example: 1
             old_password:
               type: string
               description: 原密码
@@ -337,8 +531,6 @@ def change_password():
         description: 请求参数错误
       401:
         description: 原密码错误
-      404:
-        description: 用户不存在
       500:
         description: 服务器错误
     """
@@ -352,15 +544,10 @@ def change_password():
                 'error': '请求参数不能为空'
             }), 400
         
-        user_id = data.get('user_id')
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
         old_password = data.get('old_password', '')
         new_password = data.get('new_password', '')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
         
         if not old_password:
             return jsonify({
@@ -380,14 +567,6 @@ def change_password():
                 'success': False,
                 'error': '新密码长度必须在6-64位之间'
             }), 400
-        
-        # 检查用户是否存在
-        user = db.get_user_by_id(user_id)
-        if not user:
-            return jsonify({
-                'success': False,
-                'error': '用户不存在'
-            }), 404
         
         # 修改密码
         success = db.change_password(user_id, old_password, new_password)
@@ -414,17 +593,18 @@ def change_password():
 
 
 @auth_bp.route('/api/auth/hyperliquid-settings', methods=['GET'])
+@login_required
 def get_hyperliquid_settings():
     """获取 Hyperliquid API 设置
     ---
     tags:
       - Auth
     parameters:
-      - name: user_id
-        in: query
-        type: integer
+      - name: Authorization
+        in: header
+        type: string
         required: true
-        description: 用户 ID
+        description: Bearer Token
     responses:
       200:
         description: 获取成功
@@ -440,21 +620,14 @@ def get_hyperliquid_settings():
                   type: string
                 wallet_address:
                   type: string
-      400:
-        description: 请求参数错误
       404:
         description: 用户不存在
       500:
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
         
         # 获取设置
         settings_data = db.get_hyperliquid_settings(user_id)
@@ -479,24 +652,24 @@ def get_hyperliquid_settings():
 
 
 @auth_bp.route('/api/auth/hyperliquid-settings', methods=['POST'])
+@login_required
 def update_hyperliquid_settings():
     """更新 Hyperliquid API 设置
     ---
     tags:
       - Auth
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: body
         in: body
         required: true
         schema:
           type: object
-          required:
-            - user_id
           properties:
-            user_id:
-              type: integer
-              description: 用户 ID
-              example: 1
             api_wallet:
               type: string
               description: API 钱包地址
@@ -524,8 +697,6 @@ def update_hyperliquid_settings():
               type: string
       400:
         description: 请求参数错误
-      404:
-        description: 用户不存在
       500:
         description: 服务器错误
     """
@@ -539,15 +710,10 @@ def update_hyperliquid_settings():
                 'error': '请求参数不能为空'
             }), 400
         
-        user_id = data.get('user_id')
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
         api_wallet = data.get('api_wallet')
         wallet_address = data.get('wallet_address')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
         
         if api_wallet is None and wallet_address is None:
             return jsonify({
@@ -574,14 +740,6 @@ def update_hyperliquid_settings():
                     'success': False,
                     'error': '钱包地址格式不正确'
                 }), 400
-        
-        # 检查用户是否存在
-        user = db.get_user_by_id(user_id)
-        if not user:
-            return jsonify({
-                'success': False,
-                'error': '用户不存在'
-            }), 404
         
         # 更新设置
         updated_user = db.update_hyperliquid_settings(
@@ -615,13 +773,99 @@ def update_hyperliquid_settings():
         }), 500
 
 
-@auth_bp.route('/api/auth/user/<int:user_id>', methods=['GET'])
-def get_user_info(user_id: int):
-    """获取用户信息
+@auth_bp.route('/api/auth/user', methods=['GET'])
+@login_required
+def get_current_user_info():
+    """获取当前登录用户信息
     ---
     tags:
       - Auth
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+                is_active:
+                  type: boolean
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
+        user = db.get_user_by_id(user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        # 格式化返回数据
+        response_data = {
+            'id': user['id'],
+            'account': user['account'],
+            'role': user.get('role', 'user'),
+            'api_wallet': user.get('api_wallet', ''),
+            'wallet_address': user.get('wallet_address', ''),
+            'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
+            'is_active': user.get('is_active', True),
+            'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
+            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户信息失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/user/<int:user_id>', methods=['GET'])
+@login_required
+@admin_required
+def get_user_info(user_id: int):
+    """获取指定用户信息（管理员）
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: user_id
         in: path
         type: integer
@@ -651,6 +895,8 @@ def get_user_info(user_id: int):
                   format: date-time
                 is_active:
                   type: boolean
+      403:
+        description: 无权限
       404:
         description: 用户不存在
       500:
@@ -694,17 +940,19 @@ def get_user_info(user_id: int):
 # ==================== 秘钥管理 API ====================
 
 @auth_bp.route('/api/auth/secret-keys', methods=['GET'])
+@login_required
+@admin_required
 def get_secret_keys():
     """获取秘钥列表（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
-      - name: user_id
-        in: query
-        type: integer
+      - name: Authorization
+        in: header
+        type: string
         required: true
-        description: 操作者用户 ID（需要管理员权限）
+        description: Bearer Token
       - name: is_active
         in: query
         type: boolean
@@ -737,21 +985,6 @@ def get_secret_keys():
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         is_active = request.args.get('is_active')
         if is_active is not None:
             is_active = is_active.lower() == 'true'
@@ -802,23 +1035,25 @@ def get_secret_keys():
 
 
 @auth_bp.route('/api/auth/secret-keys', methods=['POST'])
+@login_required
+@admin_required
 def create_secret_key():
     """创建秘钥（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: body
         in: body
         required: true
         schema:
           type: object
-          required:
-            - user_id
           properties:
-            user_id:
-              type: integer
-              description: 操作者用户 ID（需要管理员权限）
             key_name:
               type: string
               description: 秘钥名称/备注
@@ -846,25 +1081,10 @@ def create_secret_key():
         data = request.get_json()
         
         if not data:
-            return jsonify({
-                'success': False,
-                'error': '请求参数不能为空'
-            }), 400
+            data = {}
         
-        user_id = data.get('user_id')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
         
         key_name = data.get('key_name', '')
         user_role = data.get('user_role', 'user')
@@ -917,24 +1137,27 @@ def create_secret_key():
 
 
 @auth_bp.route('/api/auth/secret-keys/batch', methods=['POST'])
+@login_required
+@admin_required
 def batch_create_secret_keys():
     """批量创建秘钥（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: body
         in: body
         required: true
         schema:
           type: object
           required:
-            - user_id
             - count
           properties:
-            user_id:
-              type: integer
-              description: 操作者用户 ID（需要管理员权限）
             count:
               type: integer
               description: 创建数量
@@ -965,14 +1188,9 @@ def batch_create_secret_keys():
                 'error': '请求参数不能为空'
             }), 400
         
-        user_id = data.get('user_id')
+        # 从 token 获取当前用户 ID
+        user_id = get_current_user_id()
         count = data.get('count')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
         
         if not count or count < 1:
             return jsonify({
@@ -985,13 +1203,6 @@ def batch_create_secret_keys():
                 'success': False,
                 'error': '单次创建数量不能超过100'
             }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
         
         keys = db.batch_create_secret_keys(
             count=count,
@@ -1023,22 +1234,24 @@ def batch_create_secret_keys():
 
 
 @auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['GET'])
+@login_required
+@admin_required
 def get_secret_key(key_id: int):
     """获取秘钥详情（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: key_id
         in: path
         type: integer
         required: true
         description: 秘钥 ID
-      - name: user_id
-        in: query
-        type: integer
-        required: true
-        description: 操作者用户 ID
     responses:
       200:
         description: 获取成功
@@ -1050,21 +1263,6 @@ def get_secret_key(key_id: int):
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         key = db.get_secret_key(key_id)
         
         if not key:
@@ -1099,12 +1297,19 @@ def get_secret_key(key_id: int):
 
 
 @auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['PUT'])
+@login_required
+@admin_required
 def update_secret_key(key_id: int):
     """更新秘钥（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: key_id
         in: path
         type: integer
@@ -1115,12 +1320,7 @@ def update_secret_key(key_id: int):
         required: true
         schema:
           type: object
-          required:
-            - user_id
           properties:
-            user_id:
-              type: integer
-              description: 操作者用户 ID
             key_name:
               type: string
             user_role:
@@ -1144,25 +1344,7 @@ def update_secret_key(key_id: int):
         data = request.get_json()
         
         if not data:
-            return jsonify({
-                'success': False,
-                'error': '请求参数不能为空'
-            }), 400
-        
-        user_id = data.get('user_id')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
+            data = {}
         
         key = db.update_secret_key(
             key_id=key_id,
@@ -1204,22 +1386,24 @@ def update_secret_key(key_id: int):
 
 
 @auth_bp.route('/api/auth/secret-keys/<int:key_id>', methods=['DELETE'])
+@login_required
+@admin_required
 def delete_secret_key(key_id: int):
     """删除秘钥（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: key_id
         in: path
         type: integer
         required: true
         description: 秘钥 ID
-      - name: user_id
-        in: query
-        type: integer
-        required: true
-        description: 操作者用户 ID
     responses:
       200:
         description: 删除成功
@@ -1231,21 +1415,6 @@ def delete_secret_key(key_id: int):
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         success = db.delete_secret_key(key_id)
         
         if not success:
@@ -1270,17 +1439,19 @@ def delete_secret_key(key_id: int):
 
 
 @auth_bp.route('/api/auth/secret-keys/stats', methods=['GET'])
+@login_required
+@admin_required
 def get_secret_key_stats():
     """获取秘钥统计信息（管理员权限）
     ---
     tags:
       - SecretKeys
     parameters:
-      - name: user_id
-        in: query
-        type: integer
+      - name: Authorization
+        in: header
+        type: string
         required: true
-        description: 操作者用户 ID
+        description: Bearer Token
     responses:
       200:
         description: 获取成功
@@ -1290,21 +1461,6 @@ def get_secret_key_stats():
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         stats = db.get_secret_key_stats()
         
         return jsonify({
@@ -1323,17 +1479,19 @@ def get_secret_key_stats():
 # ==================== 用户管理 API（管理员） ====================
 
 @auth_bp.route('/api/auth/users', methods=['GET'])
+@login_required
+@admin_required
 def get_users():
     """获取用户列表（管理员权限）
     ---
     tags:
       - UserManagement
     parameters:
-      - name: user_id
-        in: query
-        type: integer
+      - name: Authorization
+        in: header
+        type: string
         required: true
-        description: 操作者用户 ID
+        description: Bearer Token
       - name: role
         in: query
         type: string
@@ -1360,21 +1518,6 @@ def get_users():
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         is_active = request.args.get('is_active')
         if is_active is not None:
             is_active = is_active.lower() == 'true'
@@ -1419,12 +1562,19 @@ def get_users():
 
 
 @auth_bp.route('/api/auth/users/<int:target_user_id>/role', methods=['PUT'])
+@login_required
+@admin_required
 def update_user_role(target_user_id: int):
     """更新用户身份（管理员权限）
     ---
     tags:
       - UserManagement
     parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
       - name: target_user_id
         in: path
         type: integer
@@ -1436,12 +1586,8 @@ def update_user_role(target_user_id: int):
         schema:
           type: object
           required:
-            - user_id
             - role
           properties:
-            user_id:
-              type: integer
-              description: 操作者用户 ID
             role:
               type: string
               enum: [user, member, admin]
@@ -1465,27 +1611,13 @@ def update_user_role(target_user_id: int):
                 'error': '请求参数不能为空'
             }), 400
         
-        user_id = data.get('user_id')
         role = data.get('role')
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '操作者用户 ID 不能为空'
-            }), 400
         
         if not role:
             return jsonify({
                 'success': False,
                 'error': '角色不能为空'
             }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
         
         success = db.update_user_role(target_user_id, role)
         
@@ -1511,17 +1643,19 @@ def update_user_role(target_user_id: int):
 
 
 @auth_bp.route('/api/auth/users/stats', methods=['GET'])
+@login_required
+@admin_required
 def get_user_stats():
     """获取用户统计信息（管理员权限）
     ---
     tags:
       - UserManagement
     parameters:
-      - name: user_id
-        in: query
-        type: integer
+      - name: Authorization
+        in: header
+        type: string
         required: true
-        description: 操作者用户 ID
+        description: Bearer Token
     responses:
       200:
         description: 获取成功
@@ -1531,21 +1665,6 @@ def get_user_stats():
         description: 服务器错误
     """
     try:
-        user_id = request.args.get('user_id', type=int)
-        
-        if not user_id:
-            return jsonify({
-                'success': False,
-                'error': '用户 ID 不能为空'
-            }), 400
-        
-        # 验证管理员权限
-        if not db.is_admin(user_id):
-            return jsonify({
-                'success': False,
-                'error': '无权限，需要管理员身份'
-            }), 403
-        
         stats = db.get_user_stats()
         
         return jsonify({

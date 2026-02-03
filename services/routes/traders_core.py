@@ -8,6 +8,7 @@ import logging
 from screener import TraderScreener, ScreenerConfig
 from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ traders_core_bp = Blueprint('traders_core', __name__)
 
 
 @traders_core_bp.route('/api/traders', methods=['GET'])
+@login_required
 def get_traders():
     """获取交易者列表
     ---
@@ -343,6 +345,7 @@ def get_traders():
 
 
 @traders_core_bp.route('/api/traders', methods=['POST'])
+@login_required
 def add_trader():
     """新增交易者
     ---
@@ -462,6 +465,7 @@ def add_trader():
 
 
 @traders_core_bp.route('/api/traders/<address>', methods=['GET'])
+@login_required
 def get_trader_detail(address: str):
     """获取交易者详情
     ---
@@ -517,6 +521,7 @@ def get_trader_detail(address: str):
 
 
 @traders_core_bp.route('/api/traders/<address>/refresh', methods=['POST'])
+@login_required
 def refresh_trader(address: str):
     """刷新交易者数据
     ---
@@ -638,6 +643,7 @@ def refresh_trader(address: str):
 
 
 @traders_core_bp.route('/api/traders/<address>/fills', methods=['GET'])
+@login_required
 def get_trader_fills(address: str):
     """获取交易者历史交易记录
     ---

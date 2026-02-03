@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ traders_stats_bp = Blueprint('traders_stats', __name__)
 # ==================== 统计信息 ====================
 
 @traders_stats_bp.route('/api/stats', methods=['GET'])
+@login_required
 def get_statistics():
     """获取数据库统计信息
     ---
@@ -52,6 +54,7 @@ def get_statistics():
 # ==================== 币种列表 ====================
 
 @traders_stats_bp.route('/api/coins', methods=['GET'])
+@login_required
 def get_coins():
     """获取所有币种列表
     ---
@@ -124,6 +127,7 @@ def get_coins():
 
 
 @traders_stats_bp.route('/api/hyperliquid/coins', methods=['GET'])
+@login_required
 def get_hyperliquid_coins():
     """获取Hyperliquid可交易币种列表
     ---
@@ -171,6 +175,7 @@ def get_hyperliquid_coins():
 
 
 @traders_stats_bp.route('/api/hyperliquid/coins/sync', methods=['POST'])
+@login_required
 def sync_hyperliquid_coins():
     """同步Hyperliquid币种列表
     ---
@@ -239,6 +244,7 @@ def sync_hyperliquid_coins():
 
 
 @traders_stats_bp.route('/api/hyperliquid/coins/names', methods=['GET'])
+@login_required
 def get_hyperliquid_coin_names():
     """获取Hyperliquid币种名称列表
     ---
@@ -391,6 +397,7 @@ BEST_S_PRESETS = {
 
 
 @traders_stats_bp.route('/api/traders/best-s', methods=['GET'])
+@login_required
 def get_best_s_traders():
     """获取S级优选交易员
     ---
@@ -545,6 +552,7 @@ def get_best_s_traders():
 
 
 @traders_stats_bp.route('/api/traders/best-s/presets', methods=['GET'])
+@login_required
 def get_best_s_presets():
     """获取S级优选筛选预设配置
     ---

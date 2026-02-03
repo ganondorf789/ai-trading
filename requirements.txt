@@ -67,4 +67,7 @@ dashscope>=1.14.0
 # Encryption
 cryptography>=42.0.0
 
+# JWT Authentication
+PyJWT>=2.8.0
+
 

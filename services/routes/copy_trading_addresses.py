@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ copy_trading_addresses_bp = Blueprint('copy_trading_addresses', __name__)
 # ==================== 跟单分组管理 API ====================
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['GET'])
+@login_required
 def get_copy_trading_groups():
     """获取跟单分组列表
     ---
@@ -50,6 +52,7 @@ def get_copy_trading_groups():
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['POST'])
+@login_required
 def create_copy_trading_group():
     """创建跟单分组
     ---
@@ -107,6 +110,7 @@ def create_copy_trading_group():
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['PUT'])
+@login_required
 def update_copy_trading_group(group_id: int):
     """更新跟单分组
     ---
@@ -158,6 +162,7 @@ def update_copy_trading_group(group_id: int):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['DELETE'])
+@login_required
 def delete_copy_trading_group(group_id: int):
     """删除跟单分组
     ---
@@ -208,6 +213,7 @@ def delete_copy_trading_group(group_id: int):
 # ==================== 跟单地址管理 API ====================
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses', methods=['GET'])
+@login_required
 def get_copy_trading_addresses():
     """获取跟单地址列表
     ---
@@ -311,6 +317,7 @@ def get_copy_trading_addresses():
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['GET'])
+@login_required
 def get_copy_trading_address(address: str):
     """获取单个跟单地址详情
     ---
@@ -358,6 +365,7 @@ def get_copy_trading_address(address: str):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses', methods=['POST'])
+@login_required
 def create_copy_trading_address():
     """添加跟单地址
     ---
@@ -416,6 +424,7 @@ def create_copy_trading_address():
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/quick-add', methods=['POST'])
+@login_required
 def quick_add_copy_trading_address():
     """快速添加跟单地址
     ---
@@ -535,6 +544,7 @@ def quick_add_copy_trading_address():
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['PUT'])
+@login_required
 def update_copy_trading_address(address: str):
     """更新跟单地址配置
     ---
@@ -593,6 +603,7 @@ def update_copy_trading_address(address: str):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>', methods=['DELETE'])
+@login_required
 def delete_copy_trading_address(address: str):
     """删除跟单地址
     ---
@@ -633,6 +644,7 @@ def delete_copy_trading_address(address: str):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>/toggle', methods=['POST'])
+@login_required
 def toggle_copy_trading_address(address: str):
     """启用/禁用跟单地址
     ---
@@ -695,6 +707,7 @@ def toggle_copy_trading_address(address: str):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>/sync-position', methods=['POST'])
+@login_required
 def toggle_copy_trading_sync_position(address: str):
     """切换同步仓位状态
     ---
@@ -757,6 +770,7 @@ def toggle_copy_trading_sync_position(address: str):
 
 
 @copy_trading_addresses_bp.route('/api/copy-trading/addresses/batch', methods=['POST'])
+@login_required
 def batch_update_copy_trading_addresses():
     """批量操作跟单地址
     ---

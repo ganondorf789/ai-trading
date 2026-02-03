@@ -121,6 +121,28 @@ class EncryptionSettings(BaseSettings):
     )
 
 
+class JWTSettings(BaseSettings):
+    """JWT 认证配置"""
+    model_config = SettingsConfigDict(env_prefix='JWT_')
+
+    secret_key: str = Field(
+        default="your-jwt-secret-key-change-this-in-production",
+        description="JWT 签名密钥"
+    )
+    algorithm: str = Field(
+        default="HS256",
+        description="JWT 签名算法"
+    )
+    access_token_expire_hours: int = Field(
+        default=24,
+        description="访问令牌过期时间（小时）"
+    )
+    refresh_token_expire_days: int = Field(
+        default=7,
+        description="刷新令牌过期时间（天）"
+    )
+
+
 class SystemSettings(BaseSettings):
     """系统配置"""
     model_config = SettingsConfigDict(env_prefix='')
@@ -152,6 +174,7 @@ class Settings:
         self.ai_model = AIModelSettings()
         self.system = SystemSettings()
         self.encryption = EncryptionSettings()
+        self.jwt = JWTSettings()
     
     @property
     def hyperliquid_api_url(self) -> str:

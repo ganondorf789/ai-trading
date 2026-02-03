@@ -70,7 +70,51 @@ export type {
   ConfigRuleMatchResult,
 };
 
+// Forward declaration for User type (defined later in the file)
+export interface User {
+  id: number;
+  account: string;
+  role: 'user' | 'member' | 'admin';
+  api_wallet: string;
+  wallet_address: string;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// ==================== Token 管理 ====================
+
+const TOKEN_KEY = 'access_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+const USER_KEY = 'current_user';
+
+export const tokenManager = {
+  getToken: () => localStorage.getItem(TOKEN_KEY),
+  setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  removeToken: () => localStorage.removeItem(TOKEN_KEY),
+  
+  getRefreshToken: () => localStorage.getItem(REFRESH_TOKEN_KEY),
+  setRefreshToken: (token: string) => localStorage.setItem(REFRESH_TOKEN_KEY, token),
+  removeRefreshToken: () => localStorage.removeItem(REFRESH_TOKEN_KEY),
+  
+  getUser: (): User | null => {
+    const userStr = localStorage.getItem(USER_KEY);
+    return userStr ? JSON.parse(userStr) : null;
+  },
+  setUser: (user: User) => localStorage.setItem(USER_KEY, JSON.stringify(user)),
+  removeUser: () => localStorage.removeItem(USER_KEY),
+  
+  clear: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+  
+  isLoggedIn: () => !!localStorage.getItem(TOKEN_KEY),
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -80,10 +124,99 @@ const api = axios.create({
   },
 });
 
+// 请求拦截器 - 自动附加 Token
+api.interceptors.request.use(
+  (config) => {
+    const token = tokenManager.getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// 是否正在刷新 token
+let isRefreshing = false;
+// 待重试的请求队列
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+const subscribeTokenRefresh = (callback: (token: string) => void) => {
+  refreshSubscribers.push(callback);
+};
+
+const onTokenRefreshed = (token: string) => {
+  refreshSubscribers.forEach(callback => callback(token));
+  refreshSubscribers = [];
+};
+
 // 响应拦截器
 api.interceptors.response.use(
   (response) => response.data,
-  (error) => {
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // 处理 401 错误（token 无效或过期）
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      // 如果是登录或刷新 token 请求失败，直接抛出错误
+      if (originalRequest.url?.includes('/auth/login') || 
+          originalRequest.url?.includes('/auth/refresh-token') ||
+          originalRequest.url?.includes('/auth/register')) {
+        return Promise.reject(error);
+      }
+      
+      // 如果正在刷新 token，将请求加入队列等待
+      if (isRefreshing) {
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+      
+      originalRequest._retry = true;
+      isRefreshing = true;
+      
+      const refreshToken = tokenManager.getRefreshToken();
+      if (!refreshToken) {
+        // 没有 refresh token，触发登出
+        tokenManager.clear();
+        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'no_refresh_token' } }));
+        return Promise.reject(error);
+      }
+      
+      try {
+        // 尝试刷新 token
+        const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
+          refresh_token: refreshToken
+        });
+        
+        if (response.data.success && response.data.data?.access_token) {
+          const newToken = response.data.data.access_token;
+          tokenManager.setToken(newToken);
+          
+          // 通知所有等待的请求
+          onTokenRefreshed(newToken);
+          
+          // 重试原始请求
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        } else {
+          throw new Error('Token refresh failed');
+        }
+      } catch (refreshError) {
+        // 刷新失败，清除 token 并触发登出
+        tokenManager.clear();
+        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'refresh_failed' } }));
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+    
     console.error('API Error:', error);
     return Promise.reject(error);
   }
@@ -684,18 +817,6 @@ export const riskControlApi = {
 
 // ==================== 用户认证 API ====================
 
-export interface User {
-  id: number;
-  account: string;
-  role: 'user' | 'member' | 'admin';
-  api_wallet: string;
-  wallet_address: string;
-  expires_at: string | null;
-  is_active: boolean;
-  created_at: string;
-  last_login_at: string | null;
-}
-
 export interface SecretKey {
   id: number;
   key_value: string;
@@ -731,74 +852,111 @@ export interface SecretKeyStats {
   admin_role_count: number;
 }
 
+export interface LoginResponse {
+  user: User;
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}
+
 export const authApi = {
   // 用户登录
-  login: (data: { account: string; password: string }) =>
-    api.post<any, ApiResponse<User> & { message?: string }>('/auth/login', data),
+  login: async (data: { account: string; password: string }) => {
+    const response = await api.post<any, ApiResponse<LoginResponse> & { message?: string }>('/auth/login', data);
+    if (response.success && response.data) {
+      // 保存 token 和用户信息
+      tokenManager.setToken(response.data.access_token);
+      tokenManager.setRefreshToken(response.data.refresh_token);
+      tokenManager.setUser(response.data.user);
+    }
+    return response;
+  },
 
   // 用户注册
   register: (data: { account: string; password: string; secret_key: string }) =>
     api.post<any, ApiResponse<{ id: number; account: string; role: string }> & { message?: string }>('/auth/register', data),
 
-  // 修改密码
-  changePassword: (data: { user_id: number; old_password: string; new_password: string }) =>
+  // 修改密码（不再需要 user_id，从 token 获取）
+  changePassword: (data: { old_password: string; new_password: string }) =>
     api.post<any, ApiResponse<void> & { message?: string }>('/auth/change-password', data),
 
-  // 获取用户信息
+  // 获取当前登录用户信息
+  getCurrentUser: () =>
+    api.get<any, ApiResponse<User>>('/auth/me'),
+
+  // 获取指定用户信息（管理员）
   getUserInfo: (userId: number) =>
     api.get<any, ApiResponse<User>>(`/auth/user/${userId}`),
 
-  // 获取 Hyperliquid 设置
-  getHyperliquidSettings: (userId: number) =>
-    api.get<any, ApiResponse<{ api_wallet: string; wallet_address: string }>>('/auth/hyperliquid-settings', { params: { user_id: userId } }),
+  // 验证 token 有效性
+  verifyToken: () =>
+    api.get<any, ApiResponse<{ valid: boolean; user_id: number; account: string; role: string; expires_at: string }>>('/auth/verify-token'),
 
-  // 更新 Hyperliquid 设置
-  updateHyperliquidSettings: (data: { user_id: number; api_wallet?: string; wallet_address?: string }) =>
+  // 刷新 token
+  refreshToken: async (refreshToken: string) => {
+    const response = await api.post<any, ApiResponse<{ access_token: string; expires_in: number }> & { message?: string }>('/auth/refresh-token', { refresh_token: refreshToken });
+    if (response.success && response.data) {
+      tokenManager.setToken(response.data.access_token);
+    }
+    return response;
+  },
+
+  // 登出
+  logout: () => {
+    tokenManager.clear();
+  },
+
+  // 获取 Hyperliquid 设置（不再需要 user_id）
+  getHyperliquidSettings: () =>
+    api.get<any, ApiResponse<{ api_wallet: string; wallet_address: string }>>('/auth/hyperliquid-settings'),
+
+  // 更新 Hyperliquid 设置（不再需要 user_id）
+  updateHyperliquidSettings: (data: { api_wallet?: string; wallet_address?: string }) =>
     api.post<any, ApiResponse<{ api_wallet: string; wallet_address: string }> & { message?: string }>('/auth/hyperliquid-settings', data),
 };
 
 export const userManagementApi = {
   // 获取用户列表（管理员）
-  getUsers: (params: { user_id: number; role?: string; is_active?: boolean; limit?: number; offset?: number }) =>
+  getUsers: (params?: { role?: string; is_active?: boolean; limit?: number; offset?: number }) =>
     api.get<any, ApiResponse<User[]>>('/auth/users', { params }),
 
   // 更新用户身份（管理员）
-  updateUserRole: (targetUserId: number, data: { user_id: number; role: string }) =>
+  updateUserRole: (targetUserId: number, data: { role: string }) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/role`, data),
 
   // 获取用户统计（管理员）
-  getUserStats: (userId: number) =>
-    api.get<any, ApiResponse<UserStats>>('/auth/users/stats', { params: { user_id: userId } }),
+  getUserStats: () =>
+    api.get<any, ApiResponse<UserStats>>('/auth/users/stats'),
 };
 
 export const secretKeyApi = {
   // 获取秘钥列表（管理员）
-  getSecretKeys: (params: { user_id: number; is_active?: boolean; is_used?: boolean; user_role?: string; limit?: number; offset?: number }) =>
+  getSecretKeys: (params?: { is_active?: boolean; is_used?: boolean; user_role?: string; limit?: number; offset?: number }) =>
     api.get<any, ApiResponse<SecretKey[]>>('/auth/secret-keys', { params }),
 
   // 创建秘钥（管理员）
-  createSecretKey: (data: { user_id: number; key_name?: string; user_role?: string; expires_days?: number; key_value?: string }) =>
+  createSecretKey: (data: { key_name?: string; user_role?: string; expires_days?: number; key_value?: string }) =>
     api.post<any, ApiResponse<SecretKey> & { message?: string }>('/auth/secret-keys', data),
 
   // 批量创建秘钥（管理员）
-  batchCreateSecretKeys: (data: { user_id: number; count: number; key_name_prefix?: string; user_role?: string; expires_days?: number }) =>
+  batchCreateSecretKeys: (data: { count: number; key_name_prefix?: string; user_role?: string; expires_days?: number }) =>
     api.post<any, ApiResponse<SecretKey[]> & { message?: string }>('/auth/secret-keys/batch', data),
 
   // 获取秘钥详情（管理员）
-  getSecretKey: (keyId: number, userId: number) =>
-    api.get<any, ApiResponse<SecretKey>>(`/auth/secret-keys/${keyId}`, { params: { user_id: userId } }),
+  getSecretKey: (keyId: number) =>
+    api.get<any, ApiResponse<SecretKey>>(`/auth/secret-keys/${keyId}`),
 
   // 更新秘钥（管理员）
-  updateSecretKey: (keyId: number, data: { user_id: number; key_name?: string; user_role?: string; expires_days?: number; is_active?: boolean }) =>
+  updateSecretKey: (keyId: number, data: { key_name?: string; user_role?: string; expires_days?: number; is_active?: boolean }) =>
     api.put<any, ApiResponse<SecretKey> & { message?: string }>(`/auth/secret-keys/${keyId}`, data),
 
   // 删除秘钥（管理员）
-  deleteSecretKey: (keyId: number, userId: number) =>
-    api.delete<any, ApiResponse<void> & { message?: string }>(`/auth/secret-keys/${keyId}`, { params: { user_id: userId } }),
+  deleteSecretKey: (keyId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/auth/secret-keys/${keyId}`),
 
   // 获取秘钥统计（管理员）
-  getSecretKeyStats: (userId: number) =>
-    api.get<any, ApiResponse<SecretKeyStats>>('/auth/secret-keys/stats', { params: { user_id: userId } }),
+  getSecretKeyStats: () =>
+    api.get<any, ApiResponse<SecretKeyStats>>('/auth/secret-keys/stats'),
 };
 
 // ==================== S级优选筛选 API ====================

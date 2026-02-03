@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ notifications_bp = Blueprint('notifications', __name__)
 # ==================== 通知 API ====================
 
 @notifications_bp.route('/api/notifications', methods=['GET'])
+@login_required
 def get_notifications():
     """获取通知列表（游标分页）
     ---

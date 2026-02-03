@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ copy_trading_orders_bp = Blueprint('copy_trading_orders', __name__)
 # ==================== 跟单订单管理 API ====================
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders', methods=['GET'])
+@login_required
 def get_copy_trading_orders():
     """获取跟单订单列表
     ---
@@ -175,6 +177,7 @@ def get_copy_trading_orders():
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders/stats', methods=['GET'])
+@login_required
 def get_copy_trading_order_stats():
     """获取跟单订单统计
     ---
@@ -225,6 +228,7 @@ def get_copy_trading_order_stats():
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/orders/cleanup', methods=['POST'])
+@login_required
 def cleanup_copy_trading_orders():
     """清理旧订单记录
     ---
@@ -271,6 +275,7 @@ def cleanup_copy_trading_orders():
 # ==================== 跟单仓位状态管理 API ====================
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions', methods=['GET'])
+@login_required
 def get_copy_position_states():
     """获取所有跟单仓位状态
     ---
@@ -316,6 +321,7 @@ def get_copy_position_states():
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/stats', methods=['GET'])
+@login_required
 def get_copy_position_stats():
     """获取跟单仓位统计
     ---
@@ -350,6 +356,7 @@ def get_copy_position_stats():
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>', methods=['GET'])
+@login_required
 def get_target_position_states(target_address: str):
     """获取特定目标的仓位状态
     ---
@@ -395,6 +402,7 @@ def get_target_position_states(target_address: str):
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>/<symbol>', methods=['DELETE'])
+@login_required
 def delete_position_state(target_address: str, symbol: str):
     """删除单个仓位状态
     ---
@@ -441,6 +449,7 @@ def delete_position_state(target_address: str, symbol: str):
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/<target_address>', methods=['DELETE'])
+@login_required
 def clear_target_position_states(target_address: str):
     """清空目标的所有仓位状态
     ---
@@ -484,6 +493,7 @@ def clear_target_position_states(target_address: str):
 
 
 @copy_trading_orders_bp.route('/api/copy-trading/positions/clear-all', methods=['POST'])
+@login_required
 def clear_all_position_states():
     """清空所有仓位状态
     ---

@@ -8,6 +8,7 @@ import logging
 from clients.hyperliquid_client import HyperliquidClient
 from services.routes.db import db
 from config.settings import settings
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ def get_client() -> HyperliquidClient:
 # ==================== 市场数据 API ====================
 
 @trading_bp.route('/api/trading/meta', methods=['GET'])
+@login_required
 def get_market_meta():
     """获取市场元数据
     ---
@@ -139,6 +141,7 @@ def get_market_meta():
 
 
 @trading_bp.route('/api/trading/mids', methods=['GET'])
+@login_required
 def get_all_mids():
     """获取所有交易对中间价
     ---
@@ -188,6 +191,7 @@ def get_all_mids():
 
 
 @trading_bp.route('/api/trading/mids/<symbol>', methods=['GET'])
+@login_required
 def get_mid_price(symbol: str):
     """获取指定交易对中间价
     ---
@@ -249,6 +253,7 @@ def get_mid_price(symbol: str):
 # ==================== 仓位 API ====================
 
 @trading_bp.route('/api/trading/positions', methods=['GET'])
+@login_required
 def get_positions():
     """获取当前所有仓位
     ---
@@ -368,6 +373,7 @@ def get_positions():
 
 
 @trading_bp.route('/api/trading/positions/<symbol>', methods=['GET'])
+@login_required
 def get_position(symbol: str):
     """获取指定交易对仓位
     ---
@@ -431,6 +437,7 @@ def get_position(symbol: str):
 # ==================== 补仓 API ====================
 
 @trading_bp.route('/api/trading/positions/<symbol>/add', methods=['POST'])
+@login_required
 def add_position(symbol: str):
     """市价补仓
     ---
@@ -591,6 +598,7 @@ def add_position(symbol: str):
 
 
 @trading_bp.route('/api/trading/positions/<symbol>/add-limit', methods=['POST'])
+@login_required
 def add_position_limit(symbol: str):
     """限价补仓
     ---
@@ -763,6 +771,7 @@ def add_position_limit(symbol: str):
 # ==================== 平仓 API ====================
 
 @trading_bp.route('/api/trading/positions/<symbol>/close', methods=['POST'])
+@login_required
 def close_position(symbol: str):
     """市价平仓
     ---
@@ -825,6 +834,7 @@ def close_position(symbol: str):
 
 
 @trading_bp.route('/api/trading/positions/<symbol>/close-limit', methods=['POST'])
+@login_required
 def close_position_limit(symbol: str):
     """限价平仓
     ---
@@ -906,6 +916,7 @@ def close_position_limit(symbol: str):
 
 
 @trading_bp.route('/api/trading/positions/close-all', methods=['POST'])
+@login_required
 def close_all_positions():
     """市价平掉所有仓位
     ---
@@ -950,6 +961,7 @@ def close_all_positions():
 # ==================== 止盈止损 API ====================
 
 @trading_bp.route('/api/trading/positions/<symbol>/tp-sl', methods=['POST'])
+@login_required
 def set_position_tp_sl(symbol: str):
     """设置仓位止盈止损
     ---
@@ -1046,6 +1058,7 @@ def set_position_tp_sl(symbol: str):
 # ==================== 订单 API ====================
 
 @trading_bp.route('/api/trading/orders', methods=['GET'])
+@login_required
 def get_open_orders():
     """获取未成交订单
     ---
@@ -1108,6 +1121,7 @@ def get_open_orders():
 
 
 @trading_bp.route('/api/trading/orders/<symbol>/<int:order_id>', methods=['DELETE'])
+@login_required
 def cancel_order(symbol: str, order_id: int):
     """取消订单
     ---
@@ -1149,6 +1163,7 @@ def cancel_order(symbol: str, order_id: int):
 
 
 @trading_bp.route('/api/trading/orders/<symbol>', methods=['DELETE'])
+@login_required
 def cancel_orders_by_symbol(symbol: str):
     """取消指定交易对所有订单
     ---
@@ -1197,6 +1212,7 @@ def cancel_orders_by_symbol(symbol: str):
 
 
 @trading_bp.route('/api/trading/orders', methods=['DELETE'])
+@login_required
 def cancel_all_orders():
     """取消所有订单
     ---
@@ -1241,6 +1257,7 @@ def cancel_all_orders():
 # ==================== 账户信息 API ====================
 
 @trading_bp.route('/api/trading/account', methods=['GET'])
+@login_required
 def get_account_info():
     """获取账户信息
     ---

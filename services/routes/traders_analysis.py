@@ -8,6 +8,7 @@ import logging
 from services.ai_analysis import generate_trader_analysis
 from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ traders_analysis_bp = Blueprint('traders_analysis', __name__)
 # ==================== 收藏功能 ====================
 
 @traders_analysis_bp.route('/api/traders/<address>/star', methods=['POST'])
+@login_required
 def toggle_trader_star(address: str):
     """切换交易者收藏状态
     ---
@@ -95,6 +97,7 @@ def toggle_trader_star(address: str):
 # ==================== AI 分析 ====================
 
 @traders_analysis_bp.route('/api/traders/<address>/ai-analysis', methods=['POST'])
+@login_required
 def ai_analyze_trader(address: str):
     """AI分析交易者
     ---
@@ -172,6 +175,7 @@ def ai_analyze_trader(address: str):
 
 
 @traders_analysis_bp.route('/api/traders/<address>/ai-analysis', methods=['GET'])
+@login_required
 def get_trader_ai_analysis(address: str):
     """获取交易者AI分析结果
     ---
@@ -223,6 +227,7 @@ def get_trader_ai_analysis(address: str):
 # ==================== 历史图表数据 ====================
 
 @traders_analysis_bp.route('/api/traders/<address>/history', methods=['GET'])
+@login_required
 def get_trader_history(address: str):
     """获取交易者历史图表数据
     ---
@@ -397,6 +402,7 @@ def get_trader_history(address: str):
 # ==================== 按评级筛选 ====================
 
 @traders_analysis_bp.route('/api/traders/rating/<rating>', methods=['GET'])
+@login_required
 def get_traders_by_rating(rating: str):
     """按评级获取交易者
     ---
@@ -492,6 +498,7 @@ def get_traders_by_rating(rating: str):
 # ==================== 仓位分析 ====================
 
 @traders_analysis_bp.route('/api/traders/<address>/position-analysis', methods=['GET'])
+@login_required
 def get_trader_position_analysis(address: str):
     """获取交易员仓位分析详情
     ---

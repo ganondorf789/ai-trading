@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
+from .middleware import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ traders_positions_bp = Blueprint('traders_positions', __name__)
 # ==================== 交易者持仓 API ====================
 
 @traders_positions_bp.route('/api/traders/<address>/positions', methods=['GET'])
+@login_required
 def get_trader_positions(address: str):
     """获取交易者当前持仓
     ---
@@ -60,6 +62,7 @@ def get_trader_positions(address: str):
 
 
 @traders_positions_bp.route('/api/traders/<address>/positions/refresh', methods=['POST'])
+@login_required
 def refresh_trader_positions(address: str):
     """刷新交易者持仓
     ---
@@ -135,6 +138,7 @@ def refresh_trader_positions(address: str):
 # ==================== 交易者仓位历史 API ====================
 
 @traders_positions_bp.route('/api/traders/<address>/position-history', methods=['GET'])
+@login_required
 def get_trader_position_history(address: str):
     """获取交易者仓位历史
     ---
@@ -272,6 +276,7 @@ def get_trader_position_history(address: str):
 
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/rebuild', methods=['POST'])
+@login_required
 def rebuild_trader_position_history(address: str):
     """重建交易者仓位历史
     ---
@@ -318,6 +323,7 @@ def rebuild_trader_position_history(address: str):
 
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/stats', methods=['GET'])
+@login_required
 def get_trader_position_history_stats(address: str):
     """获取交易者仓位历史统计
     ---
@@ -359,6 +365,7 @@ def get_trader_position_history_stats(address: str):
 
 
 @traders_positions_bp.route('/api/traders/<address>/position-history/by-coin', methods=['GET'])
+@login_required
 def get_trader_position_history_by_coin(address: str):
     """获取按币种汇总的仓位历史
     ---
@@ -404,6 +411,7 @@ def get_trader_position_history_by_coin(address: str):
 # ==================== 全局仓位历史 API ====================
 
 @traders_positions_bp.route('/api/position-history', methods=['GET'])
+@login_required
 def get_all_position_history():
     """获取所有交易员仓位历史
     ---
@@ -515,6 +523,7 @@ def get_all_position_history():
 
 
 @traders_positions_bp.route('/api/position-history/stats', methods=['GET'])
+@login_required
 def get_all_position_history_stats():
     """获取全局仓位历史统计
     ---
@@ -550,6 +559,7 @@ def get_all_position_history_stats():
 
 
 @traders_positions_bp.route('/api/position-history/by-coin', methods=['GET'])
+@login_required
 def get_all_position_history_by_coin():
     """获取全局按币种汇总的仓位历史
     ---
@@ -589,6 +599,7 @@ def get_all_position_history_by_coin():
 # ==================== 新仓位检测记录 API ====================
 
 @traders_positions_bp.route('/api/new-positions', methods=['GET'])
+@login_required
 def get_new_positions():
     """获取新仓位检测记录（游标分页）
     ---
