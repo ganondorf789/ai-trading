@@ -17,19 +17,14 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-  Card,
-  CardBody,
   Tooltip,
   addToast,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { secretKeyApi, SecretKey, SecretKeyStats } from "@/services/api";
+import { secretKeyApi, SecretKey } from "@/services/api";
 import { formatTime } from "@/utils";
-
-// 临时使用固定的管理员ID，实际应从登录状态获取
-const ADMIN_USER_ID = 1;
 
 const roleColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
   user: "default",
@@ -46,9 +41,7 @@ const roleNameMap: Record<string, string> = {
 export default function SecretKeysPage() {
   // 数据状态
   const [keys, setKeys] = useState<SecretKey[]>([]);
-  const [stats, setStats] = useState<SecretKeyStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statsLoading, setStatsLoading] = useState(true);
 
   // 筛选状态
   const [roleFilter, setRoleFilter] = useState<string>("");
@@ -87,7 +80,6 @@ export default function SecretKeysPage() {
     setLoading(true);
     try {
       const params: Record<string, any> = {
-        user_id: ADMIN_USER_ID,
         limit: 100,
       };
 
@@ -130,21 +122,6 @@ export default function SecretKeysPage() {
     }
   }, [roleFilter, usedFilter, activeFilter, searchValue]);
 
-  // 加载统计数据
-  const fetchStats = useCallback(async () => {
-    setStatsLoading(true);
-    try {
-      const response = await secretKeyApi.getSecretKeyStats(ADMIN_USER_ID);
-      if (response.success && response.data) {
-        setStats(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-    } finally {
-      setStatsLoading(false);
-    }
-  }, []);
-
   // 创建秘钥
   const handleCreate = async () => {
     setCreating(true);
@@ -152,7 +129,6 @@ export default function SecretKeysPage() {
       if (createForm.count > 1) {
         // 批量创建
         const response = await secretKeyApi.batchCreateSecretKeys({
-          user_id: ADMIN_USER_ID,
           count: createForm.count,
           key_name_prefix: createForm.key_name,
           user_role: createForm.user_role,
@@ -168,12 +144,10 @@ export default function SecretKeysPage() {
           setCreateModalOpen(false);
           setCreateForm({ key_name: "", user_role: "user", expires_days: 30, count: 1 });
           fetchKeys();
-          fetchStats();
         }
       } else {
         // 单个创建
         const response = await secretKeyApi.createSecretKey({
-          user_id: ADMIN_USER_ID,
           key_name: createForm.key_name,
           user_role: createForm.user_role,
           expires_days: createForm.expires_days,
@@ -188,7 +162,6 @@ export default function SecretKeysPage() {
           setCreateModalOpen(false);
           setCreateForm({ key_name: "", user_role: "user", expires_days: 30, count: 1 });
           fetchKeys();
-          fetchStats();
         }
       }
     } catch (error: any) {
@@ -221,7 +194,6 @@ export default function SecretKeysPage() {
     setUpdating(true);
     try {
       const response = await secretKeyApi.updateSecretKey(selectedKey.id, {
-        user_id: ADMIN_USER_ID,
         key_name: editForm.key_name,
         user_role: editForm.user_role,
         expires_days: editForm.expires_days,
@@ -236,7 +208,6 @@ export default function SecretKeysPage() {
         });
         setEditModalOpen(false);
         fetchKeys();
-        fetchStats();
       }
     } catch (error: any) {
       addToast({
@@ -261,7 +232,7 @@ export default function SecretKeysPage() {
 
     setDeleting(true);
     try {
-      const response = await secretKeyApi.deleteSecretKey(keyToDelete.id, ADMIN_USER_ID);
+      const response = await secretKeyApi.deleteSecretKey(keyToDelete.id);
 
       if (response.success) {
         addToast({
@@ -272,7 +243,6 @@ export default function SecretKeysPage() {
         setDeleteModalOpen(false);
         setKeyToDelete(null);
         fetchKeys();
-        fetchStats();
       }
     } catch (error: any) {
       addToast({
@@ -298,8 +268,7 @@ export default function SecretKeysPage() {
   // 初始加载
   useEffect(() => {
     fetchKeys();
-    fetchStats();
-  }, [fetchKeys, fetchStats]);
+  }, [fetchKeys]);
 
   return (
     <DefaultLayout>
@@ -322,74 +291,6 @@ export default function SecretKeysPage() {
           >
             创建秘钥
           </Button>
-        </div>
-
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">总数</p>
-              <p className="text-2xl font-bold">
-                {statsLoading ? <Spinner size="sm" /> : stats?.total_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">可用</p>
-              <p className="text-2xl font-bold text-success">
-                {statsLoading ? <Spinner size="sm" /> : stats?.available_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">已使用</p>
-              <p className="text-2xl font-bold text-warning">
-                {statsLoading ? <Spinner size="sm" /> : stats?.used_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">已启用</p>
-              <p className="text-2xl font-bold text-primary">
-                {statsLoading ? <Spinner size="sm" /> : stats?.active_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">已禁用</p>
-              <p className="text-2xl font-bold text-default-400">
-                {statsLoading ? <Spinner size="sm" /> : stats?.inactive_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">普通用户</p>
-              <p className="text-2xl font-bold">
-                {statsLoading ? <Spinner size="sm" /> : stats?.user_role_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">会员</p>
-              <p className="text-2xl font-bold text-primary">
-                {statsLoading ? <Spinner size="sm" /> : stats?.member_role_count || 0}
-              </p>
-            </CardBody>
-          </Card>
-          <Card>
-            <CardBody className="text-center">
-              <p className="text-default-500 text-sm">管理员</p>
-              <p className="text-2xl font-bold text-danger">
-                {statsLoading ? <Spinner size="sm" /> : stats?.admin_role_count || 0}
-              </p>
-            </CardBody>
-          </Card>
         </div>
 
         {/* 筛选栏 */}
@@ -442,10 +343,7 @@ export default function SecretKeysPage() {
             color="primary"
             variant="flat"
             startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => {
-              fetchKeys();
-              fetchStats();
-            }}
+            onPress={() => fetchKeys()}
             isLoading={loading}
           >
             刷新
