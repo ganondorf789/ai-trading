@@ -293,8 +293,11 @@ export interface CopyTradingAddress {
   symbols_blacklist: string[];
   check_interval: number;
   dry_run: boolean;
-  sync_position: boolean;
-  sync_position_symbols: string[];
+  // 自动补仓配置
+  auto_replenish: boolean;
+  replenish_ratio: number;
+  replenish_min_value_usd: number;
+  replenish_max_value_usd: number;
   // 时间戳
   created_at: string;
   updated_at: string;

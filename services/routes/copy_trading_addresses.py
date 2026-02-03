@@ -241,11 +241,6 @@ def quick_add_copy_trading_address():
             name:
               type: string
               description: 名称
-            sync_position_symbols:
-              type: array
-              items:
-                type: string
-              description: 同步仓位的币种列表
     responses:
       200:
         description: 添加成功
@@ -278,19 +273,12 @@ def quick_add_copy_trading_address():
             # 如果已存在但是禁用状态，则重新启用
             if not existing.get('is_enabled', True):
                 existing['is_enabled'] = True
-                # 更新同步仓位币种（如果提供了）
-                if data.get('sync_position_symbols'):
-                    existing['sync_position_symbols'] = data.get('sync_position_symbols')
-                existing['sync_position'] = True
                 record_id = db.save_copy_trading_address(existing)
-                
-                sync_symbols = existing.get('sync_position_symbols', [])
-                sync_msg = f"，同步币种: {', '.join(sync_symbols)}" if sync_symbols else "（同步所有币种）"
                 
                 return jsonify({
                     'success': True,
                     'data': {'id': record_id},
-                    'message': f'交易员已重新启用{sync_msg}'
+                    'message': '交易员已重新启用'
                 })
             else:
                 return jsonify({
@@ -316,20 +304,19 @@ def quick_add_copy_trading_address():
             'slippage': default_config.get('slippage', 0.001),
             'symbols_whitelist': default_config.get('symbols_whitelist', []),
             'symbols_blacklist': default_config.get('symbols_blacklist', []),
-            'sync_position': True,  # 启用同步仓位
-            'sync_position_symbols': data.get('sync_position_symbols', []),  # 同步指定币种
+            'auto_replenish': default_config.get('auto_replenish', False),
+            'replenish_ratio': default_config.get('replenish_ratio', 0.5),
+            'replenish_min_value_usd': default_config.get('replenish_min_value_usd', 10),
+            'replenish_max_value_usd': default_config.get('replenish_max_value_usd', 100),
             'dry_run': default_config.get('dry_run', False),
         }
         
         record_id = db.save_copy_trading_address(new_address_data)
-        
-        sync_symbols = data.get('sync_position_symbols', [])
-        sync_msg = f"，同步币种: {', '.join(sync_symbols)}" if sync_symbols else "（同步所有币种）"
 
         return jsonify({
             'success': True,
             'data': {'id': record_id},
-            'message': f'跟单地址添加成功{sync_msg}'
+            'message': '跟单地址添加成功'
         })
     except Exception as e:
         logger.error(f"快速添加跟单地址失败: {e}")
@@ -496,69 +483,6 @@ def toggle_copy_trading_address(address: str):
             }), 404
     except Exception as e:
         logger.error(f"切换跟单地址状态失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@copy_trading_addresses_bp.route('/api/copy-trading/addresses/<address>/sync-position', methods=['POST'])
-@login_required
-def toggle_copy_trading_sync_position(address: str):
-    """切换同步仓位状态
-    ---
-    tags:
-      - Copy Trading - Addresses
-    parameters:
-      - name: address
-        in: path
-        type: string
-        required: true
-        description: 跟单地址
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          required:
-            - sync_position
-          properties:
-            sync_position:
-              type: boolean
-              description: 是否同步仓位
-    responses:
-      200:
-        description: 操作成功
-      400:
-        description: 缺少参数
-      404:
-        description: 地址不存在
-      500:
-        description: 服务器错误
-    """
-    try:
-        data = request.get_json()
-        if data is None or 'sync_position' not in data:
-            return jsonify({
-                'success': False,
-                'error': '缺少 sync_position 参数'
-            }), 400
-
-        sync_position = bool(data['sync_position'])
-        success = db.toggle_copy_trading_sync_position(address, sync_position)
-
-        if success:
-            return jsonify({
-                'success': True,
-                'message': '已启用同步仓位' if sync_position else '已禁用同步仓位'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': '地址不存在'
-            }), 404
-    except Exception as e:
-        logger.error(f"切换同步仓位状态失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

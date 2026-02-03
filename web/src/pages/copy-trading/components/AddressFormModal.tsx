@@ -9,7 +9,6 @@ import {
   Button,
   Switch,
   Chip,
-  Tooltip,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { CopyTradingAddress } from "@/services/api";
@@ -40,10 +39,8 @@ export default function AddressFormModal({
   // 币种输入临时状态
   const [whitelistInput, setWhitelistInput] = useState("");
   const [blacklistInput, setBlacklistInput] = useState("");
-  const [syncPositionInput, setSyncPositionInput] = useState("");
   const [whitelistHighlightIndex, setWhitelistHighlightIndex] = useState(-1);
   const [blacklistHighlightIndex, setBlacklistHighlightIndex] = useState(-1);
-  const [syncPositionHighlightIndex, setSyncPositionHighlightIndex] = useState(-1);
 
   // 过滤可用币种（用于下拉选择）
   const filteredWhitelistCoins = useMemo(() => {
@@ -63,15 +60,6 @@ export default function AddressFormModal({
       .filter((coin) => !input || coin.includes(input))
       .slice(0, 10);
   }, [availableCoins, blacklistInput, formData.symbols_blacklist]);
-
-  const filteredSyncPositionCoins = useMemo(() => {
-    const input = syncPositionInput.trim().toUpperCase();
-    const existing = formData.sync_position_symbols || [];
-    return availableCoins
-      .filter((coin) => !existing.includes(coin))
-      .filter((coin) => !input || coin.includes(input))
-      .slice(0, 10);
-  }, [availableCoins, syncPositionInput, formData.sync_position_symbols]);
 
   // 添加币种到白名单
   const handleAddWhitelist = (coin?: string) => {
@@ -184,63 +172,6 @@ export default function AddressFormModal({
     setFormData({
       ...formData,
       symbols_blacklist: formData.symbols_blacklist?.filter((s) => s !== symbol) || [],
-    });
-  };
-
-  // 添加币种到同步仓位列表
-  const handleAddSyncPosition = (coin?: string) => {
-    const symbol = (coin || syncPositionInput.trim()).toUpperCase();
-    if (symbol && !formData.sync_position_symbols?.includes(symbol)) {
-      setFormData({
-        ...formData,
-        sync_position_symbols: [...(formData.sync_position_symbols || []), symbol],
-      });
-      setSyncPositionInput("");
-      setSyncPositionHighlightIndex(-1);
-    }
-  };
-
-  // 处理同步仓位键盘事件
-  const handleSyncPositionKeyDown = (e: React.KeyboardEvent) => {
-    if (!syncPositionInput || filteredSyncPositionCoins.length === 0) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAddSyncPosition();
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setSyncPositionHighlightIndex((prev) =>
-          prev < filteredSyncPositionCoins.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setSyncPositionHighlightIndex((prev) => (prev > 0 ? prev - 1 : -1));
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (syncPositionHighlightIndex >= 0 && syncPositionHighlightIndex < filteredSyncPositionCoins.length) {
-          handleAddSyncPosition(filteredSyncPositionCoins[syncPositionHighlightIndex]);
-        } else {
-          handleAddSyncPosition();
-        }
-        break;
-      case "Escape":
-        setSyncPositionInput("");
-        setSyncPositionHighlightIndex(-1);
-        break;
-    }
-  };
-
-  // 从同步仓位列表移除币种
-  const handleRemoveSyncPosition = (symbol: string) => {
-    setFormData({
-      ...formData,
-      sync_position_symbols: formData.sync_position_symbols?.filter((s) => s !== symbol) || [],
     });
   };
 
@@ -463,91 +394,54 @@ export default function AddressFormModal({
               >
                 复制杠杆
               </Switch>
-              <Tooltip content="启用后将同步目标交易者的现有仓位">
-                <div>
-                  <Switch
-                    isSelected={formData.sync_position}
-                    onChange={(e) => setFormData({ ...formData, sync_position: e.target.checked })}
-                  >
-                    同步仓位
-                  </Switch>
-                </div>
-              </Tooltip>
             </div>
 
-            {/* 同步仓位币种选择 */}
-            {formData.sync_position && (
-              <div className="col-span-2 border rounded-lg p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Icon icon="lucide:refresh-cw" width={16} className="text-primary" />
-                  <h4 className="text-sm font-medium text-default-700">同步仓位币种</h4>
-                </div>
-                <p className="text-xs text-default-500">
-                  指定要同步的币种（留空表示同步所有币种）
-                </p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 relative">
-                      <Input
-                        size="sm"
-                        placeholder="输入搜索币种..."
-                        value={syncPositionInput}
-                        onValueChange={(v) => {
-                          setSyncPositionInput(v);
-                          setSyncPositionHighlightIndex(-1);
-                        }}
-                        onKeyDown={handleSyncPositionKeyDown}
-                      />
-                      {syncPositionInput && filteredSyncPositionCoins.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
-                          {filteredSyncPositionCoins.map((coin, index) => (
-                            <div
-                              key={coin}
-                              className={`px-3 py-2 cursor-pointer text-sm ${
-                                index === syncPositionHighlightIndex
-                                  ? "bg-primary-100 text-primary"
-                                  : "hover:bg-default-100"
-                              }`}
-                              onClick={() => handleAddSyncPosition(coin)}
-                              onMouseEnter={() => setSyncPositionHighlightIndex(index)}
-                            >
-                              {coin}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      size="sm"
-                      color="primary"
-                      variant="flat"
-                      isIconOnly
-                      onPress={() => handleAddSyncPosition()}
-                      isDisabled={!syncPositionInput.trim()}
-                    >
-                      <Icon icon="lucide:plus" width={16} />
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-1 min-h-[32px]">
-                    {formData.sync_position_symbols?.length === 0 ? (
-                      <span className="text-xs text-default-400">不限制（同步所有币种）</span>
-                    ) : (
-                      formData.sync_position_symbols?.map((symbol) => (
-                        <Chip
-                          key={symbol}
-                          size="sm"
-                          color="primary"
-                          variant="flat"
-                          onClose={() => handleRemoveSyncPosition(symbol)}
-                        >
-                          {symbol}
-                        </Chip>
-                      ))
-                    )}
-                  </div>
-                </div>
+            {/* 自动补仓配置 */}
+            <div className="col-span-2 border rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:refresh-cw" width={16} className="text-primary" />
+                <h4 className="text-sm font-medium text-default-700">自动补仓</h4>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={formData.auto_replenish || false}
+                  onValueChange={(v) => setFormData({ ...formData, auto_replenish: v })}
+                />
+                <span className="text-sm">启用自动补仓（当目标加仓时自动跟随补仓）</span>
+              </div>
+              {formData.auto_replenish && (
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Input
+                    type="number"
+                    label="补仓比例"
+                    description="按目标补仓量的比例"
+                    size="sm"
+                    value={String(((formData.replenish_ratio || 0.5) * 100).toFixed(0))}
+                    onValueChange={(v) => setFormData({ ...formData, replenish_ratio: (parseFloat(v) || 50) / 100 })}
+                    endContent={<span className="text-default-400 text-sm">%</span>}
+                  />
+                  <Input
+                    type="number"
+                    label="补仓最小价值"
+                    description="单次补仓最小金额"
+                    size="sm"
+                    value={String(formData.replenish_min_value_usd || 10)}
+                    onValueChange={(v) => setFormData({ ...formData, replenish_min_value_usd: parseFloat(v) || 10 })}
+                    startContent={<span className="text-default-400 text-sm">$</span>}
+                  />
+                  <Input
+                    type="number"
+                    label="补仓最大价值"
+                    description="单次补仓最大金额"
+                    size="sm"
+                    value={String(formData.replenish_max_value_usd || 100)}
+                    onValueChange={(v) => setFormData({ ...formData, replenish_max_value_usd: parseFloat(v) || 100 })}
+                    startContent={<span className="text-default-400 text-sm">$</span>}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </ModalBody>
         <ModalFooter>

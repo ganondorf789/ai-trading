@@ -110,10 +110,6 @@ class CopyTradingOps:
                     item['symbols_blacklist'] = json.loads(item.get('symbols_blacklist') or '[]')
                 except:
                     item['symbols_blacklist'] = []
-                try:
-                    item['sync_position_symbols'] = json.loads(item.get('sync_position_symbols') or '[]')
-                except:
-                    item['sync_position_symbols'] = []
                 results.append(item)
 
             return results, total_count
@@ -159,10 +155,6 @@ class CopyTradingOps:
                 item['symbols_blacklist'] = json.loads(item.get('symbols_blacklist') or '[]')
             except:
                 item['symbols_blacklist'] = []
-            try:
-                item['sync_position_symbols'] = json.loads(item.get('sync_position_symbols') or '[]')
-            except:
-                item['sync_position_symbols'] = []
             return item
 
     def save_copy_trading_address(self, data: Dict) -> int:
@@ -181,13 +173,10 @@ class CopyTradingOps:
             # 处理 JSON 字段
             whitelist = data.get('symbols_whitelist', [])
             blacklist = data.get('symbols_blacklist', [])
-            sync_position_symbols = data.get('sync_position_symbols', [])
             if isinstance(whitelist, list):
                 whitelist = json.dumps(whitelist)
             if isinstance(blacklist, list):
                 blacklist = json.dumps(blacklist)
-            if isinstance(sync_position_symbols, list):
-                sync_position_symbols = json.dumps(sync_position_symbols)
 
             cursor.execute("""
                 INSERT INTO copy_trading_addresses (
@@ -196,8 +185,10 @@ class CopyTradingOps:
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
-                    check_interval, dry_run, sync_position, sync_position_symbols, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    check_interval, dry_run,
+                    auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
+                    updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -214,8 +205,10 @@ class CopyTradingOps:
                     symbols_blacklist = EXCLUDED.symbols_blacklist,
                     check_interval = EXCLUDED.check_interval,
                     dry_run = EXCLUDED.dry_run,
-                    sync_position = EXCLUDED.sync_position,
-                    sync_position_symbols = EXCLUDED.sync_position_symbols,
+                    auto_replenish = EXCLUDED.auto_replenish,
+                    replenish_ratio = EXCLUDED.replenish_ratio,
+                    replenish_min_value_usd = EXCLUDED.replenish_min_value_usd,
+                    replenish_max_value_usd = EXCLUDED.replenish_max_value_usd,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
@@ -235,8 +228,10 @@ class CopyTradingOps:
                 blacklist,
                 data.get('check_interval', 10.0),
                 data.get('dry_run', True),
-                data.get('sync_position', True),
-                sync_position_symbols,
+                data.get('auto_replenish', False),
+                data.get('replenish_ratio', 0.5),
+                data.get('replenish_min_value_usd', 10.0),
+                data.get('replenish_max_value_usd', 100.0),
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
@@ -279,26 +274,6 @@ class CopyTradingOps:
                 SET is_enabled = %s, updated_at = %s
                 WHERE address = %s
             """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
-            return cursor.rowcount > 0
-
-    def toggle_copy_trading_sync_position(self, address: str, sync_position: bool) -> bool:
-        """
-        切换同步仓位状态
-
-        Args:
-            address: 交易者地址
-            sync_position: 是否同步仓位
-
-        Returns:
-            是否更新成功
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE copy_trading_addresses
-                SET sync_position = %s, updated_at = %s
-                WHERE address = %s
-            """, (sync_position, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
             return cursor.rowcount > 0
 
     def batch_update_copy_trading_addresses(
@@ -425,10 +400,13 @@ class CopyTradingOps:
             'default_leverage': 3,
             'slippage': 0.001,
             'copy_leverage': False,
-            'sync_position': False,
             'dry_run': False,
             'symbols_whitelist': [],
             'symbols_blacklist': [],
+            'auto_replenish': False,
+            'replenish_ratio': 0.5,
+            'replenish_min_value_usd': 10.0,
+            'replenish_max_value_usd': 100.0,
         }
         
         try:

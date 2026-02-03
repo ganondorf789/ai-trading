@@ -82,8 +82,10 @@ export default function CopyTradingPage() {
     symbols_blacklist: [],
     check_interval: 10,
     dry_run: true,
-    sync_position: true,
-    sync_position_symbols: [],
+    auto_replenish: false,
+    replenish_ratio: 0.5,
+    replenish_min_value_usd: 10,
+    replenish_max_value_usd: 100,
   });
 
 
@@ -187,8 +189,10 @@ export default function CopyTradingPage() {
         symbols_blacklist: address.symbols_blacklist || [],
         check_interval: address.check_interval,
         dry_run: address.dry_run,
-        sync_position: address.sync_position ?? true,
-        sync_position_symbols: address.sync_position_symbols || [],
+        auto_replenish: address.auto_replenish ?? false,
+        replenish_ratio: address.replenish_ratio ?? 0.5,
+        replenish_min_value_usd: address.replenish_min_value_usd ?? 10,
+        replenish_max_value_usd: address.replenish_max_value_usd ?? 100,
       });
     } else {
       setEditingAddress(null);
@@ -209,8 +213,10 @@ export default function CopyTradingPage() {
         symbols_blacklist: [],
         check_interval: 10,
         dry_run: true,
-        sync_position: true,
-        sync_position_symbols: [],
+        auto_replenish: false,
+        replenish_ratio: 0.5,
+        replenish_min_value_usd: 10,
+        replenish_max_value_usd: 100,
       });
     }
     setIsAddModalOpen(true);
@@ -269,25 +275,6 @@ export default function CopyTradingPage() {
         prev.map((a) => (a.address === address ? { ...a, is_enabled: !isEnabled } : a))
       );
       console.error("Failed to toggle address:", error);
-      addToast({ title: "操作失败", color: "danger" });
-    }
-  };
-
-  // 处理同步仓位开关（使用乐观更新避免无限循环）
-  const handleToggleSyncPosition = async (address: string, syncPosition: boolean) => {
-    // 乐观更新本地状态
-    setAddresses((prev) =>
-      prev.map((a) => (a.address === address ? { ...a, sync_position: syncPosition } : a))
-    );
-
-    try {
-      await copyTradingApi.toggleSyncPosition(address, syncPosition);
-    } catch (error) {
-      // 失败时回滚状态
-      setAddresses((prev) =>
-        prev.map((a) => (a.address === address ? { ...a, sync_position: !syncPosition } : a))
-      );
-      console.error("Failed to toggle sync position:", error);
       addToast({ title: "操作失败", color: "danger" });
     }
   };
@@ -357,7 +344,7 @@ export default function CopyTradingPage() {
     { key: "copy_ratio", label: "跟单比例" },
     { key: "position_size", label: "仓位范围" },
     { key: "max_leverage", label: "最大杠杆" },
-    { key: "sync_position", label: "同步仓位" },
+    { key: "auto_replenish", label: "自动补仓" },
     { key: "symbols", label: "币种限制" },
     { key: "updated_at", label: "更新时间" },
     { key: "actions", label: "操作" },
@@ -417,13 +404,15 @@ export default function CopyTradingPage() {
           );
         case "max_leverage":
           return `${item.max_leverage}x`;
-        case "sync_position":
-          return (
-            <Switch
-              size="sm"
-              isSelected={item.sync_position}
-              onChange={(e) => handleToggleSyncPosition(item.address, e.target.checked)}
-            />
+        case "auto_replenish":
+          return item.auto_replenish ? (
+            <Chip size="sm" color="success" variant="flat">
+              已启用
+            </Chip>
+          ) : (
+            <Chip size="sm" color="default" variant="flat">
+              未启用
+            </Chip>
           );
         case "symbols":
           const whiteCount = item.symbols_whitelist?.length || 0;

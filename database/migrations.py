@@ -707,9 +707,18 @@ class DatabaseMigrations:
             cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
         )
 
-        # 添加 sync_position_symbols 字段到 copy_trading_addresses 表（同步仓位的币种列表）
+        # 添加自动补仓相关字段到 copy_trading_addresses 表
         self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'sync_position_symbols', "TEXT DEFAULT '[]'"
+            cursor, 'copy_trading_addresses', 'auto_replenish', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'replenish_ratio', 'REAL DEFAULT 0.5'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'replenish_min_value_usd', 'REAL DEFAULT 10.0'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
         )
 
         # 添加 target_is_starred 字段到 detected_new_positions 表

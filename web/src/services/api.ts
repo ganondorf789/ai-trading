@@ -453,7 +453,7 @@ export const copyTradingApi = {
     api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/addresses', data),
 
   // 快速添加跟单地址（使用默认配置）
-  quickAddAddress: (data: { address: string; name?: string; sync_position_symbols?: string[] }) =>
+  quickAddAddress: (data: { address: string; name?: string }) =>
     api.post<any, ApiResponse<{ id: number }> & { message?: string; exists?: boolean }>('/copy-trading/addresses/quick-add', data),
 
   // 更新跟单地址
@@ -467,10 +467,6 @@ export const copyTradingApi = {
   // 启用/禁用跟单地址
   toggleAddress: (address: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/toggle`, { is_enabled: isEnabled }),
-
-  // 切换同步仓位状态
-  toggleSyncPosition: (address: string, syncPosition: boolean) =>
-    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/sync-position`, { sync_position: syncPosition }),
 
   // 批量操作
   batchAction: (action: 'enable' | 'disable' | 'delete', addresses: string[]) =>

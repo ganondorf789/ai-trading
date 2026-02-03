@@ -248,8 +248,12 @@ def update_default_copy_config():
             'default_leverage': (int, 1, 100),
             'slippage': (float, 0.0001, 0.1),
             'copy_leverage': (bool, None, None),
-            'sync_position': (bool, None, None),
             'dry_run': (bool, None, None),
+            # 自动补仓配置
+            'auto_replenish': (bool, None, None),
+            'replenish_ratio': (float, 0.01, 10.0),
+            'replenish_min_value_usd': (float, 1, 100000),
+            'replenish_max_value_usd': (float, 1, 100000),
         }
 
         config = {}
@@ -273,8 +277,6 @@ def update_default_copy_config():
             config['symbols_whitelist'] = data['symbols_whitelist'] if isinstance(data['symbols_whitelist'], list) else []
         if 'symbols_blacklist' in data:
             config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
-        if 'sync_position_symbols' in data:
-            config['sync_position_symbols'] = data['sync_position_symbols'] if isinstance(data['sync_position_symbols'], list) else []
 
         success = db.save_default_copy_config(config)
         if success:
@@ -460,7 +462,6 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'default_leverage': (int, 1, 100),
             'slippage': (float, 0.0001, 0.1),
             'copy_leverage': (bool, None, None),
-            'sync_position': (bool, None, None),
             'dry_run': (bool, None, None),
             # 自动补仓配置
             'auto_replenish': (bool, None, None),
@@ -476,8 +477,6 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             validated_config['symbols_whitelist'] = config_data['symbols_whitelist'] if isinstance(config_data['symbols_whitelist'], list) else []
         if 'symbols_blacklist' in config_data:
             validated_config['symbols_blacklist'] = config_data['symbols_blacklist'] if isinstance(config_data['symbols_blacklist'], list) else []
-        if 'sync_position_symbols' in config_data:
-            validated_config['sync_position_symbols'] = config_data['sync_position_symbols'] if isinstance(config_data['sync_position_symbols'], list) else []
         
         result = {
             'name': data.get('name', '').strip(),
