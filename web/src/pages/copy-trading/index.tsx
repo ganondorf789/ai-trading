@@ -498,7 +498,10 @@ export default function CopyTradingPage() {
       <div className="flex flex-col gap-4">
         {/* 标题和操作栏 */}
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">跟单管理</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Icon icon="lucide:copy" width={28} />
+            跟单管理
+          </h1>
           <div className="flex gap-2">
             <Button
               color="primary"

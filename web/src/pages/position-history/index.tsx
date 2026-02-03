@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { Selection, SortDescriptor, DateValue, RangeValue } from "@heroui/react";
+import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
 import {
@@ -187,16 +188,14 @@ export default function PositionHistoryPage() {
 
   return (
     <DefaultLayout>
-      <div className="container mx-auto px-4 py-6">
+      <div className="flex flex-col gap-4">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Icon icon="lucide:history" width={28} />
               仓位历史
             </h1>
-            <p className="text-default-500">
-              查看所有交易员的历史仓位记录和统计信息
-            </p>
           </div>
           <div className="flex gap-2">
           </div>

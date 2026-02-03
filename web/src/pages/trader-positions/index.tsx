@@ -306,16 +306,14 @@ export default function TraderPositionsPage() {
 
   return (
     <DefaultLayout>
-      <div className="container mx-auto px-4 py-6">
+      <div className="flex flex-col gap-4">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Icon icon="lucide:wallet" width={28} />
               交易员持仓
             </h1>
-            <p className="text-default-500">
-              查看符合筛选条件的交易员的当前持仓情况
-            </p>
           </div>
           <div className="flex gap-2">
             <Button

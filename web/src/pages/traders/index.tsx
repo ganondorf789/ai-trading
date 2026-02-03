@@ -13,6 +13,7 @@ import { addToast } from "@heroui/react";
 import { Spinner } from '@heroui/spinner';
 import { Card, CardBody } from '@heroui/card';
 import { useDisclosure } from '@heroui/modal';
+import { Icon } from "@iconify/react";
 import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader } from '@/services/api';
 import { FilterSection } from './components/FilterSection';
@@ -154,10 +155,13 @@ export default function TradersPage() {
 
   return (
     <DefaultLayout>
-      <section className="flex flex-col gap-4 py-4">
+      <section className="flex flex-col gap-4">
         {/* 标题 */}
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">交易者列表</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Icon icon="lucide:trending-up" width={28} />
+            交易者列表
+          </h1>
         </div>
 
         <div className="w-full">

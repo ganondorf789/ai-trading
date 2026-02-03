@@ -344,7 +344,10 @@ export default function PositionTrackingPage() {
         {/* 标题 */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold">仓位跟单管理</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Icon icon="lucide:crosshair" width={28} />
+              仓位跟单管理
+            </h1>
           </div>
           <Button
             color="primary"
@@ -426,7 +429,6 @@ export default function PositionTrackingPage() {
                 onPageChange={setPage}
                 totalCount={pagination.total_count}
                 rowsPerPage={20}
-                className="mt-4"
               />
             )}
           </>
