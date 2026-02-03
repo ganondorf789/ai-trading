@@ -209,18 +209,18 @@ export default function AddressFormModal({
             />
             <Input
               type="number"
-              label="最大仓位"
-              placeholder="500"
-              value={String(formData.max_position_size_usd || 500)}
-              onValueChange={(v) => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 500 })}
-              startContent="$"
-            />
-            <Input
-              type="number"
               label="最小仓位"
               placeholder="20"
               value={String(formData.min_position_size_usd || 20)}
               onValueChange={(v) => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 20 })}
+              startContent="$"
+            />
+            <Input
+              type="number"
+              label="最大仓位"
+              placeholder="500"
+              value={String(formData.max_position_size_usd || 500)}
+              onValueChange={(v) => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 500 })}
               startContent="$"
             />
             <Input
