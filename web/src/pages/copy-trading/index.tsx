@@ -51,7 +51,7 @@ export default function CopyTradingPage() {
   // 筛选状态
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("");
   const [sortBy] = useState("updated_at");
   const [sortOrder] = useState<"asc" | "desc">("desc");
 
@@ -137,7 +137,7 @@ export default function CopyTradingPage() {
       };
 
       if (search) params.search = search;
-      if (statusFilter !== "all") params.is_enabled = statusFilter === "enabled";
+      if (statusFilter) params.is_enabled = statusFilter === "enabled";
 
       const response = await copyTradingApi.getAddresses(params);
       if (response.success && response.data) {
@@ -522,14 +522,15 @@ export default function CopyTradingPage() {
           />
           <Select
             className="w-40"
-            selectedKeys={[statusFilter]}
+            placeholder="启用状态"
+            selectedKeys={statusFilter ? [statusFilter] : []}
             onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string;
+              const value = Array.from(keys)[0] as string || "";
               setStatusFilter(value);
               setPage(1);
             }}
           >
-            <SelectItem key="all">全部</SelectItem>
+            <SelectItem key="">全部</SelectItem>
             <SelectItem key="enabled">已启用</SelectItem>
             <SelectItem key="disabled">已禁用</SelectItem>
           </Select>
