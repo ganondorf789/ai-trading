@@ -367,7 +367,7 @@ export default function ConfigRuleModal({
               <span className="text-sm">启用自动补仓（当目标加仓时自动跟随补仓）</span>
             </div>
             {configData.auto_replenish && (
-              <div className="grid gap-4 md:grid-cols-3 pl-4 border-l-2 border-primary-200">
+              <div className="grid gap-4 md:grid-cols-3">
                 <Input
                   type="number"
                   label="补仓比例"

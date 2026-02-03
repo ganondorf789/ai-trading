@@ -190,14 +190,6 @@ export default function AddressFormModal({
               isDisabled={!!editingAddress}
               className="col-span-2"
             />
-            <Input
-              label="名称"
-              placeholder="备注名称"
-              value={formData.name || ""}
-              onValueChange={(v) => setFormData({ ...formData, name: v })}
-              className="col-span-2"
-            />
-
             {/* 跟单配置 */}
             <Input
               type="number"
@@ -207,6 +199,13 @@ export default function AddressFormModal({
               onValueChange={(v) => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
               endContent="%"
               description="输入 10 表示跟单 10%"
+            />
+            <Input
+              type="number"
+              label="滑点容忍度"
+              value={String(((formData.slippage || 0.001) * 100).toFixed(2))}
+              onValueChange={(v) => setFormData({ ...formData, slippage: (parseFloat(v) || 0.1) / 100 })}
+              endContent="%"
             />
             <Input
               type="number"
@@ -234,7 +233,7 @@ export default function AddressFormModal({
             />
 
             {/* 币种限制 */}
-            <div className="col-span-2 border rounded-lg p-4 space-y-4">
+            <div className="col-span-2 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-medium text-default-700">币种限制</h4>
                 <Button
@@ -267,7 +266,7 @@ export default function AddressFormModal({
                       onKeyDown={handleWhitelistKeyDown}
                     />
                     {whitelistInput && filteredWhitelistCoins.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 rounded-lg shadow-lg max-h-40 overflow-auto">
                         {filteredWhitelistCoins.map((coin, index) => (
                           <div
                             key={coin}
@@ -331,7 +330,7 @@ export default function AddressFormModal({
                       onKeyDown={handleBlacklistKeyDown}
                     />
                     {blacklistInput && filteredBlacklistCoins.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 border border-default-200 rounded-lg shadow-lg max-h-40 overflow-auto">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-content1 rounded-lg shadow-lg max-h-40 overflow-auto">
                         {filteredBlacklistCoins.map((coin, index) => (
                           <div
                             key={coin}
@@ -397,7 +396,7 @@ export default function AddressFormModal({
             </div>
 
             {/* 自动补仓配置 */}
-            <div className="col-span-2 border rounded-lg p-4 space-y-3">
+            <div className="col-span-2 space-y-3">
               <div className="flex items-center gap-2">
                 <Icon icon="lucide:refresh-cw" width={16} className="text-primary" />
                 <h4 className="text-sm font-medium text-default-700">自动补仓</h4>
