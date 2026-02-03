@@ -26,7 +26,7 @@ export default function TraderDetailPage() {
   const [allCoins, setAllCoins] = useState<string[]>([]);
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [tradeTypeFilter, setTradeTypeFilter] = useState<string>('all');
-  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
+  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('');
   const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
   const [timeRange, setTimeRange] = useState<number>(30);
   const [chartLoading, setChartLoading] = useState(false);

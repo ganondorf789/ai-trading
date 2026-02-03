@@ -338,7 +338,7 @@ export function TradeHistory({
 
             {/* 时间范围筛选 */}
             <TimeRangeFilter
-              label="日期范围"
+              placeholder="日期范围"
               value={timeRangeFilter}
               dateRange={dateRange}
               onValueChange={onTimeRangeFilterChange}

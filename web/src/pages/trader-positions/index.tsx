@@ -33,7 +33,7 @@ export default function TraderPositionsPage() {
   const [pnlFilter, setPnlFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   // 开仓时间筛选状态
-  const [openTimeFilter, setOpenTimeFilter] = useState<string>("all");
+  const [openTimeFilter, setOpenTimeFilter] = useState<string>("");
   const [openTimeDateRange, setOpenTimeDateRange] = useState<RangeValue<DateValue> | null>(null);
   const openTimeRange = useTimeRange(openTimeFilter, openTimeDateRange);
 

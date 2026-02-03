@@ -91,97 +91,85 @@ export function PositionFilters({
   visibleColumns,
   onVisibleColumnsChange,
 }: PositionFiltersProps) {
-  // 获取所有币种选项
-  const coinOptions = ['all', ...byCoin.map(c => c.coin)];
-
   // 检查是否有活跃筛选
-  const hasActiveFilters = search || statusFilter !== 'all' || directionFilter !== 'all' || 
-    coinFilter !== 'all' || pnlFilter !== 'all' || scoreFilter !== 'all' || 
-    starFilter !== 'all' || openTimeFilter !== 'all';
+  const hasActiveFilters = search || statusFilter || directionFilter || 
+    coinFilter || pnlFilter || scoreFilter || 
+    starFilter || openTimeFilter;
 
   return (
     <div className="flex flex-col gap-4 mb-6">
       {/* 筛选区域 */}
-      <div className="bg-content1 rounded-xl shadow-small border border-divider overflow-hidden">
+      <div className="bg-content1 rounded-xl shadow-small overflow-hidden">
         {/* 主筛选行 */}
         <div className="p-4">
           <div className="flex flex-wrap gap-x-6 gap-y-4 items-end">
             {/* 搜索框 */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-default-500 font-medium">搜索</span>
-              <Input
-                isClearable
-                size="sm"
-                className="w-[200px]"
-                placeholder="交易员地址..."
-                startContent={<Icon icon="solar:magnifer-linear" className="text-default-400" width={16} />}
-                value={search}
-                onValueChange={onSearchChange}
-                onClear={() => onSearchChange("")}
-              />
-            </div>
+            <Input
+              isClearable
+              size="sm"
+              className="w-[200px]"
+              placeholder="交易员地址..."
+              startContent={<Icon icon="solar:magnifer-linear" className="text-default-400" width={16} />}
+              value={search}
+              onValueChange={onSearchChange}
+              onClear={() => onSearchChange("")}
+            />
 
             {/* 分隔线 */}
             <div className="h-8 w-px bg-divider hidden sm:block" />
 
             {/* 状态/方向筛选组 */}
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">状态</span>
-                <Select
-                  className="w-[110px]"
-                  size="sm"
-                  aria-label="状态筛选"
-                  selectedKeys={[statusFilter]}
-                  onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string)}
-                >
-                  <SelectItem key="all" textValue="全部">全部</SelectItem>
-                  <SelectItem key="closed" textValue="已平仓">
-                    <span className="text-default-600">已平仓</span>
-                  </SelectItem>
-                  <SelectItem key="open" textValue="持仓中">
-                    <span className="text-primary">持仓中</span>
-                  </SelectItem>
-                </Select>
-              </div>
+              <Select
+                className="w-[110px]"
+                size="sm"
+                placeholder="状态"
+                aria-label="状态筛选"
+                selectedKeys={statusFilter ? [statusFilter] : []}
+                onSelectionChange={(keys) => onStatusFilterChange(Array.from(keys)[0] as string || "")}
+              >
+                <SelectItem key="" textValue="全部">全部</SelectItem>
+                <SelectItem key="closed" textValue="已平仓">
+                  <span className="text-default-600">已平仓</span>
+                </SelectItem>
+                <SelectItem key="open" textValue="持仓中">
+                  <span className="text-primary">持仓中</span>
+                </SelectItem>
+              </Select>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">方向</span>
-                <Select
-                  className="w-[100px]"
-                  size="sm"
-                  aria-label="方向筛选"
-                  selectedKeys={[directionFilter]}
-                  onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string)}
-                >
-                  <SelectItem key="all" textValue="全部">全部</SelectItem>
-                  <SelectItem key="long" textValue="多头">
-                    <span className="text-success">多头</span>
-                  </SelectItem>
-                  <SelectItem key="short" textValue="空头">
-                    <span className="text-danger">空头</span>
-                  </SelectItem>
-                </Select>
-              </div>
+              <Select
+                className="w-[100px]"
+                size="sm"
+                placeholder="方向"
+                aria-label="方向筛选"
+                selectedKeys={directionFilter ? [directionFilter] : []}
+                onSelectionChange={(keys) => onDirectionFilterChange(Array.from(keys)[0] as string || "")}
+              >
+                <SelectItem key="" textValue="全部">全部</SelectItem>
+                <SelectItem key="long" textValue="多头">
+                  <span className="text-success">多头</span>
+                </SelectItem>
+                <SelectItem key="short" textValue="空头">
+                  <span className="text-danger">空头</span>
+                </SelectItem>
+              </Select>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">盈亏</span>
-                <Select
-                  className="w-[110px]"
-                  size="sm"
-                  aria-label="盈亏筛选"
-                  selectedKeys={[pnlFilter]}
-                  onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string)}
-                >
-                  <SelectItem key="all" textValue="全部">全部</SelectItem>
-                  <SelectItem key="profit" textValue="盈利">
-                    <span className="text-success">盈利 📈</span>
-                  </SelectItem>
-                  <SelectItem key="loss" textValue="亏损">
-                    <span className="text-danger">亏损 📉</span>
-                  </SelectItem>
-                </Select>
-              </div>
+              <Select
+                className="w-[110px]"
+                size="sm"
+                placeholder="盈亏"
+                aria-label="盈亏筛选"
+                selectedKeys={pnlFilter ? [pnlFilter] : []}
+                onSelectionChange={(keys) => onPnlFilterChange(Array.from(keys)[0] as string || "")}
+              >
+                <SelectItem key="" textValue="全部">全部</SelectItem>
+                <SelectItem key="profit" textValue="盈利">
+                  <span className="text-success">盈利 📈</span>
+                </SelectItem>
+                <SelectItem key="loss" textValue="亏损">
+                  <span className="text-danger">亏损 📉</span>
+                </SelectItem>
+              </Select>
             </div>
 
             {/* 分隔线 */}
@@ -189,42 +177,38 @@ export function PositionFilters({
 
             {/* 评级/收藏筛选组 */}
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">评级</span>
-                <Select
-                  className="w-[90px]"
-                  size="sm"
-                  aria-label="评级筛选"
-                  selectedKeys={scoreFilter ? [scoreFilter] : []}
-                  onSelectionChange={(keys) => {
-                    const selected = Array.from(keys)[0] as string;
-                    onScoreFilterChange(selected || 'all');
-                  }}
-                >
-                  <SelectItem key="all" textValue="全部">全部</SelectItem>
-                  <SelectItem key="S" textValue="S"><span className="font-semibold text-warning">S</span></SelectItem>
-                  <SelectItem key="A" textValue="A"><span className="font-semibold text-success">A</span></SelectItem>
-                  <SelectItem key="B" textValue="B"><span className="font-semibold text-primary">B</span></SelectItem>
-                  <SelectItem key="C" textValue="C"><span className="font-semibold text-default-600">C</span></SelectItem>
-                  <SelectItem key="D" textValue="D"><span className="font-semibold text-default-400">D</span></SelectItem>
-                  <SelectItem key="F" textValue="F"><span className="font-semibold text-danger">F</span></SelectItem>
-                </Select>
-              </div>
+              <Select
+                className="w-[90px]"
+                size="sm"
+                placeholder="评级"
+                aria-label="评级筛选"
+                selectedKeys={scoreFilter ? [scoreFilter] : []}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  onScoreFilterChange(selected || '');
+                }}
+              >
+                <SelectItem key="" textValue="全部">全部</SelectItem>
+                <SelectItem key="S" textValue="S"><span className="font-semibold text-warning">S</span></SelectItem>
+                <SelectItem key="A" textValue="A"><span className="font-semibold text-success">A</span></SelectItem>
+                <SelectItem key="B" textValue="B"><span className="font-semibold text-primary">B</span></SelectItem>
+                <SelectItem key="C" textValue="C"><span className="font-semibold text-default-600">C</span></SelectItem>
+                <SelectItem key="D" textValue="D"><span className="font-semibold text-default-400">D</span></SelectItem>
+                <SelectItem key="F" textValue="F"><span className="font-semibold text-danger">F</span></SelectItem>
+              </Select>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">收藏</span>
-                <Select
-                  className="w-[110px]"
-                  size="sm"
-                  aria-label="收藏筛选"
-                  selectedKeys={[starFilter]}
-                  onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string)}
-                >
-                  <SelectItem key="all" textValue="全部">全部</SelectItem>
-                  <SelectItem key="starred" textValue="已收藏">已收藏 ⭐</SelectItem>
-                  <SelectItem key="unstarred" textValue="未收藏">未收藏</SelectItem>
-                </Select>
-              </div>
+              <Select
+                className="w-[110px]"
+                size="sm"
+                placeholder="收藏"
+                aria-label="收藏筛选"
+                selectedKeys={starFilter ? [starFilter] : []}
+                onSelectionChange={(keys) => onStarFilterChange(Array.from(keys)[0] as string || "")}
+              >
+                <SelectItem key="" textValue="全部">全部</SelectItem>
+                <SelectItem key="starred" textValue="已收藏">已收藏 ⭐</SelectItem>
+                <SelectItem key="unstarred" textValue="未收藏">未收藏</SelectItem>
+              </Select>
             </div>
 
             {/* 分隔线 */}
@@ -232,36 +216,36 @@ export function PositionFilters({
 
             {/* 币种/时间筛选组 */}
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-default-500 font-medium">币种</span>
-                <Autocomplete
-                  className="w-[140px]"
-                  size="sm"
-                  aria-label="币种筛选"
-                  selectedKey={coinFilter}
-                  onSelectionChange={(key) => onCoinFilterChange((key as string) || 'all')}
-                  allowsCustomValue={false}
-                  defaultItems={coinOptions.map((coin) => ({
-                    key: coin,
-                    label: coin === 'all' ? '全部' : coin,
-                  }))}
-                >
-                  {(item) => (
-                    <AutocompleteItem key={item.key} textValue={item.label}>
-                      {item.label}
-                    </AutocompleteItem>
-                  )}
-                </Autocomplete>
-              </div>
+              <Autocomplete
+                className="w-[140px]"
+                size="sm"
+                placeholder="币种"
+                aria-label="币种筛选"
+                selectedKey={coinFilter || null}
+                onSelectionChange={(key) => onCoinFilterChange((key as string) || '')}
+                allowsCustomValue={false}
+                defaultItems={[
+                  { key: '', label: '全部' },
+                  ...byCoin.map((c) => ({
+                    key: c.coin,
+                    label: c.coin,
+                  })),
+                ]}
+              >
+                {(item) => (
+                  <AutocompleteItem key={item.key} textValue={item.label}>
+                    {item.label}
+                  </AutocompleteItem>
+                )}
+              </Autocomplete>
 
               <TimeRangeFilter
-                label="开仓时间"
+                placeholder="开仓时间"
                 value={openTimeFilter}
                 dateRange={openTimeDateRange}
                 onValueChange={onOpenTimeFilterChange}
                 onDateRangeChange={onOpenTimeDateRangeChange}
                 selectClassName="w-[120px]"
-                layout="vertical"
               />
             </div>
           </div>

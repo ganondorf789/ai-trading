@@ -72,7 +72,7 @@ export function PositionHistory({ address }: PositionHistoryProps) {
   const [directionFilter, setDirectionFilter] = useState<'all' | 'long' | 'short'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [pnlFilter, setPnlFilter] = useState<'all' | 'profit' | 'loss'>('all');
-  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('all');
+  const [timeRangeFilter, setTimeRangeFilter] = useState<string>('');
   const [dateRange, setDateRange] = useState<RangeValue<DateValue> | null>(null);
 
   // 排序和列可见性
