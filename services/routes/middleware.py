@@ -15,7 +15,7 @@ from .db import db
 logger = logging.getLogger(__name__)
 
 
-def generate_tokens(user_id: int, account: str, role: str) -> Tuple[str, str]:
+def generate_tokens(user_id: int, account: str, role: str, user_expires_at: Optional[datetime] = None) -> Tuple[str, str]:
     """
     生成访问令牌和刷新令牌
     
@@ -23,6 +23,7 @@ def generate_tokens(user_id: int, account: str, role: str) -> Tuple[str, str]:
         user_id: 用户 ID
         account: 账号
         role: 用户角色
+        user_expires_at: 用户账户过期时间（None 表示永不过期）
         
     Returns:
         (access_token, refresh_token) 元组
@@ -36,7 +37,9 @@ def generate_tokens(user_id: int, account: str, role: str) -> Tuple[str, str]:
         'role': role,
         'type': 'access',
         'iat': now,
-        'exp': now + timedelta(hours=settings.jwt.access_token_expire_hours)
+        'exp': now + timedelta(hours=settings.jwt.access_token_expire_hours),
+        # 用户账户过期时间（时间戳，None 表示永不过期）
+        'user_expires_at': int(user_expires_at.timestamp()) if user_expires_at else None
     }
     access_token = jwt.encode(
         access_payload,
@@ -142,20 +145,24 @@ def login_required(f):
             }), 401
         
         user_id = payload.get('user_id')
+        role = payload.get('role')
+        user_expires_at = payload.get('user_expires_at')
         
-        # 验证用户是否仍然有效（未禁用、未过期）
-        if not db.check_user_active(user_id):
-            return jsonify({
-                'success': False,
-                'error': '用户账户已禁用或已过期',
-                'code': 'USER_INACTIVE'
-            }), 403
+        # 非管理员用户检查账户是否过期（从 JWT 中获取过期时间）
+        if role != 'admin' and user_expires_at:
+            if datetime.utcnow().timestamp() > user_expires_at:
+                logger.warning(f"用户账户已过期: user_id={user_id}")
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已过期，请联系管理员续期',
+                    'code': 'USER_EXPIRED'
+                }), 403
         
         # 将用户信息存储到 g 对象中
         g.current_user = {
             'user_id': user_id,
             'account': payload.get('account'),
-            'role': payload.get('role')
+            'role': role
         }
         
         return f(*args, **kwargs)

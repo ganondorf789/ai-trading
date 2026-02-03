@@ -178,6 +178,21 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     
+    // 处理 403 错误（用户已禁用或已过期）
+    if (error.response?.status === 403) {
+      const errorCode = error.response?.data?.code;
+      // USER_INACTIVE: 用户被禁用, USER_EXPIRED: 用户已过期
+      if (errorCode === 'USER_INACTIVE' || errorCode === 'USER_EXPIRED') {
+        // 如果是登录请求，直接抛出错误让登录页面处理
+        if (originalRequest.url?.includes('/auth/login')) {
+          return Promise.reject(error);
+        }
+        // 其他请求，清除 token 并跳转到登录页
+        handleAuthFailure(errorCode);
+        return Promise.reject(error);
+      }
+    }
+    
     // 处理 401 错误（token 无效或过期）
     if (error.response?.status === 401 && !originalRequest._retry) {
       // 如果是登录或刷新 token 请求失败，直接抛出错误

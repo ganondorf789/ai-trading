@@ -403,13 +403,34 @@ def login():
                 'error': '账号或密码错误'
             }), 401
         
+        # 检查非管理员用户是否已过期
+        if user.get('role') != 'admin':
+            expires_at = user.get('expires_at')
+            if expires_at and expires_at < datetime.now():
+                logger.warning(f"用户登录失败: 账户已过期 - account={account}")
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已过期，请联系管理员续期',
+                    'code': 'USER_EXPIRED'
+                }), 403
+            
+            # 检查用户是否被禁用
+            if not user.get('is_active', True):
+                logger.warning(f"用户登录失败: 账户已禁用 - account={account}")
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已被禁用，请联系管理员',
+                    'code': 'USER_INACTIVE'
+                }), 403
+        
         logger.info(f"用户登录成功: {account}")
         
-        # 生成 JWT 令牌
+        # 生成 JWT 令牌（将用户过期时间写入 token）
         access_token, refresh_token = generate_tokens(
             user_id=user['id'],
             account=user['account'],
-            role=user.get('role', 'user')
+            role=user.get('role', 'user'),
+            user_expires_at=user.get('expires_at')
         )
         
         # 格式化返回数据
@@ -509,19 +530,31 @@ def refresh_token():
                 'error': '用户不存在'
             }), 401
         
-        # 检查用户状态
-        if not db.check_user_active(user_id):
-            return jsonify({
-                'success': False,
-                'error': '用户账户已禁用或已过期',
-                'code': 'USER_INACTIVE'
-            }), 403
+        # 检查用户状态（非管理员检查过期）
+        role = user.get('role', 'user')
+        expires_at = user.get('expires_at')
         
-        # 生成新的令牌
+        if role != 'admin':
+            if expires_at and expires_at < datetime.now():
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已过期，请联系管理员续期',
+                    'code': 'USER_EXPIRED'
+                }), 403
+            
+            if not user.get('is_active', True):
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已被禁用，请联系管理员',
+                    'code': 'USER_INACTIVE'
+                }), 403
+        
+        # 生成新的令牌（将用户过期时间写入 token）
         access_token, new_refresh_token = generate_tokens(
             user_id=user['id'],
             account=user['account'],
-            role=user.get('role', 'user')
+            role=role,
+            user_expires_at=expires_at
         )
         
         logger.info(f"Token 刷新成功: user_id={user_id}")
@@ -597,21 +630,24 @@ def verify_token_endpoint():
             }), 401
         
         user_id = payload.get('user_id')
+        role = payload.get('role')
+        user_expires_at = payload.get('user_expires_at')
         
-        # 检查用户状态
-        if not db.check_user_active(user_id):
-            return jsonify({
-                'success': False,
-                'error': '用户账户已禁用或已过期',
-                'code': 'USER_INACTIVE'
-            }), 403
+        # 非管理员用户检查账户是否过期（从 JWT 中获取过期时间）
+        if role != 'admin' and user_expires_at:
+            if datetime.utcnow().timestamp() > user_expires_at:
+                return jsonify({
+                    'success': False,
+                    'error': '您的账户已过期，请联系管理员续期',
+                    'code': 'USER_EXPIRED'
+                }), 403
         
         return jsonify({
             'success': True,
             'data': {
-                'user_id': payload.get('user_id'),
+                'user_id': user_id,
                 'account': payload.get('account'),
-                'role': payload.get('role')
+                'role': role
             }
         })
         

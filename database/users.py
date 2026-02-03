@@ -477,6 +477,7 @@ class UsersOps:
     def check_user_active(self, user_id: int) -> bool:
         """
         检查用户是否处于激活且未过期状态
+        注意：管理员用户不检查过期时间
 
         Args:
             user_id: 用户 ID
@@ -489,7 +490,7 @@ class UsersOps:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
-                    SELECT is_active, expires_at
+                    SELECT is_active, expires_at, role
                     FROM users
                     WHERE id = %s
                 """, (user_id,))
@@ -498,10 +499,15 @@ class UsersOps:
                 if not result:
                     return False
                 
-                is_active, expires_at = result
+                is_active, expires_at, role = result
                 if not is_active:
                     return False
                 
+                # 管理员不检查过期时间
+                if role == 'admin':
+                    return True
+                
+                # 非管理员用户检查过期时间
                 if expires_at and expires_at < datetime.now():
                     return False
                 
