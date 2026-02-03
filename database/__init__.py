@@ -20,6 +20,7 @@ from .new_positions import NewPositionsOps
 from .notifications import NotificationsOps
 from .users import UsersOps
 from .secret_keys import SecretKeysOps
+from .app_versions import AppVersionsOps
 
 
 class TraderDatabase(
@@ -37,7 +38,8 @@ class TraderDatabase(
     NewPositionsOps,
     NotificationsOps,
     UsersOps,
-    SecretKeysOps
+    SecretKeysOps,
+    AppVersionsOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

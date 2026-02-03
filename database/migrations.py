@@ -646,6 +646,48 @@ class DatabaseMigrations:
                 ON users(role)
             """)
 
+            # 创建应用版本管理表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS app_versions (
+                    id SERIAL PRIMARY KEY,
+                    version TEXT NOT NULL,                       -- 版本号（如 1.0.0）
+                    version_name TEXT DEFAULT '',                -- 版本名称/别名
+                    description TEXT DEFAULT '',                 -- 版本描述
+                    release_notes TEXT DEFAULT '',               -- 更新日志
+                    download_url TEXT DEFAULT '',                -- 下载链接
+                    
+                    -- 更新配置
+                    is_force_update BOOLEAN DEFAULT FALSE,       -- 是否强制更新
+                    is_visible BOOLEAN DEFAULT TRUE,             -- 是否对用户可见（管理员可控制）
+                    min_supported_version TEXT DEFAULT '',       -- 最低支持版本
+                    
+                    -- 平台
+                    platform TEXT DEFAULT 'all',                 -- 平台: all/android/ios/web
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by INTEGER                           -- 创建者用户ID
+                )
+            """)
+
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_app_versions_version_platform
+                ON app_versions(version, platform)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_app_versions_is_visible
+                ON app_versions(is_visible)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_app_versions_platform
+                ON app_versions(platform)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_app_versions_created_at
+                ON app_versions(created_at DESC)
+            """)
+
             # 创建跟单配置规则表（支持按杠杆区间分配不同配置）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_config_rules (

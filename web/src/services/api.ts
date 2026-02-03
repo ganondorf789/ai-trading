@@ -914,4 +914,91 @@ export const secretKeyApi = {
     api.get<any, ApiResponse<SecretKeyStats>>('/auth/secret-keys/stats'),
 };
 
+// ==================== 应用版本管理 API ====================
+
+export interface AppVersion {
+  id: number;
+  version: string;
+  version_name: string;
+  description: string;
+  release_notes: string;
+  download_url: string;
+  is_force_update: boolean;
+  is_visible: boolean;
+  min_supported_version: string;
+  platform: 'all' | 'android' | 'ios' | 'web';
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AppVersionStats {
+  total_count: number;
+  visible_count: number;
+  hidden_count: number;
+  force_update_count: number;
+  all_platform_count: number;
+  android_count: number;
+  ios_count: number;
+  web_count: number;
+}
+
+export const appVersionApi = {
+  // 获取最新版本（公开接口）
+  getLatestVersion: (platform?: string) =>
+    api.get<any, ApiResponse<AppVersion | null>>('/app-versions/latest', { params: { platform } }),
+
+  // 检查版本更新（公开接口）
+  checkUpdate: (currentVersion: string, platform?: string) =>
+    api.get<any, ApiResponse<{ has_update: boolean; is_force_update?: boolean; latest_version?: AppVersion }>>('/app-versions/check-update', {
+      params: { current_version: currentVersion, platform },
+    }),
+
+  // 获取版本列表（管理员）
+  getVersions: (params?: { is_visible?: boolean; platform?: string; limit?: number; offset?: number }) =>
+    api.get<any, ApiResponse<AppVersion[]>>('/app-versions', { params }),
+
+  // 创建版本（管理员）
+  createVersion: (data: {
+    version: string;
+    version_name?: string;
+    description?: string;
+    release_notes?: string;
+    download_url?: string;
+    is_force_update?: boolean;
+    is_visible?: boolean;
+    min_supported_version?: string;
+    platform?: string;
+  }) =>
+    api.post<any, ApiResponse<AppVersion> & { message?: string }>('/app-versions', data),
+
+  // 获取版本详情（管理员）
+  getVersion: (versionId: number) =>
+    api.get<any, ApiResponse<AppVersion>>(`/app-versions/${versionId}`),
+
+  // 更新版本（管理员）
+  updateVersion: (versionId: number, data: {
+    version_name?: string;
+    description?: string;
+    release_notes?: string;
+    download_url?: string;
+    is_force_update?: boolean;
+    is_visible?: boolean;
+    min_supported_version?: string;
+  }) =>
+    api.put<any, ApiResponse<AppVersion> & { message?: string }>(`/app-versions/${versionId}`, data),
+
+  // 删除版本（管理员）
+  deleteVersion: (versionId: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/app-versions/${versionId}`),
+
+  // 切换版本可见性（管理员）
+  toggleVisibility: (versionId: number, isVisible: boolean) =>
+    api.post<any, ApiResponse<void> & { message?: string }>(`/app-versions/${versionId}/toggle`, { is_visible: isVisible }),
+
+  // 获取版本统计（管理员）
+  getVersionStats: () =>
+    api.get<any, ApiResponse<AppVersionStats>>('/app-versions/stats'),
+};
+
 export default api;

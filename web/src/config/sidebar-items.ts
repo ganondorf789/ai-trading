@@ -116,6 +116,12 @@ export const sidebarItems: SidebarItem[] = [
         icon: "solar:key-line-duotone",
         title: "Secret Keys",
       },
+      {
+        key: "app-versions",
+        href: "/app-versions",
+        icon: "solar:box-line-duotone",
+        title: "App Versions",
+      },
     ],
   },
 ];

@@ -44,3 +44,7 @@ def register_routes(app):
     # 通知路由
     from .notifications import notifications_bp
     app.register_blueprint(notifications_bp)
+    
+    # 应用版本管理路由
+    from .app_versions import app_versions_bp
+    app.register_blueprint(app_versions_bp)

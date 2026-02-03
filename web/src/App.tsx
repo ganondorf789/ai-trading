@@ -12,6 +12,7 @@ import DefaultConfigRulesPage from "@/pages/default-config-rules";
 import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
 import UsersPage from "@/pages/users";
 import SecretKeysPage from "@/pages/secret-keys";
+import AppVersionsPage from "@/pages/app-versions";
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
       <Route element={<ImmediateConfigRulesPage />} path="/immediate-config-rules" />
       <Route element={<UsersPage />} path="/users" />
       <Route element={<SecretKeysPage />} path="/secret-keys" />
+      <Route element={<AppVersionsPage />} path="/app-versions" />
     </Routes>
   );
 }
