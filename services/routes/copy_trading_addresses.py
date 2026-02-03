@@ -1,7 +1,7 @@
 """
 跟单地址管理相关路由
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 import logging
 
 from .db import db
@@ -69,6 +69,7 @@ def get_copy_trading_addresses():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         is_enabled = request.args.get('is_enabled')
@@ -82,6 +83,7 @@ def get_copy_trading_addresses():
 
         offset = (page - 1) * limit
         addresses, total_count = db.get_copy_trading_addresses(
+            user_id=user_id,
             is_enabled=is_enabled,
             search=search,
             limit=limit,
@@ -141,7 +143,8 @@ def get_copy_trading_address(address: str):
         description: 服务器错误
     """
     try:
-        data = db.get_copy_trading_address(address)
+        user_id = g.current_user['user_id']
+        data = db.get_copy_trading_address(user_id, address)
         if not data:
             return jsonify({
                 'success': False,
@@ -188,6 +191,7 @@ def create_copy_trading_address():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data or not data.get('address'):
             return jsonify({
@@ -204,7 +208,7 @@ def create_copy_trading_address():
             }), 400
 
         data['address'] = address
-        record_id = db.save_copy_trading_address(data)
+        record_id = db.save_copy_trading_address(user_id, data)
 
         return jsonify({
             'success': True,
@@ -252,6 +256,7 @@ def quick_add_copy_trading_address():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data or not data.get('address'):
             return jsonify({
@@ -268,12 +273,12 @@ def quick_add_copy_trading_address():
             }), 400
 
         # 检查地址是否已存在
-        existing = db.get_copy_trading_address(address)
+        existing = db.get_copy_trading_address(user_id, address)
         if existing:
             # 如果已存在但是禁用状态，则重新启用
             if not existing.get('is_enabled', True):
                 existing['is_enabled'] = True
-                record_id = db.save_copy_trading_address(existing)
+                record_id = db.save_copy_trading_address(user_id, existing)
                 
                 return jsonify({
                     'success': True,
@@ -288,7 +293,7 @@ def quick_add_copy_trading_address():
                 }), 409  # Conflict
 
         # 获取默认配置
-        default_config = db.get_default_copy_config()
+        default_config = db.get_default_copy_config(user_id)
         
         # 构建新地址配置
         new_address_data = {
@@ -311,7 +316,7 @@ def quick_add_copy_trading_address():
             'dry_run': default_config.get('dry_run', False),
         }
         
-        record_id = db.save_copy_trading_address(new_address_data)
+        record_id = db.save_copy_trading_address(user_id, new_address_data)
 
         return jsonify({
             'success': True,
@@ -355,6 +360,7 @@ def update_copy_trading_address(address: str):
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -363,7 +369,7 @@ def update_copy_trading_address(address: str):
             }), 400
 
         # 检查地址是否存在
-        existing = db.get_copy_trading_address(address)
+        existing = db.get_copy_trading_address(user_id, address)
         if not existing:
             return jsonify({
                 'success': False,
@@ -371,7 +377,7 @@ def update_copy_trading_address(address: str):
             }), 404
 
         data['address'] = address
-        db.save_copy_trading_address(data)
+        db.save_copy_trading_address(user_id, data)
 
         return jsonify({
             'success': True,
@@ -407,7 +413,8 @@ def delete_copy_trading_address(address: str):
         description: 服务器错误
     """
     try:
-        success = db.delete_copy_trading_address(address)
+        user_id = g.current_user['user_id']
+        success = db.delete_copy_trading_address(user_id, address)
         if success:
             return jsonify({
                 'success': True,
@@ -461,6 +468,7 @@ def toggle_copy_trading_address(address: str):
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if data is None or 'is_enabled' not in data:
             return jsonify({
@@ -469,7 +477,7 @@ def toggle_copy_trading_address(address: str):
             }), 400
 
         is_enabled = bool(data['is_enabled'])
-        success = db.toggle_copy_trading_address(address, is_enabled)
+        success = db.toggle_copy_trading_address(user_id, address, is_enabled)
 
         if success:
             return jsonify({
@@ -533,6 +541,7 @@ def batch_update_copy_trading_addresses():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -556,6 +565,7 @@ def batch_update_copy_trading_addresses():
             }), 400
 
         affected_count = db.batch_update_copy_trading_addresses(
+            user_id=user_id,
             addresses=addresses,
             action=action
         )

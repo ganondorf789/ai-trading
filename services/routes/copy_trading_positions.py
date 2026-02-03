@@ -2,7 +2,7 @@
 跟单交易员持仓和配置管理相关路由
 包括：交易员持仓、风控配置、默认配置、立即跟单配置、AI分析
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 import logging
 
 from .db import db
@@ -118,9 +118,10 @@ def refresh_all_trader_positions():
         from hyperliquid.utils import constants
         import time
 
+        user_id = g.current_user['user_id']
         enabled_only = request.args.get('enabled_only', 'true').lower() == 'true'
 
-        addresses = db.get_copy_trading_addresses_list(enabled_only)
+        addresses = db.get_copy_trading_addresses_list(user_id, enabled_only)
 
         if not addresses:
             return jsonify({
@@ -197,7 +198,8 @@ def get_default_copy_config():
         description: 服务器错误
     """
     try:
-        config = db.get_default_copy_config()
+        user_id = g.current_user['user_id']
+        config = db.get_default_copy_config(user_id)
         return jsonify({
             'success': True,
             'data': config
@@ -232,6 +234,7 @@ def update_default_copy_config():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -278,7 +281,7 @@ def update_default_copy_config():
         if 'symbols_blacklist' in data:
             config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
 
-        success = db.save_default_copy_config(config)
+        success = db.save_default_copy_config(user_id, config)
         if success:
             return jsonify({
                 'success': True,
@@ -321,7 +324,8 @@ def get_immediate_copy_config():
         description: 服务器错误
     """
     try:
-        config = db.get_immediate_copy_config()
+        user_id = g.current_user['user_id']
+        config = db.get_immediate_copy_config(user_id)
         return jsonify({
             'success': True,
             'data': config
@@ -356,6 +360,7 @@ def update_immediate_copy_config():
         description: 服务器错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -402,7 +407,7 @@ def update_immediate_copy_config():
         if 'symbols_blacklist' in data:
             config['symbols_blacklist'] = data['symbols_blacklist'] if isinstance(data['symbols_blacklist'], list) else []
 
-        success = db.save_immediate_copy_config(config)
+        success = db.save_immediate_copy_config(user_id, config)
         if success:
             return jsonify({
                 'success': True,
@@ -581,8 +586,9 @@ def get_default_config_rules():
         description: 配置规则列表
     """
     try:
+        user_id = g.current_user['user_id']
         enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
-        rules = db.get_copy_config_rules('default', enabled_only=enabled_only)
+        rules = db.get_copy_config_rules(user_id, 'default', enabled_only=enabled_only)
         return jsonify({
             'success': True,
             'data': rules
@@ -638,6 +644,7 @@ def create_default_config_rule():
         description: 请求参数错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -652,9 +659,9 @@ def create_default_config_rule():
                 'error': error
             }), 400
         
-        rule_id = db.save_copy_config_rule(validated_data)
+        rule_id = db.save_copy_config_rule(user_id, validated_data)
         if rule_id:
-            rule = db.get_copy_config_rule_by_id(rule_id)
+            rule = db.get_copy_config_rule_by_id(user_id, rule_id)
             return jsonify({
                 'success': True,
                 'data': rule,
@@ -692,7 +699,8 @@ def get_default_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
-        rule = db.get_copy_config_rule_by_id(rule_id)
+        user_id = g.current_user['user_id']
+        rule = db.get_copy_config_rule_by_id(user_id, rule_id)
         if rule and rule.get('config_type') == 'default':
             return jsonify({
                 'success': True,
@@ -737,8 +745,9 @@ def update_default_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
+        user_id = g.current_user['user_id']
         # 检查规则是否存在
-        existing = db.get_copy_config_rule_by_id(rule_id)
+        existing = db.get_copy_config_rule_by_id(user_id, rule_id)
         if not existing or existing.get('config_type') != 'default':
             return jsonify({
                 'success': False,
@@ -760,9 +769,9 @@ def update_default_config_rule(rule_id: int):
                 'error': error
             }), 400
         
-        result_id = db.save_copy_config_rule(validated_data)
+        result_id = db.save_copy_config_rule(user_id, validated_data)
         if result_id:
-            rule = db.get_copy_config_rule_by_id(result_id)
+            rule = db.get_copy_config_rule_by_id(user_id, result_id)
             return jsonify({
                 'success': True,
                 'data': rule,
@@ -800,14 +809,15 @@ def delete_default_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
-        existing = db.get_copy_config_rule_by_id(rule_id)
+        user_id = g.current_user['user_id']
+        existing = db.get_copy_config_rule_by_id(user_id, rule_id)
         if not existing or existing.get('config_type') != 'default':
             return jsonify({
                 'success': False,
                 'error': '配置规则不存在'
             }), 404
         
-        success = db.delete_copy_config_rule(rule_id)
+        success = db.delete_copy_config_rule(user_id, rule_id)
         if success:
             return jsonify({
                 'success': True,
@@ -846,8 +856,9 @@ def get_immediate_config_rules():
         description: 配置规则列表
     """
     try:
+        user_id = g.current_user['user_id']
         enabled_only = request.args.get('enabled_only', 'false').lower() == 'true'
-        rules = db.get_copy_config_rules('immediate', enabled_only=enabled_only)
+        rules = db.get_copy_config_rules(user_id, 'immediate', enabled_only=enabled_only)
         return jsonify({
             'success': True,
             'data': rules
@@ -895,6 +906,7 @@ def create_immediate_config_rule():
         description: 请求参数错误
     """
     try:
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data:
             return jsonify({
@@ -912,16 +924,16 @@ def create_immediate_config_rule():
         # 检查币种唯一性
         symbol = validated_data.get('symbol')
         if symbol:
-            existing = db.get_immediate_config_rule_by_symbol(symbol)
+            existing = db.get_immediate_config_rule_by_symbol(user_id, symbol)
             if existing:
                 return jsonify({
                     'success': False,
                     'error': f'币种 {symbol} 已存在配置规则'
                 }), 400
         
-        rule_id = db.save_copy_config_rule(validated_data)
+        rule_id = db.save_copy_config_rule(user_id, validated_data)
         if rule_id:
-            rule = db.get_copy_config_rule_by_id(rule_id)
+            rule = db.get_copy_config_rule_by_id(user_id, rule_id)
             return jsonify({
                 'success': True,
                 'data': rule,
@@ -959,7 +971,8 @@ def get_immediate_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
-        rule = db.get_copy_config_rule_by_id(rule_id)
+        user_id = g.current_user['user_id']
+        rule = db.get_copy_config_rule_by_id(user_id, rule_id)
         if rule and rule.get('config_type') == 'immediate':
             return jsonify({
                 'success': True,
@@ -1004,8 +1017,9 @@ def update_immediate_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
+        user_id = g.current_user['user_id']
         # 检查规则是否存在
-        existing = db.get_copy_config_rule_by_id(rule_id)
+        existing = db.get_copy_config_rule_by_id(user_id, rule_id)
         if not existing or existing.get('config_type') != 'immediate':
             return jsonify({
                 'success': False,
@@ -1031,16 +1045,16 @@ def update_immediate_config_rule(rule_id: int):
         new_symbol = validated_data.get('symbol')
         old_symbol = existing.get('symbol')
         if new_symbol and new_symbol != old_symbol:
-            existing_by_symbol = db.get_immediate_config_rule_by_symbol(new_symbol)
+            existing_by_symbol = db.get_immediate_config_rule_by_symbol(user_id, new_symbol)
             if existing_by_symbol:
                 return jsonify({
                     'success': False,
                     'error': f'币种 {new_symbol} 已存在配置规则'
                 }), 400
         
-        result_id = db.save_copy_config_rule(validated_data)
+        result_id = db.save_copy_config_rule(user_id, validated_data)
         if result_id:
-            rule = db.get_copy_config_rule_by_id(result_id)
+            rule = db.get_copy_config_rule_by_id(user_id, result_id)
             return jsonify({
                 'success': True,
                 'data': rule,
@@ -1078,14 +1092,15 @@ def delete_immediate_config_rule(rule_id: int):
         description: 规则不存在
     """
     try:
-        existing = db.get_copy_config_rule_by_id(rule_id)
+        user_id = g.current_user['user_id']
+        existing = db.get_copy_config_rule_by_id(user_id, rule_id)
         if not existing or existing.get('config_type') != 'immediate':
             return jsonify({
                 'success': False,
                 'error': '配置规则不存在'
             }), 404
         
-        success = db.delete_copy_config_rule(rule_id)
+        success = db.delete_copy_config_rule(user_id, rule_id)
         if success:
             return jsonify({
                 'success': True,
@@ -1127,6 +1142,7 @@ def match_config_rule():
         description: 匹配结果
     """
     try:
+        user_id = g.current_user['user_id']
         config_type = request.args.get('config_type', 'immediate')
         leverage = float(request.args.get('leverage', 1))
         
@@ -1136,8 +1152,8 @@ def match_config_rule():
                 'error': 'config_type 必须是 default 或 immediate'
             }), 400
         
-        rule = db.match_copy_config_rule(config_type, leverage)
-        config = db.get_copy_config_by_leverage(config_type, leverage)
+        rule = db.match_copy_config_rule(user_id, config_type, leverage)
+        config = db.get_copy_config_by_leverage(user_id, config_type, leverage)
         
         return jsonify({
             'success': True,

@@ -824,6 +824,41 @@ class DatabaseMigrations:
             cursor, 'secret_keys', 'used_by_user_id', 'INTEGER'
         )
 
+        # 添加 user_id 字段到 copy_trading_addresses 表（每个用户独立的跟单地址配置）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'user_id', 'INTEGER'
+        )
+        # 创建用户+地址的唯一索引，并移除旧的地址唯一约束
+        cursor.execute("""
+            DROP INDEX IF EXISTS copy_trading_addresses_address_key
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_address
+            ON copy_trading_addresses(user_id, address)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
+            ON copy_trading_addresses(user_id)
+        """)
+
+        # 添加 user_id 字段到 copy_config_rules 表（每个用户独立的配置规则）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_config_rules', 'user_id', 'INTEGER'
+        )
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_copy_config_rules_user_id
+            ON copy_config_rules(user_id)
+        """)
+        # 更新立即跟单配置规则的唯一索引，加入 user_id
+        cursor.execute("""
+            DROP INDEX IF EXISTS idx_copy_config_rules_immediate_symbol
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_immediate_symbol
+            ON copy_config_rules(user_id, config_type, symbol)
+            WHERE config_type = 'immediate' AND symbol IS NOT NULL
+        """)
+
     def _migrate_remove_groups(self, cursor):
         """
         移除分组功能相关的表和列

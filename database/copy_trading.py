@@ -17,6 +17,7 @@ class CopyTradingOps:
 
     def get_copy_trading_addresses(
         self,
+        user_id: int,
         is_enabled: bool = None,
         search: str = None,
         limit: int = 20,
@@ -28,6 +29,7 @@ class CopyTradingOps:
         获取跟单地址列表
 
         Args:
+            user_id: 用户ID
             is_enabled: 启用状态筛选
             search: 搜索地址或名称
             limit: 每页数量
@@ -42,8 +44,8 @@ class CopyTradingOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             # 构建查询条件
-            conditions = []
-            params = []
+            conditions = ["cta.user_id = %s"]
+            params = [user_id]
 
             if is_enabled is not None:
                 conditions.append("cta.is_enabled = %s")
@@ -53,7 +55,7 @@ class CopyTradingOps:
                 conditions.append("(cta.address ILIKE %s OR cta.name ILIKE %s)")
                 params.extend([f'%{search}%', f'%{search}%'])
 
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            where_clause = " AND ".join(conditions)
 
             # 验证排序字段
             valid_sort_fields = {
@@ -114,11 +116,12 @@ class CopyTradingOps:
 
             return results, total_count
 
-    def get_copy_trading_address(self, address: str) -> Optional[Dict]:
+    def get_copy_trading_address(self, user_id: int, address: str) -> Optional[Dict]:
         """
         获取单个跟单地址详情
 
         Args:
+            user_id: 用户ID
             address: 交易者地址
 
         Returns:
@@ -140,8 +143,8 @@ class CopyTradingOps:
                     tm.analyzed_at
                 FROM copy_trading_addresses cta
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address
-                WHERE cta.address = %s
-            """, (address,))
+                WHERE cta.user_id = %s AND cta.address = %s
+            """, (user_id, address,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -157,11 +160,12 @@ class CopyTradingOps:
                 item['symbols_blacklist'] = []
             return item
 
-    def save_copy_trading_address(self, data: Dict) -> int:
+    def save_copy_trading_address(self, user_id: int, data: Dict) -> int:
         """
         保存或更新跟单地址
 
         Args:
+            user_id: 用户ID
             data: 地址数据
 
         Returns:
@@ -180,7 +184,7 @@ class CopyTradingOps:
 
             cursor.execute("""
                 INSERT INTO copy_trading_addresses (
-                    address, name, is_enabled,
+                    user_id, address, name, is_enabled,
                     copy_ratio, max_position_size_usd, min_position_size_usd,
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
@@ -188,8 +192,8 @@ class CopyTradingOps:
                     check_interval, dry_run,
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT(address) DO UPDATE SET
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
                     copy_ratio = EXCLUDED.copy_ratio,
@@ -212,6 +216,7 @@ class CopyTradingOps:
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
+                user_id,
                 data.get('address'),
                 data.get('name', ''),
                 data.get('is_enabled', True),
@@ -238,11 +243,12 @@ class CopyTradingOps:
             result = cursor.fetchone()
             return result[0] if result else None
 
-    def delete_copy_trading_address(self, address: str) -> bool:
+    def delete_copy_trading_address(self, user_id: int, address: str) -> bool:
         """
         删除跟单地址
 
         Args:
+            user_id: 用户ID
             address: 交易者地址
 
         Returns:
@@ -251,16 +257,17 @@ class CopyTradingOps:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "DELETE FROM copy_trading_addresses WHERE address = %s",
-                (address,)
+                "DELETE FROM copy_trading_addresses WHERE user_id = %s AND address = %s",
+                (user_id, address,)
             )
             return cursor.rowcount > 0
 
-    def toggle_copy_trading_address(self, address: str, is_enabled: bool) -> bool:
+    def toggle_copy_trading_address(self, user_id: int, address: str, is_enabled: bool) -> bool:
         """
         启用/禁用跟单地址
 
         Args:
+            user_id: 用户ID
             address: 交易者地址
             is_enabled: 是否启用
 
@@ -272,12 +279,13 @@ class CopyTradingOps:
             cursor.execute("""
                 UPDATE copy_trading_addresses
                 SET is_enabled = %s, updated_at = %s
-                WHERE address = %s
-            """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), address))
+                WHERE user_id = %s AND address = %s
+            """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), user_id, address))
             return cursor.rowcount > 0
 
     def batch_update_copy_trading_addresses(
         self,
+        user_id: int,
         addresses: List[str],
         action: str
     ) -> int:
@@ -285,6 +293,7 @@ class CopyTradingOps:
         批量操作跟单地址
 
         Args:
+            user_id: 用户ID
             addresses: 地址列表
             action: 操作类型 (enable/disable/delete)
 
@@ -302,27 +311,30 @@ class CopyTradingOps:
                 cursor.execute("""
                     UPDATE copy_trading_addresses
                     SET is_enabled = TRUE, updated_at = %s
-                    WHERE address = ANY(%s)
-                """, (now, addresses))
+                    WHERE user_id = %s AND address = ANY(%s)
+                """, (now, user_id, addresses))
             elif action == 'disable':
                 cursor.execute("""
                     UPDATE copy_trading_addresses
                     SET is_enabled = FALSE, updated_at = %s
-                    WHERE address = ANY(%s)
-                """, (now, addresses))
+                    WHERE user_id = %s AND address = ANY(%s)
+                """, (now, user_id, addresses))
             elif action == 'delete':
                 cursor.execute("""
                     DELETE FROM copy_trading_addresses
-                    WHERE address = ANY(%s)
-                """, (addresses,))
+                    WHERE user_id = %s AND address = ANY(%s)
+                """, (user_id, addresses,))
             else:
                 return 0
 
             return cursor.rowcount
 
-    def get_enabled_copy_addresses(self) -> List[Dict]:
+    def get_enabled_copy_addresses(self, user_id: int) -> List[Dict]:
         """
         获取所有启用的跟单地址及其完整配置
+
+        Args:
+            user_id: 用户ID
 
         Returns:
             启用的跟单地址配置列表
@@ -331,9 +343,9 @@ class CopyTradingOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM copy_trading_addresses
-                WHERE is_enabled = TRUE
+                WHERE user_id = %s AND is_enabled = TRUE
                 ORDER BY updated_at DESC
-            """)
+            """, (user_id,))
 
             results = []
             for row in cursor.fetchall():
@@ -350,11 +362,12 @@ class CopyTradingOps:
 
             return results
 
-    def get_copy_address_config(self, address: str) -> Optional[Dict]:
+    def get_copy_address_config(self, user_id: int, address: str) -> Optional[Dict]:
         """
         获取单个跟单地址的完整配置
 
         Args:
+            user_id: 用户ID
             address: 交易者地址
 
         Returns:
@@ -364,8 +377,8 @@ class CopyTradingOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT * FROM copy_trading_addresses
-                WHERE address = %s
-            """, (address,))
+                WHERE user_id = %s AND address = %s
+            """, (user_id, address,))
 
             row = cursor.fetchone()
             if not row:
@@ -385,9 +398,12 @@ class CopyTradingOps:
 
     # ==================== 默认跟单配置管理 ====================
 
-    def get_default_copy_config(self) -> Dict:
+    def get_default_copy_config(self, user_id: int) -> Dict:
         """
         获取默认跟单配置
+        
+        Args:
+            user_id: 用户ID
         
         Returns:
             默认跟单配置字典，如果不存在则返回默认值
@@ -412,9 +428,10 @@ class CopyTradingOps:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                config_key = f'default_copy_config:{user_id}'
                 cursor.execute("""
-                    SELECT config_value FROM system_config WHERE config_key = 'default_copy_config'
-                """)
+                    SELECT config_value FROM system_config WHERE config_key = %s
+                """, (config_key,))
                 row = cursor.fetchone()
                 
                 if row:
@@ -427,11 +444,12 @@ class CopyTradingOps:
             logger.warning(f"获取默认跟单配置失败，使用默认值: {e}")
             return default_config
 
-    def save_default_copy_config(self, config: Dict) -> bool:
+    def save_default_copy_config(self, user_id: int, config: Dict) -> bool:
         """
         保存默认跟单配置
         
         Args:
+            user_id: 用户ID
             config: 默认跟单配置字典
             
         Returns:
@@ -440,13 +458,14 @@ class CopyTradingOps:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                config_key = f'default_copy_config:{user_id}'
                 cursor.execute("""
                     INSERT INTO system_config (config_key, config_value, description, updated_at)
-                    VALUES ('default_copy_config', %s, '默认跟单配置', CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, '默认跟单配置', CURRENT_TIMESTAMP)
                     ON CONFLICT (config_key)
                     DO UPDATE SET config_value = %s, updated_at = CURRENT_TIMESTAMP
-                """, (json.dumps(config), json.dumps(config)))
-            logger.info(f"默认跟单配置已保存: {config}")
+                """, (config_key, json.dumps(config), json.dumps(config)))
+            logger.info(f"用户 {user_id} 默认跟单配置已保存: {config}")
             return True
         except Exception as e:
             logger.error(f"保存默认跟单配置失败: {e}")
@@ -454,9 +473,12 @@ class CopyTradingOps:
 
     # ==================== 立即跟单配置管理 ====================
 
-    def get_immediate_copy_config(self) -> Dict:
+    def get_immediate_copy_config(self, user_id: int) -> Dict:
         """
         获取立即跟单配置
+        
+        Args:
+            user_id: 用户ID
         
         Returns:
             立即跟单配置字典，如果不存在则返回默认值
@@ -482,9 +504,10 @@ class CopyTradingOps:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                config_key = f'immediate_copy_config:{user_id}'
                 cursor.execute("""
-                    SELECT config_value FROM system_config WHERE config_key = 'immediate_copy_config'
-                """)
+                    SELECT config_value FROM system_config WHERE config_key = %s
+                """, (config_key,))
                 row = cursor.fetchone()
                 
                 if row:
@@ -497,11 +520,12 @@ class CopyTradingOps:
             logger.warning(f"获取立即跟单配置失败，使用默认值: {e}")
             return default_config
 
-    def save_immediate_copy_config(self, config: Dict) -> bool:
+    def save_immediate_copy_config(self, user_id: int, config: Dict) -> bool:
         """
         保存立即跟单配置
         
         Args:
+            user_id: 用户ID
             config: 立即跟单配置字典
             
         Returns:
@@ -510,13 +534,14 @@ class CopyTradingOps:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                config_key = f'immediate_copy_config:{user_id}'
                 cursor.execute("""
                     INSERT INTO system_config (config_key, config_value, description, updated_at)
-                    VALUES ('immediate_copy_config', %s, '立即跟单配置', CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, '立即跟单配置', CURRENT_TIMESTAMP)
                     ON CONFLICT (config_key)
                     DO UPDATE SET config_value = %s, updated_at = CURRENT_TIMESTAMP
-                """, (json.dumps(config), json.dumps(config)))
-            logger.info(f"立即跟单配置已保存: {config}")
+                """, (config_key, json.dumps(config), json.dumps(config)))
+            logger.info(f"用户 {user_id} 立即跟单配置已保存: {config}")
             return True
         except Exception as e:
             logger.error(f"保存立即跟单配置失败: {e}")
@@ -524,11 +549,12 @@ class CopyTradingOps:
 
     # ==================== 跟单配置规则管理（多配置支持） ====================
 
-    def get_copy_config_rules(self, config_type: str, enabled_only: bool = False) -> List[Dict]:
+    def get_copy_config_rules(self, user_id: int, config_type: str, enabled_only: bool = False) -> List[Dict]:
         """
         获取跟单配置规则列表
         
         Args:
+            user_id: 用户ID
             config_type: 配置类型 ('default' 或 'immediate')
             enabled_only: 是否只返回启用的规则
             
@@ -545,9 +571,9 @@ class CopyTradingOps:
                            priority, is_enabled, is_default, symbol,
                            created_at, updated_at
                     FROM copy_config_rules
-                    WHERE config_type = %s
+                    WHERE user_id = %s AND config_type = %s
                 """
-                params = [config_type]
+                params = [user_id, config_type]
                 
                 if enabled_only:
                     sql += " AND is_enabled = TRUE"
@@ -575,11 +601,12 @@ class CopyTradingOps:
             logger.error(f"获取跟单配置规则失败: {e}")
             return []
 
-    def get_copy_config_rule_by_id(self, rule_id: int) -> Optional[Dict]:
+    def get_copy_config_rule_by_id(self, user_id: int, rule_id: int) -> Optional[Dict]:
         """
         根据ID获取单个配置规则
         
         Args:
+            user_id: 用户ID
             rule_id: 规则ID
             
         Returns:
@@ -594,8 +621,8 @@ class CopyTradingOps:
                            priority, is_enabled, is_default, symbol,
                            created_at, updated_at
                     FROM copy_config_rules
-                    WHERE id = %s
-                """, (rule_id,))
+                    WHERE user_id = %s AND id = %s
+                """, (user_id, rule_id,))
                 
                 row = cursor.fetchone()
                 if row:
@@ -608,11 +635,12 @@ class CopyTradingOps:
             logger.error(f"获取配置规则失败 (id={rule_id}): {e}")
             return None
 
-    def get_immediate_config_rule_by_symbol(self, symbol: str) -> Optional[Dict]:
+    def get_immediate_config_rule_by_symbol(self, user_id: int, symbol: str) -> Optional[Dict]:
         """
         根据币种获取立即跟单配置规则（每个币种最多一个配置）
         
         Args:
+            user_id: 用户ID
             symbol: 币种名称
             
         Returns:
@@ -627,9 +655,9 @@ class CopyTradingOps:
                            priority, is_enabled, is_default, symbol,
                            created_at, updated_at
                     FROM copy_config_rules
-                    WHERE config_type = 'immediate' AND symbol = %s
+                    WHERE user_id = %s AND config_type = 'immediate' AND symbol = %s
                     LIMIT 1
-                """, (symbol.upper(),))
+                """, (user_id, symbol.upper(),))
                 
                 row = cursor.fetchone()
                 if row:
@@ -642,11 +670,12 @@ class CopyTradingOps:
             logger.error(f"获取立即跟单配置规则失败 (symbol={symbol}): {e}")
             return None
 
-    def save_copy_config_rule(self, data: Dict) -> Optional[int]:
+    def save_copy_config_rule(self, user_id: int, data: Dict) -> Optional[int]:
         """
         保存或更新跟单配置规则
         
         Args:
+            user_id: 用户ID
             data: 规则数据，包含 config_type, name, leverage_min, leverage_max, config_data, symbol 等
             
         Returns:
@@ -661,7 +690,7 @@ class CopyTradingOps:
                     config_data = json.dumps(config_data)
                 
                 if data.get('id'):
-                    # 更新
+                    # 更新（只能更新自己的规则）
                     cursor.execute("""
                         UPDATE copy_config_rules
                         SET name = %s, description = %s,
@@ -669,7 +698,7 @@ class CopyTradingOps:
                             config_data = %s, priority = %s,
                             is_enabled = %s, is_default = %s, symbol = %s,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
+                        WHERE user_id = %s AND id = %s
                         RETURNING id
                     """, (
                         data.get('name', ''),
@@ -681,20 +710,22 @@ class CopyTradingOps:
                         data.get('is_enabled', True),
                         data.get('is_default', False),
                         data.get('symbol'),
+                        user_id,
                         data['id']
                     ))
                     result = cursor.fetchone()
-                    logger.info(f"更新跟单配置规则: id={data['id']}, name={data.get('name')}, symbol={data.get('symbol')}")
+                    logger.info(f"用户 {user_id} 更新跟单配置规则: id={data['id']}, name={data.get('name')}, symbol={data.get('symbol')}")
                     return result[0] if result else None
                 else:
                     # 插入
                     cursor.execute("""
                         INSERT INTO copy_config_rules 
-                        (config_type, name, description, leverage_min, leverage_max, 
+                        (user_id, config_type, name, description, leverage_min, leverage_max, 
                          config_data, priority, is_enabled, is_default, symbol)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
+                        user_id,
                         data.get('config_type', 'default'),
                         data.get('name', ''),
                         data.get('description', ''),
@@ -707,17 +738,18 @@ class CopyTradingOps:
                         data.get('symbol')
                     ))
                     rule_id = cursor.fetchone()[0]
-                    logger.info(f"创建跟单配置规则: id={rule_id}, name={data.get('name')}, symbol={data.get('symbol')}")
+                    logger.info(f"用户 {user_id} 创建跟单配置规则: id={rule_id}, name={data.get('name')}, symbol={data.get('symbol')}")
                     return rule_id
         except Exception as e:
             logger.error(f"保存跟单配置规则失败: {e}")
             return None
 
-    def delete_copy_config_rule(self, rule_id: int) -> bool:
+    def delete_copy_config_rule(self, user_id: int, rule_id: int) -> bool:
         """
         删除跟单配置规则
         
         Args:
+            user_id: 用户ID
             rule_id: 规则ID
             
         Returns:
@@ -726,16 +758,16 @@ class CopyTradingOps:
         try:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM copy_config_rules WHERE id = %s", (rule_id,))
+                cursor.execute("DELETE FROM copy_config_rules WHERE user_id = %s AND id = %s", (user_id, rule_id,))
                 deleted = cursor.rowcount > 0
                 if deleted:
-                    logger.info(f"删除跟单配置规则: id={rule_id}")
+                    logger.info(f"用户 {user_id} 删除跟单配置规则: id={rule_id}")
                 return deleted
         except Exception as e:
             logger.error(f"删除跟单配置规则失败 (id={rule_id}): {e}")
             return False
 
-    def match_copy_config_rule(self, config_type: str, leverage: float) -> Optional[Dict]:
+    def match_copy_config_rule(self, user_id: int, config_type: str, leverage: float) -> Optional[Dict]:
         """
         根据杠杆匹配最合适的配置规则
         
@@ -746,6 +778,7 @@ class CopyTradingOps:
         4. 如果还是没有，返回 None
         
         Args:
+            user_id: 用户ID
             config_type: 配置类型 ('default' 或 'immediate')
             leverage: 杠杆倍数
             
@@ -762,13 +795,13 @@ class CopyTradingOps:
                            leverage_min, leverage_max, config_data,
                            priority, is_enabled, is_default
                     FROM copy_config_rules
-                    WHERE config_type = %s 
+                    WHERE user_id = %s AND config_type = %s 
                       AND is_enabled = TRUE
                       AND leverage_min < %s 
                       AND leverage_max >= %s
                     ORDER BY priority ASC, id ASC
                     LIMIT 1
-                """, (config_type, leverage, leverage))
+                """, (user_id, config_type, leverage, leverage))
                 
                 row = cursor.fetchone()
                 
@@ -779,12 +812,12 @@ class CopyTradingOps:
                                leverage_min, leverage_max, config_data,
                                priority, is_enabled, is_default
                         FROM copy_config_rules
-                        WHERE config_type = %s 
+                        WHERE user_id = %s AND config_type = %s 
                           AND is_enabled = TRUE
                           AND is_default = TRUE
                         ORDER BY priority ASC
                         LIMIT 1
-                    """, (config_type,))
+                    """, (user_id, config_type,))
                     row = cursor.fetchone()
                 
                 if row:
@@ -798,17 +831,18 @@ class CopyTradingOps:
             logger.error(f"匹配跟单配置规则失败: {e}")
             return None
 
-    def get_immediate_config_by_symbol(self, symbol: str) -> Dict:
+    def get_immediate_config_by_symbol(self, user_id: int, symbol: str) -> Dict:
         """
         根据币种获取立即跟单配置
         
         Args:
+            user_id: 用户ID
             symbol: 币种名称
             
         Returns:
             配置字典，如果没有匹配规则则返回空字典
         """
-        rule = self.get_immediate_config_rule_by_symbol(symbol)
+        rule = self.get_immediate_config_rule_by_symbol(user_id, symbol)
         
         if rule and rule.get('is_enabled'):
             config = rule.get('config_data', {})
@@ -819,18 +853,19 @@ class CopyTradingOps:
         
         return {}
 
-    def get_copy_config_by_leverage(self, config_type: str, leverage: float) -> Dict:
+    def get_copy_config_by_leverage(self, user_id: int, config_type: str, leverage: float) -> Dict:
         """
         根据杠杆获取跟单配置（仅用于默认跟单）
         
         Args:
+            user_id: 用户ID
             config_type: 配置类型 ('default' 或 'immediate')
             leverage: 杠杆倍数
             
         Returns:
             配置字典，如果没有匹配规则则返回空字典
         """
-        rule = self.match_copy_config_rule(config_type, leverage)
+        rule = self.match_copy_config_rule(user_id, config_type, leverage)
         
         if rule:
             config = rule.get('config_data', {})

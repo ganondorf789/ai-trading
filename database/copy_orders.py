@@ -113,11 +113,12 @@ class CopyOrdersOps:
             cursor.execute("DELETE FROM copy_position_states")
             return cursor.rowcount
 
-    def get_copy_trading_addresses_list(self, enabled_only: bool = True) -> List[Dict]:
+    def get_copy_trading_addresses_list(self, user_id: int, enabled_only: bool = True) -> List[Dict]:
         """
         获取跟单地址列表（简化版，用于刷新持仓）
 
         Args:
+            user_id: 用户ID
             enabled_only: 是否只返回已启用的地址
 
         Returns:
@@ -127,9 +128,9 @@ class CopyOrdersOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
             if enabled_only:
-                cursor.execute("SELECT address, name FROM copy_trading_addresses WHERE is_enabled = TRUE")
+                cursor.execute("SELECT address, name FROM copy_trading_addresses WHERE user_id = %s AND is_enabled = TRUE", (user_id,))
             else:
-                cursor.execute("SELECT address, name FROM copy_trading_addresses")
+                cursor.execute("SELECT address, name FROM copy_trading_addresses WHERE user_id = %s", (user_id,))
 
             return [dict(row) for row in cursor.fetchall()]
 
