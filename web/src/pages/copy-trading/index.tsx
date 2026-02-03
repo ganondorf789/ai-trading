@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Table,
@@ -24,10 +24,9 @@ import {
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { copyTradingApi, hyperliquidApi, CopyTradingAddress, CopyTradingGroup, PaginationInfo } from "@/services/api";
+import { copyTradingApi, hyperliquidApi, CopyTradingAddress, PaginationInfo } from "@/services/api";
 import { TablePagination } from "@/components/TablePagination";
 import AddressFormModal from "./components/AddressFormModal";
-import GroupManagementModal from "./components/GroupManagementModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import BatchDeleteConfirmModal from "./components/BatchDeleteConfirmModal";
 
@@ -46,24 +45,21 @@ export default function CopyTradingPage() {
 
   // 数据状态
   const [addresses, setAddresses] = useState<CopyTradingAddress[]>([]);
-  const [groups, setGroups] = useState<CopyTradingGroup[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 筛选状态
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState("updated_at");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortBy] = useState("updated_at");
+  const [sortOrder] = useState<"asc" | "desc">("desc");
 
   // 选择状态 - HeroUI Selection 可以是 "all" 或 Set<Key>
   const [selectedKeys, setSelectedKeys] = useState<"all" | Set<string>>(new Set());
 
   // Modal 状态
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingAddress, setDeletingAddress] = useState<string | null>(null);
   const [editingAddress, setEditingAddress] = useState<CopyTradingAddress | null>(null);
@@ -72,7 +68,6 @@ export default function CopyTradingPage() {
   const [formData, setFormData] = useState<Partial<CopyTradingAddress>>({
     address: "",
     name: "",
-    group_id: null,
     is_enabled: true,
     copy_ratio: 0.1,
     max_position_size_usd: 500,
@@ -90,9 +85,6 @@ export default function CopyTradingPage() {
     sync_position: true,
     sync_position_symbols: [],
   });
-
-  // 分组表单
-  const [editingGroup, setEditingGroup] = useState<CopyTradingGroup | null>(null);
 
 
   // 可用币种列表
@@ -143,7 +135,6 @@ export default function CopyTradingPage() {
       };
 
       if (search) params.search = search;
-      if (selectedGroup !== null) params.group_id = selectedGroup;
       if (statusFilter !== "all") params.is_enabled = statusFilter === "enabled";
 
       const response = await copyTradingApi.getAddresses(params);
@@ -159,26 +150,11 @@ export default function CopyTradingPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, selectedGroup, statusFilter, sortBy, sortOrder]);
-
-  const loadGroups = useCallback(async () => {
-    try {
-      const response = await copyTradingApi.getGroups();
-      if (response.success && response.data) {
-        setGroups(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to load groups:", error);
-    }
-  }, []);
+  }, [page, search, statusFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     loadAddresses();
   }, [loadAddresses]);
-
-  useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
 
   useEffect(() => {
     loadAvailableCoins();
@@ -197,7 +173,6 @@ export default function CopyTradingPage() {
       setFormData({
         address: address.address,
         name: address.name,
-        group_id: address.group_id,
         is_enabled: address.is_enabled,
         copy_ratio: address.copy_ratio,
         max_position_size_usd: address.max_position_size_usd,
@@ -220,7 +195,6 @@ export default function CopyTradingPage() {
       setFormData({
         address: "",
         name: "",
-        group_id: null,
         is_enabled: true,
         copy_ratio: 0.1,
         max_position_size_usd: 500,
@@ -274,7 +248,6 @@ export default function CopyTradingPage() {
       setIsDeleteModalOpen(false);
       setDeletingAddress(null);
       loadAddresses();
-      loadGroups(); // 更新分组计数
     } catch (error) {
       console.error("Failed to delete address:", error);
       addToast({ title: "删除失败", color: "danger" });
@@ -361,55 +334,9 @@ export default function CopyTradingPage() {
       setSelectedKeys(new Set());
       setIsBatchDeleteModalOpen(false);
       loadAddresses();
-      loadGroups(); // 更新分组计数
     } catch (error) {
       console.error("Failed to batch delete:", error);
       addToast({ title: "批量删除失败", color: "danger" });
-    }
-  };
-
-  // 分组管理
-  const handleSaveGroup = async (data: { name: string; description: string; color: string }) => {
-    try {
-      if (editingGroup) {
-        // 更新分组
-        await copyTradingApi.updateGroup(editingGroup.id, data);
-        addToast({ title: "分组更新成功", color: "success" });
-      } else {
-        // 创建分组
-        await copyTradingApi.createGroup(data);
-        addToast({ title: "分组创建成功", color: "success" });
-      }
-      setEditingGroup(null);
-      loadGroups();
-    } catch (error) {
-      console.error("Failed to save group:", error);
-      addToast({ title: editingGroup ? "更新失败" : "创建失败", color: "danger" });
-    }
-  };
-
-  // 编辑分组
-  const handleEditGroup = (group: CopyTradingGroup) => {
-    setEditingGroup(group);
-  };
-
-  // 取消编辑
-  const handleCancelEditGroup = () => {
-    setEditingGroup(null);
-  };
-
-  const handleDeleteGroup = async (groupId: number) => {
-    if (!confirm("确定要删除这个分组吗？分组下的地址将移至默认分组。")) return;
-    try {
-      await copyTradingApi.deleteGroup(groupId);
-      addToast({ title: "分组删除成功", color: "success" });
-      loadGroups();
-      if (selectedGroup === groupId) {
-        setSelectedGroup(null);
-      }
-    } catch (error) {
-      console.error("Failed to delete group:", error);
-      addToast({ title: "删除失败", color: "danger" });
     }
   };
 
@@ -424,7 +351,6 @@ export default function CopyTradingPage() {
     { key: "status", label: "状态" },
     { key: "address", label: "地址" },
     { key: "name", label: "名称" },
-    { key: "group", label: "分组" },
     { key: "rating", label: "评级" },
     { key: "win_rate", label: "胜率" },
     { key: "trader_pnl", label: "盈亏" },
@@ -463,14 +389,6 @@ export default function CopyTradingPage() {
           );
         case "name":
           return item.name || "-";
-        case "group":
-          return item.group_name ? (
-            <Chip size="sm" style={{ backgroundColor: item.group_color || "#6B7280", color: "white" }}>
-              {item.group_name}
-            </Chip>
-          ) : (
-            "-"
-          );
         case "rating":
           return item.rating ? (
             <Chip size="sm" color={ratingColors[item.rating] || "default"}>
@@ -661,43 +579,6 @@ export default function CopyTradingPage() {
             </Dropdown>
           )}
 
-          <Button variant="flat" onPress={() => setIsGroupModalOpen(true)}>
-            <Icon icon="lucide:folder-plus" width={18} />
-            管理分组
-          </Button>
-        </div>
-
-        {/* 分组标签 */}
-        <div className="flex gap-2 flex-wrap">
-          <Chip
-            className="cursor-pointer"
-            variant={selectedGroup === null ? "solid" : "flat"}
-            onClose={undefined}
-            onClick={() => {
-              setSelectedGroup(null);
-              setPage(1);
-            }}
-          >
-            全部 ({groups.reduce((sum, g) => sum + (g.address_count || 0), 0)})
-          </Chip>
-          {groups.map((group) => (
-            <Chip
-              key={group.id}
-              className="cursor-pointer"
-              variant={selectedGroup === group.id ? "solid" : "flat"}
-              style={
-                selectedGroup === group.id
-                  ? { backgroundColor: group.color, color: "white" }
-                  : { borderColor: group.color }
-              }
-              onClick={() => {
-                setSelectedGroup(group.id);
-                setPage(1);
-              }}
-            >
-              {group.name} ({group.address_count || 0})
-            </Chip>
-          ))}
         </div>
 
         {/* 数据表格 */}
@@ -749,22 +630,10 @@ export default function CopyTradingPage() {
           editingAddress={editingAddress}
           formData={formData}
           setFormData={setFormData}
-          groups={groups}
           onSave={handleSaveAddress}
           availableCoins={availableCoins}
           coinsLoading={coinsLoading}
           onSyncCoins={handleSyncCoins}
-        />
-
-        <GroupManagementModal
-          isOpen={isGroupModalOpen}
-          onClose={() => setIsGroupModalOpen(false)}
-          groups={groups}
-          onSaveGroup={handleSaveGroup}
-          onEditGroup={handleEditGroup}
-          onDeleteGroup={handleDeleteGroup}
-          editingGroup={editingGroup}
-          onCancelEdit={handleCancelEditGroup}
         />
 
         <DeleteConfirmModal

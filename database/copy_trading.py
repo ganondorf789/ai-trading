@@ -1,5 +1,5 @@
 """
-跟单地址和分组管理模块 (PostgreSQL)
+跟单地址管理模块 (PostgreSQL)
 """
 from typing import List, Dict, Optional
 import pendulum
@@ -11,99 +11,12 @@ from screener.trader_screener import SHANGHAI_TZ
 
 
 class CopyTradingOps:
-    """跟单地址和分组管理相关操作"""
-
-    # ==================== 跟单分组管理 ====================
-
-    def get_copy_trading_groups(self) -> List[Dict]:
-        """
-        获取所有跟单分组
-
-        Returns:
-            分组列表，包含每个分组的地址数量
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-            cursor.execute("""
-                SELECT g.*, COUNT(a.id) as address_count
-                FROM copy_trading_groups g
-                LEFT JOIN copy_trading_addresses a ON g.id = a.group_id
-                GROUP BY g.id
-                ORDER BY g.sort_order, g.id
-            """)
-            return [dict(row) for row in cursor.fetchall()]
-
-    def save_copy_trading_group(self, data: Dict) -> int:
-        """
-        保存或更新跟单分组
-
-        Args:
-            data: 分组数据 {name, description, color, sort_order}
-
-        Returns:
-            分组ID
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            if data.get('id'):
-                # 更新
-                cursor.execute("""
-                    UPDATE copy_trading_groups
-                    SET name = %s, description = %s, color = %s, sort_order = %s
-                    WHERE id = %s
-                """, (
-                    data.get('name'),
-                    data.get('description', ''),
-                    data.get('color', '#3B82F6'),
-                    data.get('sort_order', 0),
-                    data['id']
-                ))
-                return data['id']
-            else:
-                # 插入
-                cursor.execute("""
-                    INSERT INTO copy_trading_groups (name, description, color, sort_order)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                """, (
-                    data.get('name'),
-                    data.get('description', ''),
-                    data.get('color', '#3B82F6'),
-                    data.get('sort_order', 0)
-                ))
-                return cursor.fetchone()[0]
-
-    def delete_copy_trading_group(self, group_id: int) -> bool:
-        """
-        删除跟单分组（不能删除默认分组）
-
-        Args:
-            group_id: 分组ID
-
-        Returns:
-            是否删除成功
-        """
-        if group_id == 1:
-            return False  # 默认分组不能删除
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            # 将该分组下的地址移到默认分组
-            cursor.execute("""
-                UPDATE copy_trading_addresses
-                SET group_id = 1
-                WHERE group_id = %s
-            """, (group_id,))
-            # 删除分组
-            cursor.execute("DELETE FROM copy_trading_groups WHERE id = %s", (group_id,))
-            return cursor.rowcount > 0
+    """跟单地址管理相关操作"""
 
     # ==================== 跟单地址管理 ====================
 
     def get_copy_trading_addresses(
         self,
-        group_id: int = None,
         is_enabled: bool = None,
         search: str = None,
         limit: int = 20,
@@ -115,7 +28,6 @@ class CopyTradingOps:
         获取跟单地址列表
 
         Args:
-            group_id: 分组ID筛选
             is_enabled: 启用状态筛选
             search: 搜索地址或名称
             limit: 每页数量
@@ -132,10 +44,6 @@ class CopyTradingOps:
             # 构建查询条件
             conditions = []
             params = []
-
-            if group_id is not None:
-                conditions.append("cta.group_id = %s")
-                params.append(group_id)
 
             if is_enabled is not None:
                 conditions.append("cta.is_enabled = %s")
@@ -173,8 +81,6 @@ class CopyTradingOps:
             cursor.execute(f"""
                 SELECT
                     cta.*,
-                    g.name as group_name,
-                    g.color as group_color,
                     tm.win_rate,
                     tm.total_pnl as trader_pnl,
                     tm.rating,
@@ -186,7 +92,6 @@ class CopyTradingOps:
                     tm.analyzed_at,
                     tm.is_starred
                 FROM copy_trading_addresses cta
-                LEFT JOIN copy_trading_groups g ON cta.group_id = g.id
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address
                 WHERE {where_clause}
                 ORDER BY {sort_column} {order_direction}
@@ -228,8 +133,6 @@ class CopyTradingOps:
             cursor.execute("""
                 SELECT
                     cta.*,
-                    g.name as group_name,
-                    g.color as group_color,
                     tm.win_rate,
                     tm.total_pnl as trader_pnl,
                     tm.rating,
@@ -240,7 +143,6 @@ class CopyTradingOps:
                     tm.sharpe_ratio,
                     tm.analyzed_at
                 FROM copy_trading_addresses cta
-                LEFT JOIN copy_trading_groups g ON cta.group_id = g.id
                 LEFT JOIN trader_metrics tm ON cta.address = tm.address
                 WHERE cta.address = %s
             """, (address,))
@@ -289,16 +191,15 @@ class CopyTradingOps:
 
             cursor.execute("""
                 INSERT INTO copy_trading_addresses (
-                    address, name, group_id, is_enabled,
+                    address, name, is_enabled,
                     copy_ratio, max_position_size_usd, min_position_size_usd,
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
                     check_interval, dry_run, sync_position, sync_position_symbols, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
                     name = EXCLUDED.name,
-                    group_id = EXCLUDED.group_id,
                     is_enabled = EXCLUDED.is_enabled,
                     copy_ratio = EXCLUDED.copy_ratio,
                     max_position_size_usd = EXCLUDED.max_position_size_usd,
@@ -320,7 +221,6 @@ class CopyTradingOps:
             """, (
                 data.get('address'),
                 data.get('name', ''),
-                data.get('group_id'),
                 data.get('is_enabled', True),
                 data.get('copy_ratio', 0.1),
                 data.get('max_position_size_usd', 500.0),
@@ -404,16 +304,14 @@ class CopyTradingOps:
     def batch_update_copy_trading_addresses(
         self,
         addresses: List[str],
-        action: str,
-        group_id: int = None
+        action: str
     ) -> int:
         """
         批量操作跟单地址
 
         Args:
             addresses: 地址列表
-            action: 操作类型 (enable/disable/delete/move_group)
-            group_id: 目标分组ID（仅 move_group 时需要）
+            action: 操作类型 (enable/disable/delete)
 
         Returns:
             影响的记录数
@@ -442,12 +340,6 @@ class CopyTradingOps:
                     DELETE FROM copy_trading_addresses
                     WHERE address = ANY(%s)
                 """, (addresses,))
-            elif action == 'move_group' and group_id is not None:
-                cursor.execute("""
-                    UPDATE copy_trading_addresses
-                    SET group_id = %s, updated_at = %s
-                    WHERE address = ANY(%s)
-                """, (group_id, now, addresses))
             else:
                 return 0
 

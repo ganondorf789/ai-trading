@@ -176,9 +176,6 @@ export interface GlobalPositionHistoryRecord extends PositionHistoryRecord {
   trader_pnl?: number;
   is_starred?: boolean;
   trader_name?: string;
-  group_id?: number;
-  group_name?: string;
-  group_color?: string;
 }
 
 // 全局仓位历史统计
@@ -277,23 +274,10 @@ export interface ApiResponse<T> {
 
 // ==================== 跟单交易类型 ====================
 
-export interface CopyTradingGroup {
-  id: number;
-  name: string;
-  description: string;
-  color: string;
-  sort_order: number;
-  address_count: number;
-  created_at: string;
-}
-
 export interface CopyTradingAddress {
   id: number;
   address: string;
   name: string;
-  group_id: number | null;
-  group_name?: string;
-  group_color?: string;
   is_enabled: boolean;
   // 跟单配置
   copy_ratio: number;
@@ -377,9 +361,6 @@ export interface TraderPosition {
   updated_at: string;
   // 关联字段
   trader_name: string | null;
-  group_id: number | null;
-  group_name: string | null;
-  group_color: string | null;
   // 用户标记
   is_starred?: boolean;
   // 交易员指标

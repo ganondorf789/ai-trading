@@ -7,14 +7,12 @@ import {
   ModalFooter,
   Input,
   Button,
-  Select,
-  SelectItem,
   Switch,
   Chip,
   Tooltip,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { CopyTradingAddress, CopyTradingGroup } from "@/services/api";
+import { CopyTradingAddress } from "@/services/api";
 
 interface AddressFormModalProps {
   isOpen: boolean;
@@ -22,7 +20,6 @@ interface AddressFormModalProps {
   editingAddress: CopyTradingAddress | null;
   formData: Partial<CopyTradingAddress>;
   setFormData: (data: Partial<CopyTradingAddress>) => void;
-  groups: CopyTradingGroup[];
   onSave: () => void;
   availableCoins: string[];
   coinsLoading: boolean;
@@ -35,7 +32,6 @@ export default function AddressFormModal({
   editingAddress,
   formData,
   setFormData,
-  groups,
   onSave,
   availableCoins,
   coinsLoading,
@@ -268,19 +264,8 @@ export default function AddressFormModal({
               placeholder="备注名称"
               value={formData.name || ""}
               onValueChange={(v) => setFormData({ ...formData, name: v })}
+              className="col-span-2"
             />
-            <Select
-              label="分组"
-              selectedKeys={formData.group_id ? [String(formData.group_id)] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0];
-                setFormData({ ...formData, group_id: value ? Number(value) : null });
-              }}
-            >
-              {groups.map((g) => (
-                <SelectItem key={String(g.id)}>{g.name}</SelectItem>
-              ))}
-            </Select>
 
             {/* 跟单配置 */}
             <Input

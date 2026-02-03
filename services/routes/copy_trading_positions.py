@@ -1333,7 +1333,6 @@ def ai_analyze_all_positions():
             
             positions, stats = db.get_trader_positions_with_filters(
                 enabled_only=filters.get('enabled_only', False),
-                group_id=filters.get('group_id'),
                 metric_filters=metric_filters
             )
         

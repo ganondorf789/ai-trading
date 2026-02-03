@@ -213,32 +213,12 @@ class DatabaseMigrations:
                 )
             """)
 
-            # 创建跟单分组表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS copy_trading_groups (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
-                    description TEXT DEFAULT '',
-                    color TEXT DEFAULT '#3B82F6',
-                    sort_order INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # 插入默认分组
-            cursor.execute("""
-                INSERT INTO copy_trading_groups (id, name, description, color)
-                VALUES (1, '默认分组', '未分组的跟单地址', '#6B7280')
-                ON CONFLICT (id) DO NOTHING
-            """)
-
             # 创建跟单地址表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_trading_addresses (
                     id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL UNIQUE,
                     name TEXT DEFAULT '',
-                    group_id INTEGER DEFAULT NULL,
                     is_enabled BOOLEAN DEFAULT TRUE,
 
                     -- 跟单配置
@@ -259,9 +239,7 @@ class DatabaseMigrations:
 
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-                    FOREIGN KEY (group_id) REFERENCES copy_trading_groups(id) ON DELETE SET NULL
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -273,10 +251,6 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_copy_enabled
                 ON copy_trading_addresses(is_enabled)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_copy_group
-                ON copy_trading_addresses(group_id)
             """)
 
             # 创建 Hyperliquid 币种表
@@ -720,6 +694,9 @@ class DatabaseMigrations:
 
     def _run_migrations(self, cursor):
         """运行增量迁移"""
+        # 删除分组功能相关的表和列
+        self._migrate_remove_groups(cursor)
+        
         # 添加 is_starred 字段到 trader_metrics 表
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'is_starred', 'BOOLEAN DEFAULT FALSE'
@@ -795,3 +772,32 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'secret_keys', 'used_by_user_id', 'INTEGER'
         )
+
+    def _migrate_remove_groups(self, cursor):
+        """
+        移除分组功能相关的表和列
+        
+        这是一个破坏性迁移，会删除：
+        - copy_trading_groups 表
+        - copy_trading_addresses.group_id 列
+        - idx_copy_group 索引
+        """
+        # 检查 group_id 列是否存在
+        if self._column_exists(cursor, 'copy_trading_addresses', 'group_id'):
+            # 删除索引
+            cursor.execute("DROP INDEX IF EXISTS idx_copy_group")
+            logger.info("数据库迁移: 删除索引 idx_copy_group")
+            
+            # 删除外键约束（如果存在）
+            cursor.execute("""
+                ALTER TABLE copy_trading_addresses 
+                DROP CONSTRAINT IF EXISTS copy_trading_addresses_group_id_fkey
+            """)
+            
+            # 删除列
+            cursor.execute("ALTER TABLE copy_trading_addresses DROP COLUMN group_id")
+            logger.info("数据库迁移: 删除列 copy_trading_addresses.group_id")
+        
+        # 删除分组表
+        cursor.execute("DROP TABLE IF EXISTS copy_trading_groups")
+        logger.info("数据库迁移: 删除表 copy_trading_groups")

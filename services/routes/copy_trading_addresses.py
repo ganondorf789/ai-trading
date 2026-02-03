@@ -1,6 +1,5 @@
 """
 跟单地址管理相关路由
-包括：分组管理、地址管理
 """
 from flask import Blueprint, jsonify, request
 import logging
@@ -11,203 +10,6 @@ from .middleware import login_required
 logger = logging.getLogger(__name__)
 
 copy_trading_addresses_bp = Blueprint('copy_trading_addresses', __name__)
-
-
-# ==================== 跟单分组管理 API ====================
-
-@copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['GET'])
-@login_required
-def get_copy_trading_groups():
-    """获取跟单分组列表
-    ---
-    tags:
-      - Copy Trading - Groups
-    responses:
-      200:
-        description: 分组列表
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: array
-              items:
-                type: object
-      500:
-        description: 服务器错误
-    """
-    try:
-        groups = db.get_copy_trading_groups()
-        return jsonify({
-            'success': True,
-            'data': groups
-        })
-    except Exception as e:
-        logger.error(f"获取跟单分组失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@copy_trading_addresses_bp.route('/api/copy-trading/groups', methods=['POST'])
-@login_required
-def create_copy_trading_group():
-    """创建跟单分组
-    ---
-    tags:
-      - Copy Trading - Groups
-    parameters:
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          required:
-            - name
-          properties:
-            name:
-              type: string
-              description: 分组名称
-    responses:
-      200:
-        description: 创建成功
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: object
-            message:
-              type: string
-      400:
-        description: 请求参数错误
-      500:
-        description: 服务器错误
-    """
-    try:
-        data = request.get_json()
-        if not data or not data.get('name'):
-            return jsonify({
-                'success': False,
-                'error': '分组名称不能为空'
-            }), 400
-
-        group_id = db.save_copy_trading_group(data)
-        return jsonify({
-            'success': True,
-            'data': {'id': group_id},
-            'message': '分组创建成功'
-        })
-    except Exception as e:
-        logger.error(f"创建跟单分组失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['PUT'])
-@login_required
-def update_copy_trading_group(group_id: int):
-    """更新跟单分组
-    ---
-    tags:
-      - Copy Trading - Groups
-    parameters:
-      - name: group_id
-        in: path
-        type: integer
-        required: true
-        description: 分组ID
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          properties:
-            name:
-              type: string
-              description: 分组名称
-    responses:
-      200:
-        description: 更新成功
-      400:
-        description: 请求参数错误
-      500:
-        description: 服务器错误
-    """
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': '请求数据不能为空'
-            }), 400
-
-        data['id'] = group_id
-        db.save_copy_trading_group(data)
-        return jsonify({
-            'success': True,
-            'message': '分组更新成功'
-        })
-    except Exception as e:
-        logger.error(f"更新跟单分组失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@copy_trading_addresses_bp.route('/api/copy-trading/groups/<int:group_id>', methods=['DELETE'])
-@login_required
-def delete_copy_trading_group(group_id: int):
-    """删除跟单分组
-    ---
-    tags:
-      - Copy Trading - Groups
-    parameters:
-      - name: group_id
-        in: path
-        type: integer
-        required: true
-        description: 分组ID
-    responses:
-      200:
-        description: 删除成功
-      400:
-        description: 默认分组不能删除
-      404:
-        description: 分组不存在
-      500:
-        description: 服务器错误
-    """
-    try:
-        if group_id == 1:
-            return jsonify({
-                'success': False,
-                'error': '默认分组不能删除'
-            }), 400
-
-        success = db.delete_copy_trading_group(group_id)
-        if success:
-            return jsonify({
-                'success': True,
-                'message': '分组删除成功'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': '分组不存在'
-            }), 404
-    except Exception as e:
-        logger.error(f"删除跟单分组失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 
 # ==================== 跟单地址管理 API ====================
@@ -230,10 +32,6 @@ def get_copy_trading_addresses():
         type: integer
         default: 20
         description: 每页数量
-      - name: group_id
-        in: query
-        type: integer
-        description: 分组ID筛选
       - name: is_enabled
         in: query
         type: boolean
@@ -273,7 +71,6 @@ def get_copy_trading_addresses():
     try:
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
-        group_id = request.args.get('group_id', type=int)
         is_enabled = request.args.get('is_enabled')
         search = request.args.get('search', '').strip()
         sort_by = request.args.get('sort_by', 'updated_at')
@@ -285,7 +82,6 @@ def get_copy_trading_addresses():
 
         offset = (page - 1) * limit
         addresses, total_count = db.get_copy_trading_addresses(
-            group_id=group_id,
             is_enabled=is_enabled,
             search=search,
             limit=limit,
@@ -788,16 +584,13 @@ def batch_update_copy_trading_addresses():
           properties:
             action:
               type: string
-              enum: [enable, disable, delete, move_group]
+              enum: [enable, disable, delete]
               description: 操作类型
             addresses:
               type: array
               items:
                 type: string
               description: 地址列表
-            group_id:
-              type: integer
-              description: 目标分组ID（仅move_group时需要）
     responses:
       200:
         description: 操作成功
@@ -825,9 +618,8 @@ def batch_update_copy_trading_addresses():
 
         action = data.get('action')
         addresses = data.get('addresses', [])
-        group_id = data.get('group_id')
 
-        if action not in ('enable', 'disable', 'delete', 'move_group'):
+        if action not in ('enable', 'disable', 'delete'):
             return jsonify({
                 'success': False,
                 'error': '无效的操作类型'
@@ -839,16 +631,9 @@ def batch_update_copy_trading_addresses():
                 'error': '地址列表不能为空'
             }), 400
 
-        if action == 'move_group' and group_id is None:
-            return jsonify({
-                'success': False,
-                'error': '移动分组需要指定目标分组ID'
-            }), 400
-
         affected_count = db.batch_update_copy_trading_addresses(
             addresses=addresses,
-            action=action,
-            group_id=group_id
+            action=action
         )
 
         return jsonify({

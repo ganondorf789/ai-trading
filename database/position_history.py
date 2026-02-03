@@ -596,14 +596,10 @@ class PositionHistoryOps:
                     tm.win_rate as trader_win_rate,
                     tm.total_pnl as trader_pnl,
                     tm.is_starred,
-                    ca.name as trader_name,
-                    ca.group_id,
-                    cg.name as group_name,
-                    cg.color as group_color
+                    ca.name as trader_name
                 FROM position_history ph
                 LEFT JOIN trader_metrics tm ON ph.address = tm.address
                 LEFT JOIN copy_trading_addresses ca ON ph.address = ca.address
-                LEFT JOIN copy_trading_groups cg ON ca.group_id = cg.id
                 WHERE {where_clause}
                 ORDER BY ph.open_time DESC
                 LIMIT %s OFFSET %s

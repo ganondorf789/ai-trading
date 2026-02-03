@@ -136,7 +136,6 @@ class CopyOrdersOps:
     def get_trader_positions_with_filters(
         self,
         enabled_only: bool = True,
-        group_id: int = None,
         metric_filters: Dict = None
     ) -> tuple:
         """
@@ -146,7 +145,6 @@ class CopyOrdersOps:
 
         Args:
             enabled_only: 已弃用，保留是为了兼容性（默认显示所有交易员）
-            group_id: 分组ID筛选（仅对跟单交易员有效）
             metric_filters: 指标筛选条件
 
         Returns:
@@ -160,11 +158,6 @@ class CopyOrdersOps:
             # 构建交易员筛选条件
             conditions = ["1=1"]
             params = []
-
-            # 如果指定了分组，只查找该分组的跟单交易员
-            if group_id is not None:
-                conditions.append("cta.group_id = %s")
-                params.append(group_id)
 
             # 指标筛选条件
             filter_mappings = {
@@ -194,22 +187,12 @@ class CopyOrdersOps:
             where_clause = " AND ".join(conditions)
 
             # 获取符合条件的交易员地址（从所有交易员中筛选）
-            if group_id is not None:
-                # 如果指定了分组，只从跟单地址中筛选
-                cursor.execute(f"""
-                    SELECT DISTINCT tm.address
-                    FROM trader_metrics tm
-                    INNER JOIN copy_trading_addresses cta ON tm.address = cta.address
-                    WHERE {where_clause}
-                """, params)
-            else:
-                # 否则从所有交易员中筛选
-                cursor.execute(f"""
-                    SELECT DISTINCT tm.address
-                    FROM trader_metrics tm
-                    LEFT JOIN copy_trading_addresses cta ON tm.address = cta.address
-                    WHERE {where_clause}
-                """, params)
+            cursor.execute(f"""
+                SELECT DISTINCT tm.address
+                FROM trader_metrics tm
+                LEFT JOIN copy_trading_addresses cta ON tm.address = cta.address
+                WHERE {where_clause}
+            """, params)
             
             trader_addresses = {row['address'] for row in cursor.fetchall()}
 
@@ -231,16 +214,12 @@ class CopyOrdersOps:
             cursor.execute("""
                 SELECT ap.*, 
                        cta.name as trader_name, 
-                       cta.group_id, 
-                       ctg.name as group_name, 
-                       ctg.color as group_color,
                        tm.is_starred,
                        tm.overall_score,
                        tm.rating,
                        tm.total_pnl as trader_pnl
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
-                LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
                 LEFT JOIN trader_metrics tm ON ap.address = tm.address
                 WHERE ap.address = ANY(%s)
                 ORDER BY ABS(ap.position_value) DESC
@@ -328,16 +307,12 @@ class CopyOrdersOps:
             cursor.execute("""
                 SELECT ap.*, 
                        cta.name as trader_name, 
-                       cta.group_id, 
-                       ctg.name as group_name, 
-                       ctg.color as group_color,
                        tm.is_starred,
                        tm.overall_score,
                        tm.rating,
                        tm.total_pnl as trader_pnl
                 FROM asset_positions ap
                 LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
-                LEFT JOIN copy_trading_groups ctg ON cta.group_id = ctg.id
                 LEFT JOIN trader_metrics tm ON ap.address = tm.address
                 WHERE ap.updated_at >= NOW() - INTERVAL '%s minutes'
                 ORDER BY ABS(ap.position_value) DESC

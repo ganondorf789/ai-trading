@@ -6,7 +6,6 @@ import type {
   TraderHistory,
   TraderAIAnalysis,
   ApiResponse,
-  CopyTradingGroup,
   CopyTradingAddress,
   HyperliquidCoin,
   CopyPositionState,
@@ -39,7 +38,6 @@ export type {
   TraderHistory,
   TraderAIAnalysis,
   ApiResponse,
-  CopyTradingGroup,
   CopyTradingAddress,
   HyperliquidCoin,
   CopyPositionState,
@@ -433,31 +431,12 @@ export const positionHistoryApi = {
 // ==================== 跟单地址管理 API ====================
 
 export const copyTradingApi = {
-  // ==================== 分组管理 ====================
-
-  // 获取分组列表
-  getGroups: () =>
-    api.get<any, ApiResponse<CopyTradingGroup[]>>('/copy-trading/groups'),
-
-  // 创建分组
-  createGroup: (data: { name: string; description?: string; color?: string }) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/groups', data),
-
-  // 更新分组
-  updateGroup: (groupId: number, data: Partial<CopyTradingGroup>) =>
-    api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/groups/${groupId}`, data),
-
-  // 删除分组
-  deleteGroup: (groupId: number) =>
-    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/groups/${groupId}`),
-
   // ==================== 地址管理 ====================
 
   // 获取跟单地址列表
   getAddresses: (params?: {
     page?: number;
     limit?: number;
-    group_id?: number;
     is_enabled?: boolean;
     search?: string;
     sort_by?: string;
@@ -494,11 +473,10 @@ export const copyTradingApi = {
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/sync-position`, { sync_position: syncPosition }),
 
   // 批量操作
-  batchAction: (action: 'enable' | 'disable' | 'delete' | 'move_group', addresses: string[], groupId?: number) =>
+  batchAction: (action: 'enable' | 'disable' | 'delete', addresses: string[]) =>
     api.post<any, ApiResponse<void> & { affected_count?: number; message?: string }>('/copy-trading/addresses/batch', {
       action,
       addresses,
-      group_id: groupId,
     }),
 };
 

@@ -18,7 +18,6 @@ export type {
   FillsStats,
   ApiResponse,
   // Copy trading types
-  CopyTradingGroup,
   CopyTradingAddress,
   CopyPositionState,
   CopyPositionStats,
