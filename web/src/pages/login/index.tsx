@@ -33,6 +33,7 @@ export default function LoginPage() {
     try {
       const response = await authApi.login({ account, password });
 
+
       if (response.success && response.data) {
         // 保存用户信息
         const userData = response.data;
@@ -50,6 +51,13 @@ export default function LoginPage() {
 
         // 跳转到首页
         navigate("/traders");
+      } else {
+        // 登录失败（API 返回 success: false）
+        addToast({
+          title: "登录失败",
+          description: response.error || "账号或密码错误",
+          color: "danger",
+        });
       }
     } catch (error: any) {
       addToast({

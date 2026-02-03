@@ -8,8 +8,6 @@ import type {
   ApiResponse,
   CopyTradingAddress,
   HyperliquidCoin,
-  CopyPositionState,
-  CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
   PaginationInfo,
@@ -40,8 +38,6 @@ export type {
   ApiResponse,
   CopyTradingAddress,
   HyperliquidCoin,
-  CopyPositionState,
-  CopyPositionStats,
   TraderPosition,
   TraderPositionsStats,
   PaginationInfo,
@@ -507,34 +503,6 @@ export const hyperliquidApi = {
     api.post<any, ApiResponse<HyperliquidCoin[]> & { message?: string }>('/hyperliquid/coins/sync'),
 };
 
-// ==================== 跟单仓位状态 API ====================
-
-export const copyPositionStatesApi = {
-  // 获取所有仓位状态
-  getPositions: (params?: { target_address?: string }) =>
-    api.get<any, ApiResponse<CopyPositionState[]>>('/copy-trading/positions', { params }),
-
-  // 获取统计信息
-  getStats: () =>
-    api.get<any, ApiResponse<CopyPositionStats>>('/copy-trading/positions/stats'),
-
-  // 获取特定目标的仓位
-  getTargetPositions: (targetAddress: string) =>
-    api.get<any, ApiResponse<CopyPositionState[]>>(`/copy-trading/positions/${targetAddress}`),
-
-  // 删除单个仓位状态
-  deletePosition: (targetAddress: string, symbol: string) =>
-    api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/positions/${targetAddress}/${symbol}`),
-
-  // 清空目标所有仓位状态
-  clearTargetPositions: (targetAddress: string) =>
-    api.delete<any, ApiResponse<{ deleted_count: number }> & { message?: string }>(`/copy-trading/positions/${targetAddress}`),
-
-  // 清空所有仓位状态
-  clearAll: () =>
-    api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/copy-trading/positions/clear-all'),
-};
-
 // ==================== 跟单交易员实时持仓 API ====================
 
 export const traderPositionsApi = {
@@ -823,21 +791,29 @@ export interface SecretKeyStats {
 }
 
 export interface LoginResponse {
-  user: User;
+  id: number;
+  account: string;
+  role: 'user' | 'member' | 'admin';
+  api_wallet: string;
+  wallet_address: string;
+  expires_at: string | null;
+  is_active: boolean;
+  last_login_at: string | null;
   access_token: string;
   refresh_token: string;
-  expires_in: number;
 }
 
 export const authApi = {
   // 用户登录
   login: async (data: { account: string; password: string }) => {
-    const response = await api.post<any, ApiResponse<LoginResponse> & { message?: string }>('/auth/login', data);
+    const response = await api.post<any, ApiResponse<LoginResponse> & { message?: string; error?: string }>('/auth/login', data);
     if (response.success && response.data) {
       // 保存 token 和用户信息
       tokenManager.setToken(response.data.access_token);
       tokenManager.setRefreshToken(response.data.refresh_token);
-      tokenManager.setUser(response.data.user);
+      // 提取用户信息（不包含 token）
+      const { access_token, refresh_token, ...user } = response.data;
+      tokenManager.setUser(user as User);
     }
     return response;
   },

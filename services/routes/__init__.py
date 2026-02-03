@@ -28,12 +28,10 @@ def register_routes(app):
     
     # 跟单交易路由（拆分后）
     from .copy_trading_addresses import copy_trading_addresses_bp
-    from .copy_trading_orders import copy_trading_orders_bp
     from .copy_trading_positions import copy_trading_positions_bp
     from .copy_trading_tracking import copy_trading_tracking_bp
     
     app.register_blueprint(copy_trading_addresses_bp)
-    app.register_blueprint(copy_trading_orders_bp)
     app.register_blueprint(copy_trading_positions_bp)
     app.register_blueprint(copy_trading_tracking_bp)
     

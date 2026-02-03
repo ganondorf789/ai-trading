@@ -69,12 +69,6 @@ export const sidebarItems: SidebarItem[] = [
         title: "Position History",
       },
       {
-        key: "position-states",
-        href: "/positions",
-        icon: "solar:chart-square-line-duotone",
-        title: "Position States",
-      },
-      {
         key: "position-tracking",
         href: "/position-tracking",
         icon: "solar:target-line-duotone",

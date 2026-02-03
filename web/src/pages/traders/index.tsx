@@ -155,6 +155,11 @@ export default function TradersPage() {
   return (
     <DefaultLayout>
       <section className="flex flex-col gap-4 py-4">
+        {/* 标题 */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">交易者列表</h1>
+        </div>
+
         <div className="w-full">
           <Card>
             <CardBody>

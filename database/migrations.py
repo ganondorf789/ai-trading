@@ -830,7 +830,8 @@ class DatabaseMigrations:
         )
         # 创建用户+地址的唯一索引，并移除旧的地址唯一约束
         cursor.execute("""
-            DROP INDEX IF EXISTS copy_trading_addresses_address_key
+            ALTER TABLE copy_trading_addresses 
+            DROP CONSTRAINT IF EXISTS copy_trading_addresses_address_key
         """)
         cursor.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_address

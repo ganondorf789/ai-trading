@@ -314,37 +314,6 @@ export interface CopyTradingAddress {
   is_starred?: boolean;
 }
 
-export interface CopyPositionState {
-  id: number;
-  target_address: string;
-  target_name?: string;
-  symbol: string;
-  size: number;
-  side: string;
-  entry_price: number;
-  leverage: number;
-  notional: number;
-  updated_at: string;
-}
-
-export interface CopyPositionStats {
-  total_positions: number;
-  by_target: Array<{
-    target_address: string;
-    target_name: string | null;
-    position_count: number;
-    total_notional: number;
-  }>;
-  by_symbol: Array<{
-    symbol: string;
-    side: string;
-    count: number;
-    total_size: number;
-    total_notional: number;
-  }>;
-  by_side: Record<string, { count: number; notional: number }>;
-}
-
 // 跟单交易员的实时持仓
 export interface TraderPosition {
   id: number;
