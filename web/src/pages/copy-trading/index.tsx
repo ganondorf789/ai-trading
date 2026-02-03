@@ -333,18 +333,12 @@ export default function CopyTradingPage() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  // 表格列
+  // 表格列（精简版）
   const columns = [
     { key: "status", label: "状态" },
     { key: "address", label: "地址" },
-    { key: "name", label: "名称" },
-    { key: "rating", label: "评级" },
-    { key: "win_rate", label: "胜率" },
-    { key: "trader_pnl", label: "盈亏" },
-    { key: "copy_ratio", label: "跟单比例" },
-    { key: "position_size", label: "仓位范围" },
-    { key: "max_leverage", label: "最大杠杆" },
-    { key: "auto_replenish", label: "自动补仓" },
+    { key: "trader_info", label: "交易员信息" },
+    { key: "copy_config", label: "跟单配置" },
     { key: "symbols", label: "币种限制" },
     { key: "updated_at", label: "更新时间" },
     { key: "actions", label: "操作" },
@@ -364,55 +358,69 @@ export default function CopyTradingPage() {
           );
         case "address":
           return (
-            <a
-              href={`/traders/${item.address}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-mono text-sm text-primary hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {formatAddress(item.address)}
-            </a>
+            <div className="flex flex-col gap-0.5">
+              <a
+                href={`/traders/${item.address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-sm text-primary hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {formatAddress(item.address)}
+              </a>
+              {item.name && (
+                <span className="text-xs text-default-500">{item.name}</span>
+              )}
+            </div>
           );
-        case "name":
-          return item.name || "-";
-        case "rating":
-          return item.rating ? (
-            <Chip size="sm" color={ratingColors[item.rating] || "default"}>
-              {item.rating}
-            </Chip>
-          ) : (
-            "-"
-          );
-        case "win_rate":
-          return item.win_rate != null ? `${(item.win_rate * 100).toFixed(1)}%` : "-";
-        case "trader_pnl":
-          return item.trader_pnl != null ? (
-            <span className={item.trader_pnl >= 0 ? "text-success" : "text-danger"}>
-              ${item.trader_pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </span>
-          ) : (
-            "-"
-          );
-        case "copy_ratio":
-          return `${(item.copy_ratio * 100).toFixed(0)}%`;
-        case "position_size":
+        case "trader_info":
           return (
-            <span className="text-sm">
-              ${item.min_position_size_usd} - ${item.max_position_size_usd}
-            </span>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                {item.rating ? (
+                  <Chip size="sm" color={ratingColors[item.rating] || "default"}>
+                    {item.rating}
+                  </Chip>
+                ) : (
+                  <span className="text-default-400 text-xs">未评级</span>
+                )}
+                {item.win_rate != null && (
+                  <span className="text-xs text-default-600">
+                    胜率 {(item.win_rate * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              {item.trader_pnl != null && (
+                <span className={`text-sm font-medium ${item.trader_pnl >= 0 ? "text-success" : "text-danger"}`}>
+                  {item.trader_pnl >= 0 ? "+" : ""}${item.trader_pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              )}
+            </div>
           );
-        case "max_leverage":
-          return `${item.max_leverage}x`;
-        case "auto_replenish":
-          return item.auto_replenish ? (
-            <Chip size="sm" color="success" variant="flat">
-              已启用
-            </Chip>
-          ) : (
-            <Chip size="sm" color="default" variant="flat">
-              未启用
-            </Chip>
+        case "copy_config":
+          return (
+            <Tooltip
+              content={
+                <div className="text-xs space-y-1 p-1">
+                  <div>跟单比例: {(item.copy_ratio * 100).toFixed(0)}%</div>
+                  <div>仓位范围: ${item.min_position_size_usd} - ${item.max_position_size_usd}</div>
+                  <div>最大杠杆: {item.max_leverage}x</div>
+                  <div>自动补仓: {item.auto_replenish ? "已启用" : "未启用"}</div>
+                </div>
+              }
+            >
+              <div className="flex flex-col gap-0.5 cursor-help">
+                <span className="text-sm font-medium">{(item.copy_ratio * 100).toFixed(0)}%</span>
+                <span className="text-xs text-default-500">
+                  ${item.min_position_size_usd}-${item.max_position_size_usd} / {item.max_leverage}x
+                </span>
+                {item.auto_replenish && (
+                  <Chip size="sm" color="success" variant="flat" className="w-fit">
+                    自动补仓
+                  </Chip>
+                )}
+              </div>
+            </Tooltip>
           );
         case "symbols":
           const whiteCount = item.symbols_whitelist?.length || 0;

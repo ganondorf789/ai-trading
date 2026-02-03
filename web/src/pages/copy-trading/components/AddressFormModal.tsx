@@ -9,6 +9,7 @@ import {
   Button,
   Switch,
   Chip,
+  Divider,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { CopyTradingAddress } from "@/services/api";
@@ -180,62 +181,83 @@ export default function AddressFormModal({
       <ModalContent>
         <ModalHeader>{editingAddress ? "编辑跟单地址" : "添加跟单地址"}</ModalHeader>
         <ModalBody className="max-h-[70vh] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-5">
             {/* 基础信息 */}
-            <Input
-              label="地址"
-              placeholder="0x..."
-              value={formData.address || ""}
-              onValueChange={(v) => setFormData({ ...formData, address: v })}
-              isDisabled={!!editingAddress}
-              className="col-span-2"
-            />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:wallet" width={16} className="text-primary" />
+                <h4 className="text-sm font-medium text-default-700">基础信息</h4>
+              </div>
+              <Input
+                label="地址"
+                placeholder="0x..."
+                value={formData.address || ""}
+                onValueChange={(v) => setFormData({ ...formData, address: v })}
+                isDisabled={!!editingAddress}
+              />
+            </div>
+
+            <Divider />
+
             {/* 跟单配置 */}
-            <Input
-              type="number"
-              label="跟单比例"
-              placeholder="10"
-              value={String(((formData.copy_ratio || 0.1) * 100).toFixed(0))}
-              onValueChange={(v) => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
-              endContent="%"
-              description="输入 10 表示跟单 10%"
-            />
-            <Input
-              type="number"
-              label="滑点容忍度"
-              value={String(((formData.slippage || 0.001) * 100).toFixed(2))}
-              onValueChange={(v) => setFormData({ ...formData, slippage: (parseFloat(v) || 0.1) / 100 })}
-              endContent="%"
-            />
-            <Input
-              type="number"
-              label="最小仓位"
-              placeholder="20"
-              value={String(formData.min_position_size_usd || 20)}
-              onValueChange={(v) => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 20 })}
-              startContent="$"
-            />
-            <Input
-              type="number"
-              label="最大仓位"
-              placeholder="500"
-              value={String(formData.max_position_size_usd || 500)}
-              onValueChange={(v) => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 500 })}
-              startContent="$"
-            />
-            <Input
-              type="number"
-              label="最大杠杆"
-              placeholder="10"
-              value={String(formData.max_leverage || 10)}
-              onValueChange={(v) => setFormData({ ...formData, max_leverage: parseInt(v) || 10 })}
-              endContent="x"
-            />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:settings" width={16} className="text-primary" />
+                <h4 className="text-sm font-medium text-default-700">跟单配置</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  type="number"
+                  label="跟单比例"
+                  placeholder="10"
+                  value={String(((formData.copy_ratio || 0.1) * 100).toFixed(0))}
+                  onValueChange={(v) => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
+                  endContent="%"
+                  description="输入 10 表示跟单 10%"
+                />
+                <Input
+                  type="number"
+                  label="滑点容忍度"
+                  value={String(((formData.slippage || 0.001) * 100).toFixed(2))}
+                  onValueChange={(v) => setFormData({ ...formData, slippage: (parseFloat(v) || 0.1) / 100 })}
+                  endContent="%"
+                />
+                <Input
+                  type="number"
+                  label="最小仓位"
+                  placeholder="20"
+                  value={String(formData.min_position_size_usd || 20)}
+                  onValueChange={(v) => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 20 })}
+                  startContent="$"
+                />
+                <Input
+                  type="number"
+                  label="最大仓位"
+                  placeholder="500"
+                  value={String(formData.max_position_size_usd || 500)}
+                  onValueChange={(v) => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 500 })}
+                  startContent="$"
+                />
+                <Input
+                  type="number"
+                  label="最大杠杆"
+                  placeholder="10"
+                  value={String(formData.max_leverage || 10)}
+                  onValueChange={(v) => setFormData({ ...formData, max_leverage: parseInt(v) || 10 })}
+                  endContent="x"
+                />
+              </div>
+            </div>
+
+            <Divider />
 
             {/* 币种限制 */}
-            <div className="col-span-2 space-y-4">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium text-default-700">币种限制</h4>
+                <div className="flex items-center gap-2">
+                  <Icon icon="lucide:coins" width={16} className="text-primary" />
+                  <h4 className="text-sm font-medium text-default-700">币种限制</h4>
+                </div>
                 <Button
                   size="sm"
                   variant="flat"
@@ -379,24 +401,34 @@ export default function AddressFormModal({
               </div>
             </div>
 
+            <Divider />
+
             {/* 开关选项 */}
-            <div className="col-span-2 flex flex-wrap gap-6">
-              <Switch
-                isSelected={formData.is_enabled}
-                onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
-              >
-                启用跟单
-              </Switch>
-              <Switch
-                isSelected={formData.copy_leverage}
-                onChange={(e) => setFormData({ ...formData, copy_leverage: e.target.checked })}
-              >
-                复制杠杆
-              </Switch>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:toggle-left" width={16} className="text-primary" />
+                <h4 className="text-sm font-medium text-default-700">开关选项</h4>
+              </div>
+              <div className="flex flex-wrap gap-6">
+                <Switch
+                  isSelected={formData.is_enabled}
+                  onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked })}
+                >
+                  启用跟单
+                </Switch>
+                <Switch
+                  isSelected={formData.copy_leverage}
+                  onChange={(e) => setFormData({ ...formData, copy_leverage: e.target.checked })}
+                >
+                  复制杠杆
+                </Switch>
+              </div>
             </div>
 
+            <Divider />
+
             {/* 自动补仓配置 */}
-            <div className="col-span-2 space-y-3">
+            <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Icon icon="lucide:refresh-cw" width={16} className="text-primary" />
                 <h4 className="text-sm font-medium text-default-700">自动补仓</h4>
