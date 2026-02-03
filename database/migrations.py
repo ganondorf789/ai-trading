@@ -688,6 +688,41 @@ class DatabaseMigrations:
                 ON app_versions(created_at DESC)
             """)
 
+            # 创建地址跟踪表（用于监控特定地址的交易活动）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS address_tracking (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,                    -- 用户ID
+                    tracking_address TEXT NOT NULL,              -- 跟踪地址
+                    address_remark TEXT DEFAULT '',              -- 地址备注
+                    
+                    -- 跟踪配置
+                    is_enabled BOOLEAN DEFAULT TRUE,             -- 是否启用跟踪
+                    enable_notification BOOLEAN DEFAULT TRUE,    -- 是否开启通知
+                    monitor_events TEXT DEFAULT '["open","close","add","reduce"]',  -- 监控事件（JSON数组）
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：每个用户对同一地址只能有一个跟踪记录
+                    UNIQUE(user_id, tracking_address)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_address_tracking_user_id
+                ON address_tracking(user_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_address_tracking_address
+                ON address_tracking(tracking_address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_address_tracking_enabled
+                ON address_tracking(is_enabled)
+            """)
+
             # 创建跟单配置规则表（支持按杠杆区间分配不同配置）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_config_rules (
