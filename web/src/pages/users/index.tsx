@@ -149,9 +149,6 @@ export default function UsersPage() {
             <Icon icon="lucide:users" width={28} />
             用户管理
           </h1>
-          <p className="text-default-500 mt-1">
-            管理系统用户，查看和修改用户身份
-          </p>
         </div>
 
         {/* 筛选栏 */}

@@ -146,9 +146,6 @@ export default function DefaultConfigRulesPage() {
               <Icon icon="lucide:copy" width={28} />
               默认跟单配置规则
             </h1>
-            <p className="text-default-500 mt-1">
-              根据目标杠杆匹配不同的跟单配置，优先级数字越小越先匹配
-            </p>
           </div>
           <Button
             color="primary"

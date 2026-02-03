@@ -345,9 +345,6 @@ export default function PositionTrackingPage() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">仓位跟单管理</h1>
-            <p className="text-default-500 text-sm mt-1">
-              第二种跟单模式：跟单特定交易员的特定仓位
-            </p>
           </div>
           <Button
             color="primary"

@@ -148,9 +148,6 @@ export default function ImmediateConfigRulesPage() {
               <Icon icon="lucide:zap" width={28} />
               立即跟单配置规则
             </h1>
-            <p className="text-default-500 mt-1">
-              为不同币种设置独立的跟单配置，每个币种最多一个配置
-            </p>
           </div>
           <Button
             color="primary"

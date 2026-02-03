@@ -280,9 +280,6 @@ export default function SecretKeysPage() {
               <Icon icon="lucide:key" width={28} />
               秘钥管理
             </h1>
-            <p className="text-default-500 mt-1">
-              管理注册秘钥，每个秘钥只能使用一次
-            </p>
           </div>
           <Button
             color="primary"

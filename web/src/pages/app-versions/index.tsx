@@ -20,13 +20,11 @@ import {
   Switch,
   Textarea,
   addToast,
-  Card,
-  CardBody,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
-import { appVersionApi, AppVersion, AppVersionStats } from "@/services/api";
+import { appVersionApi, AppVersion } from "@/services/api";
 import { formatTime } from "@/utils";
 
 const platformColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
@@ -46,7 +44,6 @@ const platformNameMap: Record<string, string> = {
 export default function AppVersionsPage() {
   // 数据状态
   const [versions, setVersions] = useState<AppVersion[]>([]);
-  const [stats, setStats] = useState<AppVersionStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 筛选状态
@@ -105,18 +102,6 @@ export default function AppVersionsPage() {
       setLoading(false);
     }
   }, [visibleFilter, platformFilter]);
-
-  // 加载统计信息
-  const fetchStats = useCallback(async () => {
-    try {
-      const response = await appVersionApi.getVersionStats();
-      if (response.success && response.data) {
-        setStats(response.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch stats:", error);
-    }
-  }, []);
 
   // 打开创建弹窗
   const handleCreate = () => {
@@ -185,7 +170,6 @@ export default function AppVersionsPage() {
           });
           setModalOpen(false);
           fetchVersions();
-          fetchStats();
         }
       } else {
         // 创建
@@ -199,7 +183,6 @@ export default function AppVersionsPage() {
           });
           setModalOpen(false);
           fetchVersions();
-          fetchStats();
         }
       }
     } catch (error: any) {
@@ -225,7 +208,6 @@ export default function AppVersionsPage() {
           color: "success",
         });
         fetchVersions();
-        fetchStats();
       }
     } catch (error: any) {
       addToast({
@@ -258,7 +240,6 @@ export default function AppVersionsPage() {
         });
         setDeleteModalOpen(false);
         fetchVersions();
-        fetchStats();
       }
     } catch (error: any) {
       addToast({
@@ -274,8 +255,7 @@ export default function AppVersionsPage() {
   // 初始加载
   useEffect(() => {
     fetchVersions();
-    fetchStats();
-  }, [fetchVersions, fetchStats]);
+  }, [fetchVersions]);
 
   return (
     <DefaultLayout>
@@ -286,68 +266,7 @@ export default function AppVersionsPage() {
             <Icon icon="lucide:package" width={28} />
             版本管理
           </h1>
-          <p className="text-default-500 mt-1">
-            管理应用版本，控制版本可见性
-          </p>
         </div>
-
-        {/* 统计卡片 */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardBody className="py-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary/10 rounded-lg">
-                    <Icon icon="lucide:layers" className="text-primary" width={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-default-500">总版本数</p>
-                    <p className="text-lg font-bold">{stats.total_count}</p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-success/10 rounded-lg">
-                    <Icon icon="lucide:eye" className="text-success" width={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-default-500">可见版本</p>
-                    <p className="text-lg font-bold">{stats.visible_count}</p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-default/10 rounded-lg">
-                    <Icon icon="lucide:eye-off" className="text-default-500" width={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-default-500">隐藏版本</p>
-                    <p className="text-lg font-bold">{stats.hidden_count}</p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-danger/10 rounded-lg">
-                    <Icon icon="lucide:alert-triangle" className="text-danger" width={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-default-500">强制更新</p>
-                    <p className="text-lg font-bold">{stats.force_update_count}</p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          </div>
-        )}
 
         {/* 筛选栏 */}
         <div className="flex flex-wrap gap-4 items-center">
@@ -379,10 +298,7 @@ export default function AppVersionsPage() {
             color="primary"
             variant="flat"
             startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => {
-              fetchVersions();
-              fetchStats();
-            }}
+            onPress={() => fetchVersions()}
             isLoading={loading}
           >
             刷新
