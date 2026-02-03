@@ -114,6 +114,13 @@ export const tokenManager = {
   },
   
   isLoggedIn: () => !!localStorage.getItem(TOKEN_KEY),
+  
+  // 获取登录后返回的 URL
+  getReturnUrl: () => {
+    const url = sessionStorage.getItem('returnUrl');
+    sessionStorage.removeItem('returnUrl');
+    return url || '/';
+  },
 };
 
 const api = axios.create({
@@ -152,6 +159,27 @@ const onTokenRefreshed = (token: string) => {
   refreshSubscribers = [];
 };
 
+/**
+ * 处理认证失败，清除 token 并跳转到登录页
+ */
+const handleAuthFailure = (reason: string) => {
+  console.warn(`[Auth] 认证失败: ${reason}`);
+  isRefreshing = false;
+  refreshSubscribers = [];
+  tokenManager.clear();
+  
+  // 避免在登录页或注册页重复跳转
+  const currentPath = window.location.pathname;
+  if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+    // 保存当前页面路径，登录后可以跳转回来
+    const returnUrl = window.location.pathname + window.location.search;
+    if (returnUrl && returnUrl !== '/') {
+      sessionStorage.setItem('returnUrl', returnUrl);
+    }
+    window.location.href = '/login';
+  }
+};
+
 // 响应拦截器
 api.interceptors.response.use(
   (response) => response.data,
@@ -169,10 +197,14 @@ api.interceptors.response.use(
       
       // 如果正在刷新 token，将请求加入队列等待
       if (isRefreshing) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           subscribeTokenRefresh((token: string) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(api(originalRequest));
+            if (token) {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            } else {
+              reject(error);
+            }
           });
         });
       }
@@ -182,9 +214,8 @@ api.interceptors.response.use(
       
       const refreshToken = tokenManager.getRefreshToken();
       if (!refreshToken) {
-        // 没有 refresh token，触发登出
-        tokenManager.clear();
-        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'no_refresh_token' } }));
+        // 没有 refresh token，跳转到登录页
+        handleAuthFailure('TOKEN_MISSING');
         return Promise.reject(error);
       }
       
@@ -197,6 +228,7 @@ api.interceptors.response.use(
         if (response.data.success && response.data.data?.access_token) {
           const newToken = response.data.data.access_token;
           tokenManager.setToken(newToken);
+          isRefreshing = false;
           
           // 通知所有等待的请求
           onTokenRefreshed(newToken);
@@ -208,12 +240,9 @@ api.interceptors.response.use(
           throw new Error('Token refresh failed');
         }
       } catch (refreshError) {
-        // 刷新失败，清除 token 并触发登出
-        tokenManager.clear();
-        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'refresh_failed' } }));
+        // 刷新失败，跳转到登录页
+        handleAuthFailure('REFRESH_FAILED');
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
     
