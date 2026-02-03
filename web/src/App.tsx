@@ -1,6 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, Navigate } from "react-router-dom";
 
-import IndexPage from "@/pages/index";
 import LoginPage from "@/pages/login";
 import TradersPage from "@/pages/traders";
 import TraderDetailPage from "@/pages/trader-detail";
@@ -19,7 +18,7 @@ function App() {
   return (
     <Routes>
       <Route element={<LoginPage />} path="/login" />
-      <Route element={<IndexPage />} path="/" />
+      <Route element={<Navigate to="/traders" replace />} path="/" />
       <Route element={<TradersPage />} path="/traders" />
       <Route element={<TraderDetailPage />} path="/traders/:address" />
       <Route element={<BestSTradersPage />} path="/best-s-traders" />
