@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Table,
   TableHeader,
@@ -14,10 +13,6 @@ import {
   Select,
   SelectItem,
   Switch,
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
   Tooltip,
   addToast,
 } from "@heroui/react";
@@ -28,21 +23,8 @@ import { copyTradingApi, hyperliquidApi, CopyTradingAddress, PaginationInfo } fr
 import { TablePagination } from "@/components/TablePagination";
 import AddressFormModal from "./components/AddressFormModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
-import BatchDeleteConfirmModal from "./components/BatchDeleteConfirmModal";
-
-// 评级颜色映射
-const ratingColors: Record<string, "success" | "primary" | "secondary" | "warning" | "danger" | "default"> = {
-  S: "success",
-  A: "primary",
-  B: "secondary",
-  C: "warning",
-  D: "danger",
-  F: "default",
-};
 
 export default function CopyTradingPage() {
-  const navigate = useNavigate();
-
   // 数据状态
   const [addresses, setAddresses] = useState<CopyTradingAddress[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
@@ -54,9 +36,6 @@ export default function CopyTradingPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sortBy] = useState("updated_at");
   const [sortOrder] = useState<"asc" | "desc">("desc");
-
-  // 选择状态 - HeroUI Selection 可以是 "all" 或 Set<Key>
-  const [selectedKeys, setSelectedKeys] = useState<"all" | Set<string>>(new Set());
 
   // Modal 状态
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -92,9 +71,6 @@ export default function CopyTradingPage() {
   // 可用币种列表
   const [availableCoins, setAvailableCoins] = useState<string[]>([]);
   const [coinsLoading, setCoinsLoading] = useState(false);
-
-  // 批量删除确认状态
-  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
 
   // 加载可用币种
   const loadAvailableCoins = useCallback(async () => {
@@ -279,66 +255,19 @@ export default function CopyTradingPage() {
     }
   };
 
-  // 获取选中的地址列表
-  const getSelectedAddressList = (): string[] => {
-    if (selectedKeys === "all") {
-      return addresses.map((a) => a.address);
-    }
-    return Array.from(selectedKeys);
-  };
-
-  // 获取选中数量
-  const selectedCount = selectedKeys === "all" ? addresses.length : selectedKeys.size;
-
-  // 批量操作
-  const handleBatchAction = async (action: "enable" | "disable" | "delete") => {
-    const addressList = getSelectedAddressList();
-    if (addressList.length === 0) return;
-
-    // 批量删除使用 Modal 确认
-    if (action === "delete") {
-      setIsBatchDeleteModalOpen(true);
-      return;
-    }
-
-    try {
-      await copyTradingApi.batchAction(action, addressList);
-      addToast({ title: "批量操作成功", color: "success" });
-      setSelectedKeys(new Set());
-      loadAddresses();
-    } catch (error) {
-      console.error("Failed to batch action:", error);
-      addToast({ title: "批量操作失败", color: "danger" });
-    }
-  };
-
-  // 确认批量删除
-  const handleConfirmBatchDelete = async () => {
-    try {
-      const addressList = getSelectedAddressList();
-      await copyTradingApi.batchAction("delete", addressList);
-      addToast({ title: "批量删除成功", color: "success" });
-      setSelectedKeys(new Set());
-      setIsBatchDeleteModalOpen(false);
-      loadAddresses();
-    } catch (error) {
-      console.error("Failed to batch delete:", error);
-      addToast({ title: "批量删除失败", color: "danger" });
-    }
-  };
-
-
   // 格式化地址
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  // 表格列（精简版）
+  // 表格列
   const columns = [
     { key: "status", label: "状态" },
     { key: "address", label: "地址" },
-    { key: "trader_info", label: "交易员信息" },
-    { key: "copy_config", label: "跟单配置" },
+    { key: "copy_ratio", label: "跟单比例" },
+    { key: "position_size", label: "仓位范围" },
+    { key: "max_leverage", label: "最大杠杆" },
+    { key: "auto_replenish", label: "自动补仓" },
     { key: "symbols", label: "币种限制" },
     { key: "updated_at", label: "更新时间" },
     { key: "actions", label: "操作" },
@@ -373,54 +302,24 @@ export default function CopyTradingPage() {
               )}
             </div>
           );
-        case "trader_info":
+        case "copy_ratio":
+          return `${(item.copy_ratio * 100).toFixed(0)}%`;
+        case "position_size":
           return (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                {item.rating ? (
-                  <Chip size="sm" color={ratingColors[item.rating] || "default"}>
-                    {item.rating}
-                  </Chip>
-                ) : (
-                  <span className="text-default-400 text-xs">未评级</span>
-                )}
-                {item.win_rate != null && (
-                  <span className="text-xs text-default-600">
-                    胜率 {(item.win_rate * 100).toFixed(0)}%
-                  </span>
-                )}
-              </div>
-              {item.trader_pnl != null && (
-                <span className={`text-sm font-medium ${item.trader_pnl >= 0 ? "text-success" : "text-danger"}`}>
-                  {item.trader_pnl >= 0 ? "+" : ""}${item.trader_pnl.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-              )}
-            </div>
+            <span className="text-sm whitespace-nowrap">
+              ${item.min_position_size_usd} - ${item.max_position_size_usd}
+            </span>
           );
-        case "copy_config":
+        case "max_leverage":
+          return `${item.max_leverage}x`;
+        case "auto_replenish":
+          if (!item.auto_replenish) {
+            return <span className="text-default-400">-</span>;
+          }
           return (
-            <Tooltip
-              content={
-                <div className="text-xs space-y-1 p-1">
-                  <div>跟单比例: {(item.copy_ratio * 100).toFixed(0)}%</div>
-                  <div>仓位范围: ${item.min_position_size_usd} - ${item.max_position_size_usd}</div>
-                  <div>最大杠杆: {item.max_leverage}x</div>
-                  <div>自动补仓: {item.auto_replenish ? "已启用" : "未启用"}</div>
-                </div>
-              }
-            >
-              <div className="flex flex-col gap-0.5 cursor-help">
-                <span className="text-sm font-medium">{(item.copy_ratio * 100).toFixed(0)}%</span>
-                <span className="text-xs text-default-500">
-                  ${item.min_position_size_usd}-${item.max_position_size_usd} / {item.max_leverage}x
-                </span>
-                {item.auto_replenish && (
-                  <Chip size="sm" color="success" variant="flat" className="w-fit">
-                    自动补仓
-                  </Chip>
-                )}
-              </div>
-            </Tooltip>
+            <span className="text-sm whitespace-nowrap">
+              {((item.replenish_ratio || 0.5) * 100).toFixed(0)}% / ${item.replenish_min_value_usd || 10}-${item.replenish_max_value_usd || 100}
+            </span>
           );
         case "symbols":
           const whiteCount = item.symbols_whitelist?.length || 0;
@@ -498,7 +397,7 @@ export default function CopyTradingPage() {
           return null;
       }
     },
-    [navigate]
+    []
   );
 
   return (
@@ -545,41 +444,6 @@ export default function CopyTradingPage() {
             <SelectItem key="enabled">已启用</SelectItem>
             <SelectItem key="disabled">已禁用</SelectItem>
           </Select>
-
-          {selectedCount > 0 && (
-            <Dropdown>
-              <DropdownTrigger>
-                <Button variant="flat" color="primary">
-                  批量操作 ({selectedKeys === "all" ? "全部" : selectedCount})
-                </Button>
-              </DropdownTrigger>
-              <DropdownMenu>
-                <DropdownItem
-                  key="enable"
-                  startContent={<Icon icon="lucide:toggle-right" width={16} className="text-success" />}
-                  onPress={() => handleBatchAction("enable")}
-                >
-                  批量启用
-                </DropdownItem>
-                <DropdownItem
-                  key="disable"
-                  startContent={<Icon icon="lucide:toggle-left" width={16} className="text-warning" />}
-                  onPress={() => handleBatchAction("disable")}
-                >
-                  批量禁用
-                </DropdownItem>
-                <DropdownItem
-                  key="delete"
-                  className="text-danger"
-                  startContent={<Icon icon="lucide:trash-2" width={16} />}
-                  onPress={() => handleBatchAction("delete")}
-                >
-                  批量删除
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-          )}
-
         </div>
 
         {/* 数据表格 */}
@@ -589,13 +453,7 @@ export default function CopyTradingPage() {
           </div>
         ) : (
           <>
-            <Table
-              aria-label="跟单地址列表"
-              color="primary"
-              selectionMode="multiple"
-              selectedKeys={selectedKeys}
-              onSelectionChange={(keys) => setSelectedKeys(keys as "all" | Set<string>)}
-            >
+            <Table aria-label="跟单地址列表">
               <TableHeader columns={columns}>
                 {(column) => (
                   <TableColumn key={column.key}>{column.label}</TableColumn>
@@ -618,7 +476,6 @@ export default function CopyTradingPage() {
                 onPageChange={setPage}
                 totalCount={pagination.total_count}
                 rowsPerPage={10}
-                className="mt-4"
               />
             )}
           </>
@@ -642,13 +499,6 @@ export default function CopyTradingPage() {
           onClose={() => setIsDeleteModalOpen(false)}
           onConfirm={handleConfirmDelete}
           deletingAddress={deletingAddress}
-        />
-
-        <BatchDeleteConfirmModal
-          isOpen={isBatchDeleteModalOpen}
-          onClose={() => setIsBatchDeleteModalOpen(false)}
-          onConfirm={handleConfirmBatchDelete}
-          selectedCount={selectedCount}
         />
       </div>
     </DefaultLayout>
