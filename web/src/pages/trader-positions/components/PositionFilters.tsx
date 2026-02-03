@@ -90,11 +90,9 @@ export function PositionFilters({
   const coinOptions = stats?.by_coin || [];
 
   return (
-    <div className="flex flex-col gap-4 mb-6">
+    <div className="flex flex-col gap-4">
       {/* 筛选区域 */}
-      <div className="bg-content1 rounded-xl shadow-small overflow-hidden">
-        {/* 主筛选行 */}
-        <div className="p-4">
+      <div>
           <div className="flex flex-wrap justify-between gap-4">
             {/* 左侧：筛选组 */}
             <div className="flex flex-wrap gap-x-6 gap-y-4 items-end">
@@ -212,7 +210,7 @@ export function PositionFilters({
               {/* 重置按钮 */}
               {(_search || sideFilter || coinFilter || starFilter || pnlFilter || scoreFilter || openTimeFilter) && (
                 <Button
-                  variant="light"
+                  variant="flat"
                   size="sm"
                   color="warning"
                   startContent={<Icon icon="solar:restart-linear" width={16} />}
@@ -309,7 +307,6 @@ export function PositionFilters({
               </Dropdown>
             </div>
           </div>
-        </div>
       </div>
     </div>
   );
