@@ -42,7 +42,7 @@ export function StatsCards({ stats, loading }: StatsCardsProps) {
   const isPnlPositive = totalPnl >= 0;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       <Card className="bg-gradient-to-br from-violet-500/10 to-purple-500/10 border border-violet-500/20">
         <CardBody className="text-center py-4">
           <div className="text-2xl font-bold text-violet-400">{stats.total_positions}</div>
