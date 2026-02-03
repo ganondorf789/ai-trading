@@ -56,12 +56,6 @@ export const sidebarItems: SidebarItem[] = [
         icon: "solar:copy-line-duotone",
         title: "Copy Trading",
       },
-      {
-        key: "copy-orders",
-        href: "/copy-orders",
-        icon: "solar:document-text-line-duotone",
-        title: "Copy Orders",
-      },
     ],
   },
   {
@@ -98,12 +92,6 @@ export const sidebarItems: SidebarItem[] = [
     key: "settings",
     title: "Settings",
     items: [
-      {
-        key: "risk-control",
-        href: "/risk-control",
-        icon: "solar:shield-warning-line-duotone",
-        title: "Risk Control",
-      },
       {
         key: "default-config-rules",
         href: "/default-config-rules",

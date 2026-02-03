@@ -327,45 +327,6 @@ export interface CopyTradingAddress {
   is_starred?: boolean;
 }
 
-export interface CopyTradingOrder {
-  id: number;
-  target_address: string;
-  target_name?: string;
-  symbol: string;
-  side: string;
-  action: string;
-  size: number;
-  price: number | null;
-  leverage: number;
-  copy_ratio: number | null;
-  target_size: number | null;
-  target_entry_price: number | null;
-  status: string;
-  error_message: string | null;
-  pnl: number;
-  is_dry_run: boolean;
-  created_at: string;
-  executed_at: string | null;
-}
-
-export interface CopyOrderStats {
-  total_orders: number;
-  successful_orders: number;
-  failed_orders: number;
-  pending_orders: number;
-  total_pnl: number;
-  by_symbol: Array<{
-    symbol: string;
-    count: number;
-    pnl: number;
-  }>;
-  by_target: Array<{
-    target_address: string;
-    count: number;
-    pnl: number;
-  }>;
-}
-
 export interface CopyPositionState {
   id: number;
   target_address: string;
@@ -494,31 +455,6 @@ export interface PositionsAIAnalysis {
     key_risks?: string;
     pnl_analysis?: string;
   };
-}
-
-// ==================== 风控配置类型 ====================
-
-export interface RiskControlConfig {
-  // 仓位限制
-  max_total_positions: number;
-  max_daily_trades: number;
-  
-  // 单笔风控
-  max_single_loss_usd: number;
-  
-  // 累计风控
-  max_daily_loss_usd: number;
-  max_drawdown_pct: number;
-  
-  // 资金使用率
-  max_margin_usage_pct: number;
-  
-  // 暂停条件
-  pause_on_consecutive_losses: number;
-  
-  // 订单重试
-  max_order_retries: number;
-  retry_base_delay: number;
 }
 
 // ==================== 默认跟单配置类型 ====================

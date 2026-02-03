@@ -20,8 +20,6 @@ export type {
   // Copy trading types
   CopyTradingGroup,
   CopyTradingAddress,
-  CopyTradingOrder,
-  CopyOrderStats,
   CopyPositionState,
   CopyPositionStats,
   // Hyperliquid types

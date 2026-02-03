@@ -292,45 +292,8 @@ class DatabaseMigrations:
                 )
             """)
 
-            # 创建跟单订单记录表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS copy_trading_orders (
-                    id SERIAL PRIMARY KEY,
-                    target_address TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    size REAL NOT NULL,
-                    price REAL,
-                    leverage INTEGER DEFAULT 1,
-                    copy_ratio REAL,
-                    target_size REAL,
-                    target_entry_price REAL,
-                    status TEXT DEFAULT 'pending',
-                    error_message TEXT,
-                    pnl REAL DEFAULT 0.0,
-                    is_dry_run BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    executed_at TIMESTAMP
-                )
-            """)
-
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_orders_target
-                ON copy_trading_orders(target_address)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_orders_symbol
-                ON copy_trading_orders(symbol)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_orders_created
-                ON copy_trading_orders(created_at DESC)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_orders_status
-                ON copy_trading_orders(status)
-            """)
+            # 注意: copy_trading_orders 表已弃用，不再创建
+            # 如需删除此表，请手动执行: DROP TABLE IF EXISTS copy_trading_orders;
 
             # 创建跟单仓位状态表
             cursor.execute("""

@@ -47,7 +47,6 @@ class TraderDatabase(
     - 交易记录管理
     - 持仓管理
     - 跟单地址和分组管理
-    - 跟单订单管理
     - Hyperliquid 币种管理
     - AI 分析管理
     - 仓位级别跟单管理

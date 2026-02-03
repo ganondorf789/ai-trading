@@ -8,8 +8,6 @@ import type {
   ApiResponse,
   CopyTradingGroup,
   CopyTradingAddress,
-  CopyTradingOrder,
-  CopyOrderStats,
   HyperliquidCoin,
   CopyPositionState,
   CopyPositionStats,
@@ -18,7 +16,6 @@ import type {
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
-  RiskControlConfig,
   DefaultCopyTradingConfig,
   ImmediateCopyConfig,
   PositionHistoryRecord,
@@ -44,8 +41,6 @@ export type {
   ApiResponse,
   CopyTradingGroup,
   CopyTradingAddress,
-  CopyTradingOrder,
-  CopyOrderStats,
   HyperliquidCoin,
   CopyPositionState,
   CopyPositionStats,
@@ -54,7 +49,6 @@ export type {
   PaginationInfo,
   FillsStats,
   ChartDataPoint,
-  RiskControlConfig,
   DefaultCopyTradingConfig,
   ImmediateCopyConfig,
   PositionHistoryRecord,
@@ -524,40 +518,6 @@ export const hyperliquidApi = {
     api.post<any, ApiResponse<HyperliquidCoin[]> & { message?: string }>('/hyperliquid/coins/sync'),
 };
 
-// ==================== 跟单订单 API ====================
-
-export const copyTradingOrdersApi = {
-  // 获取订单列表
-  getOrders: (params?: {
-    page?: number;
-    limit?: number;
-    target_address?: string;
-    symbol?: string;
-    status?: string;
-    action?: string;
-    is_dry_run?: boolean;
-    days?: number;
-    sort_by?: string;
-    sort_order?: 'asc' | 'desc';
-  }) =>
-    api.get<any, ApiResponse<CopyTradingOrder[]>>('/copy-trading/orders', { params }),
-
-  // 获取订单统计
-  getStats: (params?: {
-    target_address?: string;
-    days?: number;
-  }) =>
-    api.get<any, ApiResponse<CopyOrderStats>>('/copy-trading/orders/stats', { params }),
-
-  // 清理旧订单
-  cleanup: (days: number = 30) =>
-    api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>(
-      '/copy-trading/orders/cleanup',
-      null,
-      { params: { days } }
-    ),
-};
-
 // ==================== 跟单仓位状态 API ====================
 
 export const copyPositionStatesApi = {
@@ -760,17 +720,9 @@ export const positionTrackingApi = {
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
 };
 
-// ==================== 风控配置 API ====================
+// ==================== 跟单配置 API ====================
 
 export const riskControlApi = {
-  // 获取风控配置
-  getConfig: () =>
-    api.get<any, ApiResponse<RiskControlConfig>>('/copy-trading/risk-control'),
-
-  // 更新风控配置
-  updateConfig: (data: Partial<RiskControlConfig>) =>
-    api.put<any, ApiResponse<RiskControlConfig> & { message?: string }>('/copy-trading/risk-control', data),
-
   // 获取默认跟单配置
   getDefaultCopyConfig: () =>
     api.get<any, ApiResponse<DefaultCopyTradingConfig>>('/copy-trading/default-config'),

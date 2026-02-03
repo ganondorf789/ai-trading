@@ -17,10 +17,6 @@ export const siteConfig = {
       href: "/copy-trading",
     },
     {
-      label: "Copy Orders",
-      href: "/copy-orders",
-    },
-    {
       label: "Trader Positions",
       href: "/trader-positions",
     },
@@ -35,10 +31,6 @@ export const siteConfig = {
     {
       label: "Position Tracking",
       href: "/position-tracking",
-    },
-    {
-      label: "Risk Control",
-      href: "/risk-control",
     },
     {
       label: "Default Config Rules",
