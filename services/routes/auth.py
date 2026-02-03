@@ -176,6 +176,142 @@ def register():
         }), 500
 
 
+@auth_bp.route('/api/auth/init-account', methods=['POST'])
+def create_init_account():
+    """创建初始管理员账号
+    
+    仅在系统中没有任何用户时可用，用于系统初始化
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - account
+            - password
+          properties:
+            account:
+              type: string
+              description: 账号
+              example: "admin"
+            password:
+              type: string
+              description: 密码
+              example: "admin123"
+    responses:
+      200:
+        description: 创建成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                role:
+                  type: string
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      403:
+        description: 系统中已存在用户，无法创建初始账号
+      500:
+        description: 服务器错误
+    """
+    try:
+        # 检查是否已存在用户
+        user_stats = db.get_user_stats()
+        if user_stats and user_stats.get('total', 0) > 0:
+            logger.warning("尝试创建初始账号失败: 系统中已存在用户")
+            return jsonify({
+                'success': False,
+                'error': '系统中已存在用户，无法创建初始账号'
+            }), 403
+        
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        account = data.get('account', '').strip()
+        password = data.get('password', '')
+        
+        if not account:
+            return jsonify({
+                'success': False,
+                'error': '账号不能为空'
+            }), 400
+        
+        if not password:
+            return jsonify({
+                'success': False,
+                'error': '密码不能为空'
+            }), 400
+        
+        # 验证账号格式（字母、数字、下划线，4-32位）
+        import re
+        if not re.match(r'^[a-zA-Z0-9_]{4,32}$', account):
+            return jsonify({
+                'success': False,
+                'error': '账号格式不正确（4-32位字母、数字或下划线）'
+            }), 400
+        
+        # 验证密码长度
+        if len(password) < 6 or len(password) > 64:
+            return jsonify({
+                'success': False,
+                'error': '密码长度必须在6-64位之间'
+            }), 400
+        
+        # 创建管理员用户（无过期时间）
+        user = db.create_user(
+            account=account,
+            password=password,
+            secret_key_id=None,
+            role=ROLE_ADMIN,
+            expires_at=None
+        )
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '账号创建失败'
+            }), 500
+        
+        logger.info(f"初始管理员账号创建成功: {account}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': user['id'],
+                'account': user['account'],
+                'role': user['role']
+            },
+            'message': '初始管理员账号创建成功'
+        })
+        
+    except Exception as e:
+        logger.error(f"创建初始账号失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @auth_bp.route('/api/auth/login', methods=['POST'])
 def login():
     """用户登录
