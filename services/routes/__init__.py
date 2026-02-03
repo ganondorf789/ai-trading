@@ -48,7 +48,3 @@ def register_routes(app):
     # 应用版本管理路由
     from .app_versions import app_versions_bp
     app.register_blueprint(app_versions_bp)
-    
-    # 地址跟踪路由
-    from .address_tracking import address_tracking_bp
-    app.register_blueprint(address_tracking_bp)

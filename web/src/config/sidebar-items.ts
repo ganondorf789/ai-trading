@@ -80,12 +80,6 @@ export const sidebarItems: SidebarItem[] = [
         icon: "solar:target-line-duotone",
         title: "Position Tracking",
       },
-      {
-        key: "address-tracking",
-        href: "/address-tracking",
-        icon: "solar:eye-line-duotone",
-        title: "Address Tracking",
-      },
     ],
   },
   {

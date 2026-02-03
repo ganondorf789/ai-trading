@@ -21,7 +21,6 @@ from .notifications import NotificationsOps
 from .users import UsersOps
 from .secret_keys import SecretKeysOps
 from .app_versions import AppVersionsOps
-from .address_tracking import AddressTrackingOps
 
 
 class TraderDatabase(
@@ -40,8 +39,7 @@ class TraderDatabase(
     NotificationsOps,
     UsersOps,
     SecretKeysOps,
-    AppVersionsOps,
-    AddressTrackingOps
+    AppVersionsOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)
