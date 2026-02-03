@@ -9,10 +9,6 @@ export const siteConfig = {
       href: "/traders",
     },
     {
-      label: "S-Rank Picks",
-      href: "/best-s-traders",
-    },
-    {
       label: "Copy Trading",
       href: "/copy-trading",
     },

@@ -38,12 +38,6 @@ export const sidebarItems: SidebarItem[] = [
         icon: "solar:users-group-rounded-line-duotone",
         title: "Traders",
       },
-      {
-        key: "best-s-traders",
-        href: "/best-s-traders",
-        icon: "solar:star-bold-duotone",
-        title: "S-Rank Picks",
-      },
     ],
   },
   {

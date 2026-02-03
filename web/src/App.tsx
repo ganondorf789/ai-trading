@@ -7,7 +7,6 @@ import CopyTradingPage from "@/pages/copy-trading";
 import PositionsPage from "@/pages/positions";
 import TraderPositionsPage from "@/pages/trader-positions";
 import PositionHistoryPage from "@/pages/position-history";
-import BestSTradersPage from "@/pages/best-s-traders";
 import PositionTrackingPage from "@/pages/position-tracking";
 import DefaultConfigRulesPage from "@/pages/default-config-rules";
 import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
@@ -21,7 +20,6 @@ function App() {
       <Route element={<Navigate to="/traders" replace />} path="/" />
       <Route element={<TradersPage />} path="/traders" />
       <Route element={<TraderDetailPage />} path="/traders/:address" />
-      <Route element={<BestSTradersPage />} path="/best-s-traders" />
       <Route element={<CopyTradingPage />} path="/copy-trading" />
       <Route element={<PositionsPage />} path="/positions" />
       <Route element={<TraderPositionsPage />} path="/trader-positions" />
