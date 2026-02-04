@@ -32,6 +32,8 @@ const defaultConfigData: Partial<ImmediateCopyConfig> = {
   default_leverage: 3,
   slippage: 0.001,
   copy_leverage: false,
+  // 跟单行为
+  copy_only_once: false,
   // 跟单条件
   min_trader_overall_score: 0,
   min_trader_leverage: 0,
@@ -355,6 +357,15 @@ export default function ConfigRuleModal({
                   onValueChange={(v) => setConfigData({ ...configData, copy_leverage: v })}
                 />
                 <span className="text-sm">复制杠杆</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={configData.copy_only_once || false}
+                  onValueChange={(v) => setConfigData({ ...configData, copy_only_once: v })}
+                />
+                <span className="text-sm">只跟一次</span>
+                <span className="text-xs text-default-400">（跟单后自动禁用规则）</span>
               </div>
             </div>
           </div>

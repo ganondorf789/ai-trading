@@ -438,6 +438,8 @@ export interface DefaultCopyTradingConfig {
 // ==================== 立即跟单配置类型 ====================
 
 export interface ImmediateCopyConfig {
+  // 跟单行为
+  copy_only_once: boolean;  // 只跟一次，跟单后自动禁用规则
   // 跟单参数
   copy_ratio: number;
   max_position_size_usd: number;
