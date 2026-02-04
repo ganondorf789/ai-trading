@@ -170,6 +170,14 @@ def get_traders():
         min_active_days = request.args.get('min_active_days', type=int)
         max_active_days = request.args.get('max_active_days', type=int)
         has_recent_trade = request.args.get('has_recent_trade', type=int)
+        
+        # 标签筛选
+        tag_capital_scale = request.args.get('tag_capital_scale')
+        tag_trading_direction = request.args.get('tag_trading_direction')
+        tag_trading_cycle = request.args.get('tag_trading_cycle')
+        tag_frequency_style = request.args.get('tag_frequency_style')
+        tag_return_risk = request.args.get('tag_return_risk')
+        tag_strategy_capability = request.args.get('tag_strategy_capability')
 
         # 胜率区间
         if min_win_rate is not None:
@@ -230,6 +238,20 @@ def get_traders():
                 except:
                     return False
             all_traders = [t for t in all_traders if is_recent(t)]
+        
+        # 标签筛选
+        if tag_capital_scale:
+            all_traders = [t for t in all_traders if t.get('tag_capital_scale') == tag_capital_scale]
+        if tag_trading_direction:
+            all_traders = [t for t in all_traders if t.get('tag_trading_direction') == tag_trading_direction]
+        if tag_trading_cycle:
+            all_traders = [t for t in all_traders if t.get('tag_trading_cycle') == tag_trading_cycle]
+        if tag_frequency_style:
+            all_traders = [t for t in all_traders if t.get('tag_frequency_style') == tag_frequency_style]
+        if tag_return_risk:
+            all_traders = [t for t in all_traders if t.get('tag_return_risk') == tag_return_risk]
+        if tag_strategy_capability:
+            all_traders = [t for t in all_traders if t.get('tag_strategy_capability') == tag_strategy_capability]
 
         # 应用排序
         valid_sort_fields = {
@@ -321,6 +343,13 @@ def get_traders():
                 'long_short_ratio': trader.get('long_short_ratio', 0),
                 # 用户标记
                 'is_starred': trader.get('is_starred', False),
+                # 标签
+                'tag_capital_scale': trader.get('tag_capital_scale'),
+                'tag_trading_direction': trader.get('tag_trading_direction'),
+                'tag_trading_cycle': trader.get('tag_trading_cycle'),
+                'tag_frequency_style': trader.get('tag_frequency_style'),
+                'tag_return_risk': trader.get('tag_return_risk'),
+                'tag_strategy_capability': trader.get('tag_strategy_capability'),
             })
 
         return jsonify({

@@ -6,7 +6,7 @@ import { Form } from '@heroui/form';
 import { SearchIcon } from '@heroui/shared-icons';
 import { Icon } from '@iconify/react';
 import { RangeFilter } from './RangeFilter';
-import { columns, RATING_OPTIONS } from '../constants';
+import { columns, RATING_OPTIONS, TAG_OPTIONS } from '../constants';
 import type { FilterConfig } from '../types';
 
 interface FilterSectionProps {
@@ -209,7 +209,112 @@ export function FilterSection({
           </div>
         </div>
 
-        {/* 第三行：搜索、重置、新增按钮 */}
+        {/* 第三行：标签筛选 */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Select
+            className="w-full"
+            label="资金规模"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagCapitalScale ? [filters.tagCapitalScale] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagCapitalScale: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.capitalScale.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+
+          <Select
+            className="w-full"
+            label="交易方向"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagTradingDirection ? [filters.tagTradingDirection] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagTradingDirection: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.tradingDirection.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+
+          <Select
+            className="w-full"
+            label="交易周期"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagTradingCycle ? [filters.tagTradingCycle] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagTradingCycle: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.tradingCycle.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+
+          <Select
+            className="w-full"
+            label="频率风格"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagFrequencyStyle ? [filters.tagFrequencyStyle] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagFrequencyStyle: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.frequencyStyle.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+
+          <Select
+            className="w-full"
+            label="收益风险"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagReturnRisk ? [filters.tagReturnRisk] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagReturnRisk: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.returnRisk.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+
+          <Select
+            className="w-full"
+            label="策略能力"
+            labelPlacement="outside"
+            placeholder="全部"
+            size="sm"
+            selectedKeys={filters.tagStrategyCapability ? [filters.tagStrategyCapability] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              onFiltersChange({ ...filters, tagStrategyCapability: selected || undefined });
+            }}
+          >
+            {TAG_OPTIONS.strategyCapability.map((tag) => (
+              <SelectItem key={tag}>{tag}</SelectItem>
+            ))}
+          </Select>
+        </div>
+
+        {/* 第四行：搜索、重置、新增按钮 */}
         <div className="flex gap-2">
           <Button
             color="primary"
