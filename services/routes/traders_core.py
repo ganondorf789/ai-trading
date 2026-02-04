@@ -8,7 +8,7 @@ import logging
 from screener import TraderScreener, ScreenerConfig
 from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
-from .middleware import login_required
+from .middleware import login_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +285,10 @@ def get_traders():
         end = start + limit
         traders = all_traders[start:end]
 
+        # 获取当前用户的收藏列表
+        user_id = get_current_user_id()
+        user_starred_addresses = db.get_user_starred_addresses(user_id) if user_id else set()
+
         # 格式化数据（返回所有可用字段）
         result = []
         for trader in traders:
@@ -341,8 +345,8 @@ def get_traders():
                 'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
                 'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
                 'long_short_ratio': trader.get('long_short_ratio', 0),
-                # 用户标记
-                'is_starred': trader.get('is_starred', False),
+                # 用户收藏状态（用户维度）
+                'is_starred': trader.get('address') in user_starred_addresses,
                 # 标签
                 'tag_capital_scale': trader.get('tag_capital_scale'),
                 'tag_trading_direction': trader.get('tag_trading_direction'),
@@ -533,6 +537,13 @@ def get_trader_detail(address: str):
                 'success': False,
                 'error': 'Trader not found'
             }), 404
+
+        # 获取当前用户的收藏状态
+        user_id = get_current_user_id()
+        if user_id:
+            trader['is_starred'] = db.is_user_starred(user_id, address)
+        else:
+            trader['is_starred'] = False
 
         return jsonify({
             'success': True,

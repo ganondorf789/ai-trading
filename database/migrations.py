@@ -654,6 +654,30 @@ class DatabaseMigrations:
                 ON users(role)
             """)
 
+            # 创建用户收藏表（用户维度的交易者收藏）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_favorites (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,              -- 用户 ID
+                    trader_address TEXT NOT NULL,          -- 交易者地址
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：每个用户对每个交易者只能收藏一次
+                    UNIQUE(user_id, trader_address),
+                    
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id
+                ON user_favorites(user_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_favorites_trader_address
+                ON user_favorites(trader_address)
+            """)
+
             # 创建应用版本管理表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS app_versions (
