@@ -93,6 +93,7 @@ from screener.models import (
     PositionMetrics,
     ROIMetrics,
     ScoreMetrics,
+    TagMetrics,
     FillData,
 )
 
@@ -153,6 +154,13 @@ from screener.scorer import (
     get_score_breakdown,
 )
 
+# 标签系统
+from screener.tag_calculator import (
+    TraderTagCalculator,
+    TagThresholds,
+    calculate_tags,
+)
+
 # 异常
 from screener.exceptions import (
     ScreenerError,
@@ -210,6 +218,7 @@ __all__ = [
     "PositionMetrics",
     "ROIMetrics",
     "ScoreMetrics",
+    "TagMetrics",
     "FillData",
     
     # 配置
@@ -256,6 +265,11 @@ __all__ = [
     "calculate_scores",
     "get_rating_description",
     "get_score_breakdown",
+    
+    # 标签系统
+    "TraderTagCalculator",
+    "TagThresholds",
+    "calculate_tags",
     
     # 异常
     "ScreenerError",

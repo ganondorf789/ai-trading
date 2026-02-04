@@ -98,7 +98,15 @@ class DatabaseMigrations:
                     monthly_volume REAL DEFAULT 0.0,
 
                     -- 用户标记
-                    is_starred BOOLEAN DEFAULT FALSE
+                    is_starred BOOLEAN DEFAULT FALSE,
+
+                    -- 交易者标签
+                    tag_capital_scale TEXT,
+                    tag_trading_direction TEXT,
+                    tag_trading_cycle TEXT,
+                    tag_frequency_style TEXT,
+                    tag_return_risk TEXT,
+                    tag_strategy_capability TEXT
                 )
             """)
 
@@ -859,6 +867,26 @@ class DatabaseMigrations:
             ON copy_config_rules(user_id, config_type, symbol)
             WHERE config_type = 'immediate' AND symbol IS NOT NULL
         """)
+
+        # 添加交易者标签字段到 trader_metrics 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_capital_scale', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_direction', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_cycle', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_frequency_style', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_return_risk', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
+        )
 
     def _migrate_remove_groups(self, cursor):
         """
