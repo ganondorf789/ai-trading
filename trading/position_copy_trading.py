@@ -143,7 +143,8 @@ class PositionCopyTradingBot:
         reload_interval: float = 60.0,
         redis_client = None,
         grpc_client: 'GRPCClient' = None,
-        use_grpc: bool = None
+        use_grpc: bool = None,
+        max_positions: int = 0
     ):
         """
         初始化仓位跟单机器人
@@ -155,10 +156,12 @@ class PositionCopyTradingBot:
             redis_client: Redis 客户端（直连模式，用于接收开仓通知）
             grpc_client: gRPC 客户端（gRPC 模式）
             use_grpc: 是否使用 gRPC 模式，默认从配置读取
+            max_positions: 最大仓位数量限制，0表示不限制
         """
         self.client = client
         self.check_interval = check_interval
         self.reload_interval = reload_interval
+        self.max_positions = max_positions
         
         # gRPC 模式配置
         if use_grpc is None:
@@ -1006,6 +1009,32 @@ class PositionCopyTradingBot:
 
         self._publish_notification(notification_data)
 
+    def _notify_max_positions_reached(self, symbol: str, current_count: int, max_count: int):
+        """发送仓位数量已达上限通知（通过 Redis 发布）"""
+        # 去重检查：相同币种的仓位上限通知在冷却时间内只发一次
+        notification_key = f"max_positions_reached:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        # 构建 Markdown 格式内容
+        content = f"**币种**: {symbol}\n"
+        content += f"**当前仓位数**: {current_count}\n"
+        content += f"**最大限制**: {max_count}\n"
+        content += "**状态**: 跳过开仓"
+        
+        notification_data = {
+            'type': 'warning',
+            'title': '⚠️ 仓位数量已达上限',
+            'content': content,
+            'target_address': None,
+            'symbol': symbol,
+            'side': None,
+            'size': None,
+            'pnl': None
+        }
+
+        self._publish_notification(notification_data)
+
     def _notify_balance_insufficient(self, action: str, required_margin: float, available_balance: float, symbol: str = ""):
         """发送余额不足通知（通过 Redis 发布）"""
         # 去重检查：相同操作的余额不足通知在冷却时间内只发一次
@@ -1542,6 +1571,19 @@ class PositionCopyTradingBot:
     ) -> bool:
         """开仓"""
         symbol = state.symbol
+        
+        # 检查仓位数量是否已达上限
+        if self.max_positions > 0:
+            current_position_count = len(self.my_positions)
+            # 如果当前币种已有仓位，不计入新开仓检查
+            if symbol not in self.my_positions and current_position_count >= self.max_positions:
+                logger.warning(
+                    f"[{state.tracking_id}] 仓位数量已达上限 ({current_position_count}/{self.max_positions})，"
+                    f"跳过开仓: {symbol}"
+                )
+                self._notify_max_positions_reached(symbol, current_position_count, self.max_positions)
+                return False
+        
         order_lock = await self._get_order_lock(symbol)
         async with order_lock:
             # 获取锁后重新检查状态，防止并发重复开仓
@@ -1553,6 +1595,18 @@ class PositionCopyTradingBot:
             if not self._update_my_account():
                 logger.warning(f"[{state.tracking_id}] 获取账户信息失败，跳过开仓")
                 return False
+            
+            # 获取锁后再次检查仓位数量（防止并发开仓超限）
+            if self.max_positions > 0:
+                current_position_count = len(self.my_positions)
+                if symbol not in self.my_positions and current_position_count >= self.max_positions:
+                    logger.warning(
+                        f"[{state.tracking_id}] 仓位数量已达上限 ({current_position_count}/{self.max_positions})，"
+                        f"跳过开仓: {symbol}"
+                    )
+                    self._notify_max_positions_reached(symbol, current_position_count, self.max_positions)
+                    return False
+            
             my_pos = self.my_positions.get(symbol)
             if my_pos is not None:
                 existing_is_long = my_pos.side == PositionSide.LONG

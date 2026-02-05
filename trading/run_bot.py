@@ -176,12 +176,17 @@ async def run(use_grpc: bool = None):
         redis_client=redis_client if not use_grpc else None,
         grpc_client=grpc_client if use_grpc else None,
         use_grpc=use_grpc,
+        max_positions=settings.bot.max_positions,
     )
 
     logger.info("启动仓位跟单机器人...")
     logger.info(f"用户ID: {settings.bot.user_id}")
     logger.info(f"检查间隔: {settings.bot.check_interval}秒")
     logger.info(f"配置重载间隔: {settings.bot.reload_interval}秒")
+    if settings.bot.max_positions > 0:
+        logger.info(f"最大仓位数量: {settings.bot.max_positions}")
+    else:
+        logger.info("最大仓位数量: 不限制")
     if use_grpc:
         logger.info(f"gRPC 服务器: {settings.grpc.host}:{settings.grpc.port}")
     logger.info("按 Ctrl+C 停止\n")

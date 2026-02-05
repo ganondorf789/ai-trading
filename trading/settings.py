@@ -53,6 +53,7 @@ class BotSettings(BaseSettings):
     user_id: int = Field(default=1, description="跟单用户ID")
     check_interval: float = Field(default=0.1, description="检查间隔（秒）")
     reload_interval: float = Field(default=60.0, description="配置重载间隔（秒）")
+    max_positions: int = Field(default=0, description="最大仓位数量限制，0表示不限制")
 
 
 class APISettings(BaseSettings):
