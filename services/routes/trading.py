@@ -2,11 +2,14 @@
 C端交易 API 路由
 提供用户交易相关的 API 接口
 """
-from flask import Blueprint, jsonify, request
+import json
+import pendulum
+from flask import Blueprint, jsonify, request, g
 import logging
 
 from clients.hyperliquid_client import HyperliquidClient
 from services.routes.db import db
+from services.shared import get_redis_client
 from config.settings import settings
 from .middleware import login_required
 
@@ -16,6 +19,61 @@ trading_bp = Blueprint('trading', __name__)
 
 # 全局客户端实例（延迟初始化）
 _client: HyperliquidClient = None
+
+# Redis 通知 channel（与 websocket.py 一致）
+REDIS_NOTIFICATIONS_CHANNEL = "notifications"
+
+
+def _publish_trading_notification(
+    notification_type: str,
+    title: str,
+    content: str,
+    user_id: int,
+    symbol: str = None,
+    side: str = None,
+    size: float = None,
+    pnl: float = None
+):
+    """
+    发布交易通知到 Redis
+    
+    Args:
+        notification_type: 通知类型 ('open' | 'close' | 'adjust' | 'error' | 'trade')
+        title: 通知标题
+        content: Markdown 格式内容
+        user_id: 用户ID（用于定向发送）
+        symbol: 交易对
+        side: 方向
+        size: 仓位大小
+        pnl: 盈亏
+    """
+    try:
+        redis_client = get_redis_client()
+        if redis_client is None:
+            logger.debug("Redis 客户端未初始化，跳过通知发布")
+            return
+        
+        notification_data = {
+            'type': notification_type,
+            'title': title,
+            'content': content,
+            'user_id': user_id,
+            'symbol': symbol,
+            'side': side,
+            'size': size,
+            'pnl': pnl,
+            'target_address': None,  # 手动交易没有目标地址
+            'timestamp': pendulum.now().to_iso8601_string()
+        }
+        
+        redis_client.publish(
+            REDIS_NOTIFICATIONS_CHANNEL,
+            json.dumps(notification_data, ensure_ascii=False)
+        )
+        logger.debug(f"交易通知已发布: type={notification_type}, symbol={symbol}, user_id={user_id}")
+        
+    except Exception as e:
+        logger.warning(f"发布交易通知失败: {e}")
 
 
 def _extract_order_data(result: dict) -> dict:
@@ -587,6 +645,21 @@ def add_position(symbol: str):
             response_data['leverage'] = leverage
             response_data['leverage_result'] = leverage_result
         
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        side_cn = "做多" if is_buy else "做空"
+        side_emoji = "🟢" if is_buy else "🔴"
+        content = f"**交易对**: {symbol}\n**方向**: {side_cn}\n**补仓数量**: {size}"
+        _publish_trading_notification(
+            notification_type='adjust',
+            title=f'{side_emoji} 市价补仓',
+            content=content,
+            user_id=user_id,
+            symbol=symbol,
+            side='long' if is_buy else 'short',
+            size=size
+        )
+        
         return jsonify(response_data)
         
     except Exception as e:
@@ -758,6 +831,21 @@ def add_position_limit(symbol: str):
             response_data['leverage'] = leverage
             response_data['leverage_result'] = leverage_result
         
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        side_cn = "做多" if is_buy else "做空"
+        side_emoji = "🟢" if is_buy else "🔴"
+        content = f"**交易对**: {symbol}\n**方向**: {side_cn}\n**补仓数量**: {size}\n**限价**: {price}"
+        _publish_trading_notification(
+            notification_type='adjust',
+            title=f'{side_emoji} 限价补仓',
+            content=content,
+            user_id=user_id,
+            symbol=symbol,
+            side='long' if is_buy else 'short',
+            size=size
+        )
+        
         return jsonify(response_data)
         
     except Exception as e:
@@ -818,6 +906,20 @@ def close_position(symbol: str):
                 'success': False,
                 'error': f'未找到 {symbol} 的仓位'
             }), 404
+        
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**交易对**: {symbol}\n**类型**: 市价平仓"
+        if size:
+            content += f"\n**平仓数量**: {size}"
+        _publish_trading_notification(
+            notification_type='close',
+            title='📤 市价平仓',
+            content=content,
+            user_id=user_id,
+            symbol=symbol,
+            size=size
+        )
         
         return jsonify({
             'success': True,
@@ -901,6 +1003,20 @@ def close_position_limit(symbol: str):
                 'error': f'未找到 {symbol} 的仓位'
             }), 404
         
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**交易对**: {symbol}\n**类型**: 限价平仓\n**限价**: {price}"
+        if size:
+            content += f"\n**平仓数量**: {size}"
+        _publish_trading_notification(
+            notification_type='close',
+            title='📤 限价平仓',
+            content=content,
+            user_id=user_id,
+            symbol=symbol,
+            size=size
+        )
+        
         return jsonify({
             'success': True,
             'data': _extract_order_data(result),
@@ -942,6 +1058,18 @@ def close_all_positions():
     try:
         client = get_client()
         results = client.close_all_positions()
+        
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**类型**: 一键平仓\n**平仓数量**: {len(results)} 个仓位"
+        _publish_trading_notification(
+            notification_type='close',
+            title='📤 一键平仓',
+            content=content,
+            user_id=user_id,
+            symbol=None,
+            size=len(results)
+        )
         
         return jsonify({
             'success': True,
@@ -1034,6 +1162,23 @@ def set_position_tp_sl(symbol: str):
             'tp': _extract_order_data(result.get('tp')) if result.get('tp') else None,
             'sl': _extract_order_data(result.get('sl')) if result.get('sl') else None
         }
+        
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        tp_price = data.get('tp_trigger_price')
+        sl_price = data.get('sl_trigger_price')
+        content_parts = [f"**交易对**: {symbol}"]
+        if tp_price:
+            content_parts.append(f"**止盈价格**: {tp_price}")
+        if sl_price:
+            content_parts.append(f"**止损价格**: {sl_price}")
+        _publish_trading_notification(
+            notification_type='adjust',
+            title='⚙️ 止盈止损设置',
+            content='\n'.join(content_parts),
+            user_id=user_id,
+            symbol=symbol
+        )
         
         return jsonify({
             'success': True,
@@ -1148,6 +1293,17 @@ def cancel_order(symbol: str, order_id: int):
         client = get_client()
         result = client.cancel_order(symbol, order_id)
         
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**交易对**: {symbol}\n**订单ID**: {order_id}"
+        _publish_trading_notification(
+            notification_type='trade',
+            title='❌ 取消订单',
+            content=content,
+            user_id=user_id,
+            symbol=symbol
+        )
+        
         return jsonify({
             'success': True,
             'data': _extract_order_data(result),
@@ -1196,6 +1352,18 @@ def cancel_orders_by_symbol(symbol: str):
         client = get_client()
         results = client.cancel_orders_by_symbol(symbol)
         
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**交易对**: {symbol}\n**取消数量**: {len(results)} 个订单"
+        _publish_trading_notification(
+            notification_type='trade',
+            title='❌ 取消订单',
+            content=content,
+            user_id=user_id,
+            symbol=symbol,
+            size=len(results)
+        )
+        
         return jsonify({
             'success': True,
             'data': _extract_order_data_list(results),
@@ -1238,6 +1406,18 @@ def cancel_all_orders():
     try:
         client = get_client()
         results = client.cancel_all_orders()
+        
+        # 发送通知
+        user_id = g.current_user.get('user_id')
+        content = f"**类型**: 一键取消\n**取消数量**: {len(results)} 个订单"
+        _publish_trading_notification(
+            notification_type='trade',
+            title='❌ 一键取消订单',
+            content=content,
+            user_id=user_id,
+            symbol=None,
+            size=len(results)
+        )
         
         return jsonify({
             'success': True,
