@@ -6,9 +6,7 @@
 - 第一种：跟单交易员的所有仓位
 - 第二种：只跟单交易员的特定仓位（本模块）
 
-支持两种模式：
-- 直连模式：直接连接 PostgreSQL 和 Redis
-- gRPC 模式：通过 gRPC 服务访问数据库和 Redis（推荐）
+通过 gRPC 服务访问数据库和 Redis
 """
 import sys
 import os
@@ -30,13 +28,7 @@ from core.models import Position, PositionSide
 from core.tracking_utils import build_tracking_data_from_dataclass
 from clients.hyperliquid_client import HyperliquidClient
 from trading.settings import settings
-
-# gRPC 客户端
-try:
-    from trading.grpc_client import GRPCClient, GRPCDatabaseClient, GRPCRedisClient
-    GRPC_AVAILABLE = True
-except ImportError:
-    GRPC_AVAILABLE = False
+from trading.grpc_client import GRPCClient, GRPCDatabaseClient, GRPCRedisClient
 
 # Redis 开仓通知 channel
 REDIS_OPEN_CHANNEL = "position_tracking_open"
@@ -141,9 +133,7 @@ class PositionCopyTradingBot:
         client: HyperliquidClient,
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
-        redis_client = None,
         grpc_client: 'GRPCClient' = None,
-        use_grpc: bool = None,
         max_positions: int = 0
     ):
         """
@@ -153,9 +143,7 @@ class PositionCopyTradingBot:
             client: Hyperliquid 客户端（需要已初始化钱包）
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
-            redis_client: Redis 客户端（直连模式，用于接收开仓通知）
-            grpc_client: gRPC 客户端（gRPC 模式）
-            use_grpc: 是否使用 gRPC 模式，默认从配置读取
+            grpc_client: gRPC 客户端
             max_positions: 最大仓位数量限制，0表示不限制
         """
         self.client = client
@@ -163,10 +151,7 @@ class PositionCopyTradingBot:
         self.reload_interval = reload_interval
         self.max_positions = max_positions
         
-        # gRPC 模式配置
-        if use_grpc is None:
-            use_grpc = settings.grpc.enabled and GRPC_AVAILABLE
-        self._use_grpc = use_grpc
+        # gRPC 客户端
         self._grpc_client = grpc_client
         
         # 跟单状态 (tracking_id -> TrackingState)
@@ -193,11 +178,6 @@ class PositionCopyTradingBot:
         self._meta_cache_time: Optional[pendulum.DateTime] = None
         self._symbol_decimals: Dict[str, int] = {}
         
-        # 延迟加载数据库（直连模式）
-        self._db = None
-        
-        # Redis 开仓通知（直连模式外部传入，gRPC 模式通过 grpc_client）
-        self._redis_client = redis_client
         # 正在处理中的 tracking_id（防止并发重复处理）
         self._processing_tracking_ids: set = set()
         
@@ -210,79 +190,36 @@ class PositionCopyTradingBot:
         self.address_configs: Dict[str, AddressConfig] = {}  # 地址配置缓存 (address -> AddressConfig)
         self._address_positions: Dict[str, Dict[str, Dict]] = {}  # 地址仓位缓存 (address -> {symbol -> position})
         
-        if self._use_grpc:
-            logger.info("使用 gRPC 模式连接数据库和 Redis")
+        logger.info("使用 gRPC 模式连接数据库和 Redis")
 
     @property
-    def db(self):
-        """延迟加载数据库（支持直连和 gRPC 两种模式）"""
-        if self._use_grpc:
-            # gRPC 模式
-            if self._grpc_client is None:
-                self._grpc_client = GRPCClient(
-                    host=settings.grpc.host,
-                    port=settings.grpc.port
-                )
-                logger.info(f"gRPC 客户端已连接: {settings.grpc.host}:{settings.grpc.port}")
-            return self._grpc_client.db
-        else:
-            # 直连模式
-            if self._db is None:
-                from database import TraderDatabase
-                self._db = TraderDatabase()
-            return self._db
+    def db(self) -> GRPCDatabaseClient:
+        """获取数据库客户端"""
+        if self._grpc_client is None:
+            self._grpc_client = GRPCClient(
+                host=settings.grpc.host,
+                port=settings.grpc.port
+            )
+            logger.info(f"gRPC 客户端已连接: {settings.grpc.host}:{settings.grpc.port}")
+        return self._grpc_client.db
     
     @property
-    def redis(self):
-        """获取 Redis 客户端（支持直连和 gRPC 两种模式）"""
-        if self._use_grpc:
-            # gRPC 模式
-            if self._grpc_client is None:
-                self._grpc_client = GRPCClient(
-                    host=settings.grpc.host,
-                    port=settings.grpc.port
-                )
-            return self._grpc_client.redis
-        else:
-            # 直连模式
-            return self._redis_client
+    def redis(self) -> GRPCRedisClient:
+        """获取 Redis 客户端"""
+        if self._grpc_client is None:
+            self._grpc_client = GRPCClient(
+                host=settings.grpc.host,
+                port=settings.grpc.port
+            )
+        return self._grpc_client.redis
 
     async def _listen_redis_open(self):
         """监听 Redis 开仓通知，收到后立即执行开仓"""
-        if self._use_grpc:
-            # gRPC 模式：使用 gRPC Subscribe
-            await self._listen_redis_grpc(
-                channels=[REDIS_OPEN_CHANNEL],
-                handler=self._on_redis_open_message,
-                name="开仓"
-            )
-        else:
-            # 直连模式：使用原生 Redis pubsub
-            if not self._redis_client:
-                return
-            
-            try:
-                pubsub = self._redis_client.pubsub()
-                pubsub.subscribe(REDIS_OPEN_CHANNEL)
-                logger.info(f"开始监听开仓通知 (channel: {REDIS_OPEN_CHANNEL})")
-                
-                while self.is_running:
-                    try:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                        if message and message['type'] == 'message':
-                            await self._on_redis_open_message(message['channel'], message['data'])
-                    except Exception as e:
-                        logger.warning(f"Redis 监听错误: {e}")
-                    
-                    await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                logger.error(f"Redis 监听异常: {e}")
-            finally:
-                try:
-                    pubsub.close()
-                except:
-                    pass
+        await self._listen_redis_grpc(
+            channels=[REDIS_OPEN_CHANNEL],
+            handler=self._on_redis_open_message,
+            name="开仓"
+        )
     
     async def _on_redis_open_message(self, channel: str, data: str):
         """处理开仓通知消息"""
@@ -397,40 +334,11 @@ class PositionCopyTradingBot:
 
     async def _listen_redis_adjust(self):
         """监听 Redis 补仓通知，收到后立即执行补仓"""
-        if self._use_grpc:
-            # gRPC 模式
-            await self._listen_redis_grpc(
-                channels=[REDIS_ADJUST_CHANNEL],
-                handler=self._on_redis_adjust_message,
-                name="补仓"
-            )
-        else:
-            # 直连模式
-            if not self._redis_client:
-                return
-            
-            try:
-                pubsub = self._redis_client.pubsub()
-                pubsub.subscribe(REDIS_ADJUST_CHANNEL)
-                logger.info(f"开始监听补仓通知 (channel: {REDIS_ADJUST_CHANNEL})")
-                
-                while self.is_running:
-                    try:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                        if message and message['type'] == 'message':
-                            await self._on_redis_adjust_message(message['channel'], message['data'])
-                    except Exception as e:
-                        logger.warning(f"Redis 补仓监听错误: {e}")
-                    
-                    await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                logger.error(f"Redis 补仓监听异常: {e}")
-            finally:
-                try:
-                    pubsub.close()
-                except:
-                    pass
+        await self._listen_redis_grpc(
+            channels=[REDIS_ADJUST_CHANNEL],
+            handler=self._on_redis_adjust_message,
+            name="补仓"
+        )
     
     async def _on_redis_adjust_message(self, channel: str, data: str):
         """处理补仓通知消息"""
@@ -618,40 +526,11 @@ class PositionCopyTradingBot:
 
     async def _listen_redis_close(self):
         """监听 Redis 平仓通知，收到后立即执行平仓"""
-        if self._use_grpc:
-            # gRPC 模式
-            await self._listen_redis_grpc(
-                channels=[REDIS_CLOSE_CHANNEL],
-                handler=self._on_redis_close_message,
-                name="平仓"
-            )
-        else:
-            # 直连模式
-            if not self._redis_client:
-                return
-            
-            try:
-                pubsub = self._redis_client.pubsub()
-                pubsub.subscribe(REDIS_CLOSE_CHANNEL)
-                logger.info(f"开始监听平仓通知 (channel: {REDIS_CLOSE_CHANNEL})")
-                
-                while self.is_running:
-                    try:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                        if message and message['type'] == 'message':
-                            await self._on_redis_close_message(message['channel'], message['data'])
-                    except Exception as e:
-                        logger.warning(f"Redis 平仓监听错误: {e}")
-                    
-                    await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                logger.error(f"Redis 平仓监听异常: {e}")
-            finally:
-                try:
-                    pubsub.close()
-                except:
-                    pass
+        await self._listen_redis_grpc(
+            channels=[REDIS_CLOSE_CHANNEL],
+            handler=self._on_redis_close_message,
+            name="平仓"
+        )
     
     async def _on_redis_close_message(self, channel: str, data: str):
         """处理平仓通知消息"""
@@ -667,40 +546,11 @@ class PositionCopyTradingBot:
 
     async def _listen_redis_config_reload(self):
         """监听 Redis 配置重载通知，收到后立即重载配置"""
-        if self._use_grpc:
-            # gRPC 模式
-            await self._listen_redis_grpc(
-                channels=[REDIS_CONFIG_RELOAD_CHANNEL],
-                handler=self._on_redis_config_reload_message,
-                name="配置重载"
-            )
-        else:
-            # 直连模式
-            if not self._redis_client:
-                return
-            
-            try:
-                pubsub = self._redis_client.pubsub()
-                pubsub.subscribe(REDIS_CONFIG_RELOAD_CHANNEL)
-                logger.info(f"开始监听配置重载通知 (channel: {REDIS_CONFIG_RELOAD_CHANNEL})")
-                
-                while self.is_running:
-                    try:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                        if message and message['type'] == 'message':
-                            await self._on_redis_config_reload_message(message['channel'], message['data'])
-                    except Exception as e:
-                        logger.warning(f"Redis 配置重载监听错误: {e}")
-                    
-                    await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                logger.error(f"Redis 配置重载监听异常: {e}")
-            finally:
-                try:
-                    pubsub.close()
-                except:
-                    pass
+        await self._listen_redis_grpc(
+            channels=[REDIS_CONFIG_RELOAD_CHANNEL],
+            handler=self._on_redis_config_reload_message,
+            name="配置重载"
+        )
     
     async def _on_redis_config_reload_message(self, channel: str, data: str):
         """处理配置重载通知消息"""
@@ -885,24 +735,11 @@ class PositionCopyTradingBot:
         
         message = json.dumps(notification_data, ensure_ascii=False)
         
-        if self._use_grpc:
-            # gRPC 模式
-            try:
-                self.redis.publish(REDIS_NOTIFICATIONS_CHANNEL, message)
-                logger.debug(f"通知已发布 (gRPC): type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
-            except Exception as e:
-                logger.warning(f"发布通知失败 (gRPC): {e}")
-        else:
-            # 直连模式
-            if not self._redis_client:
-                logger.debug("Redis 客户端未初始化，跳过通知发布")
-                return
-            
-            try:
-                self._redis_client.publish(REDIS_NOTIFICATIONS_CHANNEL, message)
-                logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
-            except Exception as e:
-                logger.warning(f"发布通知失败: {e}")
+        try:
+            self.redis.publish(REDIS_NOTIFICATIONS_CHANNEL, message)
+            logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
+        except Exception as e:
+            logger.warning(f"发布通知失败: {e}")
 
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知（通过 Redis 发布）"""
@@ -1326,6 +1163,7 @@ class PositionCopyTradingBot:
             tracking_id = self.db.save_position_tracking(tracking_data)
             
             if tracking_id:
+                side = position.get('side', 'unknown')
                 logger.success(
                     f"[自动跟单] 创建跟单记录: {symbol} {side} "
                     f"(tracking_id={tracking_id}, 来自 {config.name or address[:10]}...)"
@@ -1333,10 +1171,7 @@ class PositionCopyTradingBot:
                 
                 # 发送 Redis 通知触发开仓
                 try:
-                    if self._use_grpc:
-                        self.redis.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
-                    elif self._redis_client:
-                        self._redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+                    self.redis.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
                     logger.info(f"[自动跟单] 已发送开仓通知 (tracking_id={tracking_id})")
                 except Exception as e:
                     logger.warning(f"[自动跟单] Redis 开仓通知发送失败: {e}")
@@ -1489,12 +1324,8 @@ class PositionCopyTradingBot:
                     })
                 
                 # 写入 Redis（设置 60 秒过期，防止数据过期）
-                if self._use_grpc:
-                    self.redis.setex(REDIS_MY_POSITIONS_KEY, 60, json.dumps(positions_data))
-                    self.redis.setex(REDIS_MY_BALANCE_KEY, 60, str(self.available_balance))
-                elif self._redis_client:
-                    self._redis_client.setex(REDIS_MY_POSITIONS_KEY, 60, json.dumps(positions_data))
-                    self._redis_client.setex(REDIS_MY_BALANCE_KEY, 60, str(self.available_balance))
+                self.redis.setex(REDIS_MY_POSITIONS_KEY, 60, json.dumps(positions_data))
+                self.redis.setex(REDIS_MY_BALANCE_KEY, 60, str(self.available_balance))
             except Exception as e:
                 logger.debug(f"写入 Redis 缓存失败: {e}")
             return True
@@ -2111,16 +1942,11 @@ class PositionCopyTradingBot:
         elif not self.address_configs:
             logger.info(f"已加载 {len(self.trackings)} 个手动跟单，无自动跟单地址")
 
-        # 启动 Redis 通知监听任务（gRPC 模式或直连模式）
-        redis_open_task = None
-        redis_adjust_task = None
-        redis_close_task = None
-        redis_config_reload_task = None
-        if self._use_grpc or self._redis_client:
-            redis_open_task = asyncio.create_task(self._listen_redis_open())
-            redis_adjust_task = asyncio.create_task(self._listen_redis_adjust())
-            redis_close_task = asyncio.create_task(self._listen_redis_close())
-            redis_config_reload_task = asyncio.create_task(self._listen_redis_config_reload())
+        # 启动 Redis 通知监听任务
+        redis_open_task = asyncio.create_task(self._listen_redis_open())
+        redis_adjust_task = asyncio.create_task(self._listen_redis_adjust())
+        redis_close_task = asyncio.create_task(self._listen_redis_close())
+        redis_config_reload_task = asyncio.create_task(self._listen_redis_config_reload())
 
         try:
             while self.is_running:

@@ -1,0 +1,28 @@
+# Trading Service Dependencies
+# Python 3.10+
+
+# Hyperliquid SDK
+hyperliquid-python-sdk>=0.8.1
+
+# Web Framework
+flask>=3.0.0
+flask-cors>=4.0.0
+flasgger>=0.9.7
+
+# Configuration
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Logging
+loguru>=0.7.2
+
+# Date/Time
+pendulum>=3.0.0
+
+# gRPC (required for database and Redis access)
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+
+# Async HTTP (used by hyperliquid SDK)
+aiohttp>=3.9.0

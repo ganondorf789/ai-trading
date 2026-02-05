@@ -90,7 +90,6 @@ class GRPCSettings(BaseSettings):
     """gRPC 配置"""
     model_config = SettingsConfigDict(env_prefix='GRPC_')
     
-    enabled: bool = Field(default=True, description="是否启用 gRPC 模式")
     host: str = Field(default="localhost", description="gRPC 服务器地址")
     port: int = Field(default=50051, description="gRPC 服务器端口")
 

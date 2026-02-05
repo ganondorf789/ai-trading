@@ -5,9 +5,7 @@
 通过轮询目标交易者的特定仓位变化进行跟单
 从数据库加载仓位跟单配置，支持同时跟单多个仓位
 
-支持两种模式：
-- gRPC 模式（默认）：通过 gRPC 服务访问数据库和 Redis
-- 直连模式：直接连接 PostgreSQL 和 Redis
+通过 gRPC 服务访问数据库和 Redis
 
 启动方式：
 cd trading
@@ -17,7 +15,7 @@ python run_bot.py
 python -m trading.run_bot
 """
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 import asyncio
 import argparse
 import os
@@ -32,24 +30,10 @@ from loguru import logger
 from clients.hyperliquid_client import HyperliquidClient
 from trading.position_copy_trading import PositionCopyTradingBot
 from trading.settings import settings
-
-# gRPC 客户端支持
-try:
-    from trading.grpc_client import GRPCClient
-    GRPC_AVAILABLE = True
-except ImportError:
-    GRPC_AVAILABLE = False
-
-# Redis 直连支持（可选，仅直连模式需要）
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
+from trading.grpc_client import GRPCClient
 
 # 全局变量
 grpc_client = None
-redis_client = None
 
 
 def setup_logging():
@@ -75,10 +59,6 @@ def setup_grpc_client():
     """初始化 gRPC 客户端"""
     global grpc_client
     
-    if not GRPC_AVAILABLE:
-        logger.warning("gRPC 客户端不可用，将使用直连模式")
-        return None
-    
     try:
         grpc_client = GRPCClient(
             host=settings.grpc.host,
@@ -89,47 +69,17 @@ def setup_grpc_client():
             logger.info(f"gRPC 已连接: {settings.grpc.host}:{settings.grpc.port}")
             return grpc_client
         else:
-            logger.warning(f"gRPC 连接测试失败: {settings.grpc.host}:{settings.grpc.port}")
+            logger.error(f"gRPC 连接测试失败: {settings.grpc.host}:{settings.grpc.port}")
             return None
     except Exception as e:
-        logger.warning(f"gRPC 连接失败: {e}")
+        logger.error(f"gRPC 连接失败: {e}")
         grpc_client = None
         return None
 
 
-def setup_redis_client():
-    """初始化 Redis 客户端（仅直连模式）"""
-    global redis_client
-    
-    if not REDIS_AVAILABLE:
-        logger.warning("Redis 库未安装，实时通知将不可用")
-        return None
-    
-    try:
-        redis_client = redis.Redis(
-            host=settings.redis.host,
-            port=settings.redis.port,
-            password=settings.redis.password or None,
-            db=settings.redis.db,
-            decode_responses=True
-        )
-        redis_client.ping()
-        logger.info(f"Redis 已连接: {settings.redis.host}:{settings.redis.port}")
-        return redis_client
-    except Exception as e:
-        logger.warning(f"Redis 连接失败: {e}")
-        redis_client = None
-        return None
-
-
-async def run(use_grpc: bool = None):
-    """
-    运行仓位跟单机器人
-    
-    Args:
-        use_grpc: 是否使用 gRPC 模式，默认从配置读取
-    """
-    global grpc_client, redis_client
+async def run():
+    """运行仓位跟单机器人"""
+    global grpc_client
 
     setup_logging()
 
@@ -138,23 +88,12 @@ async def run(use_grpc: bool = None):
     logger.info("第二种跟单模式：跟单特定仓位")
     logger.info("=" * 60)
 
-    # 确定运行模式
-    if use_grpc is None:
-        use_grpc = settings.grpc.enabled and GRPC_AVAILABLE
-    
-    if use_grpc:
-        # gRPC 模式
-        logger.info("运行模式: gRPC")
-        grpc_client = setup_grpc_client()
-        if not grpc_client:
-            logger.error("gRPC 模式初始化失败，请检查 gRPC 服务器是否运行")
-            logger.info("启动 gRPC 服务器: python grpc_server.py")
-            return
-    else:
-        # 直连模式
-        logger.info("运行模式: 直连 (PostgreSQL + Redis)")
-        # 初始化 Redis（直连模式）
-        setup_redis_client()
+    # 初始化 gRPC 客户端
+    grpc_client = setup_grpc_client()
+    if not grpc_client:
+        logger.error("gRPC 初始化失败，请检查 gRPC 服务器是否运行")
+        logger.info("启动 gRPC 服务器: python grpc_server.py")
+        return
 
     # 验证配置
     if not settings.hyperliquid.private_key:
@@ -173,9 +112,7 @@ async def run(use_grpc: bool = None):
         client=client,
         check_interval=settings.bot.check_interval,
         reload_interval=settings.bot.reload_interval,
-        redis_client=redis_client if not use_grpc else None,
-        grpc_client=grpc_client if use_grpc else None,
-        use_grpc=use_grpc,
+        grpc_client=grpc_client,
         max_positions=settings.bot.max_positions,
     )
 
@@ -187,8 +124,7 @@ async def run(use_grpc: bool = None):
         logger.info(f"最大仓位数量: {settings.bot.max_positions}")
     else:
         logger.info("最大仓位数量: 不限制")
-    if use_grpc:
-        logger.info(f"gRPC 服务器: {settings.grpc.host}:{settings.grpc.port}")
+    logger.info(f"gRPC 服务器: {settings.grpc.host}:{settings.grpc.port}")
     logger.info("按 Ctrl+C 停止\n")
 
     try:
@@ -223,11 +159,6 @@ async def run(use_grpc: bool = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='仓位级别跟单机器人')
     parser.add_argument(
-        '--direct', 
-        action='store_true', 
-        help='使用直连模式（直接连接 PostgreSQL 和 Redis）'
-    )
-    parser.add_argument(
         '--grpc-host',
         default=None,
         help='gRPC 服务器地址'
@@ -244,21 +175,17 @@ if __name__ == "__main__":
     # 覆盖 gRPC 设置
     if args.grpc_host:
         os.environ['GRPC_HOST'] = args.grpc_host
-        # 重新加载 settings
         settings.grpc.host = args.grpc_host
     if args.grpc_port:
         os.environ['GRPC_PORT'] = str(args.grpc_port)
         settings.grpc.port = args.grpc_port
-    
-    # 确定运行模式
-    use_grpc = not args.direct
     
     # Windows 上需要特殊处理
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     try:
-        asyncio.run(run(use_grpc=use_grpc))
+        asyncio.run(run())
     except KeyboardInterrupt:
         logger.info("程序已退出")
     
