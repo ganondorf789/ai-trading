@@ -557,14 +557,16 @@ export function PositionHistory({ address }: PositionHistoryProps) {
                 </Table>
 
                 {/* 分页 */}
-                <TablePagination
-                  page={page}
-                  totalPages={totalPages}
-                  onPageChange={setPage}
-                  totalCount={totalCount}
-                  rowsPerPage={rowsPerPage}
-                  className="mt-4"
-                />
+                {totalPages > 1 && (
+                  <TablePagination
+                    page={page}
+                    totalPages={totalPages}
+                    onPageChange={setPage}
+                    totalCount={totalCount}
+                    rowsPerPage={rowsPerPage}
+                    className="mt-4"
+                  />
+                )}
               </>
             ) : (
               <div className="text-center text-gray-500 py-8">

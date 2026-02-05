@@ -180,14 +180,16 @@ export default function DefaultConfigRulesPage() {
         />
         
         {/* 分页 */}
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          totalCount={rules.length}
-          rowsPerPage={rowsPerPage}
-          onPageChange={setPage}
-          onRowsPerPageChange={setRowsPerPage}
-        />
+        {totalPages > 1 && (
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            totalCount={rules.length}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setPage}
+            onRowsPerPageChange={setRowsPerPage}
+          />
+        )}
 
         {/* 编辑弹窗 */}
         <ConfigRuleModal

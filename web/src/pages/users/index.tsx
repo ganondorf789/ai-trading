@@ -215,14 +215,16 @@ export default function UsersPage() {
         <Table 
           aria-label="用户列表"
           bottomContent={
-            <TablePagination
-              page={page}
-              totalPages={totalPages}
-              totalCount={users.length}
-              rowsPerPage={rowsPerPage}
-              onPageChange={setPage}
-              onRowsPerPageChange={setRowsPerPage}
-            />
+            totalPages > 1 ? (
+              <TablePagination
+                page={page}
+                totalPages={totalPages}
+                totalCount={users.length}
+                rowsPerPage={rowsPerPage}
+                onPageChange={setPage}
+                onRowsPerPageChange={setRowsPerPage}
+              />
+            ) : null
           }
           bottomContentPlacement="outside"
         >

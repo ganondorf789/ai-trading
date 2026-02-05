@@ -469,7 +469,7 @@ export default function CopyTradingPage() {
             </Table>
 
             {/* 分页 */}
-            {pagination && pagination.total_pages > 0 && (
+            {pagination && pagination.total_pages > 1 && (
               <TablePagination
                 page={page}
                 totalPages={pagination.total_pages}

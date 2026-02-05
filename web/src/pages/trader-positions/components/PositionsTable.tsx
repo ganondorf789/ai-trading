@@ -302,7 +302,7 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
 
   // 底部分页内容
   const bottomContent = useMemo(() => {
-    if (totalCount === 0) return null;
+    if (totalPages <= 1) return null;
     
     return (
       <TablePagination

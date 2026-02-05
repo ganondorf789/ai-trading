@@ -201,13 +201,15 @@ export default function TradersPage() {
                   }
                   topContentPlacement="outside"
                   bottomContent={
-                    <TablePagination
-                      page={page}
-                      totalPages={totalPages}
-                      totalCount={totalCount}
-                      rowsPerPage={ROWS_PER_PAGE}
-                      onPageChange={setPage}
-                    />
+                    totalPages > 1 ? (
+                      <TablePagination
+                        page={page}
+                        totalPages={totalPages}
+                        totalCount={totalCount}
+                        rowsPerPage={ROWS_PER_PAGE}
+                        onPageChange={setPage}
+                      />
+                    ) : null
                   }
                   bottomContentPlacement="outside"
                   sortDescriptor={sortDescriptor}

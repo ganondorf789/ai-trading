@@ -429,6 +429,7 @@ export function TradeHistory({
 
   // 表格底部内容
   const bottomContent = useMemo(() => {
+    if (totalPages <= 1) return null;
     return (
       <TablePagination
         page={page}

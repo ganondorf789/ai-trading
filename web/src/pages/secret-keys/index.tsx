@@ -365,14 +365,16 @@ export default function SecretKeysPage() {
         <Table 
           aria-label="秘钥列表"
           bottomContent={
-            <TablePagination
-              page={page}
-              totalPages={totalPages}
-              totalCount={keys.length}
-              rowsPerPage={rowsPerPage}
-              onPageChange={setPage}
-              onRowsPerPageChange={setRowsPerPage}
-            />
+            totalPages > 1 ? (
+              <TablePagination
+                page={page}
+                totalPages={totalPages}
+                totalCount={keys.length}
+                rowsPerPage={rowsPerPage}
+                onPageChange={setPage}
+                onRowsPerPageChange={setRowsPerPage}
+              />
+            ) : null
           }
           bottomContentPlacement="outside"
         >

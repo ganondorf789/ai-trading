@@ -333,14 +333,16 @@ export default function AppVersionsPage() {
         <Table 
           aria-label="版本列表"
           bottomContent={
-            <TablePagination
-              page={page}
-              totalPages={totalPages}
-              totalCount={versions.length}
-              rowsPerPage={rowsPerPage}
-              onPageChange={setPage}
-              onRowsPerPageChange={setRowsPerPage}
-            />
+            totalPages > 1 ? (
+              <TablePagination
+                page={page}
+                totalPages={totalPages}
+                totalCount={versions.length}
+                rowsPerPage={rowsPerPage}
+                onPageChange={setPage}
+                onRowsPerPageChange={setRowsPerPage}
+              />
+            ) : null
           }
           bottomContentPlacement="outside"
         >
