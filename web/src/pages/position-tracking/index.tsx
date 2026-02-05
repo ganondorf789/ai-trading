@@ -222,14 +222,19 @@ export default function PositionTrackingPage() {
         case "target":
           return (
             <div className="flex flex-col">
-              <a
-                href={`/traders/${item.target_address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-sm text-primary hover:underline"
-              >
-                {item.target_name || formatAddress(item.target_address)}
-              </a>
+              <div className="flex items-center gap-1">
+                {item.target_is_starred && (
+                  <Icon icon="lucide:star" width={14} className="text-warning" />
+                )}
+                <a
+                  href={`/traders/${item.target_address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-sm text-primary hover:underline"
+                >
+                  {item.target_name || formatAddress(item.target_address)}
+                </a>
+              </div>
               {item.target_name && (
                 <span className="text-xs text-default-400 font-mono">
                   {formatAddress(item.target_address)}
@@ -257,9 +262,16 @@ export default function PositionTrackingPage() {
           if (!item.target_initial_size) return "-";
           return (
             <div className="flex flex-col">
-              <span className={item.target_initial_side === "long" ? "text-success" : "text-danger"}>
-                {item.target_initial_side?.toUpperCase()} {item.target_initial_size?.toFixed(4)}
-              </span>
+              <div className="flex items-center gap-1">
+                <span className={item.target_initial_side === "long" ? "text-success" : "text-danger"}>
+                  {item.target_initial_side?.toUpperCase()} {item.target_initial_size?.toFixed(4)}
+                </span>
+                {item.target_initial_leverage && (
+                  <Chip size="sm" variant="flat" className="h-4 text-xs px-1">
+                    {item.target_initial_leverage}x
+                  </Chip>
+                )}
+              </div>
               {item.target_initial_entry_price && (
                 <span className="text-xs text-default-400">
                   @ ${item.target_initial_entry_price.toFixed(2)}

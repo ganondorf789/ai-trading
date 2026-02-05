@@ -586,6 +586,7 @@ export interface PositionTracking {
   id: number;
   target_address: string;
   target_name: string;
+  target_is_starred: boolean;
   symbol: string;
   is_enabled: boolean;
   copy_ratio: number;
@@ -604,6 +605,7 @@ export interface PositionTracking {
   target_initial_size: number | null;
   target_initial_side: string | null;
   target_initial_entry_price: number | null;
+  target_initial_leverage: number | null;
   my_size: number;
   my_side: string | null;
   my_entry_price: number | null;
