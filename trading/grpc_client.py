@@ -1,0 +1,525 @@
+"""
+gRPC 客户端
+
+为 trading 服务提供数据库和 Redis 操作的 gRPC 客户端
+替代直接的数据库和 Redis 连接
+"""
+import sys
+import os
+import json
+import asyncio
+import threading
+from typing import Dict, List, Optional, Callable, Any
+from dataclasses import dataclass
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import grpc
+from loguru import logger
+
+import trading_service_pb2 as pb2
+import trading_service_pb2_grpc as pb2_grpc
+
+
+class GRPCDatabaseClient:
+    """数据库 gRPC 客户端"""
+    
+    def __init__(self, host: str = 'localhost', port: int = 50051):
+        """
+        初始化数据库客户端
+        
+        Args:
+            host: gRPC 服务器地址
+            port: gRPC 服务器端口
+        """
+        self._address = f'{host}:{port}'
+        self._channel = None
+        self._stub = None
+    
+    def _ensure_connected(self):
+        """确保已连接"""
+        if self._channel is None:
+            self._channel = grpc.insecure_channel(self._address)
+            self._stub = pb2_grpc.DatabaseServiceStub(self._channel)
+    
+    def close(self):
+        """关闭连接"""
+        if self._channel:
+            self._channel.close()
+            self._channel = None
+            self._stub = None
+    
+    def _tracking_to_dict(self, tracking: pb2.PositionTracking) -> Dict:
+        """将 proto 消息转换为字典"""
+        return {
+            'id': tracking.id,
+            'target_address': tracking.target_address,
+            'symbol': tracking.symbol,
+            'target_side': tracking.target_side,
+            'copy_ratio': tracking.copy_ratio,
+            'max_position_size': tracking.max_position_size,
+            'slippage': tracking.slippage,
+            'is_enabled': tracking.is_enabled,
+            'status': tracking.status,
+            'my_size': tracking.my_size if tracking.my_size else None,
+            'my_side': tracking.my_side if tracking.my_side else None,
+            'my_entry_price': tracking.my_entry_price if tracking.my_entry_price else None,
+            'user_id': tracking.user_id if tracking.user_id else None,
+            'address_id': tracking.address_id if tracking.address_id else None,
+            'target_entry_price': tracking.target_entry_price if tracking.target_entry_price else None,
+            'target_size': tracking.target_size if tracking.target_size else None,
+            'nickname': tracking.nickname if tracking.nickname else None,
+            'created_at': tracking.created_at if tracking.created_at else None,
+            'updated_at': tracking.updated_at if tracking.updated_at else None,
+            'close_reason': tracking.close_reason if tracking.close_reason else None,
+            'closed_pnl': tracking.closed_pnl if tracking.closed_pnl else None,
+        }
+    
+    def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:
+        """将地址配置 proto 消息转换为字典"""
+        return {
+            'id': address.id,
+            'user_id': address.user_id,
+            'address': address.address,
+            'nickname': address.nickname if address.nickname else None,
+            'copy_ratio': address.copy_ratio,
+            'max_position_size': address.max_position_size,
+            'slippage': address.slippage,
+            'is_enabled': address.is_enabled,
+            'auto_copy': address.auto_copy,
+            'whitelist_symbols': json.loads(address.whitelist_symbols) if address.whitelist_symbols else [],
+            'blacklist_symbols': json.loads(address.blacklist_symbols) if address.blacklist_symbols else [],
+            'created_at': address.created_at if address.created_at else None,
+            'updated_at': address.updated_at if address.updated_at else None,
+        }
+    
+    def get_position_tracking(self, tracking_id: int) -> Optional[Dict]:
+        """获取单个仓位跟单详情"""
+        self._ensure_connected()
+        try:
+            response = self._stub.GetPositionTracking(
+                pb2.GetPositionTrackingRequest(tracking_id=tracking_id)
+            )
+            if response.success and response.HasField('tracking'):
+                return self._tracking_to_dict(response.tracking)
+            return None
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (GetPositionTracking): {e}")
+            return None
+    
+    def get_active_position_trackings(self) -> List[Dict]:
+        """获取所有活跃的仓位跟单"""
+        self._ensure_connected()
+        try:
+            response = self._stub.GetActivePositionTrackings(
+                pb2.GetActivePositionTrackingsRequest()
+            )
+            if response.success:
+                return [self._tracking_to_dict(t) for t in response.trackings]
+            return []
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (GetActivePositionTrackings): {e}")
+            return []
+    
+    def save_position_tracking(self, data: Dict) -> int:
+        """保存仓位跟单记录"""
+        self._ensure_connected()
+        try:
+            request = pb2.SavePositionTrackingRequest(
+                target_address=data['target_address'],
+                symbol=data['symbol'],
+                target_side=data['target_side'],
+                copy_ratio=data.get('copy_ratio', 1.0),
+                is_enabled=data.get('is_enabled', True),
+                status=data.get('status', 'pending'),
+            )
+            
+            # 可选字段
+            if 'id' in data and data['id']:
+                request.id = data['id']
+            if 'max_position_size' in data and data['max_position_size']:
+                request.max_position_size = data['max_position_size']
+            if 'slippage' in data and data['slippage']:
+                request.slippage = data['slippage']
+            if 'my_size' in data and data['my_size']:
+                request.my_size = data['my_size']
+            if 'my_side' in data and data['my_side']:
+                request.my_side = data['my_side']
+            if 'my_entry_price' in data and data['my_entry_price']:
+                request.my_entry_price = data['my_entry_price']
+            if 'user_id' in data and data['user_id']:
+                request.user_id = data['user_id']
+            if 'address_id' in data and data['address_id']:
+                request.address_id = data['address_id']
+            if 'target_entry_price' in data and data['target_entry_price']:
+                request.target_entry_price = data['target_entry_price']
+            if 'target_size' in data and data['target_size']:
+                request.target_size = data['target_size']
+            if 'nickname' in data and data['nickname']:
+                request.nickname = data['nickname']
+            
+            response = self._stub.SavePositionTracking(request)
+            if response.success:
+                return response.tracking_id
+            else:
+                logger.error(f"SavePositionTracking 失败: {response.error}")
+                return 0
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (SavePositionTracking): {e}")
+            return 0
+    
+    def update_tracking_status(
+        self,
+        tracking_id: int,
+        status: str,
+        close_reason: Optional[str] = None,
+        closed_pnl: Optional[float] = None
+    ) -> bool:
+        """更新跟单状态"""
+        self._ensure_connected()
+        try:
+            request = pb2.UpdateTrackingStatusRequest(
+                tracking_id=tracking_id,
+                status=status
+            )
+            if close_reason:
+                request.close_reason = close_reason
+            if closed_pnl is not None:
+                request.closed_pnl = closed_pnl
+            
+            response = self._stub.UpdateTrackingStatus(request)
+            return response.success
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (UpdateTrackingStatus): {e}")
+            return False
+    
+    def update_tracking_position(
+        self,
+        tracking_id: int,
+        my_size: float,
+        my_side: str,
+        my_entry_price: Optional[float] = None
+    ) -> bool:
+        """更新跟单仓位信息"""
+        self._ensure_connected()
+        try:
+            request = pb2.UpdateTrackingPositionRequest(
+                tracking_id=tracking_id,
+                my_size=my_size,
+                my_side=my_side
+            )
+            if my_entry_price is not None:
+                request.my_entry_price = my_entry_price
+            
+            response = self._stub.UpdateTrackingPosition(request)
+            return response.success
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (UpdateTrackingPosition): {e}")
+            return False
+    
+    def get_enabled_copy_addresses(self, user_id: int) -> List[Dict]:
+        """获取启用的跟单地址配置"""
+        self._ensure_connected()
+        try:
+            response = self._stub.GetEnabledCopyAddresses(
+                pb2.GetEnabledCopyAddressesRequest(user_id=user_id)
+            )
+            if response.success:
+                return [self._address_to_dict(a) for a in response.addresses]
+            return []
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (GetEnabledCopyAddresses): {e}")
+            return []
+    
+    def check_position_tracking_exists(self, target_address: str, symbol: str) -> bool:
+        """检查仓位跟单是否存在"""
+        self._ensure_connected()
+        try:
+            response = self._stub.CheckPositionTrackingExists(
+                pb2.CheckPositionTrackingExistsRequest(
+                    target_address=target_address,
+                    symbol=symbol
+                )
+            )
+            return response.exists
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (CheckPositionTrackingExists): {e}")
+            return False
+
+
+class GRPCRedisClient:
+    """Redis gRPC 客户端"""
+    
+    def __init__(self, host: str = 'localhost', port: int = 50051):
+        """
+        初始化 Redis 客户端
+        
+        Args:
+            host: gRPC 服务器地址
+            port: gRPC 服务器端口
+        """
+        self._address = f'{host}:{port}'
+        self._channel = None
+        self._stub = None
+        self._subscriptions: Dict[str, threading.Thread] = {}
+        self._stop_events: Dict[str, threading.Event] = {}
+    
+    def _ensure_connected(self):
+        """确保已连接"""
+        if self._channel is None:
+            self._channel = grpc.insecure_channel(self._address)
+            self._stub = pb2_grpc.RedisServiceStub(self._channel)
+    
+    def close(self):
+        """关闭连接"""
+        # 停止所有订阅
+        for key, stop_event in self._stop_events.items():
+            stop_event.set()
+        
+        # 等待所有订阅线程结束
+        for thread in self._subscriptions.values():
+            thread.join(timeout=2.0)
+        
+        if self._channel:
+            self._channel.close()
+            self._channel = None
+            self._stub = None
+    
+    def publish(self, channel: str, message: str) -> int:
+        """发布消息到指定 channel"""
+        self._ensure_connected()
+        try:
+            response = self._stub.Publish(
+                pb2.PublishRequest(channel=channel, message=message)
+            )
+            if response.success:
+                return response.receivers
+            return 0
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (Publish): {e}")
+            return 0
+    
+    def setex(self, key: str, expire_seconds: int, value: str) -> bool:
+        """设置带过期时间的键值"""
+        self._ensure_connected()
+        try:
+            response = self._stub.SetEx(
+                pb2.SetExRequest(
+                    key=key,
+                    value=value,
+                    expire_seconds=expire_seconds
+                )
+            )
+            return response.success
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (SetEx): {e}")
+            return False
+    
+    def get(self, key: str) -> Optional[str]:
+        """获取键值"""
+        self._ensure_connected()
+        try:
+            response = self._stub.Get(pb2.GetRequest(key=key))
+            if response.success and response.HasField('value'):
+                return response.value
+            return None
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (Get): {e}")
+            return None
+    
+    def subscribe_async(
+        self,
+        channels: List[str],
+        callback: Callable[[str, str], None],
+        subscription_key: str = None
+    ) -> str:
+        """
+        异步订阅 channel
+        
+        Args:
+            channels: 要订阅的 channel 列表
+            callback: 收到消息时的回调函数，参数为 (channel, message)
+            subscription_key: 订阅标识符，用于后续取消订阅
+        
+        Returns:
+            订阅标识符
+        """
+        key = subscription_key or f"sub_{id(callback)}"
+        
+        if key in self._subscriptions:
+            logger.warning(f"订阅已存在: {key}")
+            return key
+        
+        stop_event = threading.Event()
+        self._stop_events[key] = stop_event
+        
+        def subscription_thread():
+            try:
+                # 创建新的 channel 用于订阅
+                channel = grpc.insecure_channel(self._address)
+                stub = pb2_grpc.RedisServiceStub(channel)
+                
+                request = pb2.SubscribeRequest(channels=channels)
+                
+                logger.info(f"开始订阅 {channels}")
+                
+                for message in stub.Subscribe(request):
+                    if stop_event.is_set():
+                        break
+                    try:
+                        callback(message.channel, message.message)
+                    except Exception as e:
+                        logger.error(f"订阅回调错误: {e}")
+                
+                channel.close()
+                logger.info(f"订阅结束 {channels}")
+                
+            except grpc.RpcError as e:
+                if not stop_event.is_set():
+                    logger.error(f"订阅错误: {e}")
+            except Exception as e:
+                logger.error(f"订阅线程异常: {e}")
+        
+        thread = threading.Thread(target=subscription_thread, daemon=True)
+        self._subscriptions[key] = thread
+        thread.start()
+        
+        return key
+    
+    def unsubscribe(self, subscription_key: str):
+        """取消订阅"""
+        if subscription_key in self._stop_events:
+            self._stop_events[subscription_key].set()
+            del self._stop_events[subscription_key]
+        
+        if subscription_key in self._subscriptions:
+            thread = self._subscriptions[subscription_key]
+            thread.join(timeout=2.0)
+            del self._subscriptions[subscription_key]
+
+
+class GRPCPubSub:
+    """
+    Redis PubSub 兼容接口
+    
+    用于替代原有的 redis.pubsub() 接口，保持 API 兼容性
+    """
+    
+    def __init__(self, redis_client: GRPCRedisClient):
+        """
+        初始化 PubSub
+        
+        Args:
+            redis_client: GRPCRedisClient 实例
+        """
+        self._client = redis_client
+        self._channels: List[str] = []
+        self._messages: asyncio.Queue = None
+        self._subscription_key: str = None
+        self._running = False
+    
+    def subscribe(self, *channels: str):
+        """订阅 channel"""
+        self._channels.extend(channels)
+    
+    def unsubscribe(self, *channels: str):
+        """取消订阅"""
+        for ch in channels:
+            if ch in self._channels:
+                self._channels.remove(ch)
+    
+    def _start_subscription(self):
+        """启动订阅"""
+        if self._running or not self._channels:
+            return
+        
+        self._messages = asyncio.Queue()
+        self._running = True
+        
+        def on_message(channel: str, message: str):
+            try:
+                # 使用线程安全的方式添加消息
+                asyncio.get_event_loop().call_soon_threadsafe(
+                    self._messages.put_nowait,
+                    {'type': 'message', 'channel': channel, 'data': message}
+                )
+            except:
+                pass
+        
+        self._subscription_key = self._client.subscribe_async(
+            channels=self._channels,
+            callback=on_message
+        )
+    
+    def get_message(self, ignore_subscribe_messages: bool = True, timeout: float = 1.0) -> Optional[Dict]:
+        """
+        获取消息（同步接口，用于兼容原有代码）
+        
+        注意：此方法在 gRPC 模式下不直接可用，需要使用 async_get_message
+        """
+        raise NotImplementedError("请使用 async_get_message 或 GRPCRedisClient.subscribe_async")
+    
+    async def async_get_message(self, ignore_subscribe_messages: bool = True, timeout: float = 1.0) -> Optional[Dict]:
+        """异步获取消息"""
+        if not self._running:
+            self._start_subscription()
+        
+        try:
+            message = await asyncio.wait_for(self._messages.get(), timeout=timeout)
+            return message
+        except asyncio.TimeoutError:
+            return None
+    
+    def close(self):
+        """关闭订阅"""
+        self._running = False
+        if self._subscription_key:
+            self._client.unsubscribe(self._subscription_key)
+            self._subscription_key = None
+
+
+class GRPCClient:
+    """
+    统一的 gRPC 客户端
+    
+    提供数据库和 Redis 操作的统一接口
+    """
+    
+    def __init__(self, host: str = 'localhost', port: int = 50051):
+        """
+        初始化 gRPC 客户端
+        
+        Args:
+            host: gRPC 服务器地址
+            port: gRPC 服务器端口
+        """
+        self.host = host
+        self.port = port
+        self._db = GRPCDatabaseClient(host, port)
+        self._redis = GRPCRedisClient(host, port)
+    
+    @property
+    def db(self) -> GRPCDatabaseClient:
+        """获取数据库客户端"""
+        return self._db
+    
+    @property
+    def redis(self) -> GRPCRedisClient:
+        """获取 Redis 客户端"""
+        return self._redis
+    
+    def close(self):
+        """关闭所有连接"""
+        self._db.close()
+        self._redis.close()
+    
+    def ping(self) -> bool:
+        """测试连接"""
+        try:
+            # 尝试获取活跃跟单列表来测试数据库连接
+            self._db.get_active_position_trackings()
+            return True
+        except Exception as e:
+            logger.error(f"gRPC 连接测试失败: {e}")
+            return False

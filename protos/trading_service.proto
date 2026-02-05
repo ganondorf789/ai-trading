@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+package trading;
+
+option go_package = "trading/pb";
+
+// ============================================
+// 数据库服务 - 仓位跟单相关操作
+// ============================================
+
+service DatabaseService {
+    // 获取单个仓位跟单详情
+    rpc GetPositionTracking(GetPositionTrackingRequest) returns (PositionTrackingResponse);
+    
+    // 获取所有活跃的仓位跟单
+    rpc GetActivePositionTrackings(GetActivePositionTrackingsRequest) returns (PositionTrackingListResponse);
+    
+    // 保存仓位跟单记录
+    rpc SavePositionTracking(SavePositionTrackingRequest) returns (SavePositionTrackingResponse);
+    
+    // 更新跟单状态
+    rpc UpdateTrackingStatus(UpdateTrackingStatusRequest) returns (UpdateTrackingResponse);
+    
+    // 更新跟单仓位信息
+    rpc UpdateTrackingPosition(UpdateTrackingPositionRequest) returns (UpdateTrackingResponse);
+    
+    // 获取启用的跟单地址配置
+    rpc GetEnabledCopyAddresses(GetEnabledCopyAddressesRequest) returns (CopyAddressListResponse);
+    
+    // 检查仓位跟单是否存在
+    rpc CheckPositionTrackingExists(CheckPositionTrackingExistsRequest) returns (CheckPositionTrackingExistsResponse);
+}
+
+// ============================================
+// Redis服务 - Pub/Sub和缓存操作
+// ============================================
+
+service RedisService {
+    // 发布消息到指定channel
+    rpc Publish(PublishRequest) returns (PublishResponse);
+    
+    // 订阅channel（服务端流）
+    rpc Subscribe(SubscribeRequest) returns (stream SubscribeMessage);
+    
+    // 设置带过期时间的键值
+    rpc SetEx(SetExRequest) returns (SetExResponse);
+    
+    // 获取键值
+    rpc Get(GetRequest) returns (GetResponse);
+}
+
+// ============================================
+// 数据库服务消息定义
+// ============================================
+
+message GetPositionTrackingRequest {
+    int32 tracking_id = 1;
+}
+
+message GetActivePositionTrackingsRequest {
+    // 空请求，获取所有活跃跟单
+}
+
+message SavePositionTrackingRequest {
+    optional int32 id = 1;
+    string target_address = 2;
+    string symbol = 3;
+    string target_side = 4;
+    double copy_ratio = 5;
+    optional double max_position_size = 6;
+    optional double slippage = 7;
+    bool is_enabled = 8;
+    string status = 9;
+    optional double my_size = 10;
+    optional string my_side = 11;
+    optional double my_entry_price = 12;
+    optional int32 user_id = 13;
+    optional int32 address_id = 14;
+    optional double target_entry_price = 15;
+    optional double target_size = 16;
+    optional string nickname = 17;
+}
+
+message PositionTrackingResponse {
+    bool success = 1;
+    optional PositionTracking tracking = 2;
+    string error = 3;
+}
+
+message PositionTrackingListResponse {
+    bool success = 1;
+    repeated PositionTracking trackings = 2;
+    string error = 3;
+}
+
+message PositionTracking {
+    int32 id = 1;
+    string target_address = 2;
+    string symbol = 3;
+    string target_side = 4;
+    double copy_ratio = 5;
+    double max_position_size = 6;
+    double slippage = 7;
+    bool is_enabled = 8;
+    string status = 9;
+    double my_size = 10;
+    string my_side = 11;
+    double my_entry_price = 12;
+    int32 user_id = 13;
+    int32 address_id = 14;
+    double target_entry_price = 15;
+    double target_size = 16;
+    string nickname = 17;
+    string created_at = 18;
+    string updated_at = 19;
+    string close_reason = 20;
+    double closed_pnl = 21;
+}
+
+message SavePositionTrackingResponse {
+    bool success = 1;
+    int32 tracking_id = 2;
+    string error = 3;
+}
+
+message UpdateTrackingStatusRequest {
+    int32 tracking_id = 1;
+    string status = 2;
+    optional string close_reason = 3;
+    optional double closed_pnl = 4;
+}
+
+message UpdateTrackingPositionRequest {
+    int32 tracking_id = 1;
+    double my_size = 2;
+    string my_side = 3;
+    optional double my_entry_price = 4;
+}
+
+message UpdateTrackingResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetEnabledCopyAddressesRequest {
+    int32 user_id = 1;
+}
+
+message CopyAddressListResponse {
+    bool success = 1;
+    repeated CopyAddress addresses = 2;
+    string error = 3;
+}
+
+message CopyAddress {
+    int32 id = 1;
+    int32 user_id = 2;
+    string address = 3;
+    string nickname = 4;
+    double copy_ratio = 5;
+    double max_position_size = 6;
+    double slippage = 7;
+    bool is_enabled = 8;
+    bool auto_copy = 9;
+    string whitelist_symbols = 10;  // JSON array string
+    string blacklist_symbols = 11;  // JSON array string
+    string created_at = 12;
+    string updated_at = 13;
+}
+
+message CheckPositionTrackingExistsRequest {
+    string target_address = 1;
+    string symbol = 2;
+}
+
+message CheckPositionTrackingExistsResponse {
+    bool exists = 1;
+    string error = 2;
+}
+
+// ============================================
+// Redis服务消息定义
+// ============================================
+
+message PublishRequest {
+    string channel = 1;
+    string message = 2;
+}
+
+message PublishResponse {
+    bool success = 1;
+    int64 receivers = 2;
+    string error = 3;
+}
+
+message SubscribeRequest {
+    repeated string channels = 1;
+}
+
+message SubscribeMessage {
+    string channel = 1;
+    string message = 2;
+}
+
+message SetExRequest {
+    string key = 1;
+    string value = 2;
+    int32 expire_seconds = 3;
+}
+
+message SetExResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    bool success = 1;
+    optional string value = 2;
+    string error = 3;
+}

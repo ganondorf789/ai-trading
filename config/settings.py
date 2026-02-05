@@ -167,6 +167,24 @@ class TradingAPISettings(BaseSettings):
     )
 
 
+class GRPCServerSettings(BaseSettings):
+    """gRPC 服务器配置"""
+    model_config = SettingsConfigDict(env_prefix='GRPC_')
+    
+    host: str = Field(
+        default="0.0.0.0",
+        description="gRPC 服务器监听地址"
+    )
+    port: int = Field(
+        default=50051,
+        description="gRPC 服务器监听端口"
+    )
+    max_workers: int = Field(
+        default=10,
+        description="gRPC 服务器最大工作线程数"
+    )
+
+
 class Settings:
     """统一配置管理"""
     
@@ -191,6 +209,7 @@ class Settings:
         self.encryption = EncryptionSettings()
         self.jwt = JWTSettings()
         self.trading_api = TradingAPISettings()
+        self.grpc = GRPCServerSettings()
     
     @property
     def hyperliquid_api_url(self) -> str:

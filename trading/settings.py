@@ -85,6 +85,15 @@ class LogSettings(BaseSettings):
     dir: str = Field(default="./logs", description="日志目录")
 
 
+class GRPCSettings(BaseSettings):
+    """gRPC 配置"""
+    model_config = SettingsConfigDict(env_prefix='GRPC_')
+    
+    enabled: bool = Field(default=True, description="是否启用 gRPC 模式")
+    host: str = Field(default="localhost", description="gRPC 服务器地址")
+    port: int = Field(default=50051, description="gRPC 服务器端口")
+
+
 class Settings:
     """统一配置管理"""
     
@@ -113,6 +122,7 @@ class Settings:
         self.bot = BotSettings()
         self.api = APISettings()
         self.log = LogSettings()
+        self.grpc = GRPCSettings()
     
     def validate(self) -> bool:
         """验证配置是否有效"""

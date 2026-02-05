@@ -1,0 +1,229 @@
+"""
+数据库服务 gRPC 实现
+
+处理所有仓位跟单相关的数据库操作
+"""
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+import grpc
+from loguru import logger
+
+import trading_service_pb2 as pb2
+import trading_service_pb2_grpc as pb2_grpc
+from database import TraderDatabase
+
+
+class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
+    """数据库服务 gRPC 实现"""
+    
+    def __init__(self, db: TraderDatabase = None):
+        """
+        初始化数据库服务
+        
+        Args:
+            db: 数据库实例，如果为 None 则自动创建
+        """
+        self._db = db or TraderDatabase()
+        logger.info("DatabaseService 初始化完成")
+    
+    def _tracking_to_proto(self, tracking: dict) -> pb2.PositionTracking:
+        """将数据库记录转换为 proto 消息"""
+        return pb2.PositionTracking(
+            id=tracking.get('id', 0),
+            target_address=tracking.get('target_address', ''),
+            symbol=tracking.get('symbol', ''),
+            target_side=tracking.get('target_side', ''),
+            copy_ratio=float(tracking.get('copy_ratio', 1.0)),
+            max_position_size=float(tracking.get('max_position_size', 0)),
+            slippage=float(tracking.get('slippage', 0.001)),
+            is_enabled=tracking.get('is_enabled', True),
+            status=tracking.get('status', 'pending'),
+            my_size=float(tracking.get('my_size', 0) or 0),
+            my_side=tracking.get('my_side', '') or '',
+            my_entry_price=float(tracking.get('my_entry_price', 0) or 0),
+            user_id=tracking.get('user_id', 0) or 0,
+            address_id=tracking.get('address_id', 0) or 0,
+            target_entry_price=float(tracking.get('target_entry_price', 0) or 0),
+            target_size=float(tracking.get('target_size', 0) or 0),
+            nickname=tracking.get('nickname', '') or '',
+            created_at=str(tracking.get('created_at', '')),
+            updated_at=str(tracking.get('updated_at', '')),
+            close_reason=tracking.get('close_reason', '') or '',
+            closed_pnl=float(tracking.get('closed_pnl', 0) or 0),
+        )
+    
+    def _address_to_proto(self, address: dict) -> pb2.CopyAddress:
+        """将地址配置转换为 proto 消息"""
+        import json
+        return pb2.CopyAddress(
+            id=address.get('id', 0),
+            user_id=address.get('user_id', 0),
+            address=address.get('address', ''),
+            nickname=address.get('nickname', '') or '',
+            copy_ratio=float(address.get('copy_ratio', 1.0)),
+            max_position_size=float(address.get('max_position_size', 0)),
+            slippage=float(address.get('slippage', 0.001)),
+            is_enabled=address.get('is_enabled', True),
+            auto_copy=address.get('auto_copy', False),
+            whitelist_symbols=json.dumps(address.get('whitelist_symbols', []) or []),
+            blacklist_symbols=json.dumps(address.get('blacklist_symbols', []) or []),
+            created_at=str(address.get('created_at', '')),
+            updated_at=str(address.get('updated_at', '')),
+        )
+    
+    def GetPositionTracking(self, request: pb2.GetPositionTrackingRequest, context) -> pb2.PositionTrackingResponse:
+        """获取单个仓位跟单详情"""
+        try:
+            tracking = self._db.get_position_tracking(request.tracking_id)
+            if tracking:
+                return pb2.PositionTrackingResponse(
+                    success=True,
+                    tracking=self._tracking_to_proto(tracking)
+                )
+            else:
+                return pb2.PositionTrackingResponse(
+                    success=False,
+                    error=f"跟单记录不存在: {request.tracking_id}"
+                )
+        except Exception as e:
+            logger.error(f"GetPositionTracking 错误: {e}")
+            return pb2.PositionTrackingResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def GetActivePositionTrackings(self, request: pb2.GetActivePositionTrackingsRequest, context) -> pb2.PositionTrackingListResponse:
+        """获取所有活跃的仓位跟单"""
+        try:
+            trackings = self._db.get_active_position_trackings()
+            return pb2.PositionTrackingListResponse(
+                success=True,
+                trackings=[self._tracking_to_proto(t) for t in trackings]
+            )
+        except Exception as e:
+            logger.error(f"GetActivePositionTrackings 错误: {e}")
+            return pb2.PositionTrackingListResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def SavePositionTracking(self, request: pb2.SavePositionTrackingRequest, context) -> pb2.SavePositionTrackingResponse:
+        """保存仓位跟单记录"""
+        try:
+            data = {
+                'target_address': request.target_address,
+                'symbol': request.symbol,
+                'target_side': request.target_side,
+                'copy_ratio': request.copy_ratio,
+                'is_enabled': request.is_enabled,
+                'status': request.status,
+            }
+            
+            # 可选字段
+            if request.HasField('id'):
+                data['id'] = request.id
+            if request.HasField('max_position_size'):
+                data['max_position_size'] = request.max_position_size
+            if request.HasField('slippage'):
+                data['slippage'] = request.slippage
+            if request.HasField('my_size'):
+                data['my_size'] = request.my_size
+            if request.HasField('my_side'):
+                data['my_side'] = request.my_side
+            if request.HasField('my_entry_price'):
+                data['my_entry_price'] = request.my_entry_price
+            if request.HasField('user_id'):
+                data['user_id'] = request.user_id
+            if request.HasField('address_id'):
+                data['address_id'] = request.address_id
+            if request.HasField('target_entry_price'):
+                data['target_entry_price'] = request.target_entry_price
+            if request.HasField('target_size'):
+                data['target_size'] = request.target_size
+            if request.HasField('nickname'):
+                data['nickname'] = request.nickname
+            
+            tracking_id = self._db.save_position_tracking(data)
+            return pb2.SavePositionTrackingResponse(
+                success=True,
+                tracking_id=tracking_id
+            )
+        except Exception as e:
+            logger.error(f"SavePositionTracking 错误: {e}")
+            return pb2.SavePositionTrackingResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def UpdateTrackingStatus(self, request: pb2.UpdateTrackingStatusRequest, context) -> pb2.UpdateTrackingResponse:
+        """更新跟单状态"""
+        try:
+            close_reason = request.close_reason if request.HasField('close_reason') else None
+            closed_pnl = request.closed_pnl if request.HasField('closed_pnl') else None
+            
+            success = self._db.update_tracking_status(
+                tracking_id=request.tracking_id,
+                status=request.status,
+                close_reason=close_reason,
+                closed_pnl=closed_pnl
+            )
+            return pb2.UpdateTrackingResponse(success=success)
+        except Exception as e:
+            logger.error(f"UpdateTrackingStatus 错误: {e}")
+            return pb2.UpdateTrackingResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def UpdateTrackingPosition(self, request: pb2.UpdateTrackingPositionRequest, context) -> pb2.UpdateTrackingResponse:
+        """更新跟单仓位信息"""
+        try:
+            my_entry_price = request.my_entry_price if request.HasField('my_entry_price') else None
+            
+            success = self._db.update_tracking_position(
+                tracking_id=request.tracking_id,
+                my_size=request.my_size,
+                my_side=request.my_side,
+                my_entry_price=my_entry_price
+            )
+            return pb2.UpdateTrackingResponse(success=success)
+        except Exception as e:
+            logger.error(f"UpdateTrackingPosition 错误: {e}")
+            return pb2.UpdateTrackingResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def GetEnabledCopyAddresses(self, request: pb2.GetEnabledCopyAddressesRequest, context) -> pb2.CopyAddressListResponse:
+        """获取启用的跟单地址配置"""
+        try:
+            addresses = self._db.get_enabled_copy_addresses(request.user_id)
+            return pb2.CopyAddressListResponse(
+                success=True,
+                addresses=[self._address_to_proto(a) for a in addresses]
+            )
+        except Exception as e:
+            logger.error(f"GetEnabledCopyAddresses 错误: {e}")
+            return pb2.CopyAddressListResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def CheckPositionTrackingExists(self, request: pb2.CheckPositionTrackingExistsRequest, context) -> pb2.CheckPositionTrackingExistsResponse:
+        """检查仓位跟单是否存在"""
+        try:
+            exists = self._db.check_position_tracking_exists(
+                target_address=request.target_address,
+                symbol=request.symbol
+            )
+            return pb2.CheckPositionTrackingExistsResponse(exists=exists)
+        except Exception as e:
+            logger.error(f"CheckPositionTrackingExists 错误: {e}")
+            return pb2.CheckPositionTrackingExistsResponse(
+                exists=False,
+                error=str(e)
+            )

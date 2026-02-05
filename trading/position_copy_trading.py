@@ -5,6 +5,10 @@
 与第一种模式 (MultiTargetCopyTradingBot) 的区别：
 - 第一种：跟单交易员的所有仓位
 - 第二种：只跟单交易员的特定仓位（本模块）
+
+支持两种模式：
+- 直连模式：直接连接 PostgreSQL 和 Redis
+- gRPC 模式：通过 gRPC 服务访问数据库和 Redis（推荐）
 """
 import sys
 import os
@@ -25,6 +29,13 @@ from hyperliquid.info import Info
 from core.models import Position, PositionSide
 from clients.hyperliquid_client import HyperliquidClient
 from trading.settings import settings
+
+# gRPC 客户端
+try:
+    from trading.grpc_client import GRPCClient, GRPCDatabaseClient, GRPCRedisClient
+    GRPC_AVAILABLE = True
+except ImportError:
+    GRPC_AVAILABLE = False
 
 # Redis 开仓通知 channel
 REDIS_OPEN_CHANNEL = "position_tracking_open"
@@ -117,7 +128,9 @@ class PositionCopyTradingBot:
         client: HyperliquidClient,
         check_interval: float = 10.0,
         reload_interval: float = 60.0,
-        redis_client = None
+        redis_client = None,
+        grpc_client: 'GRPCClient' = None,
+        use_grpc: bool = None
     ):
         """
         初始化仓位跟单机器人
@@ -126,11 +139,19 @@ class PositionCopyTradingBot:
             client: Hyperliquid 客户端（需要已初始化钱包）
             check_interval: 检查间隔（秒）
             reload_interval: 配置重载间隔（秒）
-            redis_client: Redis 客户端（用于接收开仓通知，立即执行开仓）
+            redis_client: Redis 客户端（直连模式，用于接收开仓通知）
+            grpc_client: gRPC 客户端（gRPC 模式）
+            use_grpc: 是否使用 gRPC 模式，默认从配置读取
         """
         self.client = client
         self.check_interval = check_interval
         self.reload_interval = reload_interval
+        
+        # gRPC 模式配置
+        if use_grpc is None:
+            use_grpc = settings.grpc.enabled and GRPC_AVAILABLE
+        self._use_grpc = use_grpc
+        self._grpc_client = grpc_client
         
         # 跟单状态 (tracking_id -> TrackingState)
         self.trackings: Dict[int, TrackingState] = {}
@@ -156,10 +177,10 @@ class PositionCopyTradingBot:
         self._meta_cache_time: Optional[pendulum.DateTime] = None
         self._symbol_decimals: Dict[str, int] = {}
         
-        # 延迟加载数据库
+        # 延迟加载数据库（直连模式）
         self._db = None
         
-        # Redis 开仓通知（外部传入）
+        # Redis 开仓通知（直连模式外部传入，gRPC 模式通过 grpc_client）
         self._redis_client = redis_client
         # 正在处理中的 tracking_id（防止并发重复处理）
         self._processing_tracking_ids: set = set()
@@ -172,49 +193,89 @@ class PositionCopyTradingBot:
         self._user_id: int = settings.bot.user_id  # 从配置读取用户ID
         self.address_configs: Dict[str, AddressConfig] = {}  # 地址配置缓存 (address -> AddressConfig)
         self._address_positions: Dict[str, Dict[str, Dict]] = {}  # 地址仓位缓存 (address -> {symbol -> position})
+        
+        if self._use_grpc:
+            logger.info("使用 gRPC 模式连接数据库和 Redis")
 
     @property
     def db(self):
-        """延迟加载数据库"""
-        if self._db is None:
-            from database import TraderDatabase
-            self._db = TraderDatabase()
-        return self._db
+        """延迟加载数据库（支持直连和 gRPC 两种模式）"""
+        if self._use_grpc:
+            # gRPC 模式
+            if self._grpc_client is None:
+                self._grpc_client = GRPCClient(
+                    host=settings.grpc.host,
+                    port=settings.grpc.port
+                )
+                logger.info(f"gRPC 客户端已连接: {settings.grpc.host}:{settings.grpc.port}")
+            return self._grpc_client.db
+        else:
+            # 直连模式
+            if self._db is None:
+                from database import TraderDatabase
+                self._db = TraderDatabase()
+            return self._db
+    
+    @property
+    def redis(self):
+        """获取 Redis 客户端（支持直连和 gRPC 两种模式）"""
+        if self._use_grpc:
+            # gRPC 模式
+            if self._grpc_client is None:
+                self._grpc_client = GRPCClient(
+                    host=settings.grpc.host,
+                    port=settings.grpc.port
+                )
+            return self._grpc_client.redis
+        else:
+            # 直连模式
+            return self._redis_client
 
     async def _listen_redis_open(self):
         """监听 Redis 开仓通知，收到后立即执行开仓"""
-        if not self._redis_client:
-            return
-        
-        try:
-            pubsub = self._redis_client.pubsub()
-            pubsub.subscribe(REDIS_OPEN_CHANNEL)
-            logger.info(f"开始监听开仓通知 (channel: {REDIS_OPEN_CHANNEL})")
+        if self._use_grpc:
+            # gRPC 模式：使用 gRPC Subscribe
+            await self._listen_redis_grpc(
+                channels=[REDIS_OPEN_CHANNEL],
+                handler=self._on_redis_open_message,
+                name="开仓"
+            )
+        else:
+            # 直连模式：使用原生 Redis pubsub
+            if not self._redis_client:
+                return
             
-            while self.is_running:
-                try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if message and message['type'] == 'message':
-                        # 消息格式: "tracking_id" 如 "123"
-                        try:
-                            tracking_id = int(message['data'])
-                            logger.info(f"收到开仓通知: tracking_id={tracking_id}")
-                            # 立即执行开仓
-                            await self._handle_open_notification(tracking_id)
-                        except ValueError:
-                            logger.warning(f"无效的开仓通知格式: {message['data']}")
-                except Exception as e:
-                    logger.warning(f"Redis 监听错误: {e}")
-                
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Redis 监听异常: {e}")
-        finally:
             try:
-                pubsub.close()
-            except:
-                pass
+                pubsub = self._redis_client.pubsub()
+                pubsub.subscribe(REDIS_OPEN_CHANNEL)
+                logger.info(f"开始监听开仓通知 (channel: {REDIS_OPEN_CHANNEL})")
+                
+                while self.is_running:
+                    try:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                        if message and message['type'] == 'message':
+                            await self._on_redis_open_message(message['channel'], message['data'])
+                    except Exception as e:
+                        logger.warning(f"Redis 监听错误: {e}")
+                    
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Redis 监听异常: {e}")
+            finally:
+                try:
+                    pubsub.close()
+                except:
+                    pass
+    
+    async def _on_redis_open_message(self, channel: str, data: str):
+        """处理开仓通知消息"""
+        try:
+            tracking_id = int(data)
+            logger.info(f"收到开仓通知: tracking_id={tracking_id}")
+            await self._handle_open_notification(tracking_id)
+        except ValueError:
+            logger.warning(f"无效的开仓通知格式: {data}")
 
     async def _handle_open_notification(self, tracking_id: int):
         """处理开仓通知，立即执行开仓"""
@@ -320,44 +381,54 @@ class PositionCopyTradingBot:
 
     async def _listen_redis_adjust(self):
         """监听 Redis 补仓通知，收到后立即执行补仓"""
-        if not self._redis_client:
-            return
-        
-        try:
-            pubsub = self._redis_client.pubsub()
-            pubsub.subscribe(REDIS_ADJUST_CHANNEL)
-            logger.info(f"开始监听补仓通知 (channel: {REDIS_ADJUST_CHANNEL})")
+        if self._use_grpc:
+            # gRPC 模式
+            await self._listen_redis_grpc(
+                channels=[REDIS_ADJUST_CHANNEL],
+                handler=self._on_redis_adjust_message,
+                name="补仓"
+            )
+        else:
+            # 直连模式
+            if not self._redis_client:
+                return
             
-            while self.is_running:
-                try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if message and message['type'] == 'message':
-                        # 消息格式: JSON {"tracking_id": 123, "ratio": 50, "direction": "long"}
-                        try:
-                            import json
-                            data = json.loads(message['data'])
-                            tracking_id = int(data.get('tracking_id', 0))
-                            ratio = data.get('ratio')      # 调整比例（百分比）
-                            size = data.get('size')        # 调整数量（直接指定）
-                            direction = data.get('direction')  # 下单方向: 'long' 或 'short'
-                            
-                            logger.info(f"收到调仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}, direction={direction}")
-                            # 立即执行调仓
-                            await self._handle_adjust_notification(tracking_id, ratio=ratio, size=size, direction=direction)
-                        except (ValueError, json.JSONDecodeError) as e:
-                            logger.warning(f"无效的补仓通知格式: {message['data']}, error: {e}")
-                except Exception as e:
-                    logger.warning(f"Redis 补仓监听错误: {e}")
-                
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Redis 补仓监听异常: {e}")
-        finally:
             try:
-                pubsub.close()
-            except:
-                pass
+                pubsub = self._redis_client.pubsub()
+                pubsub.subscribe(REDIS_ADJUST_CHANNEL)
+                logger.info(f"开始监听补仓通知 (channel: {REDIS_ADJUST_CHANNEL})")
+                
+                while self.is_running:
+                    try:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                        if message and message['type'] == 'message':
+                            await self._on_redis_adjust_message(message['channel'], message['data'])
+                    except Exception as e:
+                        logger.warning(f"Redis 补仓监听错误: {e}")
+                    
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Redis 补仓监听异常: {e}")
+            finally:
+                try:
+                    pubsub.close()
+                except:
+                    pass
+    
+    async def _on_redis_adjust_message(self, channel: str, data: str):
+        """处理补仓通知消息"""
+        try:
+            msg_data = json.loads(data)
+            tracking_id = int(msg_data.get('tracking_id', 0))
+            ratio = msg_data.get('ratio')
+            size = msg_data.get('size')
+            direction = msg_data.get('direction')
+            
+            logger.info(f"收到调仓通知: tracking_id={tracking_id}, ratio={ratio}, size={size}, direction={direction}")
+            await self._handle_adjust_notification(tracking_id, ratio=ratio, size=size, direction=direction)
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"无效的补仓通知格式: {data}, error: {e}")
 
     async def _handle_adjust_notification(
         self, 
@@ -531,71 +602,136 @@ class PositionCopyTradingBot:
 
     async def _listen_redis_close(self):
         """监听 Redis 平仓通知，收到后立即执行平仓"""
-        if not self._redis_client:
-            return
-        
-        try:
-            pubsub = self._redis_client.pubsub()
-            pubsub.subscribe(REDIS_CLOSE_CHANNEL)
-            logger.info(f"开始监听平仓通知 (channel: {REDIS_CLOSE_CHANNEL})")
+        if self._use_grpc:
+            # gRPC 模式
+            await self._listen_redis_grpc(
+                channels=[REDIS_CLOSE_CHANNEL],
+                handler=self._on_redis_close_message,
+                name="平仓"
+            )
+        else:
+            # 直连模式
+            if not self._redis_client:
+                return
             
-            while self.is_running:
-                try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if message and message['type'] == 'message':
-                        # 消息格式: JSON {"symbol": "BTC"} 或 {"tracking_id": 123}
-                        try:
-                            import json
-                            data = json.loads(message['data'])
-                            symbol = data.get('symbol')
-                            tracking_id = data.get('tracking_id')
-                            
-                            logger.info(f"收到平仓通知: symbol={symbol}, tracking_id={tracking_id}")
-                            # 立即执行平仓
-                            await self._handle_close_notification(symbol=symbol, tracking_id=tracking_id)
-                        except (ValueError, json.JSONDecodeError) as e:
-                            logger.warning(f"无效的平仓通知格式: {message['data']}, error: {e}")
-                except Exception as e:
-                    logger.warning(f"Redis 平仓监听错误: {e}")
-                
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Redis 平仓监听异常: {e}")
-        finally:
             try:
-                pubsub.close()
-            except:
-                pass
+                pubsub = self._redis_client.pubsub()
+                pubsub.subscribe(REDIS_CLOSE_CHANNEL)
+                logger.info(f"开始监听平仓通知 (channel: {REDIS_CLOSE_CHANNEL})")
+                
+                while self.is_running:
+                    try:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                        if message and message['type'] == 'message':
+                            await self._on_redis_close_message(message['channel'], message['data'])
+                    except Exception as e:
+                        logger.warning(f"Redis 平仓监听错误: {e}")
+                    
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Redis 平仓监听异常: {e}")
+            finally:
+                try:
+                    pubsub.close()
+                except:
+                    pass
+    
+    async def _on_redis_close_message(self, channel: str, data: str):
+        """处理平仓通知消息"""
+        try:
+            msg_data = json.loads(data)
+            symbol = msg_data.get('symbol')
+            tracking_id = msg_data.get('tracking_id')
+            
+            logger.info(f"收到平仓通知: symbol={symbol}, tracking_id={tracking_id}")
+            await self._handle_close_notification(symbol=symbol, tracking_id=tracking_id)
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"无效的平仓通知格式: {data}, error: {e}")
 
     async def _listen_redis_config_reload(self):
         """监听 Redis 配置重载通知，收到后立即重载配置"""
-        if not self._redis_client:
-            return
-        
-        try:
-            pubsub = self._redis_client.pubsub()
-            pubsub.subscribe(REDIS_CONFIG_RELOAD_CHANNEL)
-            logger.info(f"开始监听配置重载通知 (channel: {REDIS_CONFIG_RELOAD_CHANNEL})")
+        if self._use_grpc:
+            # gRPC 模式
+            await self._listen_redis_grpc(
+                channels=[REDIS_CONFIG_RELOAD_CHANNEL],
+                handler=self._on_redis_config_reload_message,
+                name="配置重载"
+            )
+        else:
+            # 直连模式
+            if not self._redis_client:
+                return
             
-            while self.is_running:
-                try:
-                    message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                    if message and message['type'] == 'message':
-                        logger.info(f"收到配置重载通知，立即重载配置...")
-                        self.reload_configs()
-                except Exception as e:
-                    logger.warning(f"Redis 配置重载监听错误: {e}")
-                
-                await asyncio.sleep(0.1)
-                
-        except Exception as e:
-            logger.error(f"Redis 配置重载监听异常: {e}")
-        finally:
             try:
-                pubsub.close()
-            except:
-                pass
+                pubsub = self._redis_client.pubsub()
+                pubsub.subscribe(REDIS_CONFIG_RELOAD_CHANNEL)
+                logger.info(f"开始监听配置重载通知 (channel: {REDIS_CONFIG_RELOAD_CHANNEL})")
+                
+                while self.is_running:
+                    try:
+                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                        if message and message['type'] == 'message':
+                            await self._on_redis_config_reload_message(message['channel'], message['data'])
+                    except Exception as e:
+                        logger.warning(f"Redis 配置重载监听错误: {e}")
+                    
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Redis 配置重载监听异常: {e}")
+            finally:
+                try:
+                    pubsub.close()
+                except:
+                    pass
+    
+    async def _on_redis_config_reload_message(self, channel: str, data: str):
+        """处理配置重载通知消息"""
+        logger.info(f"收到配置重载通知，立即重载配置...")
+        self.reload_configs()
+    
+    async def _listen_redis_grpc(self, channels: List[str], handler, name: str):
+        """
+        使用 gRPC 订阅 Redis channels
+        
+        Args:
+            channels: 要订阅的 channel 列表
+            handler: 消息处理函数 (channel, data) -> None
+            name: 订阅名称（用于日志）
+        """
+        import grpc as grpc_module
+        import trading_service_pb2 as pb2
+        import trading_service_pb2_grpc as pb2_grpc
+        
+        address = f"{settings.grpc.host}:{settings.grpc.port}"
+        logger.info(f"开始监听{name}通知 (gRPC: {address}, channels: {channels})")
+        
+        while self.is_running:
+            try:
+                channel = grpc_module.insecure_channel(address)
+                stub = pb2_grpc.RedisServiceStub(channel)
+                
+                request = pb2.SubscribeRequest(channels=channels)
+                
+                for message in stub.Subscribe(request):
+                    if not self.is_running:
+                        break
+                    try:
+                        await handler(message.channel, message.message)
+                    except Exception as e:
+                        logger.error(f"处理{name}消息错误: {e}")
+                
+                channel.close()
+                
+            except grpc_module.RpcError as e:
+                if self.is_running:
+                    logger.warning(f"gRPC {name}订阅断开: {e}, 5秒后重连...")
+                    await asyncio.sleep(5)
+            except Exception as e:
+                if self.is_running:
+                    logger.error(f"gRPC {name}订阅异常: {e}, 5秒后重连...")
+                    await asyncio.sleep(5)
 
     async def _handle_close_notification(
         self, 
@@ -726,23 +862,31 @@ class PositionCopyTradingBot:
         Args:
             notification_data: 通知数据，包含 type, title, content, target_address, symbol 等字段
         """
-        if not self._redis_client:
-            logger.debug("Redis 客户端未初始化，跳过通知发布")
-            return
+        # 添加时间戳
+        notification_data['timestamp'] = pendulum.now().to_iso8601_string()
+        # 添加用户ID（用于定向发送通知）
+        notification_data['user_id'] = self._user_id
         
-        try:
-            # 添加时间戳
-            notification_data['timestamp'] = pendulum.now().to_iso8601_string()
-            # 添加用户ID（用于定向发送通知）
-            notification_data['user_id'] = self._user_id
+        message = json.dumps(notification_data, ensure_ascii=False)
+        
+        if self._use_grpc:
+            # gRPC 模式
+            try:
+                self.redis.publish(REDIS_NOTIFICATIONS_CHANNEL, message)
+                logger.debug(f"通知已发布 (gRPC): type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
+            except Exception as e:
+                logger.warning(f"发布通知失败 (gRPC): {e}")
+        else:
+            # 直连模式
+            if not self._redis_client:
+                logger.debug("Redis 客户端未初始化，跳过通知发布")
+                return
             
-            self._redis_client.publish(
-                REDIS_NOTIFICATIONS_CHANNEL,
-                json.dumps(notification_data, ensure_ascii=False)
-            )
-            logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
-        except Exception as e:
-            logger.warning(f"发布通知失败: {e}")
+            try:
+                self._redis_client.publish(REDIS_NOTIFICATIONS_CHANNEL, message)
+                logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
+            except Exception as e:
+                logger.warning(f"发布通知失败: {e}")
 
     def _notify_copy_open(self, target_address: str, symbol: str, side: str, size: float):
         """发送开仓通知（通过 Redis 发布）"""
@@ -1156,12 +1300,14 @@ class PositionCopyTradingBot:
                 )
                 
                 # 发送 Redis 通知触发开仓
-                if self._redis_client:
-                    try:
+                try:
+                    if self._use_grpc:
+                        self.redis.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+                    elif self._redis_client:
                         self._redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
-                        logger.info(f"[自动跟单] 已发送开仓通知 (tracking_id={tracking_id})")
-                    except Exception as e:
-                        logger.warning(f"[自动跟单] Redis 开仓通知发送失败: {e}")
+                    logger.info(f"[自动跟单] 已发送开仓通知 (tracking_id={tracking_id})")
+                except Exception as e:
+                    logger.warning(f"[自动跟单] Redis 开仓通知发送失败: {e}")
                 
                 return tracking_id
             else:
@@ -1294,36 +1440,31 @@ class PositionCopyTradingBot:
             logger.debug(f"账户可用余额: {self.available_balance:.2f} USD, 持仓数: {len(self.my_positions)}")
             
             # 写入 Redis 缓存（供外部使用）
-            if self._redis_client:
-                try:
-                    import json
-                    # 序列化仓位数据
-                    positions_data = []
-                    for pos in account_info.positions:
-                        positions_data.append({
-                            'symbol': pos.symbol,
-                            'side': pos.side.value,
-                            'size': pos.size,
-                            'entry_price': pos.entry_price,
-                            'current_price': pos.current_price,
-                            'leverage': pos.leverage,
-                            'unrealized_pnl': pos.unrealized_pnl,
-                            'liquidation_price': pos.liquidation_price,
-                            'margin_used': pos.margin_used,
-                        })
-                    # 写入 Redis（设置 60 秒过期，防止数据过期）
-                    self._redis_client.setex(
-                        REDIS_MY_POSITIONS_KEY, 
-                        60, 
-                        json.dumps(positions_data)
-                    )
-                    self._redis_client.setex(
-                        REDIS_MY_BALANCE_KEY, 
-                        60, 
-                        str(self.available_balance)
-                    )
-                except Exception as e:
-                    logger.debug(f"写入 Redis 缓存失败: {e}")
+            try:
+                # 序列化仓位数据
+                positions_data = []
+                for pos in account_info.positions:
+                    positions_data.append({
+                        'symbol': pos.symbol,
+                        'side': pos.side.value,
+                        'size': pos.size,
+                        'entry_price': pos.entry_price,
+                        'current_price': pos.current_price,
+                        'leverage': pos.leverage,
+                        'unrealized_pnl': pos.unrealized_pnl,
+                        'liquidation_price': pos.liquidation_price,
+                        'margin_used': pos.margin_used,
+                    })
+                
+                # 写入 Redis（设置 60 秒过期，防止数据过期）
+                if self._use_grpc:
+                    self.redis.setex(REDIS_MY_POSITIONS_KEY, 60, json.dumps(positions_data))
+                    self.redis.setex(REDIS_MY_BALANCE_KEY, 60, str(self.available_balance))
+                elif self._redis_client:
+                    self._redis_client.setex(REDIS_MY_POSITIONS_KEY, 60, json.dumps(positions_data))
+                    self._redis_client.setex(REDIS_MY_BALANCE_KEY, 60, str(self.available_balance))
+            except Exception as e:
+                logger.debug(f"写入 Redis 缓存失败: {e}")
             return True
         except Exception as e:
             logger.error(f"获取账户信息失败: {e}")
@@ -1873,12 +2014,12 @@ class PositionCopyTradingBot:
         elif not self.address_configs:
             logger.info(f"已加载 {len(self.trackings)} 个手动跟单，无自动跟单地址")
 
-        # 启动 Redis 通知监听任务（如果启用）
+        # 启动 Redis 通知监听任务（gRPC 模式或直连模式）
         redis_open_task = None
         redis_adjust_task = None
         redis_close_task = None
         redis_config_reload_task = None
-        if self._redis_client:
+        if self._use_grpc or self._redis_client:
             redis_open_task = asyncio.create_task(self._listen_redis_open())
             redis_adjust_task = asyncio.create_task(self._listen_redis_adjust())
             redis_close_task = asyncio.create_task(self._listen_redis_close())
