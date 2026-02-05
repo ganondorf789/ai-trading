@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table,
   TableHeader,
@@ -24,6 +24,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { userManagementApi, User } from "@/services/api";
 import { formatTime } from "@/utils";
+import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 const roleColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
   user: "default",
@@ -46,6 +47,19 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<string>("");
   const [activeFilter, setActiveFilter] = useState<string>("");
   const [searchValue, setSearchValue] = useState("");
+
+  // 分页
+  const {
+    page,
+    setPage,
+    rowsPerPage,
+    setRowsPerPage,
+    totalPages,
+    getPageItems,
+  } = useLocalPagination({ totalItems: users.length, defaultRowsPerPage: 20 });
+
+  // 当前页的用户数据
+  const paginatedUsers = useMemo(() => getPageItems(users), [getPageItems, users]);
 
   // 编辑角色弹窗
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -198,7 +212,20 @@ export default function UsersPage() {
         </div>
 
         {/* 用户表格 */}
-        <Table aria-label="用户列表">
+        <Table 
+          aria-label="用户列表"
+          bottomContent={
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={users.length}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setPage}
+              onRowsPerPageChange={setRowsPerPage}
+            />
+          }
+          bottomContentPlacement="outside"
+        >
           <TableHeader>
             <TableColumn>ID</TableColumn>
             <TableColumn>账号</TableColumn>
@@ -212,7 +239,7 @@ export default function UsersPage() {
             <TableColumn>操作</TableColumn>
           </TableHeader>
           <TableBody
-            items={users}
+            items={paginatedUsers}
             isLoading={loading}
             loadingContent={<Spinner label="加载中..." />}
             emptyContent="暂无用户数据"

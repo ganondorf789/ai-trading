@@ -5,6 +5,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { riskControlApi, ImmediateCopyConfigRule } from "@/services/api";
 import { ConfigRulesTable, ConfigRuleModal, DeleteConfirmModal } from "./components";
+import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 export default function ImmediateConfigRulesPage() {
   const [rules, setRules] = useState<ImmediateCopyConfigRule[]>([]);
@@ -19,6 +20,19 @@ export default function ImmediateConfigRulesPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingRule, setDeletingRule] = useState<ImmediateCopyConfigRule | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // 分页
+  const {
+    page,
+    setPage,
+    rowsPerPage,
+    setRowsPerPage,
+    totalPages,
+    getPageItems,
+  } = useLocalPagination({ totalItems: rules.length, defaultRowsPerPage: 20 });
+
+  // 当前页的规则数据
+  const paginatedRules = useMemo(() => getPageItems(rules), [getPageItems, rules]);
 
   // 已存在配置的币种列表
   const existingSymbols = useMemo(() => {
@@ -160,11 +174,21 @@ export default function ImmediateConfigRulesPage() {
 
         {/* 规则表格 */}
         <ConfigRulesTable
-          rules={rules}
+          rules={paginatedRules}
           loading={loading}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
           onToggleEnabled={handleToggleEnabled}
+        />
+        
+        {/* 分页 */}
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={rules.length}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setPage}
+          onRowsPerPageChange={setRowsPerPage}
         />
 
         {/* 编辑弹窗 */}

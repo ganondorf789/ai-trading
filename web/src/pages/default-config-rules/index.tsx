@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, addToast } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
 import { riskControlApi, DefaultCopyConfigRule } from "@/services/api";
 import { ConfigRulesTable, ConfigRuleModal, DeleteConfirmModal } from "./components";
+import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 export default function DefaultConfigRulesPage() {
   const [rules, setRules] = useState<DefaultCopyConfigRule[]>([]);
@@ -19,6 +20,19 @@ export default function DefaultConfigRulesPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingRule, setDeletingRule] = useState<DefaultCopyConfigRule | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // 分页
+  const {
+    page,
+    setPage,
+    rowsPerPage,
+    setRowsPerPage,
+    totalPages,
+    getPageItems,
+  } = useLocalPagination({ totalItems: rules.length, defaultRowsPerPage: 20 });
+
+  // 当前页的规则数据
+  const paginatedRules = useMemo(() => getPageItems(rules), [getPageItems, rules]);
 
   // 加载规则列表
   const loadRules = useCallback(async () => {
@@ -158,11 +172,21 @@ export default function DefaultConfigRulesPage() {
 
         {/* 规则表格 */}
         <ConfigRulesTable
-          rules={rules}
+          rules={paginatedRules}
           loading={loading}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
           onToggleEnabled={handleToggleEnabled}
+        />
+        
+        {/* 分页 */}
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={rules.length}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setPage}
+          onRowsPerPageChange={setRowsPerPage}
         />
 
         {/* 编辑弹窗 */}

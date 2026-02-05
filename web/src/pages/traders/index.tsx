@@ -18,9 +18,9 @@ import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader } from '@/services/api';
 import { FilterSection } from './components/FilterSection';
 import { TraderTableCell } from './components/TraderTableCell';
-import { PaginationSection } from './components/PaginationSection';
 import { AddTraderModal } from './components/AddTraderModal';
 import { columns, INITIAL_VISIBLE_COLUMNS, ROWS_PER_PAGE } from './constants';
+import { TablePagination } from '@/components/TablePagination';
 import type { FilterConfig, ColumnKey } from './types';
 
 export default function TradersPage() {
@@ -201,7 +201,7 @@ export default function TradersPage() {
                   }
                   topContentPlacement="outside"
                   bottomContent={
-                    <PaginationSection
+                    <TablePagination
                       page={page}
                       totalPages={totalPages}
                       totalCount={totalCount}

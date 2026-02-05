@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table,
   TableHeader,
@@ -25,6 +25,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { secretKeyApi, SecretKey } from "@/services/api";
 import { formatTime } from "@/utils";
+import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 const roleColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
   user: "default",
@@ -48,6 +49,19 @@ export default function SecretKeysPage() {
   const [usedFilter, setUsedFilter] = useState<string>("");
   const [activeFilter, setActiveFilter] = useState<string>("");
   const [searchValue, setSearchValue] = useState("");
+
+  // 分页
+  const {
+    page,
+    setPage,
+    rowsPerPage,
+    setRowsPerPage,
+    totalPages,
+    getPageItems,
+  } = useLocalPagination({ totalItems: keys.length, defaultRowsPerPage: 20 });
+
+  // 当前页的秘钥数据
+  const paginatedKeys = useMemo(() => getPageItems(keys), [getPageItems, keys]);
 
   // 创建秘钥弹窗
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -348,7 +362,20 @@ export default function SecretKeysPage() {
         </div>
 
         {/* 秘钥表格 */}
-        <Table aria-label="秘钥列表">
+        <Table 
+          aria-label="秘钥列表"
+          bottomContent={
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={keys.length}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setPage}
+              onRowsPerPageChange={setRowsPerPage}
+            />
+          }
+          bottomContentPlacement="outside"
+        >
           <TableHeader>
             <TableColumn>ID</TableColumn>
             <TableColumn>秘钥</TableColumn>
@@ -361,7 +388,7 @@ export default function SecretKeysPage() {
             <TableColumn>操作</TableColumn>
           </TableHeader>
           <TableBody
-            items={keys}
+            items={paginatedKeys}
             isLoading={loading}
             loadingContent={<Spinner label="加载中..." />}
             emptyContent="暂无秘钥数据"

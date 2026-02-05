@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table,
   TableHeader,
@@ -26,6 +26,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { appVersionApi, AppVersion } from "@/services/api";
 import { formatTime } from "@/utils";
+import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 const platformColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
   all: "primary",
@@ -49,6 +50,19 @@ export default function AppVersionsPage() {
   // 筛选状态
   const [visibleFilter, setVisibleFilter] = useState<string>("");
   const [platformFilter, setPlatformFilter] = useState<string>("");
+
+  // 分页
+  const {
+    page,
+    setPage,
+    rowsPerPage,
+    setRowsPerPage,
+    totalPages,
+    getPageItems,
+  } = useLocalPagination({ totalItems: versions.length, defaultRowsPerPage: 20 });
+
+  // 当前页的版本数据
+  const paginatedVersions = useMemo(() => getPageItems(versions), [getPageItems, versions]);
 
   // 创建/编辑弹窗
   const [modalOpen, setModalOpen] = useState(false);
@@ -316,7 +330,20 @@ export default function AppVersionsPage() {
         </div>
 
         {/* 版本表格 */}
-        <Table aria-label="版本列表">
+        <Table 
+          aria-label="版本列表"
+          bottomContent={
+            <TablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={versions.length}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setPage}
+              onRowsPerPageChange={setRowsPerPage}
+            />
+          }
+          bottomContentPlacement="outside"
+        >
           <TableHeader>
             <TableColumn>版本号</TableColumn>
             <TableColumn>版本名称</TableColumn>
@@ -328,7 +355,7 @@ export default function AppVersionsPage() {
             <TableColumn>操作</TableColumn>
           </TableHeader>
           <TableBody
-            items={versions}
+            items={paginatedVersions}
             isLoading={loading}
             loadingContent={<Spinner label="加载中..." />}
             emptyContent="暂无版本数据"
