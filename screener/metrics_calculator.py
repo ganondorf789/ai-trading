@@ -8,6 +8,7 @@
 这样更能准确反映交易者的真实表现。
 """
 from typing import List, Dict, Any, Optional, Tuple
+import random
 import numpy as np
 import pendulum
 from loguru import logger
@@ -23,6 +24,7 @@ from .models import (
     ScoreMetrics,
     TagMetrics,
 )
+from .config import LargeDataConfig
 from .tag_calculator import TraderTagCalculator
 from .utils import (
     SHANGHAI_TZ,
@@ -52,9 +54,57 @@ class MetricsCalculator:
     从成交记录和用户状态计算交易者的各种指标
     """
     
-    def __init__(self):
-        """初始化计算器"""
-        pass
+    def __init__(self, large_data_config: Optional[LargeDataConfig] = None):
+        """
+        初始化计算器
+        
+        Args:
+            large_data_config: 大数据量保护配置
+        """
+        self._large_data_config = large_data_config or LargeDataConfig()
+    
+    def _should_downgrade(self, fills_count: int) -> bool:
+        """检查是否需要降级处理"""
+        if not self._large_data_config.enabled:
+            return False
+        return fills_count > self._large_data_config.max_fills_for_full_calculation
+    
+    def _sample_fills(self, fills: List[Dict], target_count: int) -> List[Dict]:
+        """
+        对 fills 进行采样
+        
+        保留首尾记录，中间随机采样，保持时间顺序
+        
+        Args:
+            fills: 原始 fills 列表（已按时间排序）
+            target_count: 目标数量
+        
+        Returns:
+            采样后的 fills 列表
+        """
+        if len(fills) <= target_count:
+            return fills
+        
+        # 保留首尾各 10% 的记录（确保时间范围完整）
+        keep_ends = max(int(target_count * 0.1), 100)
+        
+        head = fills[:keep_ends]
+        tail = fills[-keep_ends:]
+        middle_fills = fills[keep_ends:-keep_ends]
+        
+        # 中间部分随机采样
+        middle_count = target_count - len(head) - len(tail)
+        if middle_count > 0 and len(middle_fills) > 0:
+            sample_indices = sorted(random.sample(range(len(middle_fills)), min(middle_count, len(middle_fills))))
+            middle_sampled = [middle_fills[i] for i in sample_indices]
+        else:
+            middle_sampled = []
+        
+        # 合并并按时间排序
+        result = head + middle_sampled + tail
+        result.sort(key=lambda x: x.get('time', 0))
+        
+        return result
     
     def calculate(
         self,
@@ -62,7 +112,9 @@ class MetricsCalculator:
         fills: List[Dict],
         user_state: Optional[Dict] = None,
         store_fills: bool = True,
-        db_total_trades: Optional[int] = None
+        db_total_trades: Optional[int] = None,
+        db_aggregated_stats: Optional[Dict] = None,
+        db_position_metrics: Optional[Dict] = None
     ) -> TraderMetrics:
         """
         计算交易者指标
@@ -77,6 +129,8 @@ class MetricsCalculator:
             user_state: 用户状态
             store_fills: 是否存储原始交易记录
             db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
+            db_aggregated_stats: 从数据库获取的聚合统计（大数据量优化）
+            db_position_metrics: 从数据库获取的仓位指标（跳过内存中重建仓位历史）
         
         Returns:
             TraderMetrics 对象
@@ -86,27 +140,73 @@ class MetricsCalculator:
         if not fills:
             return metrics
         
+        original_fills_count = len(fills)
+        is_downgraded = False
+        
+        # 大数据量保护
+        if self._should_downgrade(original_fills_count):
+            is_downgraded = True
+            logger.warning(
+                f"交易员 {address[:10]}... 有 {original_fills_count} 条 fills，"
+                f"超过阈值 {self._large_data_config.max_fills_for_full_calculation}，启用降级策略"
+            )
+            
+            # 采样降级
+            if self._large_data_config.sampling_enabled:
+                target_count = int(original_fills_count * self._large_data_config.sampling_ratio)
+                target_count = max(target_count, 10000)  # 至少保留 10000 条
+                fills = self._sample_fills(fills, target_count)
+                logger.info(f"采样降级: {original_fills_count} -> {len(fills)} 条 fills")
+        elif original_fills_count > self._large_data_config.warning_threshold:
+            logger.info(
+                f"交易员 {address[:10]}... 有 {original_fills_count} 条 fills，"
+                f"接近阈值 {self._large_data_config.max_fills_for_full_calculation}"
+            )
+        
         # 预处理成交记录
         processed_fills = self._preprocess_fills(fills)
         
-        # 从 fills 重建仓位历史
-        # 这样可以更准确地计算胜率、盈亏笔数等指标
-        positions = rebuild_positions_from_fills(processed_fills)
-        position_metrics = calculate_position_based_metrics(positions)
+        # 仓位历史和指标
+        positions = []
+        position_metrics = {}
         
-        # 计算各类指标（使用仓位历史）
-        self._calculate_pnl_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
-        self._calculate_trade_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
-        self._calculate_risk_metrics(metrics, processed_fills, positions, position_metrics)
-        self._calculate_activity_metrics(metrics, processed_fills, positions, position_metrics, db_total_trades)
+        if db_position_metrics:
+            # 使用数据库中的仓位指标（大数据量优化）
+            position_metrics = db_position_metrics
+            logger.debug(f"使用数据库中的仓位指标，跳过内存重建")
+        else:
+            # 从 fills 重建仓位历史
+            # 这样可以更准确地计算胜率、盈亏笔数等指标
+            positions = rebuild_positions_from_fills(processed_fills)
+            position_metrics = calculate_position_based_metrics(positions)
+        
+        # 计算基于 fills 的统计
+        # 优先使用数据库聚合数据，否则单次遍历计算
+        if db_aggregated_stats and self._is_db_aggregated_complete(db_aggregated_stats):
+            # 使用数据库聚合数据（大数据量优化，跳过内存遍历）
+            fills_stats = self._convert_db_aggregated_to_fills_stats(db_aggregated_stats)
+            logger.debug(f"使用数据库聚合统计，跳过内存遍历")
+        else:
+            # 单次遍历计算所有基于 fills 的统计（合并多次遍历）
+            fills_stats = self._calculate_fills_stats_single_pass(processed_fills)
+        
+        # 计算各类指标（使用仓位历史和单次遍历结果）
+        self._calculate_pnl_metrics(metrics, positions, position_metrics, fills_stats, db_total_trades)
+        self._calculate_trade_metrics(metrics, positions, position_metrics, fills_stats, db_total_trades)
+        
+        # 风险指标（可能跳过昂贵计算）
+        skip_expensive = is_downgraded and self._large_data_config.skip_expensive_metrics
+        self._calculate_risk_metrics(metrics, processed_fills, positions, position_metrics, skip_expensive)
+        
+        self._calculate_activity_metrics(metrics, positions, position_metrics, fills_stats, db_total_trades)
         
         # 从用户状态计算
         if user_state:
             self._calculate_position_metrics(metrics, user_state)
             self._calculate_roi_metrics(metrics, user_state)
         
-        # 存储原始数据
-        if store_fills:
+        # 存储原始数据（降级时不存储以节省内存）
+        if store_fills and not is_downgraded:
             metrics.fills = processed_fills
         
         if user_state:
@@ -118,7 +218,64 @@ class MetricsCalculator:
         # 清理临时属性，避免内存泄漏
         self._cleanup_temp_attributes(metrics)
         
+        # 记录原始 fills 数量（用于调试）
+        metrics._original_fills_count = original_fills_count
+        metrics._is_downgraded = is_downgraded
+        
         return metrics
+    
+    def _is_db_aggregated_complete(self, stats: Dict) -> bool:
+        """
+        检查数据库聚合统计是否完整，可以完全替代内存遍历
+        
+        Args:
+            stats: 数据库聚合统计
+        
+        Returns:
+            True 如果数据完整可用
+        """
+        if not stats:
+            return False
+        
+        # 检查必要的字段是否存在
+        required_keys = ['basic_stats', 'daily_pnl', 'weekly_pnl', 'monthly_pnl', 'symbol_counts']
+        return all(key in stats for key in required_keys)
+    
+    def _convert_db_aggregated_to_fills_stats(self, db_stats: Dict) -> Dict[str, Any]:
+        """
+        将数据库聚合统计转换为 _calculate_fills_stats_single_pass 的返回格式
+        
+        Args:
+            db_stats: 数据库聚合统计（来自 get_aggregated_fills_metrics）
+        
+        Returns:
+            与 _calculate_fills_stats_single_pass 返回格式兼容的字典
+        """
+        basic = db_stats.get('basic_stats', {})
+        
+        # 转换首末交易时间
+        first_time_ms = basic.get('first_trade_time')
+        last_time_ms = basic.get('last_trade_time')
+        first_trade_time = timestamp_to_pendulum(first_time_ms) if first_time_ms else None
+        last_trade_time = timestamp_to_pendulum(last_time_ms) if last_time_ms else None
+        
+        return {
+            'daily_pnl': db_stats.get('daily_pnl', {}),
+            'weekly_pnl': db_stats.get('weekly_pnl', {}),
+            'monthly_pnl': db_stats.get('monthly_pnl', {}),
+            'daily_volume': db_stats.get('daily_volume', {}),
+            'weekly_volume': db_stats.get('weekly_volume', {}),
+            'monthly_volume': db_stats.get('monthly_volume', {}),
+            'total_volume': basic.get('total_volume', 0.0),
+            'total_price': basic.get('avg_price', 0.0) * basic.get('fills_count', 0),  # 近似计算
+            'total_size_usd': basic.get('total_size_usd', 0.0),
+            'symbol_counts': db_stats.get('symbol_counts', {}),
+            'long_count': basic.get('long_count', 0),
+            'short_count': basic.get('short_count', 0),
+            'first_trade_time': first_trade_time,
+            'last_trade_time': last_trade_time,
+            'fills_count': basic.get('fills_count', 0),
+        }
     
     def _preprocess_fills(self, fills: List[Dict]) -> List[Dict]:
         """
@@ -148,12 +305,114 @@ class MetricsCalculator:
         
         return processed
     
+    def _calculate_fills_stats_single_pass(self, fills: List[Dict]) -> Dict[str, Any]:
+        """
+        单次遍历计算所有基于 fills 的统计数据
+        
+        合并原来在 _calculate_pnl_metrics 和 _calculate_trade_metrics 中的多次遍历，
+        大幅减少对大数据集的迭代次数。
+        
+        Args:
+            fills: 成交记录列表
+        
+        Returns:
+            包含所有统计数据的字典：
+            - daily_pnl, weekly_pnl, monthly_pnl: 按时间段聚合的 PnL
+            - daily_volume, weekly_volume, monthly_volume: 按时间段聚合的交易量
+            - total_volume: 总交易量
+            - total_price: 价格总和（用于计算平均价格）
+            - total_size_usd: 交易金额总和
+            - symbol_counts: 品种交易次数
+            - long_count, short_count: 多空交易次数
+            - first_trade_time, last_trade_time: 首末交易时间
+        """
+        # 初始化所有统计变量
+        daily_pnl: Dict[str, float] = {}
+        weekly_pnl: Dict[str, float] = {}
+        monthly_pnl: Dict[str, float] = {}
+        
+        daily_volume: Dict[str, float] = {}
+        weekly_volume: Dict[str, float] = {}
+        monthly_volume: Dict[str, float] = {}
+        
+        total_volume = 0.0
+        total_price = 0.0
+        total_size_usd = 0.0
+        
+        symbol_counts: Dict[str, int] = {}
+        long_count = 0
+        short_count = 0
+        
+        first_trade_time = None
+        last_trade_time = None
+        
+        # 单次遍历计算所有统计
+        for fill in fills:
+            # 基础数据提取
+            price = float(fill.get('px', 0))
+            size = float(fill.get('sz', 0))
+            volume = price * size
+            closed_pnl = float(fill.get('closedPnl', 0))
+            time_ms = fill.get('time', 0)
+            
+            # 时间处理
+            trade_time = timestamp_to_pendulum(time_ms)
+            day_key, week_key, month_key = get_time_keys(trade_time)
+            
+            # 首末交易时间
+            if first_trade_time is None:
+                first_trade_time = trade_time
+            last_trade_time = trade_time
+            
+            # PnL 统计
+            daily_pnl[day_key] = daily_pnl.get(day_key, 0) + closed_pnl
+            weekly_pnl[week_key] = weekly_pnl.get(week_key, 0) + closed_pnl
+            monthly_pnl[month_key] = monthly_pnl.get(month_key, 0) + closed_pnl
+            
+            # 交易量统计
+            total_volume += volume
+            total_price += price
+            total_size_usd += volume
+            
+            daily_volume[day_key] = daily_volume.get(day_key, 0) + volume
+            weekly_volume[week_key] = weekly_volume.get(week_key, 0) + volume
+            monthly_volume[month_key] = monthly_volume.get(month_key, 0) + volume
+            
+            # 品种统计
+            symbol = fill.get('coin', '')
+            symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+            
+            # 多空统计
+            side = fill.get('side', '').upper()
+            if side in ('B', 'BUY'):
+                long_count += 1
+            elif side in ('A', 'SELL'):
+                short_count += 1
+        
+        return {
+            'daily_pnl': daily_pnl,
+            'weekly_pnl': weekly_pnl,
+            'monthly_pnl': monthly_pnl,
+            'daily_volume': daily_volume,
+            'weekly_volume': weekly_volume,
+            'monthly_volume': monthly_volume,
+            'total_volume': total_volume,
+            'total_price': total_price,
+            'total_size_usd': total_size_usd,
+            'symbol_counts': symbol_counts,
+            'long_count': long_count,
+            'short_count': short_count,
+            'first_trade_time': first_trade_time,
+            'last_trade_time': last_trade_time,
+            'fills_count': len(fills),
+        }
+    
     def _calculate_pnl_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict],
         positions: List[Dict],
         position_metrics: Dict[str, Any],
+        fills_stats: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
@@ -163,9 +422,9 @@ class MetricsCalculator:
         
         Args:
             metrics: 指标对象
-            fills: 成交记录
             positions: 仓位历史
             position_metrics: 基于仓位计算的指标
+            fills_stats: 单次遍历计算的统计数据
             db_total_trades: 从数据库获取的总交易数
         """
         pnl = metrics.pnl
@@ -187,20 +446,10 @@ class MetricsCalculator:
         pnl.avg_win_amount = position_metrics.get('avg_win', 0.0)
         pnl.avg_loss_amount = position_metrics.get('avg_loss', 0.0)
         
-        # ===== 基于 fills 计算的辅助指标（按时间段统计）=====
-        daily_pnl: Dict[str, float] = {}
-        weekly_pnl: Dict[str, float] = {}
-        monthly_pnl: Dict[str, float] = {}
-        
-        # 仍然使用 fills 来计算时间段统计（因为需要精确的时间信息）
-        for fill in fills:
-            closed_pnl = float(fill.get('closedPnl', 0))
-            trade_time = timestamp_to_pendulum(fill.get('time', 0))
-            day_key, week_key, month_key = get_time_keys(trade_time)
-            
-            daily_pnl[day_key] = daily_pnl.get(day_key, 0) + closed_pnl
-            weekly_pnl[week_key] = weekly_pnl.get(week_key, 0) + closed_pnl
-            monthly_pnl[month_key] = monthly_pnl.get(month_key, 0) + closed_pnl
+        # ===== 使用单次遍历结果的时间段统计 =====
+        daily_pnl = fills_stats.get('daily_pnl', {})
+        weekly_pnl = fills_stats.get('weekly_pnl', {})
+        monthly_pnl = fills_stats.get('monthly_pnl', {})
         
         # 时间段均值
         if daily_pnl:
@@ -225,9 +474,9 @@ class MetricsCalculator:
     def _calculate_trade_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict],
         positions: List[Dict],
         position_metrics: Dict[str, Any],
+        fills_stats: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
@@ -237,9 +486,9 @@ class MetricsCalculator:
         
         Args:
             metrics: 指标对象
-            fills: 成交记录
             positions: 仓位历史
             position_metrics: 基于仓位计算的指标
+            fills_stats: 单次遍历计算的统计数据
             db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
         """
         trade = metrics.trade
@@ -261,47 +510,21 @@ class MetricsCalculator:
         pf = position_metrics.get('profit_factor', 0.0)
         trade.profit_factor = pf if pf != float('inf') else float('inf')
         
-        # ===== 基于 fills 计算的辅助指标 =====
-        total_price = 0.0
-        total_size_usd = 0.0
-        symbol_counts: Dict[str, int] = {}
-        long_count = 0
-        short_count = 0
+        # ===== 使用单次遍历结果的统计数据 =====
+        total_price = fills_stats.get('total_price', 0.0)
+        total_size_usd = fills_stats.get('total_size_usd', 0.0)
+        symbol_counts = fills_stats.get('symbol_counts', {})
+        long_count = fills_stats.get('long_count', 0)
+        short_count = fills_stats.get('short_count', 0)
         
-        daily_volume: Dict[str, float] = {}
-        weekly_volume: Dict[str, float] = {}
-        monthly_volume: Dict[str, float] = {}
+        daily_volume = fills_stats.get('daily_volume', {})
+        weekly_volume = fills_stats.get('weekly_volume', {})
+        monthly_volume = fills_stats.get('monthly_volume', {})
         
-        for fill in fills:
-            price = float(fill.get('px', 0))
-            size = float(fill.get('sz', 0))
-            volume = price * size
-            
-            trade.total_volume += volume
-            total_price += price
-            total_size_usd += volume
-            
-            # 品种统计
-            symbol = fill.get('coin', '')
-            symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
-            
-            # 多空统计
-            side = fill.get('side', '').upper()
-            if side in ('B', 'BUY'):
-                long_count += 1
-            elif side in ('A', 'SELL'):
-                short_count += 1
-            
-            # 按时间段统计交易量
-            trade_time = timestamp_to_pendulum(fill.get('time', 0))
-            day_key, week_key, month_key = get_time_keys(trade_time)
-            
-            daily_volume[day_key] = daily_volume.get(day_key, 0) + volume
-            weekly_volume[week_key] = weekly_volume.get(week_key, 0) + volume
-            monthly_volume[month_key] = monthly_volume.get(month_key, 0) + volume
+        trade.total_volume = fills_stats.get('total_volume', 0.0)
         
         # 计算平均值
-        num_fills = len(fills)
+        num_fills = fills_stats.get('fills_count', 0)
         if num_fills > 0:
             trade.avg_trade_price = total_price / num_fills
             trade.avg_trade_size = total_size_usd / num_fills
@@ -339,7 +562,8 @@ class MetricsCalculator:
         metrics: TraderMetrics,
         fills: List[Dict],
         positions: List[Dict],
-        position_metrics: Dict[str, Any]
+        position_metrics: Dict[str, Any],
+        skip_expensive: bool = False
     ) -> None:
         """
         计算风险指标
@@ -352,6 +576,7 @@ class MetricsCalculator:
             fills: 成交记录
             positions: 仓位历史
             position_metrics: 基于仓位计算的指标
+            skip_expensive: 是否跳过昂贵计算（VaR、CVaR、连续盈亏等）
         """
         risk = metrics.risk
         
@@ -369,13 +594,13 @@ class MetricsCalculator:
         if len(sorted_pnl_list) < 2:
             sorted_pnl_list = pnl_list
         
-        # 最大回撤（基于仓位累计盈亏）
+        # 最大回撤（基于仓位累计盈亏）- 核心指标，始终计算
         risk.max_drawdown, risk.max_drawdown_abs = calculate_max_drawdown(sorted_pnl_list)
         
-        # 夏普比率（基于仓位盈亏）
+        # 夏普比率（基于仓位盈亏）- 核心指标，始终计算
         risk.sharpe_ratio = calculate_sharpe_ratio(sorted_pnl_list)
         
-        # 索提诺比率
+        # 索提诺比率 - 核心指标，始终计算
         risk.sortino_ratio = calculate_sortino_ratio(sorted_pnl_list)
         
         # 卡玛比率
@@ -389,6 +614,11 @@ class MetricsCalculator:
                     days
                 )
         
+        # 以下为昂贵计算，可选跳过
+        if skip_expensive:
+            logger.debug("跳过昂贵的风险指标计算（VaR、CVaR、连续盈亏）")
+            return
+        
         # VaR 指标（基于仓位盈亏）
         risk.var_95 = calculate_var(sorted_pnl_list, 0.95)
         risk.var_99 = calculate_var(sorted_pnl_list, 0.99)
@@ -401,9 +631,9 @@ class MetricsCalculator:
     def _calculate_activity_metrics(
         self,
         metrics: TraderMetrics,
-        fills: List[Dict],
         positions: List[Dict],
         position_metrics: Dict[str, Any],
+        fills_stats: Dict[str, Any],
         db_total_trades: Optional[int] = None
     ) -> None:
         """
@@ -411,22 +641,22 @@ class MetricsCalculator:
         
         Args:
             metrics: 指标对象
-            fills: 成交记录
             positions: 仓位历史
             position_metrics: 基于仓位计算的指标
+            fills_stats: 单次遍历计算的统计数据
             db_total_trades: 从数据库获取的总交易数
         """
         activity = metrics.activity
         
-        if not fills:
+        if fills_stats.get('fills_count', 0) == 0:
             return
         
-        # 时间范围
-        activity.first_trade_time = timestamp_to_pendulum(fills[0].get('time', 0))
-        activity.last_trade_time = timestamp_to_pendulum(fills[-1].get('time', 0))
+        # 时间范围（使用单次遍历结果）
+        activity.first_trade_time = fills_stats.get('first_trade_time')
+        activity.last_trade_time = fills_stats.get('last_trade_time')
         
-        # 活跃天数
-        daily_pnl = getattr(metrics, '_daily_pnl', {})
+        # 活跃天数（使用单次遍历结果中的 daily_pnl）
+        daily_pnl = fills_stats.get('daily_pnl', {})
         activity.active_days = len(daily_pnl)
         
         # 交易频率（基于仓位数）
@@ -535,7 +765,8 @@ def calculate_metrics(
     fills: List[Dict],
     user_state: Optional[Dict] = None,
     store_fills: bool = True,
-    db_total_trades: Optional[int] = None
+    db_total_trades: Optional[int] = None,
+    large_data_config: Optional[LargeDataConfig] = None
 ) -> TraderMetrics:
     """
     计算交易者指标（便捷函数）
@@ -546,9 +777,10 @@ def calculate_metrics(
         user_state: 用户状态
         store_fills: 是否存储原始交易记录
         db_total_trades: 从数据库获取的总交易数（如果提供则使用此值）
+        large_data_config: 大数据量保护配置
     
     Returns:
         TraderMetrics 对象
     """
-    calculator = MetricsCalculator()
+    calculator = MetricsCalculator(large_data_config)
     return calculator.calculate(address, fills, user_state, store_fills, db_total_trades)

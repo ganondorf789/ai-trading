@@ -112,6 +112,29 @@ class DataConfig:
 
 
 @dataclass
+class LargeDataConfig:
+    """大数据量保护配置"""
+    # 启用大数据保护（超过阈值时自动降级）
+    enabled: bool = True
+    
+    # 触发降级的 fills 数量阈值
+    max_fills_for_full_calculation: int = 100000
+    
+    # 降级策略
+    sampling_enabled: bool = True  # 是否启用采样
+    sampling_ratio: float = 0.1  # 采样比例（仅在采样启用时生效）
+    
+    # 跳过昂贵的计算
+    skip_expensive_metrics: bool = False  # 跳过 VaR、CVaR、连续盈亏等
+    
+    # 使用数据库聚合替代 Python 计算
+    use_db_aggregation: bool = True
+    
+    # 警告阈值（超过此数量时记录警告日志）
+    warning_threshold: int = 50000
+
+
+@dataclass
 class OutputConfig:
     """输出配置"""
     top_n: int = 20  # 输出前 N 名
@@ -133,6 +156,7 @@ class ScreenerConfig:
     cache: CacheConfig = field(default_factory=CacheConfig)
     data: DataConfig = field(default_factory=DataConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    large_data: LargeDataConfig = field(default_factory=LargeDataConfig)
     
     # ===== 便捷属性（向后兼容）=====
     @property
@@ -259,6 +283,8 @@ class ScreenerConfig:
             config.data = DataConfig(**data['data'])
         if 'output' in data:
             config.output = OutputConfig(**data['output'])
+        if 'large_data' in data:
+            config.large_data = LargeDataConfig(**data['large_data'])
         
         return config
 

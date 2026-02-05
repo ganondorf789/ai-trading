@@ -551,3 +551,235 @@ class TraderFillsOps:
                 })
             
             return results
+
+    # ============= 数据库聚合下推方法 =============
+    # 这些方法将计算下推到数据库，减少内存中的数据处理
+
+    def get_fills_stats_aggregated(self, address: str) -> Optional[Dict[str, Any]]:
+        """
+        从数据库获取交易记录的聚合统计信息
+        
+        将统计计算下推到数据库，避免在内存中遍历大量数据。
+        
+        Args:
+            address: 交易者地址
+        
+        Returns:
+            聚合统计字典，包含：
+            - fills_count: 总交易记录数
+            - total_volume: 总交易量 (px * sz)
+            - total_size_usd: 总交易规模
+            - total_closed_pnl: 总已实现盈亏
+            - total_fee: 总手续费
+            - first_trade_time: 首次交易时间（毫秒）
+            - last_trade_time: 最后交易时间（毫秒）
+            - long_count: 做多交易数
+            - short_count: 做空交易数
+            - avg_price: 平均价格
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as fills_count,
+                    COALESCE(SUM(px * sz), 0) as total_volume,
+                    COALESCE(SUM(sz), 0) as total_size_usd,
+                    COALESCE(SUM(closed_pnl), 0) as total_closed_pnl,
+                    COALESCE(SUM(fee), 0) as total_fee,
+                    MIN(time) as first_trade_time,
+                    MAX(time) as last_trade_time,
+                    SUM(CASE WHEN side = 'B' THEN 1 ELSE 0 END) as long_count,
+                    SUM(CASE WHEN side = 'A' THEN 1 ELSE 0 END) as short_count,
+                    COALESCE(AVG(px), 0) as avg_price
+                FROM trader_fills
+                WHERE address = %s
+            """, (address,))
+            
+            row = cursor.fetchone()
+            if not row or row['fills_count'] == 0:
+                return None
+            
+            return {
+                'fills_count': row['fills_count'],
+                'total_volume': float(row['total_volume']),
+                'total_size_usd': float(row['total_size_usd']),
+                'total_closed_pnl': float(row['total_closed_pnl']),
+                'total_fee': float(row['total_fee']),
+                'first_trade_time': row['first_trade_time'],
+                'last_trade_time': row['last_trade_time'],
+                'long_count': row['long_count'],
+                'short_count': row['short_count'],
+                'avg_price': float(row['avg_price']),
+            }
+
+    def get_pnl_by_period(
+        self,
+        address: str,
+        period: str = 'daily'
+    ) -> Dict[str, float]:
+        """
+        按时间段聚合盈亏数据
+        
+        Args:
+            address: 交易者地址
+            period: 时间段类型 ('daily', 'weekly', 'monthly')
+        
+        Returns:
+            {时间段键: 盈亏值} 字典
+            - daily: 'YYYY-MM-DD' -> pnl
+            - weekly: 'YYYY-WW' -> pnl
+            - monthly: 'YYYY-MM' -> pnl
+        """
+        # 根据时间段类型选择 SQL 的日期截断方式
+        if period == 'daily':
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD')"
+        elif period == 'weekly':
+            # ISO 周格式: YYYY-WW
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'IYYY-IW')"
+        elif period == 'monthly':
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM')"
+        else:
+            raise ValueError(f"Unsupported period: {period}")
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            cursor.execute(f"""
+                SELECT 
+                    {date_format} as period_key,
+                    COALESCE(SUM(closed_pnl), 0) as pnl
+                FROM trader_fills
+                WHERE address = %s
+                GROUP BY {date_format}
+                ORDER BY period_key
+            """, (address,))
+            
+            result = {}
+            for row in cursor.fetchall():
+                if row['period_key']:
+                    result[row['period_key']] = float(row['pnl'])
+            
+            return result
+
+    def get_volume_by_period(
+        self,
+        address: str,
+        period: str = 'daily'
+    ) -> Dict[str, float]:
+        """
+        按时间段聚合交易量数据
+        
+        Args:
+            address: 交易者地址
+            period: 时间段类型 ('daily', 'weekly', 'monthly')
+        
+        Returns:
+            {时间段键: 交易量} 字典
+        """
+        if period == 'daily':
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD')"
+        elif period == 'weekly':
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'IYYY-IW')"
+        elif period == 'monthly':
+            date_format = "TO_CHAR(TO_TIMESTAMP(time / 1000) AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM')"
+        else:
+            raise ValueError(f"Unsupported period: {period}")
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            cursor.execute(f"""
+                SELECT 
+                    {date_format} as period_key,
+                    COALESCE(SUM(px * sz), 0) as volume
+                FROM trader_fills
+                WHERE address = %s
+                GROUP BY {date_format}
+                ORDER BY period_key
+            """, (address,))
+            
+            result = {}
+            for row in cursor.fetchall():
+                if row['period_key']:
+                    result[row['period_key']] = float(row['volume'])
+            
+            return result
+
+    def get_symbol_stats(self, address: str) -> Dict[str, int]:
+        """
+        获取按币种统计的交易次数
+        
+        Args:
+            address: 交易者地址
+        
+        Returns:
+            {币种: 交易次数} 字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            
+            cursor.execute("""
+                SELECT 
+                    coin,
+                    COUNT(*) as count
+                FROM trader_fills
+                WHERE address = %s
+                GROUP BY coin
+                ORDER BY count DESC
+            """, (address,))
+            
+            result = {}
+            for row in cursor.fetchall():
+                if row['coin']:
+                    result[row['coin']] = row['count']
+            
+            return result
+
+    def get_aggregated_fills_metrics(self, address: str) -> Optional[Dict[str, Any]]:
+        """
+        获取完整的数据库聚合指标，用于替代内存中的 fills 遍历
+        
+        这是一个综合方法，一次性获取所有需要的聚合数据。
+        
+        Args:
+            address: 交易者地址
+        
+        Returns:
+            完整的聚合指标字典，包含：
+            - basic_stats: 基础统计（fills_count, volume, pnl 等）
+            - daily_pnl: 按日聚合的盈亏
+            - weekly_pnl: 按周聚合的盈亏
+            - monthly_pnl: 按月聚合的盈亏
+            - daily_volume: 按日聚合的交易量
+            - weekly_volume: 按周聚合的交易量
+            - monthly_volume: 按月聚合的交易量
+            - symbol_counts: 按币种统计的交易次数
+        """
+        # 获取基础统计
+        basic_stats = self.get_fills_stats_aggregated(address)
+        if not basic_stats:
+            return None
+        
+        # 获取时间段聚合数据
+        daily_pnl = self.get_pnl_by_period(address, 'daily')
+        weekly_pnl = self.get_pnl_by_period(address, 'weekly')
+        monthly_pnl = self.get_pnl_by_period(address, 'monthly')
+        
+        daily_volume = self.get_volume_by_period(address, 'daily')
+        weekly_volume = self.get_volume_by_period(address, 'weekly')
+        monthly_volume = self.get_volume_by_period(address, 'monthly')
+        
+        # 获取币种统计
+        symbol_counts = self.get_symbol_stats(address)
+        
+        return {
+            'basic_stats': basic_stats,
+            'daily_pnl': daily_pnl,
+            'weekly_pnl': weekly_pnl,
+            'monthly_pnl': monthly_pnl,
+            'daily_volume': daily_volume,
+            'weekly_volume': weekly_volume,
+            'monthly_volume': monthly_volume,
+            'symbol_counts': symbol_counts,
+        }

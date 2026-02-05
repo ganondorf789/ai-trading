@@ -439,6 +439,33 @@ class DatabaseMigrations:
                 ON position_history(address, coin)
             """)
 
+            # 创建仓位计算状态表（用于增量计算）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_calc_state (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL UNIQUE,
+                    
+                    -- 最后处理的 fill 时间戳
+                    last_processed_fill_time BIGINT DEFAULT 0,
+                    
+                    -- 当前未平仓仓位的 JSON 快照
+                    open_positions_snapshot JSONB DEFAULT '{}',
+                    
+                    -- 计算统计
+                    total_fills_processed INTEGER DEFAULT 0,
+                    total_positions_generated INTEGER DEFAULT 0,
+                    
+                    -- 时间戳
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_position_calc_state_address
+                ON position_calc_state(address)
+            """)
+
             # 创建持仓AI分析结果表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS positions_ai_analysis (

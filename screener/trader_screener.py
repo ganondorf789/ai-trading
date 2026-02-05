@@ -103,7 +103,7 @@ class TraderScreener:
         self._api_client = SyncAPIClient(
             self.config.api, self._cache, cache_fills=cache_fills, worker_index=worker_index
         )
-        self._metrics_calculator = MetricsCalculator()
+        self._metrics_calculator = MetricsCalculator(self.config.large_data)
         self._scorer = TraderScorer(self.config.scoring)
         
         # 状态存储
@@ -234,9 +234,35 @@ class TraderScreener:
                 logger.debug(f"交易者 {short_address(address)} 无成交记录")
                 return None
             
+            # 尝试从数据库获取优化数据（大数据量优化）
+            db_position_metrics = None
+            db_aggregated_stats = None
+            use_db_optimization = (
+                self._db is not None and 
+                self.config.large_data.use_db_aggregation and
+                len(fills) > self.config.large_data.warning_threshold
+            )
+            
+            if use_db_optimization:
+                try:
+                    # 尝试获取数据库仓位指标
+                    if self._db.has_position_history(address):
+                        db_position_metrics = self._db.get_position_metrics_from_db(address)
+                        if db_position_metrics:
+                            logger.debug(f"使用数据库仓位指标优化计算: {short_address(address)}")
+                    
+                    # 获取聚合的 fills 统计（下推到数据库计算）
+                    db_aggregated_stats = self._db.get_aggregated_fills_metrics(address)
+                    if db_aggregated_stats:
+                        logger.debug(f"使用数据库聚合统计优化计算: {short_address(address)}")
+                except Exception as e:
+                    logger.debug(f"获取数据库优化数据失败: {e}")
+            
             # 计算指标
             metrics = self._metrics_calculator.calculate(
-                address, fills, user_state, store_fills, db_total_trades
+                address, fills, user_state, store_fills, db_total_trades,
+                db_aggregated_stats=db_aggregated_stats,
+                db_position_metrics=db_position_metrics
             )
             
             # 计算评分
@@ -251,6 +277,7 @@ class TraderScreener:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
             # 重建历史仓位记录（批量处理时可跳过以提高性能）
+            # 使用增量计算而不是全量重建
             if self._db and not self._skip_position_history:
                 try:
                     history_count = self._db.rebuild_position_history(address)
