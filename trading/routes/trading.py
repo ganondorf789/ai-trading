@@ -13,6 +13,7 @@ import logging
 
 from clients.hyperliquid_client import HyperliquidClient
 from trading.settings import settings
+from trading.grpc_client import GRPCClient
 from .middleware import api_key_required
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ trading_bp = Blueprint('trading', __name__)
 
 # 全局客户端实例（延迟初始化）
 _client: HyperliquidClient = None
+_grpc_client: GRPCClient = None
 
 
 def _extract_order_data(result: dict) -> dict:
@@ -71,6 +73,21 @@ def get_client() -> HyperliquidClient:
         logger.info(f"HyperliquidClient 初始化完成，钱包地址: {_client.wallet_address}")
     
     return _client
+
+
+def get_grpc_client() -> GRPCClient:
+    """
+    获取 GRPCClient 实例（单例模式）
+    """
+    global _grpc_client
+    if _grpc_client is None:
+        _grpc_client = GRPCClient(
+            host=settings.grpc.host,
+            port=settings.grpc.port
+        )
+        logger.info(f"GRPCClient 初始化完成，服务器地址: {settings.grpc.host}:{settings.grpc.port}")
+    
+    return _grpc_client
 
 
 # ==================== 市场数据 API ====================
@@ -179,12 +196,29 @@ def get_positions():
         client = get_client()
         positions = client.get_positions()
         
-        # 获取所有交易对的中间价
+        # 获取所有交易对的中间价（标记价格）
         all_mids = client.get_all_mids()
+        
+        # 获取所有活跃的跟单记录，用于匹配仓位（通过 gRPC）
+        grpc_client = get_grpc_client()
+        active_trackings = grpc_client.db.get_active_position_trackings()
+        
+        # 构建 symbol -> tracking 的映射（只取活跃的跟单）
+        tracking_map = {}
+        for tracking in active_trackings:
+            symbol = tracking.get('symbol')
+            if symbol and symbol not in tracking_map:
+                tracking_map[symbol] = tracking
         
         positions_data = []
         for p in positions:
+            # 查找该仓位对应的跟单记录
+            tracking = tracking_map.get(p.symbol)
+            
+            # 获取当前价格（标记价格/中间价）
             current_price = float(all_mids.get(p.symbol, 0)) or p.current_price
+            
+            # 计算仓位价值（USDC）= 仓位数量 * 当前价格
             position_value = p.size * current_price
             
             position_info = {
@@ -197,7 +231,12 @@ def get_positions():
                 'unrealized_pnl': p.unrealized_pnl,
                 'liquidation_price': p.liquidation_price,
                 'position_value': position_value,
-                'margin_used': p.margin_used
+                'margin_used': p.margin_used,
+                # 跟单相关字段
+                'tracking_id': tracking.get('id') if tracking else None,
+                'target_address': tracking.get('target_address') if tracking else None,
+                'target_name': tracking.get('target_name') if tracking else None,
+                'has_tracking': tracking is not None
             }
             positions_data.append(position_info)
         
