@@ -79,6 +79,32 @@ message SavePositionTrackingRequest {
     optional double target_entry_price = 15;
     optional double target_size = 16;
     optional string nickname = 17;
+    
+    // 自动补仓配置
+    optional bool auto_replenish = 18;           // 是否开启自动补仓
+    optional double replenish_ratio = 19;        // 补仓比例
+    optional double replenish_min_value_usd = 20; // 最小补仓金额
+    optional double replenish_max_value_usd = 21; // 最大补仓金额
+    
+    // 其他配置
+    optional string target_name = 22;            // 目标交易员名称
+    optional double min_position_size = 23;      // 最小仓位
+    optional bool copy_leverage = 24;            // 是否跟单杠杆
+    optional int32 max_leverage = 25;            // 最大杠杆
+    optional int32 default_leverage = 26;        // 默认杠杆
+    
+    // 目标初始仓位快照
+    optional double target_initial_size = 27;
+    optional string target_initial_side = 28;
+    optional double target_initial_entry_price = 29;
+    optional int32 target_initial_leverage = 30;
+    
+    // 时间戳
+    optional string started_at = 31;
+    optional string closed_at = 32;
+    
+    // 标记
+    optional bool target_is_starred = 33;
 }
 
 message PositionTrackingResponse {
@@ -115,6 +141,32 @@ message PositionTracking {
     string updated_at = 19;
     string close_reason = 20;
     double closed_pnl = 21;
+    
+    // 自动补仓配置
+    bool auto_replenish = 22;              // 是否开启自动补仓
+    double replenish_ratio = 23;           // 补仓比例
+    double replenish_min_value_usd = 24;   // 最小补仓金额
+    double replenish_max_value_usd = 25;   // 最大补仓金额
+    
+    // 其他配置
+    string target_name = 26;               // 目标交易员名称
+    double min_position_size = 27;         // 最小仓位
+    bool copy_leverage = 28;               // 是否跟单杠杆
+    int32 max_leverage = 29;               // 最大杠杆
+    int32 default_leverage = 30;           // 默认杠杆
+    
+    // 目标初始仓位快照
+    double target_initial_size = 31;
+    string target_initial_side = 32;
+    double target_initial_entry_price = 33;
+    int32 target_initial_leverage = 34;
+    
+    // 时间戳
+    string started_at = 35;
+    string closed_at = 36;
+    
+    // 标记
+    bool target_is_starred = 37;
 }
 
 message SavePositionTrackingResponse {

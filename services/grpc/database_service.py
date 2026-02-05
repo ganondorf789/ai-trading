@@ -38,7 +38,7 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             symbol=tracking.get('symbol', ''),
             target_side=tracking.get('target_side', ''),
             copy_ratio=float(tracking.get('copy_ratio', 1.0)),
-            max_position_size=float(tracking.get('max_position_size', 0)),
+            max_position_size=float(tracking.get('max_position_size_usd', 0) or tracking.get('max_position_size', 0)),
             slippage=float(tracking.get('slippage', 0.001)),
             is_enabled=tracking.get('is_enabled', True),
             status=tracking.get('status', 'pending'),
@@ -49,11 +49,32 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             address_id=tracking.get('address_id', 0) or 0,
             target_entry_price=float(tracking.get('target_entry_price', 0) or 0),
             target_size=float(tracking.get('target_size', 0) or 0),
-            nickname=tracking.get('nickname', '') or '',
+            nickname=tracking.get('nickname', '') or tracking.get('target_name', '') or '',
             created_at=str(tracking.get('created_at', '')),
             updated_at=str(tracking.get('updated_at', '')),
             close_reason=tracking.get('close_reason', '') or '',
             closed_pnl=float(tracking.get('closed_pnl', 0) or 0),
+            # 自动补仓配置
+            auto_replenish=tracking.get('auto_replenish', False) or False,
+            replenish_ratio=float(tracking.get('replenish_ratio', 0.5) or 0.5),
+            replenish_min_value_usd=float(tracking.get('replenish_min_value_usd', 10.0) or 10.0),
+            replenish_max_value_usd=float(tracking.get('replenish_max_value_usd', 100.0) or 100.0),
+            # 其他配置
+            target_name=tracking.get('target_name', '') or '',
+            min_position_size=float(tracking.get('min_position_size_usd', 20.0) or tracking.get('min_position_size', 20.0)),
+            copy_leverage=tracking.get('copy_leverage', True) if tracking.get('copy_leverage') is not None else True,
+            max_leverage=tracking.get('max_leverage', 10) or 10,
+            default_leverage=tracking.get('default_leverage', 5) or 5,
+            # 目标初始仓位快照
+            target_initial_size=float(tracking.get('target_initial_size', 0) or 0),
+            target_initial_side=tracking.get('target_initial_side', '') or '',
+            target_initial_entry_price=float(tracking.get('target_initial_entry_price', 0) or 0),
+            target_initial_leverage=tracking.get('target_initial_leverage', 0) or 0,
+            # 时间戳
+            started_at=str(tracking.get('started_at', '') or ''),
+            closed_at=str(tracking.get('closed_at', '') or ''),
+            # 标记
+            target_is_starred=tracking.get('target_is_starred', False) or False,
         )
     
     def _address_to_proto(self, address: dict) -> pb2.CopyAddress:
@@ -127,7 +148,7 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             if request.HasField('id'):
                 data['id'] = request.id
             if request.HasField('max_position_size'):
-                data['max_position_size'] = request.max_position_size
+                data['max_position_size_usd'] = request.max_position_size
             if request.HasField('slippage'):
                 data['slippage'] = request.slippage
             if request.HasField('my_size'):
@@ -145,7 +166,49 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             if request.HasField('target_size'):
                 data['target_size'] = request.target_size
             if request.HasField('nickname'):
-                data['nickname'] = request.nickname
+                data['target_name'] = request.nickname
+            
+            # 自动补仓配置
+            if request.HasField('auto_replenish'):
+                data['auto_replenish'] = request.auto_replenish
+            if request.HasField('replenish_ratio'):
+                data['replenish_ratio'] = request.replenish_ratio
+            if request.HasField('replenish_min_value_usd'):
+                data['replenish_min_value_usd'] = request.replenish_min_value_usd
+            if request.HasField('replenish_max_value_usd'):
+                data['replenish_max_value_usd'] = request.replenish_max_value_usd
+            
+            # 其他配置
+            if request.HasField('target_name'):
+                data['target_name'] = request.target_name
+            if request.HasField('min_position_size'):
+                data['min_position_size_usd'] = request.min_position_size
+            if request.HasField('copy_leverage'):
+                data['copy_leverage'] = request.copy_leverage
+            if request.HasField('max_leverage'):
+                data['max_leverage'] = request.max_leverage
+            if request.HasField('default_leverage'):
+                data['default_leverage'] = request.default_leverage
+            
+            # 目标初始仓位快照
+            if request.HasField('target_initial_size'):
+                data['target_initial_size'] = request.target_initial_size
+            if request.HasField('target_initial_side'):
+                data['target_initial_side'] = request.target_initial_side
+            if request.HasField('target_initial_entry_price'):
+                data['target_initial_entry_price'] = request.target_initial_entry_price
+            if request.HasField('target_initial_leverage'):
+                data['target_initial_leverage'] = request.target_initial_leverage
+            
+            # 时间戳
+            if request.HasField('started_at'):
+                data['started_at'] = request.started_at
+            if request.HasField('closed_at'):
+                data['closed_at'] = request.closed_at
+            
+            # 标记
+            if request.HasField('target_is_starred'):
+                data['target_is_starred'] = request.target_is_starred
             
             tracking_id = self._db.save_position_tracking(data)
             return pb2.SavePositionTrackingResponse(

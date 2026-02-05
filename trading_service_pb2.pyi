@@ -17,7 +17,7 @@ class GetActivePositionTrackingsRequest(_message.Message):
     def __init__(self) -> None: ...
 
 class SavePositionTrackingRequest(_message.Message):
-    __slots__ = ("id", "target_address", "symbol", "target_side", "copy_ratio", "max_position_size", "slippage", "is_enabled", "status", "my_size", "my_side", "my_entry_price", "user_id", "address_id", "target_entry_price", "target_size", "nickname")
+    __slots__ = ("id", "target_address", "symbol", "target_side", "copy_ratio", "max_position_size", "slippage", "is_enabled", "status", "my_size", "my_side", "my_entry_price", "user_id", "address_id", "target_entry_price", "target_size", "nickname", "auto_replenish", "replenish_ratio", "replenish_min_value_usd", "replenish_max_value_usd", "target_name", "min_position_size", "copy_leverage", "max_leverage", "default_leverage", "target_initial_size", "target_initial_side", "target_initial_entry_price", "target_initial_leverage", "started_at", "closed_at", "target_is_starred")
     ID_FIELD_NUMBER: _ClassVar[int]
     TARGET_ADDRESS_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
@@ -35,6 +35,22 @@ class SavePositionTrackingRequest(_message.Message):
     TARGET_ENTRY_PRICE_FIELD_NUMBER: _ClassVar[int]
     TARGET_SIZE_FIELD_NUMBER: _ClassVar[int]
     NICKNAME_FIELD_NUMBER: _ClassVar[int]
+    AUTO_REPLENISH_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_RATIO_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_MIN_VALUE_USD_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_MAX_VALUE_USD_FIELD_NUMBER: _ClassVar[int]
+    TARGET_NAME_FIELD_NUMBER: _ClassVar[int]
+    MIN_POSITION_SIZE_FIELD_NUMBER: _ClassVar[int]
+    COPY_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    MAX_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_SIDE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_ENTRY_PRICE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    CLOSED_AT_FIELD_NUMBER: _ClassVar[int]
+    TARGET_IS_STARRED_FIELD_NUMBER: _ClassVar[int]
     id: int
     target_address: str
     symbol: str
@@ -52,7 +68,23 @@ class SavePositionTrackingRequest(_message.Message):
     target_entry_price: float
     target_size: float
     nickname: str
-    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ...) -> None: ...
+    auto_replenish: bool
+    replenish_ratio: float
+    replenish_min_value_usd: float
+    replenish_max_value_usd: float
+    target_name: str
+    min_position_size: float
+    copy_leverage: bool
+    max_leverage: int
+    default_leverage: int
+    target_initial_size: float
+    target_initial_side: str
+    target_initial_entry_price: float
+    target_initial_leverage: int
+    started_at: str
+    closed_at: str
+    target_is_starred: bool
+    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ...) -> None: ...
 
 class PositionTrackingResponse(_message.Message):
     __slots__ = ("success", "tracking", "error")
@@ -75,7 +107,7 @@ class PositionTrackingListResponse(_message.Message):
     def __init__(self, success: bool = ..., trackings: _Optional[_Iterable[_Union[PositionTracking, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
 
 class PositionTracking(_message.Message):
-    __slots__ = ("id", "target_address", "symbol", "target_side", "copy_ratio", "max_position_size", "slippage", "is_enabled", "status", "my_size", "my_side", "my_entry_price", "user_id", "address_id", "target_entry_price", "target_size", "nickname", "created_at", "updated_at", "close_reason", "closed_pnl")
+    __slots__ = ("id", "target_address", "symbol", "target_side", "copy_ratio", "max_position_size", "slippage", "is_enabled", "status", "my_size", "my_side", "my_entry_price", "user_id", "address_id", "target_entry_price", "target_size", "nickname", "created_at", "updated_at", "close_reason", "closed_pnl", "auto_replenish", "replenish_ratio", "replenish_min_value_usd", "replenish_max_value_usd", "target_name", "min_position_size", "copy_leverage", "max_leverage", "default_leverage", "target_initial_size", "target_initial_side", "target_initial_entry_price", "target_initial_leverage", "started_at", "closed_at", "target_is_starred")
     ID_FIELD_NUMBER: _ClassVar[int]
     TARGET_ADDRESS_FIELD_NUMBER: _ClassVar[int]
     SYMBOL_FIELD_NUMBER: _ClassVar[int]
@@ -97,6 +129,22 @@ class PositionTracking(_message.Message):
     UPDATED_AT_FIELD_NUMBER: _ClassVar[int]
     CLOSE_REASON_FIELD_NUMBER: _ClassVar[int]
     CLOSED_PNL_FIELD_NUMBER: _ClassVar[int]
+    AUTO_REPLENISH_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_RATIO_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_MIN_VALUE_USD_FIELD_NUMBER: _ClassVar[int]
+    REPLENISH_MAX_VALUE_USD_FIELD_NUMBER: _ClassVar[int]
+    TARGET_NAME_FIELD_NUMBER: _ClassVar[int]
+    MIN_POSITION_SIZE_FIELD_NUMBER: _ClassVar[int]
+    COPY_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    MAX_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_SIDE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_ENTRY_PRICE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_INITIAL_LEVERAGE_FIELD_NUMBER: _ClassVar[int]
+    STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    CLOSED_AT_FIELD_NUMBER: _ClassVar[int]
+    TARGET_IS_STARRED_FIELD_NUMBER: _ClassVar[int]
     id: int
     target_address: str
     symbol: str
@@ -118,7 +166,23 @@ class PositionTracking(_message.Message):
     updated_at: str
     close_reason: str
     closed_pnl: float
-    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ...) -> None: ...
+    auto_replenish: bool
+    replenish_ratio: float
+    replenish_min_value_usd: float
+    replenish_max_value_usd: float
+    target_name: str
+    min_position_size: float
+    copy_leverage: bool
+    max_leverage: int
+    default_leverage: int
+    target_initial_size: float
+    target_initial_side: str
+    target_initial_entry_price: float
+    target_initial_leverage: int
+    started_at: str
+    closed_at: str
+    target_is_starred: bool
+    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ...) -> None: ...
 
 class SavePositionTrackingResponse(_message.Message):
     __slots__ = ("success", "tracking_id", "error")

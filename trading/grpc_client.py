@@ -59,6 +59,7 @@ class GRPCDatabaseClient:
             'target_side': tracking.target_side,
             'copy_ratio': tracking.copy_ratio,
             'max_position_size': tracking.max_position_size,
+            'max_position_size_usd': tracking.max_position_size,  # 兼容字段名
             'slippage': tracking.slippage,
             'is_enabled': tracking.is_enabled,
             'status': tracking.status,
@@ -70,10 +71,32 @@ class GRPCDatabaseClient:
             'target_entry_price': tracking.target_entry_price if tracking.target_entry_price else None,
             'target_size': tracking.target_size if tracking.target_size else None,
             'nickname': tracking.nickname if tracking.nickname else None,
+            'target_name': tracking.target_name if tracking.target_name else tracking.nickname if tracking.nickname else None,
             'created_at': tracking.created_at if tracking.created_at else None,
             'updated_at': tracking.updated_at if tracking.updated_at else None,
             'close_reason': tracking.close_reason if tracking.close_reason else None,
             'closed_pnl': tracking.closed_pnl if tracking.closed_pnl else None,
+            # 自动补仓配置
+            'auto_replenish': tracking.auto_replenish,
+            'replenish_ratio': tracking.replenish_ratio if tracking.replenish_ratio else 0.5,
+            'replenish_min_value_usd': tracking.replenish_min_value_usd if tracking.replenish_min_value_usd else 10.0,
+            'replenish_max_value_usd': tracking.replenish_max_value_usd if tracking.replenish_max_value_usd else 100.0,
+            # 其他配置
+            'min_position_size': tracking.min_position_size if tracking.min_position_size else 20.0,
+            'min_position_size_usd': tracking.min_position_size if tracking.min_position_size else 20.0,
+            'copy_leverage': tracking.copy_leverage,
+            'max_leverage': tracking.max_leverage if tracking.max_leverage else 10,
+            'default_leverage': tracking.default_leverage if tracking.default_leverage else 5,
+            # 目标初始仓位快照
+            'target_initial_size': tracking.target_initial_size if tracking.target_initial_size else None,
+            'target_initial_side': tracking.target_initial_side if tracking.target_initial_side else None,
+            'target_initial_entry_price': tracking.target_initial_entry_price if tracking.target_initial_entry_price else None,
+            'target_initial_leverage': tracking.target_initial_leverage if tracking.target_initial_leverage else None,
+            # 时间戳
+            'started_at': tracking.started_at if tracking.started_at else None,
+            'closed_at': tracking.closed_at if tracking.closed_at else None,
+            # 标记
+            'target_is_starred': tracking.target_is_starred,
         }
     
     def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:
@@ -138,8 +161,10 @@ class GRPCDatabaseClient:
             # 可选字段
             if 'id' in data and data['id']:
                 request.id = data['id']
-            if 'max_position_size' in data and data['max_position_size']:
-                request.max_position_size = data['max_position_size']
+            # 支持两种字段名
+            max_pos = data.get('max_position_size') or data.get('max_position_size_usd')
+            if max_pos:
+                request.max_position_size = max_pos
             if 'slippage' in data and data['slippage']:
                 request.slippage = data['slippage']
             if 'my_size' in data and data['my_size']:
@@ -156,8 +181,54 @@ class GRPCDatabaseClient:
                 request.target_entry_price = data['target_entry_price']
             if 'target_size' in data and data['target_size']:
                 request.target_size = data['target_size']
-            if 'nickname' in data and data['nickname']:
-                request.nickname = data['nickname']
+            # 支持两种字段名
+            nickname = data.get('nickname') or data.get('target_name')
+            if nickname:
+                request.nickname = nickname
+            
+            # 自动补仓配置
+            if 'auto_replenish' in data:
+                request.auto_replenish = data['auto_replenish']
+            if 'replenish_ratio' in data and data['replenish_ratio']:
+                request.replenish_ratio = data['replenish_ratio']
+            if 'replenish_min_value_usd' in data and data['replenish_min_value_usd']:
+                request.replenish_min_value_usd = data['replenish_min_value_usd']
+            if 'replenish_max_value_usd' in data and data['replenish_max_value_usd']:
+                request.replenish_max_value_usd = data['replenish_max_value_usd']
+            
+            # 其他配置
+            target_name = data.get('target_name') or data.get('nickname')
+            if target_name:
+                request.target_name = target_name
+            min_pos = data.get('min_position_size') or data.get('min_position_size_usd')
+            if min_pos:
+                request.min_position_size = min_pos
+            if 'copy_leverage' in data:
+                request.copy_leverage = data['copy_leverage']
+            if 'max_leverage' in data and data['max_leverage']:
+                request.max_leverage = data['max_leverage']
+            if 'default_leverage' in data and data['default_leverage']:
+                request.default_leverage = data['default_leverage']
+            
+            # 目标初始仓位快照
+            if 'target_initial_size' in data and data['target_initial_size']:
+                request.target_initial_size = data['target_initial_size']
+            if 'target_initial_side' in data and data['target_initial_side']:
+                request.target_initial_side = data['target_initial_side']
+            if 'target_initial_entry_price' in data and data['target_initial_entry_price']:
+                request.target_initial_entry_price = data['target_initial_entry_price']
+            if 'target_initial_leverage' in data and data['target_initial_leverage']:
+                request.target_initial_leverage = data['target_initial_leverage']
+            
+            # 时间戳
+            if 'started_at' in data and data['started_at']:
+                request.started_at = str(data['started_at'])
+            if 'closed_at' in data and data['closed_at']:
+                request.closed_at = str(data['closed_at'])
+            
+            # 标记
+            if 'target_is_starred' in data:
+                request.target_is_starred = data['target_is_starred']
             
             response = self._stub.SavePositionTracking(request)
             if response.success:
