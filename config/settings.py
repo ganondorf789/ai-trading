@@ -153,6 +153,20 @@ class SystemSettings(BaseSettings):
     copy_trading_user_id: int = Field(default=1, description="自动跟单使用的用户ID")
 
 
+class TradingAPISettings(BaseSettings):
+    """Trading API 配置"""
+    model_config = SettingsConfigDict(env_prefix='TRADING_API_')
+    
+    api_key: str = Field(
+        default="",
+        description="Trading API Key（为空时禁用认证）"
+    )
+    port: int = Field(
+        default=5001,
+        description="Trading API 服务端口"
+    )
+
+
 class Settings:
     """统一配置管理"""
     
@@ -176,6 +190,7 @@ class Settings:
         self.system = SystemSettings()
         self.encryption = EncryptionSettings()
         self.jwt = JWTSettings()
+        self.trading_api = TradingAPISettings()
     
     @property
     def hyperliquid_api_url(self) -> str:

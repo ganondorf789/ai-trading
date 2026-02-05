@@ -35,10 +35,6 @@ def register_routes(app):
     app.register_blueprint(copy_trading_positions_bp)
     app.register_blueprint(copy_trading_tracking_bp)
     
-    # C端交易 API 路由
-    from .trading import trading_bp
-    app.register_blueprint(trading_bp)
-    
     # 通知路由
     from .notifications import notifications_bp
     app.register_blueprint(notifications_bp)
@@ -46,7 +42,3 @@ def register_routes(app):
     # 应用版本管理路由
     from .app_versions import app_versions_bp
     app.register_blueprint(app_versions_bp)
-    
-    # 日志路由
-    from .logs import logs_bp
-    app.register_blueprint(logs_bp)
