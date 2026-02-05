@@ -47,12 +47,39 @@ export const ROWS_PER_PAGE = 20;
 
 export const RATING_OPTIONS = ['S', 'A', 'B', 'C', 'D', 'F'] as const;
 
-// 标签选项
+// 标签选项 - key用于API传参，label用于显示
 export const TAG_OPTIONS = {
-  capitalScale: ['小资金', '中等资金', '大资金'],
-  tradingDirection: ['偏空头', '中性', '偏多头'],
-  tradingCycle: ['长线', '波段', '短线', '超短线'],
-  frequencyStyle: ['高频激进', '低频稳健', '低频激进'],
-  returnRisk: ['稳定盈利', '持续盈利', '波动盈利', '盈亏平衡', '高风险高回报', '低回撤'],
-  strategyCapability: ['波动策略', '非对称高手'],
+  capitalScale: [
+    { key: 'small', label: '小资金' },
+    { key: 'medium', label: '中等资金' },
+    { key: 'large', label: '大资金' },
+  ],
+  tradingDirection: [
+    { key: 'bearish', label: '偏空头' },
+    { key: 'neutral', label: '中性' },
+    { key: 'bullish', label: '偏多头' },
+  ],
+  tradingCycle: [
+    { key: 'long_term', label: '长线' },
+    { key: 'swing', label: '波段' },
+    { key: 'short_term', label: '短线' },
+    { key: 'ultra_short', label: '超短线' },
+  ],
+  frequencyStyle: [
+    { key: 'high_freq_aggressive', label: '高频激进' },
+    { key: 'low_freq_stable', label: '低频稳健' },
+    { key: 'low_freq_aggressive', label: '低频激进' },
+  ],
+  returnRisk: [
+    { key: 'stable_profit', label: '稳定盈利' },
+    { key: 'continuous_profit', label: '持续盈利' },
+    { key: 'volatile_profit', label: '波动盈利' },
+    { key: 'break_even', label: '盈亏平衡' },
+    { key: 'high_risk_high_return', label: '高风险高回报' },
+    { key: 'low_drawdown', label: '低回撤' },
+  ],
+  strategyCapability: [
+    { key: 'volatility_strategy', label: '波动策略' },
+    { key: 'asymmetric_master', label: '非对称高手' },
+  ],
 } as const;

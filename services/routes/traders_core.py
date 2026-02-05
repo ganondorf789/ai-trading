@@ -12,6 +12,43 @@ from .middleware import login_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
+# 标签英文key到中文label的映射
+TAG_KEY_TO_LABEL = {
+    'capital_scale': {
+        'small': '小资金',
+        'medium': '中等资金',
+        'large': '大资金',
+    },
+    'trading_direction': {
+        'bearish': '偏空头',
+        'neutral': '中性',
+        'bullish': '偏多头',
+    },
+    'trading_cycle': {
+        'long_term': '长线',
+        'swing': '波段',
+        'short_term': '短线',
+        'ultra_short': '超短线',
+    },
+    'frequency_style': {
+        'high_freq_aggressive': '高频激进',
+        'low_freq_stable': '低频稳健',
+        'low_freq_aggressive': '低频激进',
+    },
+    'return_risk': {
+        'stable_profit': '稳定盈利',
+        'continuous_profit': '持续盈利',
+        'volatile_profit': '波动盈利',
+        'break_even': '盈亏平衡',
+        'high_risk_high_return': '高风险高回报',
+        'low_drawdown': '低回撤',
+    },
+    'strategy_capability': {
+        'volatility_strategy': '波动策略',
+        'asymmetric_master': '非对称高手',
+    },
+}
+
 traders_core_bp = Blueprint('traders_core', __name__)
 
 
@@ -171,13 +208,20 @@ def get_traders():
         max_active_days = request.args.get('max_active_days', type=int)
         has_recent_trade = request.args.get('has_recent_trade', type=int)
         
-        # 标签筛选
-        tag_capital_scale = request.args.get('tag_capital_scale')
-        tag_trading_direction = request.args.get('tag_trading_direction')
-        tag_trading_cycle = request.args.get('tag_trading_cycle')
-        tag_frequency_style = request.args.get('tag_frequency_style')
-        tag_return_risk = request.args.get('tag_return_risk')
-        tag_strategy_capability = request.args.get('tag_strategy_capability')
+        # 标签筛选 - 将英文key转换为中文label
+        tag_capital_scale_key = request.args.get('tag_capital_scale')
+        tag_trading_direction_key = request.args.get('tag_trading_direction')
+        tag_trading_cycle_key = request.args.get('tag_trading_cycle')
+        tag_frequency_style_key = request.args.get('tag_frequency_style')
+        tag_return_risk_key = request.args.get('tag_return_risk')
+        
+        tag_capital_scale = TAG_KEY_TO_LABEL['capital_scale'].get(tag_capital_scale_key) if tag_capital_scale_key else None
+        tag_trading_direction = TAG_KEY_TO_LABEL['trading_direction'].get(tag_trading_direction_key) if tag_trading_direction_key else None
+        tag_trading_cycle = TAG_KEY_TO_LABEL['trading_cycle'].get(tag_trading_cycle_key) if tag_trading_cycle_key else None
+        tag_frequency_style = TAG_KEY_TO_LABEL['frequency_style'].get(tag_frequency_style_key) if tag_frequency_style_key else None
+        tag_return_risk = TAG_KEY_TO_LABEL['return_risk'].get(tag_return_risk_key) if tag_return_risk_key else None
+        tag_strategy_capability_key = request.args.get('tag_strategy_capability')
+        tag_strategy_capability = TAG_KEY_TO_LABEL['strategy_capability'].get(tag_strategy_capability_key) if tag_strategy_capability_key else None
 
         # 胜率区间
         if min_win_rate is not None:

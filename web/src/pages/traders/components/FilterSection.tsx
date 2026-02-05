@@ -71,7 +71,7 @@ export function FilterSection({
             }}
           >
             {RATING_OPTIONS.map((rating) => (
-              <SelectItem key={rating}>{rating}</SelectItem>
+              <SelectItem key={rating} textValue={rating}>{rating}</SelectItem>
             ))}
           </Select>
 
@@ -95,7 +95,7 @@ export function FilterSection({
             }}
           >
             {columns.filter((c) => c.sortable).map((col) => (
-              <SelectItem key={col.uid}>{col.name}</SelectItem>
+              <SelectItem key={col.uid} textValue={col.name}>{col.name}</SelectItem>
             ))}
           </Select>
 
@@ -110,7 +110,7 @@ export function FilterSection({
             onSelectionChange={onVisibleColumnsChange}
           >
             {columns.map((col) => (
-              <SelectItem key={col.uid}>{col.name}</SelectItem>
+              <SelectItem key={col.uid} textValue={col.name}>{col.name}</SelectItem>
             ))}
           </Select>
         </div>
@@ -210,9 +210,9 @@ export function FilterSection({
         </div>
 
         {/* 第三行：标签筛选 */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="flex flex-wrap gap-3">
           <Select
-            className="w-full"
+            className="w-[140px]"
             label="资金规模"
             labelPlacement="outside"
             placeholder="全部"
@@ -224,12 +224,12 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.capitalScale.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
-            className="w-full"
+            className="w-[140px]"
             label="交易方向"
             labelPlacement="outside"
             placeholder="全部"
@@ -241,12 +241,12 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.tradingDirection.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
-            className="w-full"
+            className="w-[140px]"
             label="交易周期"
             labelPlacement="outside"
             placeholder="全部"
@@ -258,12 +258,12 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.tradingCycle.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
-            className="w-full"
+            className="w-[140px]"
             label="频率风格"
             labelPlacement="outside"
             placeholder="全部"
@@ -275,12 +275,12 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.frequencyStyle.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
-            className="w-full"
+            className="w-[160px]"
             label="收益风险"
             labelPlacement="outside"
             placeholder="全部"
@@ -292,12 +292,12 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.returnRisk.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
-            className="w-full"
+            className="w-[140px]"
             label="策略能力"
             labelPlacement="outside"
             placeholder="全部"
@@ -309,7 +309,7 @@ export function FilterSection({
             }}
           >
             {TAG_OPTIONS.strategyCapability.map((tag) => (
-              <SelectItem key={tag}>{tag}</SelectItem>
+              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
         </div>
