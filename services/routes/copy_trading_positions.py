@@ -508,6 +508,7 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'default_leverage': (int, 1, 100),
             'slippage': (float, 0.0001, 0.1),
             'copy_leverage': (bool, None, None),
+            'copy_only_once': (bool, None, None),  # 只跟一次
             # 跟单条件
             'min_trader_overall_score': (float, 0, 100),
             'min_trader_leverage': (float, 0, 100),

@@ -103,6 +103,13 @@ export default function TradersPage() {
         min_active_days: filters.minActiveDays,
         max_active_days: filters.maxActiveDays,
         has_recent_trade: filters.hasRecentTrade,
+        // 标签筛选
+        tag_capital_scale: filters.tagCapitalScale,
+        tag_trading_direction: filters.tagTradingDirection,
+        tag_trading_cycle: filters.tagTradingCycle,
+        tag_frequency_style: filters.tagFrequencyStyle,
+        tag_return_risk: filters.tagReturnRisk,
+        tag_strategy_capability: filters.tagStrategyCapability,
       };
 
       const response = await traderApi.getTraders(params);

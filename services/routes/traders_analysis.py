@@ -2,13 +2,13 @@
 交易者分析相关路由
 包括：收藏、AI分析、历史图表、评级筛选
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 import logging
 
 from services.ai_analysis import generate_trader_analysis
 from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
-from .middleware import login_required
+from .middleware import login_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ traders_analysis_bp = Blueprint('traders_analysis', __name__)
 @traders_analysis_bp.route('/api/traders/<address>/star', methods=['POST'])
 @login_required
 def toggle_trader_star(address: str):
-    """切换交易者收藏状态
+    """切换交易者收藏状态（用户维度）
     ---
     tags:
       - Traders - Analysis
@@ -60,8 +60,9 @@ def toggle_trader_star(address: str):
     try:
         data = request.get_json() or {}
         is_starred = data.get('is_starred', True)
+        user_id = get_current_user_id()
 
-        logger.info(f"切换收藏状态: {address}, is_starred={is_starred}")
+        logger.info(f"用户 {user_id} 切换收藏状态: {address}, is_starred={is_starred}")
 
         # 检查交易者是否存在
         trader = db.get_trader_by_address(address)
@@ -71,8 +72,8 @@ def toggle_trader_star(address: str):
                 'error': 'Trader not found'
             }), 404
 
-        # 切换收藏状态
-        success = db.toggle_star(address, is_starred)
+        # 切换用户收藏状态
+        success = db.toggle_user_star(user_id, address, is_starred)
 
         if success:
             return jsonify({

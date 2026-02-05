@@ -98,7 +98,15 @@ class DatabaseMigrations:
                     monthly_volume REAL DEFAULT 0.0,
 
                     -- 用户标记
-                    is_starred BOOLEAN DEFAULT FALSE
+                    is_starred BOOLEAN DEFAULT FALSE,
+
+                    -- 交易者标签
+                    tag_capital_scale TEXT,
+                    tag_trading_direction TEXT,
+                    tag_trading_cycle TEXT,
+                    tag_frequency_style TEXT,
+                    tag_return_risk TEXT,
+                    tag_strategy_capability TEXT
                 )
             """)
 
@@ -646,6 +654,30 @@ class DatabaseMigrations:
                 ON users(role)
             """)
 
+            # 创建用户收藏表（用户维度的交易者收藏）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_favorites (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,              -- 用户 ID
+                    trader_address TEXT NOT NULL,          -- 交易者地址
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：每个用户对每个交易者只能收藏一次
+                    UNIQUE(user_id, trader_address),
+                    
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_favorites_user_id
+                ON user_favorites(user_id)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_favorites_trader_address
+                ON user_favorites(trader_address)
+            """)
+
             # 创建应用版本管理表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS app_versions (
@@ -859,6 +891,26 @@ class DatabaseMigrations:
             ON copy_config_rules(user_id, config_type, symbol)
             WHERE config_type = 'immediate' AND symbol IS NOT NULL
         """)
+
+        # 添加交易者标签字段到 trader_metrics 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_capital_scale', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_direction', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_cycle', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_frequency_style', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_return_risk', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
+        )
 
     def _migrate_remove_groups(self, cursor):
         """

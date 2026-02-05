@@ -21,7 +21,9 @@ from .models import (
     PositionMetrics,
     ROIMetrics,
     ScoreMetrics,
+    TagMetrics,
 )
+from .tag_calculator import TraderTagCalculator
 from .utils import (
     SHANGHAI_TZ,
     timestamp_to_pendulum,
@@ -109,6 +111,9 @@ class MetricsCalculator:
         
         if user_state:
             metrics.asset_positions = user_state.get('assetPositions', [])
+        
+        # 计算交易者标签
+        self._calculate_tags(metrics)
         
         # 清理临时属性，避免内存泄漏
         self._cleanup_temp_attributes(metrics)
@@ -499,6 +504,16 @@ class MetricsCalculator:
         roi.daily_roi = safe_divide(metrics.pnl.daily_pnl, equity)
         roi.weekly_roi = safe_divide(metrics.pnl.weekly_pnl, equity)
         roi.monthly_roi = safe_divide(metrics.pnl.monthly_pnl, equity)
+    
+    def _calculate_tags(self, metrics: TraderMetrics) -> None:
+        """
+        计算交易者标签
+        
+        Args:
+            metrics: 指标对象
+        """
+        tag_calculator = TraderTagCalculator()
+        metrics.tags = tag_calculator.calculate_tags(metrics)
     
     def _cleanup_temp_attributes(self, metrics: TraderMetrics) -> None:
         """

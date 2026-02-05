@@ -46,3 +46,13 @@ export const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
 export const ROWS_PER_PAGE = 20;
 
 export const RATING_OPTIONS = ['S', 'A', 'B', 'C', 'D', 'F'] as const;
+
+// 标签选项
+export const TAG_OPTIONS = {
+  capitalScale: ['小资金', '中等资金', '大资金'],
+  tradingDirection: ['偏空头', '中性', '偏多头'],
+  tradingCycle: ['长线', '波段', '短线', '超短线'],
+  frequencyStyle: ['高频激进', '低频稳健', '低频激进'],
+  returnRisk: ['稳定盈利', '持续盈利', '波动盈利', '盈亏平衡', '高风险高回报', '低回撤'],
+  strategyCapability: ['波动策略', '非对称高手'],
+} as const;

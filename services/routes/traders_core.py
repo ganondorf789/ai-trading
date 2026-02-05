@@ -8,7 +8,7 @@ import logging
 from screener import TraderScreener, ScreenerConfig
 from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
-from .middleware import login_required
+from .middleware import login_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +170,14 @@ def get_traders():
         min_active_days = request.args.get('min_active_days', type=int)
         max_active_days = request.args.get('max_active_days', type=int)
         has_recent_trade = request.args.get('has_recent_trade', type=int)
+        
+        # 标签筛选
+        tag_capital_scale = request.args.get('tag_capital_scale')
+        tag_trading_direction = request.args.get('tag_trading_direction')
+        tag_trading_cycle = request.args.get('tag_trading_cycle')
+        tag_frequency_style = request.args.get('tag_frequency_style')
+        tag_return_risk = request.args.get('tag_return_risk')
+        tag_strategy_capability = request.args.get('tag_strategy_capability')
 
         # 胜率区间
         if min_win_rate is not None:
@@ -230,6 +238,20 @@ def get_traders():
                 except:
                     return False
             all_traders = [t for t in all_traders if is_recent(t)]
+        
+        # 标签筛选
+        if tag_capital_scale:
+            all_traders = [t for t in all_traders if t.get('tag_capital_scale') == tag_capital_scale]
+        if tag_trading_direction:
+            all_traders = [t for t in all_traders if t.get('tag_trading_direction') == tag_trading_direction]
+        if tag_trading_cycle:
+            all_traders = [t for t in all_traders if t.get('tag_trading_cycle') == tag_trading_cycle]
+        if tag_frequency_style:
+            all_traders = [t for t in all_traders if t.get('tag_frequency_style') == tag_frequency_style]
+        if tag_return_risk:
+            all_traders = [t for t in all_traders if t.get('tag_return_risk') == tag_return_risk]
+        if tag_strategy_capability:
+            all_traders = [t for t in all_traders if t.get('tag_strategy_capability') == tag_strategy_capability]
 
         # 应用排序
         valid_sort_fields = {
@@ -262,6 +284,10 @@ def get_traders():
         start = (page - 1) * limit
         end = start + limit
         traders = all_traders[start:end]
+
+        # 获取当前用户的收藏列表
+        user_id = get_current_user_id()
+        user_starred_addresses = db.get_user_starred_addresses(user_id) if user_id else set()
 
         # 格式化数据（返回所有可用字段）
         result = []
@@ -319,8 +345,15 @@ def get_traders():
                 'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
                 'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
                 'long_short_ratio': trader.get('long_short_ratio', 0),
-                # 用户标记
-                'is_starred': trader.get('is_starred', False),
+                # 用户收藏状态（用户维度）
+                'is_starred': trader.get('address') in user_starred_addresses,
+                # 标签
+                'tag_capital_scale': trader.get('tag_capital_scale'),
+                'tag_trading_direction': trader.get('tag_trading_direction'),
+                'tag_trading_cycle': trader.get('tag_trading_cycle'),
+                'tag_frequency_style': trader.get('tag_frequency_style'),
+                'tag_return_risk': trader.get('tag_return_risk'),
+                'tag_strategy_capability': trader.get('tag_strategy_capability'),
             })
 
         return jsonify({
@@ -504,6 +537,13 @@ def get_trader_detail(address: str):
                 'success': False,
                 'error': 'Trader not found'
             }), 404
+
+        # 获取当前用户的收藏状态
+        user_id = get_current_user_id()
+        if user_id:
+            trader['is_starred'] = db.is_user_starred(user_id, address)
+        else:
+            trader['is_starred'] = False
 
         return jsonify({
             'success': True,

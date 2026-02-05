@@ -284,6 +284,13 @@ export const traderApi = {
     min_trades?: number;
     min_active_days?: number;
     has_recent_trade?: number;
+    // 标签筛选
+    tag_capital_scale?: string;
+    tag_trading_direction?: string;
+    tag_trading_cycle?: string;
+    tag_frequency_style?: string;
+    tag_return_risk?: string;
+    tag_strategy_capability?: string;
   }) =>
     api.get<any, ApiResponse<Trader[]>>('/traders', { params }),
 
