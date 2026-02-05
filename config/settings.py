@@ -150,6 +150,7 @@ class SystemSettings(BaseSettings):
     log_level: str = Field(default="INFO", description="日志级别")
     testnet_mode: bool = Field(default=False, description="测试网模式")
     log_dir: str = Field(default="./logs", description="日志目录")
+    copy_trading_user_id: int = Field(default=1, description="自动跟单使用的用户ID")
 
 
 class Settings:

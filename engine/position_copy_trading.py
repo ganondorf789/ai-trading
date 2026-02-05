@@ -78,6 +78,27 @@ class TrackingState:
     target_is_starred: bool = False
 
 
+@dataclass
+class AddressConfig:
+    """跟单地址配置（用于自动跟单）"""
+    address: str
+    name: str
+    is_enabled: bool = True
+    
+    # 跟单配置
+    copy_ratio: float = 0.1
+    max_position_size_usd: float = 500.0
+    min_position_size_usd: float = 20.0
+    copy_leverage: bool = True
+    max_leverage: int = 10
+    default_leverage: int = 5
+    slippage: float = 0.01
+    
+    # 币种限制
+    symbols_whitelist: List[str] = field(default_factory=list)  # 白名单（空表示不限制）
+    symbols_blacklist: List[str] = field(default_factory=list)  # 黑名单
+
+
 class PositionCopyTradingBot:
     """
     仓位级别跟单机器人
@@ -140,6 +161,11 @@ class PositionCopyTradingBot:
         # 通知去重（避免重复发送相同通知）
         self._recent_notifications: Dict[str, float] = {}  # notification_key -> timestamp
         self._notification_cooldown: float = 10.0  # 10秒内相同通知不重复发送
+        
+        # 自动跟单相关
+        self._user_id: int = settings.system.copy_trading_user_id  # 从配置读取用户ID
+        self.address_configs: Dict[str, AddressConfig] = {}  # 地址配置缓存 (address -> AddressConfig)
+        self._address_positions: Dict[str, Dict[str, Dict]] = {}  # 地址仓位缓存 (address -> {symbol -> position})
 
     @property
     def db(self):
@@ -701,12 +727,14 @@ class PositionCopyTradingBot:
         try:
             # 添加时间戳
             notification_data['timestamp'] = pendulum.now().to_iso8601_string()
+            # 添加用户ID（用于定向发送通知）
+            notification_data['user_id'] = self._user_id
             
             self._redis_client.publish(
                 REDIS_NOTIFICATIONS_CHANNEL,
                 json.dumps(notification_data, ensure_ascii=False)
             )
-            logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}")
+            logger.debug(f"通知已发布: type={notification_data.get('type')}, symbol={notification_data.get('symbol')}, user_id={self._user_id}")
         except Exception as e:
             logger.warning(f"发布通知失败: {e}")
 
@@ -960,6 +988,235 @@ class PositionCopyTradingBot:
 
         self.last_config_reload = pendulum.now()
         logger.info(f"仓位跟单配置加载完成: 共 {len(self.trackings)} 个")
+        
+        # 加载自动跟单地址配置
+        self._load_address_configs()
+
+    def _load_address_configs(self):
+        """从数据库加载启用的跟单地址配置（用于自动跟单）"""
+        try:
+            configs = self.db.get_enabled_copy_addresses(self._user_id)
+            
+            current_addresses = set(self.address_configs.keys())
+            new_addresses = set()
+            
+            for data in configs:
+                address = data['address']
+                new_addresses.add(address)
+                
+                config = AddressConfig(
+                    address=address,
+                    name=data.get('name', ''),
+                    is_enabled=data.get('is_enabled', True),
+                    copy_ratio=data.get('copy_ratio', 0.1),
+                    max_position_size_usd=data.get('max_position_size_usd', 500.0),
+                    min_position_size_usd=data.get('min_position_size_usd', 20.0),
+                    copy_leverage=data.get('copy_leverage', True),
+                    max_leverage=data.get('max_leverage', 10),
+                    default_leverage=data.get('default_leverage', 5),
+                    slippage=data.get('slippage', 0.01),
+                    symbols_whitelist=data.get('symbols_whitelist', []) or [],
+                    symbols_blacklist=data.get('symbols_blacklist', []) or []
+                )
+                
+                self.address_configs[address] = config
+                logger.debug(f"加载自动跟单地址: {address[:10]}... ({config.name})")
+            
+            # 移除已删除/禁用的配置
+            for address in current_addresses - new_addresses:
+                del self.address_configs[address]
+                # 同时清理仓位缓存
+                if address in self._address_positions:
+                    del self._address_positions[address]
+                logger.info(f"移除自动跟单地址: {address[:10]}...")
+            
+            if self.address_configs:
+                logger.info(f"自动跟单地址配置加载完成: 共 {len(self.address_configs)} 个")
+            
+        except Exception as e:
+            logger.error(f"加载自动跟单地址配置失败: {e}")
+
+    # ==================== 自动跟单 ====================
+
+    def _should_copy_symbol(self, config: AddressConfig, symbol: str) -> bool:
+        """
+        根据白名单/黑名单判断是否应该跟单该币种
+        
+        Args:
+            config: 地址配置
+            symbol: 币种符号
+            
+        Returns:
+            是否应该跟单
+        """
+        # 黑名单优先：在黑名单中则不跟
+        if symbol in config.symbols_blacklist:
+            return False
+        
+        # 白名单为空表示不限制，否则必须在白名单中
+        if config.symbols_whitelist:
+            return symbol in config.symbols_whitelist
+        
+        return True
+
+    def _detect_new_positions(
+        self,
+        address: str,
+        old_positions: Dict[str, Dict],
+        new_positions: Dict[str, Dict]
+    ) -> List[Dict]:
+        """
+        检测新开的仓位
+        
+        Args:
+            address: 交易员地址
+            old_positions: 上次缓存的仓位 {symbol: position_dict}
+            new_positions: 当前的仓位 {symbol: position_dict}
+            
+        Returns:
+            新仓位列表
+        """
+        old_symbols = set(old_positions.keys())
+        new_symbols = set(new_positions.keys())
+        
+        # 新出现的币种就是新仓位
+        new_coin_set = new_symbols - old_symbols
+        
+        new_positions_list = []
+        for symbol in new_coin_set:
+            pos = new_positions[symbol]
+            new_positions_list.append(pos)
+            
+        return new_positions_list
+
+    def _auto_create_tracking(
+        self,
+        config: AddressConfig,
+        position: Dict
+    ) -> Optional[int]:
+        """
+        自动创建跟单记录
+        
+        Args:
+            config: 地址配置
+            position: 目标仓位信息
+            
+        Returns:
+            创建的 tracking_id，如果创建失败或已存在则返回 None
+        """
+        symbol = position['symbol']
+        address = config.address
+        
+        # 检查是否已存在活跃的跟单记录
+        if self.db.check_position_tracking_exists(address, symbol):
+            logger.debug(f"[自动跟单] 跳过 {symbol}: 已有活跃跟单记录")
+            return None
+        
+        # 获取仓位详情
+        size = position.get('size', 0)
+        entry_price = position.get('entry_price', 0)
+        leverage = position.get('leverage', 1)
+        side = 'long' if size > 0 else 'short'
+        
+        # 创建跟单记录
+        tracking_data = {
+            'target_address': address,
+            'target_name': config.name or address[:10] + '...',
+            'symbol': symbol,
+            'is_enabled': True,
+            # 使用地址配置中的参数
+            'copy_ratio': config.copy_ratio,
+            'max_position_size_usd': config.max_position_size_usd,
+            'min_position_size_usd': config.min_position_size_usd,
+            'copy_leverage': config.copy_leverage,
+            'max_leverage': config.max_leverage,
+            'default_leverage': config.default_leverage,
+            'slippage': config.slippage,
+            # 目标仓位快照
+            'target_initial_size': abs(size),
+            'target_initial_side': side,
+            'target_initial_entry_price': entry_price,
+            'target_initial_leverage': leverage,
+            'status': 'pending'
+        }
+        
+        try:
+            tracking_id = self.db.save_position_tracking(tracking_data)
+            
+            if tracking_id:
+                logger.success(
+                    f"[自动跟单] 创建跟单记录: {symbol} {side} "
+                    f"(tracking_id={tracking_id}, 来自 {config.name or address[:10]}...)"
+                )
+                
+                # 发送 Redis 通知触发开仓
+                if self._redis_client:
+                    try:
+                        self._redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
+                        logger.info(f"[自动跟单] 已发送开仓通知 (tracking_id={tracking_id})")
+                    except Exception as e:
+                        logger.warning(f"[自动跟单] Redis 开仓通知发送失败: {e}")
+                
+                return tracking_id
+            else:
+                logger.error(f"[自动跟单] 创建跟单记录失败: {symbol}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[自动跟单] 创建跟单记录异常: {symbol} - {e}")
+            return None
+
+    async def _sync_auto_copy(self):
+        """
+        自动跟单主循环
+        
+        检测配置地址的新仓位，根据白名单/黑名单筛选后自动创建跟单
+        """
+        if not self.address_configs:
+            return
+        
+        new_trackings_count = 0
+        
+        for address, config in self.address_configs.items():
+            if not config.is_enabled:
+                continue
+                
+            try:
+                # 获取当前仓位
+                current_positions = self._get_target_positions(address)
+                
+                # 获取上次缓存的仓位
+                old_positions = self._address_positions.get(address, {})
+                
+                # 检测新仓位
+                new_positions = self._detect_new_positions(address, old_positions, current_positions)
+                
+                for position in new_positions:
+                    symbol = position['symbol']
+                    
+                    # 检查白名单/黑名单
+                    if not self._should_copy_symbol(config, symbol):
+                        logger.debug(
+                            f"[自动跟单] 跳过 {symbol}: 不在白名单或在黑名单中 "
+                            f"(白名单: {config.symbols_whitelist}, 黑名单: {config.symbols_blacklist})"
+                        )
+                        continue
+                    
+                    # 创建跟单记录
+                    tracking_id = self._auto_create_tracking(config, position)
+                    if tracking_id:
+                        new_trackings_count += 1
+                
+                # 更新仓位缓存
+                self._address_positions[address] = current_positions
+                
+            except Exception as e:
+                logger.error(f"[自动跟单] 检测 {address[:10]}... 新仓位失败: {e}")
+        
+        if new_trackings_count > 0:
+            logger.info(f"[自动跟单] 本轮创建了 {new_trackings_count} 个新跟单")
+            # 重载配置以加载新创建的跟单
+            self.reload_configs()
 
     # ==================== 持仓获取 ====================
 
@@ -989,6 +1246,31 @@ class PositionCopyTradingBot:
         except Exception as e:
             logger.error(f"获取目标持仓失败 {address[:10]}... {symbol}: {e}")
             return None
+
+    def _get_target_positions(self, address: str) -> Dict[str, Dict]:
+        """获取目标交易者的所有仓位，返回 {symbol: position_dict}"""
+        try:
+            state = self.info_client.user_state(address)
+            positions = {}
+            for pos_data in state.get('assetPositions', []):
+                pos = pos_data.get('position', {})
+                symbol = pos.get('coin', '')
+                size = float(pos.get('szi', 0))
+                if size != 0 and symbol:
+                    leverage_info = pos.get('leverage', {})
+                    positions[symbol] = {
+                        'symbol': symbol,
+                        'size': size,
+                        'side': 'long' if size > 0 else 'short',
+                        'entry_price': float(pos.get('entryPx', 0)),
+                        'leverage': int(leverage_info.get('value', 1)),
+                        'unrealized_pnl': float(pos.get('unrealizedPnl', 0)),
+                        'notional': abs(size) * float(pos.get('entryPx', 0))
+                    }
+            return positions
+        except Exception as e:
+            logger.error(f"获取目标持仓失败 {address[:10]}...: {e}")
+            return {}
 
     def _update_my_account(self) -> bool:
         """
@@ -1390,7 +1672,7 @@ class PositionCopyTradingBot:
 
     # ==================== 同步逻辑 ====================
 
-    async def _sync_tracking(self, state: TrackingState):
+    async def _sync_tracking(self, state: TrackingState, target_positions_cache: Dict[str, Dict[str, Dict]] = None):
         """同步单个仓位跟单"""
         symbol = state.symbol
         target_address = state.target_address
@@ -1403,8 +1685,11 @@ class PositionCopyTradingBot:
         if f"close_{symbol}" in self._processing_tracking_ids:
             return
         
-        # 获取目标仓位
-        target_pos = self._get_target_position(target_address, symbol)
+        # 获取目标仓位（优先使用缓存）
+        if target_positions_cache and target_address in target_positions_cache:
+            target_pos = target_positions_cache[target_address].get(symbol)
+        else:
+            target_pos = self._get_target_position(target_address, symbol)
         
         # 获取我方仓位
         my_pos = self.my_positions.get(symbol)
@@ -1542,10 +1827,16 @@ class PositionCopyTradingBot:
                 if s.status in ('pending', 'active')
             ]
             
+            # 按 target_address 分组，每个交易员只获取一次仓位
+            target_addresses = set(s.target_address for s in active_trackings)
+            target_positions_cache: Dict[str, Dict[str, Dict]] = {}
+            for address in target_addresses:
+                target_positions_cache[address] = self._get_target_positions(address)
+            
             # 异步并行同步所有仓位
             async def sync_with_error_handling(state):
                 try:
-                    await self._sync_tracking(state)
+                    await self._sync_tracking(state, target_positions_cache)
                 except Exception as e:
                     logger.error(f"同步仓位跟单 {state.tracking_id} 失败: {e}")
             
@@ -1563,13 +1854,18 @@ class PositionCopyTradingBot:
         logger.info("仓位级别跟单机器人启动")
         logger.info(f"检查间隔: {self.check_interval}秒")
         logger.info(f"配置重载间隔: {self.reload_interval}秒")
+        logger.info(f"自动跟单用户ID: {self._user_id}")
         logger.info("=" * 60)
 
         # 加载初始配置
         self.reload_configs()
 
-        if not self.trackings:
-            logger.warning("没有启用的仓位跟单，等待添加...")
+        if not self.trackings and not self.address_configs:
+            logger.warning("没有启用的仓位跟单和自动跟单地址，等待添加...")
+        elif not self.trackings:
+            logger.info(f"无手动跟单，已加载 {len(self.address_configs)} 个自动跟单地址")
+        elif not self.address_configs:
+            logger.info(f"已加载 {len(self.trackings)} 个手动跟单，无自动跟单地址")
 
         # 启动 Redis 通知监听任务（如果启用）
         redis_open_task = None
@@ -1593,6 +1889,10 @@ class PositionCopyTradingBot:
                     # 同步现有跟单
                     if self.trackings:
                         await self._sync_all_trackings()
+                    
+                    # 自动跟单检测
+                    if self.address_configs:
+                        await self._sync_auto_copy()
 
                 except asyncio.CancelledError:
                     raise

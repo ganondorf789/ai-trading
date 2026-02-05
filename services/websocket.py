@@ -1,17 +1,19 @@
 """
 WebSocket 模块
 通过 Redis Pub/Sub 接收新仓位通知和跟单通知并广播给连接的客户端
+支持 JWT 认证，通知按用户定向发送
 """
 import json
 import logging
-from typing import Optional
+from typing import Optional, Dict
 
 import redis
-from flask import Flask
-from flask_socketio import SocketIO, emit
+from flask import Flask, request
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from config.settings import settings
 from .shared import get_redis_client, reset_redis_client
+from .routes.middleware import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,9 @@ _redis_running = False
 
 # 数据库实例（延迟加载）
 _db = None
+
+# 用户会话管理 (session_id -> user_info)
+_user_sessions: Dict[str, Dict] = {}
 
 
 def _get_db():
@@ -63,14 +68,66 @@ def init_socketio(app: Flask) -> SocketIO:
     # 注册事件处理器
     @socketio.on('connect')
     def handle_connect():
-        logger.info("WebSocket 客户端已连接")
+        logger.info(f"WebSocket 客户端已连接: {request.sid}")
         # 确保 Redis 监听已启动
         _ensure_redis_listener_started()
-        emit('connected', {'message': '已连接到新仓位推送服务'})
+        emit('connected', {'message': '已连接，请发送 authenticate 事件进行认证'})
     
     @socketio.on('disconnect')
     def handle_disconnect():
-        logger.info("WebSocket 客户端已断开")
+        session_id = request.sid
+        # 清理用户会话
+        if session_id in _user_sessions:
+            user_info = _user_sessions.pop(session_id)
+            user_id = user_info.get('user_id')
+            # 离开用户专属房间
+            leave_room(f"user_{user_id}")
+            logger.info(f"WebSocket 客户端已断开: {session_id}, user_id={user_id}")
+        else:
+            logger.info(f"WebSocket 客户端已断开: {session_id}")
+    
+    @socketio.on('authenticate')
+    def handle_authenticate(data):
+        """
+        客户端认证
+        
+        Args:
+            data: {'token': 'JWT access token'}
+        """
+        session_id = request.sid
+        token = data.get('token') if data else None
+        
+        if not token:
+            emit('auth_error', {'error': '未提供认证令牌', 'code': 'TOKEN_MISSING'})
+            return
+        
+        # 验证 token
+        payload = verify_token(token, 'access')
+        
+        if not payload:
+            emit('auth_error', {'error': '认证令牌无效或已过期', 'code': 'TOKEN_INVALID'})
+            return
+        
+        user_id = payload.get('user_id')
+        account = payload.get('account')
+        role = payload.get('role')
+        
+        # 保存用户会话
+        _user_sessions[session_id] = {
+            'user_id': user_id,
+            'account': account,
+            'role': role
+        }
+        
+        # 加入用户专属房间（用于定向发送消息）
+        join_room(f"user_{user_id}")
+        
+        logger.info(f"WebSocket 客户端认证成功: {session_id}, user_id={user_id}, account={account}")
+        emit('authenticated', {
+            'user_id': user_id,
+            'account': account,
+            'message': '认证成功，将接收您的专属通知'
+        })
     
     @socketio.on('ping')
     def handle_ping():
@@ -204,7 +261,7 @@ def _broadcast_new_position(data: dict):
 
 def _handle_notification(data: dict):
     """
-    处理通知消息：保存到数据库并广播给 WebSocket 客户端
+    处理通知消息：保存到数据库并发送给对应用户
     
     Args:
         data: 通知数据，包含:
@@ -217,8 +274,11 @@ def _handle_notification(data: dict):
             - size: 仓位大小
             - pnl: 盈亏
             - timestamp: 时间戳
+            - user_id: 目标用户ID（可选，如果指定则只发送给该用户）
     """
     global socketio
+    
+    user_id = data.get('user_id')
     
     # 1. 保存通知到数据库
     try:
@@ -226,20 +286,27 @@ def _handle_notification(data: dict):
         notification_id = db.save_notification(data)
         if notification_id:
             data['id'] = notification_id
-            logger.info(f"通知已保存: id={notification_id}, type={data.get('type')}, symbol={data.get('symbol')}")
+            logger.info(f"通知已保存: id={notification_id}, type={data.get('type')}, symbol={data.get('symbol')}, user_id={user_id}")
     except Exception as e:
         logger.error(f"保存通知到数据库失败: {e}")
     
-    # 2. 广播通知给 WebSocket 客户端
+    # 2. 发送通知给 WebSocket 客户端
     if socketio is None:
-        logger.warning("SocketIO 未初始化，无法广播通知")
+        logger.warning("SocketIO 未初始化，无法发送通知")
         return
     
     try:
-        socketio.emit('notification', data, namespace='/')
-        logger.info(f"已广播通知: {data.get('type')} - {data.get('title')}")
+        if user_id:
+            # 定向发送给指定用户
+            room = f"user_{user_id}"
+            socketio.emit('notification', data, room=room, namespace='/')
+            logger.info(f"已发送通知给用户 {user_id}: {data.get('type')} - {data.get('title')}")
+        else:
+            # 没有指定用户时，广播给所有已认证的用户
+            socketio.emit('notification', data, namespace='/')
+            logger.info(f"已广播通知: {data.get('type')} - {data.get('title')}")
     except Exception as e:
-        logger.error(f"广播通知失败: {e}")
+        logger.error(f"发送通知失败: {e}")
 
 
 def broadcast_message(event: str, data: dict):

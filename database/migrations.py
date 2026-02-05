@@ -939,6 +939,15 @@ class DatabaseMigrations:
             cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
         )
 
+        # 添加 user_id 字段到 notifications 表（通知与用户关联）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'notifications', 'user_id', 'INTEGER'
+        )
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_id
+            ON notifications(user_id)
+        """)
+
     def _migrate_remove_groups(self, cursor):
         """
         移除分组功能相关的表和列

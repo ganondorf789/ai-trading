@@ -29,6 +29,7 @@ class NotificationsOps:
                 - side: 方向 'long' | 'short'（可选）
                 - size: 仓位大小（可选）
                 - pnl: 盈亏（可选）
+                - user_id: 用户ID（可选，用于定向发送通知）
 
         Returns:
             通知记录 ID，失败返回 None
@@ -41,11 +42,11 @@ class NotificationsOps:
                     INSERT INTO notifications (
                         type, title, content,
                         target_address, symbol, side, size, pnl,
-                        is_read, created_at
+                        user_id, is_read, created_at
                     ) VALUES (
                         %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        FALSE, CURRENT_TIMESTAMP
+                        %s, FALSE, CURRENT_TIMESTAMP
                     )
                     RETURNING id
                 """, (
@@ -56,7 +57,8 @@ class NotificationsOps:
                     data.get('symbol'),
                     data.get('side'),
                     data.get('size'),
-                    data.get('pnl')
+                    data.get('pnl'),
+                    data.get('user_id')
                 ))
                 
                 result = cursor.fetchone()
@@ -73,6 +75,7 @@ class NotificationsOps:
 
     def get_notifications(
         self,
+        user_id: Optional[int] = None,
         notification_type: Optional[str] = None,
         is_read: Optional[bool] = None,
         limit: int = 50,
@@ -82,6 +85,7 @@ class NotificationsOps:
         获取通知列表
 
         Args:
+            user_id: 用户ID筛选
             notification_type: 通知类型筛选
             is_read: 已读状态筛选
             limit: 每页数量
@@ -96,6 +100,10 @@ class NotificationsOps:
             # 构建查询条件
             conditions = []
             params = []
+
+            if user_id is not None:
+                conditions.append("user_id = %s")
+                params.append(user_id)
 
             if notification_type is not None:
                 conditions.append("type = %s")
@@ -179,19 +187,28 @@ class NotificationsOps:
             """)
             return cursor.rowcount
 
-    def get_unread_count(self) -> int:
+    def get_unread_count(self, user_id: Optional[int] = None) -> int:
         """
         获取未读通知数量
+
+        Args:
+            user_id: 用户ID（可选）
 
         Returns:
             未读通知数量
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) FROM notifications
-                WHERE is_read = FALSE
-            """)
+            if user_id is not None:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM notifications
+                    WHERE is_read = FALSE AND user_id = %s
+                """, (user_id,))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM notifications
+                    WHERE is_read = FALSE
+                """)
             result = cursor.fetchone()
             return result[0] if result else 0
 
@@ -269,6 +286,7 @@ class NotificationsOps:
 
     def get_notifications_cursor(
         self,
+        user_id: Optional[int] = None,
         limit: int = 50,
         before: Optional[int] = None,
         after: Optional[int] = None,
@@ -281,6 +299,7 @@ class NotificationsOps:
         使用游标分页查询通知记录
 
         Args:
+            user_id: 用户ID过滤
             limit: 返回数量限制
             before: 游标ID，获取此ID之前的记录（不包含此ID），为空则从最新记录开始
             after: 游标ID，获取此ID之后的记录（不包含此ID），用于获取更新的数据
@@ -298,6 +317,11 @@ class NotificationsOps:
             # 构建查询条件
             conditions = []
             params = []
+            
+            # user_id 条件
+            if user_id is not None:
+                conditions.append("user_id = %s")
+                params.append(user_id)
             
             # before 游标条件
             if before is not None:
