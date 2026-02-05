@@ -27,6 +27,7 @@ import pendulum
 from hyperliquid.info import Info
 
 from core.models import Position, PositionSide
+from core.tracking_utils import build_tracking_data_from_dataclass
 from clients.hyperliquid_client import HyperliquidClient
 from trading.settings import settings
 
@@ -69,6 +70,12 @@ class TrackingState:
     default_leverage: int = 5
     slippage: float = 0.01
     
+    # 自动补仓配置
+    auto_replenish: bool = False  # 是否启用自动补仓
+    replenish_ratio: float = 0.5  # 补仓比例（按目标补仓量的比例）
+    replenish_min_value_usd: float = 10.0  # 单次补仓最小金额
+    replenish_max_value_usd: float = 100.0  # 单次补仓最大金额
+    
     # 目标仓位快照
     target_initial_size: Optional[float] = None
     target_initial_side: Optional[str] = None
@@ -110,6 +117,12 @@ class AddressConfig:
     max_leverage: int = 10
     default_leverage: int = 5
     slippage: float = 0.01
+    
+    # 自动补仓配置
+    auto_replenish: bool = False  # 是否启用自动补仓
+    replenish_ratio: float = 0.5  # 补仓比例（按目标补仓量的比例）
+    replenish_min_value_usd: float = 10.0  # 单次补仓最小金额
+    replenish_max_value_usd: float = 100.0  # 单次补仓最大金额
     
     # 币种限制
     symbols_whitelist: List[str] = field(default_factory=list)  # 白名单（空表示不限制）
@@ -1090,6 +1103,10 @@ class PositionCopyTradingBot:
             max_leverage=data.get('max_leverage', 10),
             default_leverage=data.get('default_leverage', 5),
             slippage=data.get('slippage', 0.01),
+            auto_replenish=data.get('auto_replenish', False),
+            replenish_ratio=data.get('replenish_ratio', 0.5),
+            replenish_min_value_usd=data.get('replenish_min_value_usd', 10.0),
+            replenish_max_value_usd=data.get('replenish_max_value_usd', 100.0),
             target_initial_size=data.get('target_initial_size'),
             target_initial_side=data.get('target_initial_side'),
             target_initial_entry_price=data.get('target_initial_entry_price'),
@@ -1165,6 +1182,10 @@ class PositionCopyTradingBot:
                     max_leverage=data.get('max_leverage', 10),
                     default_leverage=data.get('default_leverage', 5),
                     slippage=data.get('slippage', 0.01),
+                    auto_replenish=data.get('auto_replenish', False),
+                    replenish_ratio=data.get('replenish_ratio', 0.5),
+                    replenish_min_value_usd=data.get('replenish_min_value_usd', 10.0),
+                    replenish_max_value_usd=data.get('replenish_max_value_usd', 100.0),
                     symbols_whitelist=data.get('symbols_whitelist', []) or [],
                     symbols_blacklist=data.get('symbols_blacklist', []) or []
                 )
@@ -1262,33 +1283,15 @@ class PositionCopyTradingBot:
             logger.debug(f"[自动跟单] 跳过 {symbol}: 已有活跃跟单记录")
             return None
         
-        # 获取仓位详情
-        size = position.get('size', 0)
-        entry_price = position.get('entry_price', 0)
-        leverage = position.get('leverage', 1)
-        side = 'long' if size > 0 else 'short'
-        
-        # 创建跟单记录
-        tracking_data = {
-            'target_address': address,
-            'target_name': config.name or address[:10] + '...',
-            'symbol': symbol,
-            'is_enabled': True,
-            # 使用地址配置中的参数
-            'copy_ratio': config.copy_ratio,
-            'max_position_size_usd': config.max_position_size_usd,
-            'min_position_size_usd': config.min_position_size_usd,
-            'copy_leverage': config.copy_leverage,
-            'max_leverage': config.max_leverage,
-            'default_leverage': config.default_leverage,
-            'slippage': config.slippage,
-            # 目标仓位快照
-            'target_initial_size': abs(size),
-            'target_initial_side': side,
-            'target_initial_entry_price': entry_price,
-            'target_initial_leverage': leverage,
-            'status': 'pending'
-        }
+        # 使用公共方法创建跟单记录
+        tracking_data = build_tracking_data_from_dataclass(
+            config_obj=config,
+            target_address=address,
+            symbol=symbol,
+            target_position=position,
+            target_is_starred=False,
+            status='pending'
+        )
         
         try:
             tracking_id = self.db.save_position_tracking(tracking_data)
@@ -1654,54 +1657,94 @@ class PositionCopyTradingBot:
             # 计算目标仓位
             current_price = self.client.get_mid_price(symbol)
             target_notional = target_position['notional']
-            my_target_size = self._calculate_copy_size(
-                state, target_notional, current_price, is_opening=False
-            )
+            prev_target_notional = state.target_current_notional
             my_current_size = abs(my_pos.size)
+            my_current_notional = my_current_size * current_price
             
-            # 判断是加仓还是减仓
-            is_increase = my_target_size > my_current_size
+            # 检测目标是否在加仓（notional 增加）
+            target_is_increasing = prev_target_notional is not None and target_notional > prev_target_notional
+            target_notional_increase = target_notional - prev_target_notional if target_is_increasing else 0
             
-            # 如果需要减仓，检查目标交易员是否真的减仓了
-            # 避免因为手动补仓超过 max_position_size_usd 而被自动减仓
-            if not is_increase:
-                prev_target_notional = state.target_current_notional
-                if prev_target_notional is not None and target_notional >= prev_target_notional:
-                    # 目标交易员没有减仓（notional 没有减少），但本地仓位超过了计算的目标
-                    # 这通常是因为手动补仓超过了 max_position_size_usd，不应自动减仓
+            # 自动补仓逻辑：当目标加仓且启用了自动补仓
+            if target_is_increasing and state.auto_replenish:
+                # 按目标加仓量的比例计算补仓金额
+                replenish_value = target_notional_increase * state.replenish_ratio
+                
+                # 限制在配置的范围内
+                if replenish_value < state.replenish_min_value_usd:
                     logger.debug(
-                        f"[{state.tracking_id}] [{symbol}] 本地仓位 ${my_current_size * current_price:.2f} "
-                        f"超过计算目标 ${my_target_size * current_price:.2f}，但目标未减仓 "
-                        f"(notional: {prev_target_notional:.2f} -> {target_notional:.2f})，跳过自动减仓"
+                        f"[{state.tracking_id}] [{symbol}] 自动补仓: 计算补仓金额 ${replenish_value:.2f} "
+                        f"< 最小限制 ${state.replenish_min_value_usd:.2f}，跳过"
                     )
-                    # 更新目标 notional 记录
                     state.target_current_notional = target_notional
                     return True
+                
+                if replenish_value > state.replenish_max_value_usd:
+                    logger.info(
+                        f"[{state.tracking_id}] [{symbol}] 自动补仓: 计算补仓金额 ${replenish_value:.2f} "
+                        f"> 最大限制 ${state.replenish_max_value_usd:.2f}，限制为 ${state.replenish_max_value_usd:.2f}"
+                    )
+                    replenish_value = state.replenish_max_value_usd
+                
+                adjustment_size = self._round_size(symbol, replenish_value / current_price)
+                adjustment_value = adjustment_size * current_price
+                
+                logger.info(
+                    f"[{state.tracking_id}] [{symbol}] 自动补仓: 目标加仓 ${target_notional_increase:.2f} "
+                    f"(ratio={state.replenish_ratio:.0%})，补仓 ${adjustment_value:.2f}"
+                )
+                
+                is_increase = True
+                action_type = "自动补仓"
+                my_target_size = my_current_size + adjustment_size
+            else:
+                # 原有逻辑：按 copy_ratio 计算目标仓位
+                my_target_size = self._calculate_copy_size(
+                    state, target_notional, current_price, is_opening=False
+                )
+                
+                # 判断是加仓还是减仓
+                is_increase = my_target_size > my_current_size
+                
+                # 如果需要减仓，检查目标交易员是否真的减仓了
+                # 避免因为手动补仓超过 max_position_size_usd 而被自动减仓
+                if not is_increase:
+                    if prev_target_notional is not None and target_notional >= prev_target_notional:
+                        # 目标交易员没有减仓（notional 没有减少），但本地仓位超过了计算的目标
+                        # 这通常是因为手动补仓超过了 max_position_size_usd，不应自动减仓
+                        logger.debug(
+                            f"[{state.tracking_id}] [{symbol}] 本地仓位 ${my_current_notional:.2f} "
+                            f"超过计算目标 ${my_target_size * current_price:.2f}，但目标未减仓 "
+                            f"(notional: {prev_target_notional:.2f} -> {target_notional:.2f})，跳过自动减仓"
+                        )
+                        # 更新目标 notional 记录
+                        state.target_current_notional = target_notional
+                        return True
+                
+                adjustment_size = abs(my_target_size - my_current_size)
+                adjustment_size = self._round_size(symbol, adjustment_size)
+                
+                # 检查调整价值
+                adjustment_value = adjustment_size * current_price
+                action_type = "加仓" if is_increase else "减仓"
+                
+                # 加仓时限制单次补仓价值不超过 max_position_size_usd
+                if is_increase and adjustment_value > state.max_position_size_usd:
+                    logger.info(
+                        f"[{state.tracking_id}] [{symbol}] 补仓价值 ${adjustment_value:.2f} "
+                        f"超过限制 ${state.max_position_size_usd:.2f}，限制为 ${state.max_position_size_usd:.2f}"
+                    )
+                    adjustment_value = state.max_position_size_usd
+                    adjustment_size = self._round_size(symbol, adjustment_value / current_price)
+                    my_target_size = my_current_size + adjustment_size
             
             # 更新目标 notional 记录
             state.target_current_notional = target_notional
-            
-            adjustment_size = abs(my_target_size - my_current_size)
-            adjustment_size = self._round_size(symbol, adjustment_size)
-            
-            # 检查调整价值
-            adjustment_value = adjustment_size * current_price
-            action_type = "加仓" if is_increase else "减仓"
-            
-            # 加仓时限制单次补仓价值不超过 max_position_size_usd
-            if is_increase and adjustment_value > state.max_position_size_usd:
-                logger.info(
-                    f"[{state.tracking_id}] [{symbol}] 补仓价值 ${adjustment_value:.2f} "
-                    f"超过限制 ${state.max_position_size_usd:.2f}，限制为 ${state.max_position_size_usd:.2f}"
-                )
-                adjustment_value = state.max_position_size_usd
-                adjustment_size = self._round_size(symbol, adjustment_value / current_price)
             
             # 检查调整价值是否太小（小于10 USD则跳过）
             if adjustment_value < 10:
                 msg = f"[{symbol}] {action_type}调整价值 ${adjustment_value:.2f} < $10，跳过调整"
                 logger.debug(f"[{state.tracking_id}] {msg}")
-                self._notify_error(msg)
                 return True
 
             is_long = my_pos.side == PositionSide.LONG
@@ -1712,7 +1755,7 @@ class PositionCopyTradingBot:
                 # 获取当前仓位的杠杆
                 leverage = my_pos.leverage if my_pos.leverage else state.default_leverage
                 required_margin = notional_value / leverage
-                if not self._check_balance_sufficient(required_margin, "加仓", symbol):
+                if not self._check_balance_sufficient(required_margin, action_type, symbol):
                     return False
 
             try:

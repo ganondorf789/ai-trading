@@ -42,6 +42,7 @@ from database import TraderDatabase
 from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
 from screener.utils import now_shanghai
+from core.tracking_utils import build_tracking_data
 
 # Redis 新仓位推送 channel
 REDIS_POSITION_CHANNEL = "new_positions"
@@ -446,28 +447,22 @@ def create_position_tracking_for_copy(
     if matched_rule_name:
         logger.info(f"    → 币种 {coin} 匹配规则: {matched_rule_name}")
     
-    # 创建跟单记录
-    tracking_data = {
-        'target_address': address,
-        'target_name': trader.get('name', '') or address[:10] + '...',
-        'symbol': coin,
-        'is_enabled': True,
-        # 从匹配的配置获取跟单参数
-        'copy_ratio': effective_config.get('copy_ratio', 0.1),
-        'max_position_size_usd': effective_config.get('max_position_size_usd', 500.0),
-        'min_position_size_usd': effective_config.get('min_position_size_usd', 20.0),
-        'copy_leverage': effective_config.get('copy_leverage', False),
-        'max_leverage': effective_config.get('max_leverage', 10),
-        'default_leverage': effective_config.get('default_leverage', 3),
-        'slippage': effective_config.get('slippage', 0.001),
-        # 目标仓位快照
-        'target_initial_size': abs(szi),
-        'target_initial_side': side,
-        'target_initial_entry_price': entry_px,
-        'target_initial_leverage': leverage,
-        'target_is_starred': trader.get('is_starred', False),
-        'status': 'pending'
+    # 使用公共方法创建跟单记录
+    target_position = {
+        'size': szi,
+        'side': side,
+        'entry_price': entry_px,
+        'leverage': leverage
     }
+    tracking_data = build_tracking_data(
+        target_address=address,
+        target_name=trader.get('name', ''),
+        symbol=coin,
+        config=effective_config,
+        target_position=target_position,
+        target_is_starred=trader.get('is_starred', False),
+        status='pending'
+    )
     
     try:
         tracking_id = db.save_position_tracking(tracking_data)
