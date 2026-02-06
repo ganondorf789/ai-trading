@@ -1109,6 +1109,199 @@ def get_user_info(user_id: int):
         }), 500
 
 
+# ==================== 用户兑换秘钥 API ====================
+
+@auth_bp.route('/api/auth/redeem-key', methods=['POST'])
+@login_required
+def redeem_secret_key():
+    """用户兑换秘钥
+    
+    用户可以使用秘钥来延长账户有效期或升级身份。
+    - 如果用户身份与秘钥身份一致：追加有效期到现有的 expires_at
+    - 如果用户已过期：从当前时间开始追加
+    - 如果用户是普通用户，秘钥身份是会员：升级为会员并从当前时间开始追加
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - secret_key
+          properties:
+            secret_key:
+              type: string
+              description: 兑换秘钥
+              example: "your-secret-key"
+    responses:
+      200:
+        description: 兑换成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                role:
+                  type: string
+                  description: 用户当前身份
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: 新的过期时间
+                added_days:
+                  type: integer
+                  description: 增加的天数
+                role_upgraded:
+                  type: boolean
+                  description: 是否升级了身份
+            message:
+              type: string
+      400:
+        description: 请求参数错误
+      403:
+        description: 秘钥无效或不适用
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+        
+        # 验证必填字段
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+        
+        secret_key = data.get('secret_key', '').strip()
+        
+        if not secret_key:
+            return jsonify({
+                'success': False,
+                'error': '秘钥不能为空'
+            }), 400
+        
+        # 获取当前用户信息
+        user_id = get_current_user_id()
+        user = db.get_user_by_id(user_id)
+        
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        user_role = user.get('role', ROLE_USER)
+        user_expires_at = user.get('expires_at')
+        
+        # 管理员不需要兑换秘钥
+        if user_role == ROLE_ADMIN:
+            return jsonify({
+                'success': False,
+                'error': '管理员账户无需兑换秘钥'
+            }), 400
+        
+        # 验证秘钥
+        secret_key_info = db.validate_secret_key(secret_key)
+        if not secret_key_info:
+            logger.warning(f"秘钥兑换失败: 秘钥验证失败 - user_id={user_id}")
+            return jsonify({
+                'success': False,
+                'error': '秘钥无效或已被使用'
+            }), 403
+        
+        key_role = secret_key_info['user_role']
+        key_expires_days = secret_key_info['expires_days']
+        
+        # 管理员秘钥不能通过兑换获得
+        if key_role == ROLE_ADMIN:
+            return jsonify({
+                'success': False,
+                'error': '此秘钥不支持兑换'
+            }), 403
+        
+        # 计算新的过期时间
+        now = datetime.now()
+        role_upgraded = False
+        new_role = user_role
+        
+        # 判断是否需要升级身份
+        # 普通用户 -> 会员（秘钥身份比用户身份高）
+        if user_role == ROLE_USER and key_role == ROLE_MEMBER:
+            # 升级为会员，从当前时间开始计算
+            role_upgraded = True
+            new_role = ROLE_MEMBER
+            base_time = now
+        elif user_role == key_role:
+            # 身份一致，追加到现有过期时间
+            # 如果已过期或没有过期时间，从当前时间开始
+            if user_expires_at is None or user_expires_at < now:
+                base_time = now
+            else:
+                base_time = user_expires_at
+        elif user_role == ROLE_MEMBER and key_role == ROLE_USER:
+            # 会员使用普通用户秘钥，仍然追加时间但不降级身份
+            if user_expires_at is None or user_expires_at < now:
+                base_time = now
+            else:
+                base_time = user_expires_at
+        else:
+            # 其他情况（理论上不会发生）
+            return jsonify({
+                'success': False,
+                'error': '秘钥与当前账户身份不匹配'
+            }), 403
+        
+        # 计算新的过期时间
+        if key_expires_days > 0:
+            new_expires_at = base_time + timedelta(days=key_expires_days)
+        else:
+            # expires_days 为 0 表示永不过期
+            new_expires_at = None
+        
+        # 更新用户信息
+        # 如果需要升级身份
+        if role_upgraded:
+            db.update_user_role(user_id, new_role)
+        
+        # 更新过期时间
+        db.update_user_expiry(user_id, new_expires_at)
+        
+        # 标记秘钥为已使用
+        db.use_secret_key(secret_key_info['id'], user_id)
+        
+        logger.info(f"用户兑换秘钥成功: user_id={user_id}, added_days={key_expires_days}, role_upgraded={role_upgraded}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'role': new_role,
+                'expires_at': new_expires_at.isoformat() if new_expires_at else None,
+                'added_days': key_expires_days,
+                'role_upgraded': role_upgraded
+            },
+            'message': '秘钥兑换成功' + ('，已升级为会员' if role_upgraded else '')
+        })
+        
+    except Exception as e:
+        logger.error(f"秘钥兑换失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # ==================== 秘钥管理 API ====================
 
 @auth_bp.route('/api/auth/secret-keys', methods=['GET'])

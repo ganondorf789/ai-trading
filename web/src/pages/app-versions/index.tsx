@@ -29,17 +29,13 @@ import { formatTime } from "@/utils";
 import { TablePagination, useLocalPagination } from "@/components/TablePagination";
 
 const platformColorMap: Record<string, "default" | "primary" | "success" | "warning" | "danger"> = {
-  all: "primary",
   android: "success",
   ios: "warning",
-  web: "default",
 };
 
 const platformNameMap: Record<string, string> = {
-  all: "全平台",
   android: "Android",
   ios: "iOS",
-  web: "Web",
 };
 
 export default function AppVersionsPage() {
@@ -76,7 +72,7 @@ export default function AppVersionsPage() {
     is_force_update: false,
     is_visible: true,
     min_supported_version: "",
-    platform: "all",
+    platform: "android",
   });
   const [saving, setSaving] = useState(false);
 
@@ -129,7 +125,7 @@ export default function AppVersionsPage() {
       is_force_update: false,
       is_visible: true,
       min_supported_version: "",
-      platform: "all",
+      platform: "android",
     });
     setModalOpen(true);
   };
@@ -302,10 +298,8 @@ export default function AppVersionsPage() {
             className="w-32"
           >
             <SelectItem key="">全部</SelectItem>
-            <SelectItem key="all">全平台</SelectItem>
             <SelectItem key="android">Android</SelectItem>
             <SelectItem key="ios">iOS</SelectItem>
-            <SelectItem key="web">Web</SelectItem>
           </Select>
 
           <Button
@@ -460,10 +454,8 @@ export default function AppVersionsPage() {
                     onSelectionChange={(keys) => setFormData({ ...formData, platform: Array.from(keys)[0] as string })}
                     isDisabled={!!editingVersion}
                   >
-                    <SelectItem key="all">全平台</SelectItem>
                     <SelectItem key="android">Android</SelectItem>
                     <SelectItem key="ios">iOS</SelectItem>
-                    <SelectItem key="web">Web</SelectItem>
                   </Select>
                   <Input
                     label="最低支持版本"
