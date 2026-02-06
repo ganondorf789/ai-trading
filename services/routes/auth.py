@@ -1165,6 +1165,12 @@ def redeem_secret_key():
                 role_upgraded:
                   type: boolean
                   description: 是否升级了身份
+                access_token:
+                  type: string
+                  description: 新的访问令牌（包含更新后的信息）
+                refresh_token:
+                  type: string
+                  description: 新的刷新令牌
             message:
               type: string
       400:
@@ -1281,6 +1287,14 @@ def redeem_secret_key():
         # 标记秘钥为已使用
         db.use_secret_key(secret_key_info['id'], user_id)
         
+        # 生成新的 JWT 令牌（包含更新后的 role 和 expires_at）
+        access_token, refresh_token = generate_tokens(
+            user_id=user_id,
+            account=user['account'],
+            role=new_role,
+            user_expires_at=new_expires_at
+        )
+        
         logger.info(f"用户兑换秘钥成功: user_id={user_id}, added_days={key_expires_days}, role_upgraded={role_upgraded}")
         
         return jsonify({
@@ -1289,7 +1303,9 @@ def redeem_secret_key():
                 'role': new_role,
                 'expires_at': new_expires_at.isoformat() if new_expires_at else None,
                 'added_days': key_expires_days,
-                'role_upgraded': role_upgraded
+                'role_upgraded': role_upgraded,
+                'access_token': access_token,
+                'refresh_token': refresh_token
             },
             'message': '秘钥兑换成功' + ('，已升级为会员' if role_upgraded else '')
         })
