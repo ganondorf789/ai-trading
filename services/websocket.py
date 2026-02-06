@@ -35,6 +35,9 @@ _db = None
 # 用户会话管理 (session_id -> user_info)
 _user_sessions: Dict[str, Dict] = {}
 
+# 单点登录：用户ID -> session_id 映射（确保每个用户只有一个活跃连接）
+_user_active_sessions: Dict[int, str] = {}
+
 
 def _get_db():
     """延迟加载数据库实例"""
@@ -82,6 +85,9 @@ def init_socketio(app: Flask) -> SocketIO:
             user_id = user_info.get('user_id')
             # 离开用户专属房间
             leave_room(f"user_{user_id}")
+            # 清理用户活跃会话映射（仅当当前 session 是活跃 session 时）
+            if user_id in _user_active_sessions and _user_active_sessions[user_id] == session_id:
+                del _user_active_sessions[user_id]
             logger.info(f"WebSocket 客户端已断开: {session_id}, user_id={user_id}")
         else:
             logger.info(f"WebSocket 客户端已断开: {session_id}")
@@ -89,10 +95,14 @@ def init_socketio(app: Flask) -> SocketIO:
     @socketio.on('authenticate')
     def handle_authenticate(data):
         """
-        客户端认证
+        客户端认证（支持单点登录）
         
         Args:
             data: {'token': 'JWT access token'}
+        
+        单点登录逻辑：
+        - 同一用户只能有一个活跃的 WebSocket 连接
+        - 新连接认证成功后，会踢掉该用户的旧连接
         """
         session_id = request.sid
         token = data.get('token') if data else None
@@ -112,12 +122,40 @@ def init_socketio(app: Flask) -> SocketIO:
         account = payload.get('account')
         role = payload.get('role')
         
-        # 保存用户会话
+        # 单点登录：检查是否有该用户的其他活跃连接
+        if user_id in _user_active_sessions:
+            old_session_id = _user_active_sessions[user_id]
+            if old_session_id != session_id and old_session_id in _user_sessions:
+                # 向旧连接发送被踢下线通知
+                try:
+                    socketio.emit('kicked', {
+                        'message': '您的账号在其他地方登录，当前连接已断开',
+                        'code': 'KICKED_BY_NEW_LOGIN'
+                    }, room=old_session_id, namespace='/')
+                    logger.info(f"单点登录: 踢掉用户 {user_id} 的旧连接 {old_session_id}")
+                except Exception as e:
+                    logger.error(f"发送踢下线通知失败: {e}")
+                
+                # 清理旧会话
+                old_user_info = _user_sessions.pop(old_session_id, None)
+                if old_user_info:
+                    leave_room(f"user_{user_id}", sid=old_session_id)
+                
+                # 断开旧连接
+                try:
+                    socketio.server.disconnect(old_session_id, namespace='/')
+                except Exception as e:
+                    logger.error(f"断开旧连接失败: {e}")
+        
+        # 保存新会话
         _user_sessions[session_id] = {
             'user_id': user_id,
             'account': account,
             'role': role
         }
+        
+        # 更新用户活跃会话映射
+        _user_active_sessions[user_id] = session_id
         
         # 加入用户专属房间（用于定向发送消息）
         join_room(f"user_{user_id}")
