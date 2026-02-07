@@ -83,7 +83,8 @@ def get_grpc_client() -> GRPCClient:
     if _grpc_client is None:
         _grpc_client = GRPCClient(
             host=settings.grpc.host,
-            port=settings.grpc.port
+            port=settings.grpc.port,
+            api_key=settings.api.key
         )
         logger.info(f"GRPCClient 初始化完成，服务器地址: {settings.grpc.host}:{settings.grpc.port}")
     

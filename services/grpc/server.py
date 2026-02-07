@@ -20,9 +20,63 @@ from loguru import logger
 
 import trading_service_pb2_grpc as pb2_grpc
 from config.settings import settings
+from database import TraderDatabase
 
 from .database_service import DatabaseServiceServicer
 from .redis_service import RedisServiceServicer
+from .auth_service import AuthServiceServicer
+
+
+# 不需要认证的 gRPC 方法（白名单）
+AUTH_WHITELIST = {
+    '/trading.AuthService/VerifyApiKey',
+}
+
+
+class ApiKeyAuthInterceptor(grpc.ServerInterceptor):
+    """
+    gRPC 服务端 API Key 认证拦截器
+    
+    从请求 metadata 中提取 'x-api-key'，验证后将 user_id 注入 context。
+    白名单中的方法（如 VerifyApiKey 自身）不需要认证。
+    """
+    
+    def __init__(self, db: TraderDatabase):
+        self._db = db
+    
+    def intercept_service(self, continuation, handler_call_details):
+        """拦截 gRPC 请求，验证 API Key"""
+        method = handler_call_details.method
+        
+        # 白名单方法不需要认证
+        if method in AUTH_WHITELIST:
+            return continuation(handler_call_details)
+        
+        # 从 metadata 中提取 API Key
+        metadata = dict(handler_call_details.invocation_metadata or [])
+        api_key = metadata.get('x-api-key', '')
+        
+        if not api_key:
+            # 无 API Key，拒绝请求
+            return self._unauthenticated_handler()
+        
+        # 验证 API Key
+        user = self._db.verify_api_key(api_key)
+        if not user:
+            return self._unauthenticated_handler()
+        
+        # 认证通过，继续处理
+        return continuation(handler_call_details)
+    
+    def _unauthenticated_handler(self):
+        """返回一个拒绝请求的 handler"""
+        def _abort(ignored_request, context):
+            context.abort(
+                grpc.StatusCode.UNAUTHENTICATED,
+                'API Key 无效或未提供，请在 Trading 服务配置中设置有效的 API_KEY'
+            )
+        
+        return grpc.unary_unary_rpc_method_handler(_abort)
 
 
 class GRPCServer:
@@ -66,10 +120,24 @@ class GRPCServer:
         Args:
             block: 是否阻塞等待
         """
-        self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=self.max_workers))
+        # 创建共享的数据库实例
+        shared_db = TraderDatabase()
         
-        # 注册数据库服务
-        db_servicer = DatabaseServiceServicer()
+        # 创建 API Key 认证拦截器
+        auth_interceptor = ApiKeyAuthInterceptor(db=shared_db)
+        
+        self._server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=self.max_workers),
+            interceptors=[auth_interceptor]
+        )
+        
+        # 注册认证服务（使用共享数据库实例）
+        auth_servicer = AuthServiceServicer(db=shared_db)
+        pb2_grpc.add_AuthServiceServicer_to_server(auth_servicer, self._server)
+        logger.info("已注册 AuthService（API Key 认证拦截器已启用）")
+        
+        # 注册数据库服务（使用共享数据库实例）
+        db_servicer = DatabaseServiceServicer(db=shared_db)
         pb2_grpc.add_DatabaseServiceServicer_to_server(db_servicer, self._server)
         logger.info("已注册 DatabaseService")
         

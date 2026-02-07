@@ -5,6 +5,15 @@ package trading;
 option go_package = "trading/pb";
 
 // ============================================
+// 认证服务 - API Key 验证
+// ============================================
+
+service AuthService {
+    // 验证 API Key，返回关联的用户信息
+    rpc VerifyApiKey(VerifyApiKeyRequest) returns (VerifyApiKeyResponse);
+}
+
+// ============================================
 // 数据库服务 - 仓位跟单相关操作
 // ============================================
 
@@ -281,4 +290,20 @@ message GetResponse {
     bool success = 1;
     optional string value = 2;
     string error = 3;
+}
+
+// ============================================
+// 认证服务消息定义
+// ============================================
+
+message VerifyApiKeyRequest {
+    string api_key = 1;
+}
+
+message VerifyApiKeyResponse {
+    bool valid = 1;
+    int32 user_id = 2;
+    string account = 3;
+    string role = 4;
+    string error = 5;
 }

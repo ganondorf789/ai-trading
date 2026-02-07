@@ -1,7 +1,8 @@
 """
 API Key 认证中间件
-提供简单的 API Key 验证
+通过 gRPC 回源验证 API Key，确保认证控制权在服务端
 """
+import hmac
 from functools import wraps
 from typing import Optional
 from flask import request, jsonify, g
@@ -11,11 +12,26 @@ from trading.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# gRPC 客户端引用（由 app 初始化时注入）
+_grpc_client = None
+
+
+def init_middleware_grpc(grpc_client):
+    """
+    注入 gRPC 客户端用于 API Key 远程验证
+    
+    Args:
+        grpc_client: GRPCClient 实例
+    """
+    global _grpc_client
+    _grpc_client = grpc_client
+    logger.info("API Key 中间件已初始化 gRPC 远程验证")
+
 
 def get_api_key_from_request() -> Optional[str]:
     """
     从请求中提取 API Key
-    支持 Header 和 Query Parameter
+    支持 Header 和 Bearer Token
     
     Returns:
         API Key 字符串，未找到返回 None
@@ -32,11 +48,6 @@ def get_api_key_from_request() -> Optional[str]:
         if len(parts) == 2 and parts[0].lower() == 'bearer':
             return parts[1]
     
-    # 3. 从 Query Parameter 获取
-    api_key = request.args.get('api_key')
-    if api_key:
-        return api_key
-    
     return None
 
 
@@ -44,20 +55,36 @@ def verify_api_key(api_key: str) -> bool:
     """
     验证 API Key
     
+    优先通过 gRPC 远程验证（回源到 services 端）。
+    若 gRPC 不可用，则回退到本地配置验证。
+    
     Args:
         api_key: API Key
         
     Returns:
         验证是否通过
     """
-    # 从配置中获取有效的 API Key
+    # 优先使用 gRPC 远程验证
+    if _grpc_client:
+        try:
+            result = _grpc_client.verify_api_key(api_key)
+            if result:
+                # 将用户信息存储到 g 对象中
+                g.api_user = result
+                return True
+            return False
+        except Exception as e:
+            logger.warning(f"gRPC 远程验证失败，回退到本地验证: {e}")
+    
+    # 回退: 从本地配置验证（兼容旧模式）
     valid_api_key = settings.api.key
     
     if not valid_api_key:
-        logger.warning("未配置 API_KEY，API Key 验证已禁用")
-        return True  # 未配置时允许所有请求
+        logger.warning("未配置 API_KEY 且 gRPC 验证不可用，API Key 验证已禁用")
+        return True
     
-    return api_key == valid_api_key
+    # 使用时间常量比较防止时序攻击
+    return hmac.compare_digest(api_key, valid_api_key)
 
 
 def api_key_required(f):

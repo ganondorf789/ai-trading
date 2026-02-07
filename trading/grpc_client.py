@@ -25,17 +25,25 @@ import trading_service_pb2_grpc as pb2_grpc
 class GRPCDatabaseClient:
     """数据库 gRPC 客户端"""
     
-    def __init__(self, host: str = 'localhost', port: int = 50051):
+    def __init__(self, host: str = 'localhost', port: int = 50051, api_key: str = ''):
         """
         初始化数据库客户端
         
         Args:
             host: gRPC 服务器地址
             port: gRPC 服务器端口
+            api_key: API Key（用于 gRPC 认证）
         """
         self._address = f'{host}:{port}'
+        self._api_key = api_key
         self._channel = None
         self._stub = None
+    
+    def _get_metadata(self):
+        """获取携带 API Key 的 metadata"""
+        if self._api_key:
+            return [('x-api-key', self._api_key)]
+        return []
     
     def _ensure_connected(self):
         """确保已连接"""
@@ -125,7 +133,8 @@ class GRPCDatabaseClient:
         self._ensure_connected()
         try:
             response = self._stub.GetPositionTracking(
-                pb2.GetPositionTrackingRequest(tracking_id=tracking_id)
+                pb2.GetPositionTrackingRequest(tracking_id=tracking_id),
+                metadata=self._get_metadata()
             )
             if response.success and response.HasField('tracking'):
                 return self._tracking_to_dict(response.tracking)
@@ -139,7 +148,8 @@ class GRPCDatabaseClient:
         self._ensure_connected()
         try:
             response = self._stub.GetActivePositionTrackings(
-                pb2.GetActivePositionTrackingsRequest()
+                pb2.GetActivePositionTrackingsRequest(),
+                metadata=self._get_metadata()
             )
             if response.success:
                 return [self._tracking_to_dict(t) for t in response.trackings]
@@ -239,7 +249,7 @@ class GRPCDatabaseClient:
             if 'target_rating' in data and data['target_rating']:
                 request.target_rating = data['target_rating']
             
-            response = self._stub.SavePositionTracking(request)
+            response = self._stub.SavePositionTracking(request, metadata=self._get_metadata())
             if response.success:
                 return response.tracking_id
             else:
@@ -268,7 +278,7 @@ class GRPCDatabaseClient:
             if closed_pnl is not None:
                 request.closed_pnl = closed_pnl
             
-            response = self._stub.UpdateTrackingStatus(request)
+            response = self._stub.UpdateTrackingStatus(request, metadata=self._get_metadata())
             return response.success
         except grpc.RpcError as e:
             logger.error(f"gRPC 错误 (UpdateTrackingStatus): {e}")
@@ -292,7 +302,7 @@ class GRPCDatabaseClient:
             if my_entry_price is not None:
                 request.my_entry_price = my_entry_price
             
-            response = self._stub.UpdateTrackingPosition(request)
+            response = self._stub.UpdateTrackingPosition(request, metadata=self._get_metadata())
             return response.success
         except grpc.RpcError as e:
             logger.error(f"gRPC 错误 (UpdateTrackingPosition): {e}")
@@ -303,7 +313,8 @@ class GRPCDatabaseClient:
         self._ensure_connected()
         try:
             response = self._stub.GetEnabledCopyAddresses(
-                pb2.GetEnabledCopyAddressesRequest(user_id=user_id)
+                pb2.GetEnabledCopyAddressesRequest(user_id=user_id),
+                metadata=self._get_metadata()
             )
             if response.success:
                 return [self._address_to_dict(a) for a in response.addresses]
@@ -320,7 +331,8 @@ class GRPCDatabaseClient:
                 pb2.CheckPositionTrackingExistsRequest(
                     target_address=target_address,
                     symbol=symbol
-                )
+                ),
+                metadata=self._get_metadata()
             )
             return response.exists
         except grpc.RpcError as e:
@@ -331,19 +343,27 @@ class GRPCDatabaseClient:
 class GRPCRedisClient:
     """Redis gRPC 客户端"""
     
-    def __init__(self, host: str = 'localhost', port: int = 50051):
+    def __init__(self, host: str = 'localhost', port: int = 50051, api_key: str = ''):
         """
         初始化 Redis 客户端
         
         Args:
             host: gRPC 服务器地址
             port: gRPC 服务器端口
+            api_key: API Key（用于 gRPC 认证）
         """
         self._address = f'{host}:{port}'
+        self._api_key = api_key
         self._channel = None
         self._stub = None
         self._subscriptions: Dict[str, threading.Thread] = {}
         self._stop_events: Dict[str, threading.Event] = {}
+    
+    def _get_metadata(self):
+        """获取携带 API Key 的 metadata"""
+        if self._api_key:
+            return [('x-api-key', self._api_key)]
+        return []
     
     def _ensure_connected(self):
         """确保已连接"""
@@ -371,7 +391,8 @@ class GRPCRedisClient:
         self._ensure_connected()
         try:
             response = self._stub.Publish(
-                pb2.PublishRequest(channel=channel, message=message)
+                pb2.PublishRequest(channel=channel, message=message),
+                metadata=self._get_metadata()
             )
             if response.success:
                 return response.receivers
@@ -389,7 +410,8 @@ class GRPCRedisClient:
                     key=key,
                     value=value,
                     expire_seconds=expire_seconds
-                )
+                ),
+                metadata=self._get_metadata()
             )
             return response.success
         except grpc.RpcError as e:
@@ -400,7 +422,7 @@ class GRPCRedisClient:
         """获取键值"""
         self._ensure_connected()
         try:
-            response = self._stub.Get(pb2.GetRequest(key=key))
+            response = self._stub.Get(pb2.GetRequest(key=key), metadata=self._get_metadata())
             if response.success and response.HasField('value'):
                 return response.value
             return None
@@ -444,7 +466,7 @@ class GRPCRedisClient:
                 
                 logger.info(f"开始订阅 {channels}")
                 
-                for message in stub.Subscribe(request):
+                for message in stub.Subscribe(request, metadata=self._get_metadata()):
                     if stop_event.is_set():
                         break
                     try:
@@ -564,20 +586,25 @@ class GRPCClient:
     统一的 gRPC 客户端
     
     提供数据库和 Redis 操作的统一接口
+    所有请求通过 API Key 进行认证
     """
     
-    def __init__(self, host: str = 'localhost', port: int = 50051):
+    def __init__(self, host: str = 'localhost', port: int = 50051, api_key: str = ''):
         """
         初始化 gRPC 客户端
         
         Args:
             host: gRPC 服务器地址
             port: gRPC 服务器端口
+            api_key: API Key（用于 gRPC 认证）
         """
         self.host = host
         self.port = port
-        self._db = GRPCDatabaseClient(host, port)
-        self._redis = GRPCRedisClient(host, port)
+        self._api_key = api_key
+        self._db = GRPCDatabaseClient(host, port, api_key=api_key)
+        self._redis = GRPCRedisClient(host, port, api_key=api_key)
+        self._auth_channel = None
+        self._auth_stub = None
     
     @property
     def db(self) -> GRPCDatabaseClient:
@@ -593,13 +620,63 @@ class GRPCClient:
         """关闭所有连接"""
         self._db.close()
         self._redis.close()
+        if self._auth_channel:
+            self._auth_channel.close()
+            self._auth_channel = None
+            self._auth_stub = None
+    
+    def _ensure_auth_connected(self):
+        """确保认证 channel 已连接"""
+        if self._auth_channel is None:
+            self._auth_channel = grpc.insecure_channel(f'{self.host}:{self.port}')
+            self._auth_stub = pb2_grpc.AuthServiceStub(self._auth_channel)
+    
+    def verify_api_key(self, api_key: str = None) -> Optional[Dict]:
+        """
+        验证 API Key（通过 gRPC 调用服务端验证）
+        
+        Args:
+            api_key: 要验证的 API Key，为空则使用自身的 API Key
+            
+        Returns:
+            验证成功返回用户信息 dict，失败返回 None
+        """
+        key_to_verify = api_key or self._api_key
+        if not key_to_verify:
+            return None
+        
+        self._ensure_auth_connected()
+        try:
+            response = self._auth_stub.VerifyApiKey(
+                pb2.VerifyApiKeyRequest(api_key=key_to_verify)
+            )
+            if response.valid:
+                return {
+                    'user_id': response.user_id,
+                    'account': response.account,
+                    'role': response.role,
+                }
+            return None
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (VerifyApiKey): {e}")
+            return None
     
     def ping(self) -> bool:
-        """测试连接"""
+        """测试连接（同时验证 API Key）"""
         try:
-            # 尝试获取活跃跟单列表来测试数据库连接
-            self._db.get_active_position_trackings()
-            return True
+            if self._api_key:
+                # 有 API Key 时通过认证接口验证连接
+                result = self.verify_api_key()
+                if result:
+                    logger.info(f"gRPC 认证成功: user={result['account']}, role={result['role']}")
+                    return True
+                else:
+                    logger.error("gRPC 认证失败: API Key 无效")
+                    return False
+            else:
+                # 无 API Key 时尝试直接连接（会被拦截器拒绝）
+                self._db.get_active_position_trackings()
+                return True
         except Exception as e:
             logger.error(f"gRPC 连接测试失败: {e}")
             return False

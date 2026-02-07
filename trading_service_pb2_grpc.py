@@ -25,6 +25,91 @@ if _version_not_supported:
     )
 
 
+class AuthServiceStub(object):
+    """============================================
+    认证服务 - API Key 验证
+    ============================================
+
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.VerifyApiKey = channel.unary_unary(
+                '/trading.AuthService/VerifyApiKey',
+                request_serializer=trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.VerifyApiKeyResponse.FromString,
+                _registered_method=True)
+
+
+class AuthServiceServicer(object):
+    """============================================
+    认证服务 - API Key 验证
+    ============================================
+
+    """
+
+    def VerifyApiKey(self, request, context):
+        """验证 API Key，返回关联的用户信息
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AuthServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'VerifyApiKey': grpc.unary_unary_rpc_method_handler(
+                    servicer.VerifyApiKey,
+                    request_deserializer=trading__service__pb2.VerifyApiKeyRequest.FromString,
+                    response_serializer=trading__service__pb2.VerifyApiKeyResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'trading.AuthService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('trading.AuthService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AuthService(object):
+    """============================================
+    认证服务 - API Key 验证
+    ============================================
+
+    """
+
+    @staticmethod
+    def VerifyApiKey(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.AuthService/VerifyApiKey',
+            trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
+            trading__service__pb2.VerifyApiKeyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class DatabaseServiceStub(object):
     """============================================
     数据库服务 - 仓位跟单相关操作

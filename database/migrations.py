@@ -951,6 +951,16 @@ class DatabaseMigrations:
             cursor, 'copy_position_tracking', 'target_rating', 'TEXT'
         )
 
+        # 添加 api_key 字段到 users 表（Trading 服务认证用）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'users', 'api_key', 'TEXT'
+        )
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key
+            ON users(api_key)
+            WHERE api_key IS NOT NULL
+        """)
+
         # 添加 user_id 字段到 notifications 表（通知与用户关联）
         self._migrate_add_column_if_not_exists(
             cursor, 'notifications', 'user_id', 'INTEGER'

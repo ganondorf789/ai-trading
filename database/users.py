@@ -733,3 +733,158 @@ class UsersOps:
         except Exception as e:
             logger.error(f"检查管理员权限失败: {e}")
             return False
+
+    # ==================== API Key 管理 ====================
+
+    def _generate_api_key(self) -> str:
+        """
+        生成一个安全的 API Key
+        
+        格式: atk_<48位随机hex> (共52字符)
+        
+        Returns:
+            API Key 字符串
+        """
+        return f"atk_{secrets.token_hex(24)}"
+
+    def generate_user_api_key(self, user_id: int) -> Optional[str]:
+        """
+        为用户生成新的 API Key（会覆盖旧的）
+
+        Args:
+            user_id: 用户 ID
+
+        Returns:
+            生成的 API Key，失败返回 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 确认用户存在
+                cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+                if not cursor.fetchone():
+                    logger.warning(f"生成 API Key 失败: 用户不存在 - id={user_id}")
+                    return None
+                
+                # 生成新 API Key
+                api_key = self._generate_api_key()
+                
+                cursor.execute("""
+                    UPDATE users
+                    SET api_key = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (api_key, user_id))
+                
+                logger.info(f"用户 API Key 生成成功: user_id={user_id}")
+                return api_key
+                
+        except Exception as e:
+            logger.error(f"生成 API Key 失败: {e}")
+            return None
+
+    def verify_api_key(self, api_key: str) -> Optional[Dict]:
+        """
+        验证 API Key 并返回关联的用户信息
+
+        Args:
+            api_key: API Key 字符串
+
+        Returns:
+            验证成功返回用户信息 (id, account, role, is_active, expires_at)，失败返回 None
+        """
+        if not api_key:
+            return None
+        
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                
+                cursor.execute("""
+                    SELECT id, account, role, is_active, expires_at
+                    FROM users
+                    WHERE api_key = %s
+                """, (api_key,))
+                
+                user = cursor.fetchone()
+                if not user:
+                    return None
+                
+                user = dict(user)
+                
+                # 检查账户是否激活
+                if not user.get('is_active', True):
+                    logger.warning(f"API Key 验证失败: 账户已禁用 - user_id={user['id']}")
+                    return None
+                
+                # 非管理员检查过期
+                if user.get('role') != self.ROLE_ADMIN:
+                    expires_at = user.get('expires_at')
+                    if expires_at and expires_at < datetime.now():
+                        logger.warning(f"API Key 验证失败: 账户已过期 - user_id={user['id']}")
+                        return None
+                
+                return user
+                
+        except Exception as e:
+            logger.error(f"验证 API Key 失败: {e}")
+            return None
+
+    def revoke_user_api_key(self, user_id: int) -> bool:
+        """
+        撤销用户的 API Key
+
+        Args:
+            user_id: 用户 ID
+
+        Returns:
+            是否撤销成功
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    UPDATE users
+                    SET api_key = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (user_id,))
+                
+                if cursor.rowcount > 0:
+                    logger.info(f"用户 API Key 撤销成功: user_id={user_id}")
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"撤销 API Key 失败: {e}")
+            return False
+
+    def get_user_api_key(self, user_id: int) -> Optional[str]:
+        """
+        获取用户的 API Key
+
+        Args:
+            user_id: 用户 ID
+
+        Returns:
+            API Key 字符串，无则返回 None
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    "SELECT api_key FROM users WHERE id = %s",
+                    (user_id,)
+                )
+                
+                result = cursor.fetchone()
+                if result and result[0]:
+                    return result[0]
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取 API Key 失败: {e}")
+            return None

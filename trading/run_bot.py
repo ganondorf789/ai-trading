@@ -62,14 +62,15 @@ def setup_grpc_client():
     try:
         grpc_client = GRPCClient(
             host=settings.grpc.host,
-            port=settings.grpc.port
+            port=settings.grpc.port,
+            api_key=settings.api.key
         )
-        # 测试连接
+        # 测试连接（同时验证 API Key）
         if grpc_client.ping():
             logger.info(f"gRPC 已连接: {settings.grpc.host}:{settings.grpc.port}")
             return grpc_client
         else:
-            logger.error(f"gRPC 连接测试失败: {settings.grpc.host}:{settings.grpc.port}")
+            logger.error(f"gRPC 连接/认证失败: {settings.grpc.host}:{settings.grpc.port}")
             return None
     except Exception as e:
         logger.error(f"gRPC 连接失败: {e}")

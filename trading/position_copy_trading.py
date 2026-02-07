@@ -202,7 +202,8 @@ class PositionCopyTradingBot:
         if self._grpc_client is None:
             self._grpc_client = GRPCClient(
                 host=settings.grpc.host,
-                port=settings.grpc.port
+                port=settings.grpc.port,
+                api_key=settings.api.key
             )
             logger.info(f"gRPC 客户端已连接: {settings.grpc.host}:{settings.grpc.port}")
         return self._grpc_client.db
@@ -213,7 +214,8 @@ class PositionCopyTradingBot:
         if self._grpc_client is None:
             self._grpc_client = GRPCClient(
                 host=settings.grpc.host,
-                port=settings.grpc.port
+                port=settings.grpc.port,
+                api_key=settings.api.key
             )
         return self._grpc_client.redis
 
@@ -579,6 +581,9 @@ class PositionCopyTradingBot:
         address = f"{settings.grpc.host}:{settings.grpc.port}"
         logger.info(f"开始监听{name}通知 (gRPC: {address}, channels: {channels})")
         
+        # 构造认证 metadata
+        api_key_metadata = [('x-api-key', settings.api.key)] if settings.api.key else []
+        
         while self.is_running:
             try:
                 channel = grpc_module.insecure_channel(address)
@@ -586,7 +591,7 @@ class PositionCopyTradingBot:
                 
                 request = pb2.SubscribeRequest(channels=channels)
                 
-                for message in stub.Subscribe(request):
+                for message in stub.Subscribe(request, metadata=api_key_metadata):
                     if not self.is_running:
                         break
                     try:

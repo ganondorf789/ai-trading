@@ -2036,6 +2036,241 @@ def update_user_role(target_user_id: int):
         }), 500
 
 
+# ==================== API Key 管理 ====================
+
+@auth_bp.route('/api/auth/api-key', methods=['GET'])
+@login_required
+def get_my_api_key():
+    """获取当前用户的 API Key
+    ---
+    tags:
+      - ApiKey
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                  description: API Key（可能为 null）
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = get_current_user_id()
+        api_key = db.get_user_api_key(user_id)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'api_key': api_key
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"获取 API Key 失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/api-key/refresh', methods=['POST'])
+@login_required
+def refresh_my_api_key():
+    """刷新当前用户的 API Key（生成新的，旧的失效）
+    ---
+    tags:
+      - ApiKey
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                  description: 新的 API Key
+            message:
+              type: string
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = get_current_user_id()
+        api_key = db.generate_user_api_key(user_id)
+        
+        if not api_key:
+            return jsonify({
+                'success': False,
+                'error': 'API Key 生成失败'
+            }), 500
+        
+        logger.info(f"用户刷新 API Key: user_id={user_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'api_key': api_key
+            },
+            'message': 'API Key 已刷新，请更新 Trading 服务配置'
+        })
+        
+    except Exception as e:
+        logger.error(f"刷新 API Key 失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/users/<int:target_user_id>/api-key/refresh', methods=['POST'])
+@login_required
+@admin_required
+def admin_refresh_user_api_key(target_user_id: int):
+    """管理员刷新指定用户的 API Key
+    ---
+    tags:
+      - ApiKey
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: target_user_id
+        in: path
+        type: integer
+        required: true
+        description: 目标用户 ID
+    responses:
+      200:
+        description: 刷新成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                api_key:
+                  type: string
+            message:
+              type: string
+      403:
+        description: 无权限
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        api_key = db.generate_user_api_key(target_user_id)
+        
+        if not api_key:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在或 API Key 生成失败'
+            }), 404
+        
+        logger.info(f"管理员刷新用户 API Key: target_user_id={target_user_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'user_id': target_user_id,
+                'api_key': api_key
+            },
+            'message': 'API Key 已刷新'
+        })
+        
+    except Exception as e:
+        logger.error(f"管理员刷新 API Key 失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/users/<int:target_user_id>/api-key', methods=['DELETE'])
+@login_required
+@admin_required
+def admin_revoke_user_api_key(target_user_id: int):
+    """管理员撤销指定用户的 API Key
+    ---
+    tags:
+      - ApiKey
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: target_user_id
+        in: path
+        type: integer
+        required: true
+        description: 目标用户 ID
+    responses:
+      200:
+        description: 撤销成功
+      403:
+        description: 无权限
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        success = db.revoke_user_api_key(target_user_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+        
+        logger.info(f"管理员撤销用户 API Key: target_user_id={target_user_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'API Key 已撤销'
+        })
+        
+    except Exception as e:
+        logger.error(f"管理员撤销 API Key 失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @auth_bp.route('/api/auth/users/stats', methods=['GET'])
 @login_required
 @admin_required
