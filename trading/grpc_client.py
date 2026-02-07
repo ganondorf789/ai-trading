@@ -97,6 +97,9 @@ class GRPCDatabaseClient:
             'closed_at': tracking.closed_at if tracking.closed_at else None,
             # 标记
             'target_is_starred': tracking.target_is_starred,
+            # 交易员评分信息
+            'trader_score': tracking.trader_score if tracking.trader_score else None,
+            'trader_rating': tracking.trader_rating if tracking.trader_rating else None,
         }
     
     def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:

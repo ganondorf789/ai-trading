@@ -75,6 +75,9 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             closed_at=str(tracking.get('closed_at', '') or ''),
             # 标记
             target_is_starred=tracking.get('target_is_starred', False) or False,
+            # 交易员评分信息
+            trader_score=float(tracking.get('trader_score', 0) or 0),
+            trader_rating=tracking.get('trader_rating', '') or '',
         )
     
     def _address_to_proto(self, address: dict) -> pb2.CopyAddress:

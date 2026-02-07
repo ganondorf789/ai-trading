@@ -150,3 +150,81 @@ def get_notifications():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@notifications_bp.route('/api/notifications/<int:notification_id>', methods=['GET'])
+@login_required
+def get_notification(notification_id: int):
+    """获取通知详情
+    ---
+    tags:
+      - Notifications
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: notification_id
+        in: path
+        type: integer
+        required: true
+        description: 通知ID
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                type:
+                  type: string
+                title:
+                  type: string
+                content:
+                  type: string
+                  description: Markdown 格式内容
+                target_address:
+                  type: string
+                symbol:
+                  type: string
+                side:
+                  type: string
+                size:
+                  type: number
+                pnl:
+                  type: number
+                is_read:
+                  type: boolean
+                created_at:
+                  type: string
+      404:
+        description: 通知不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        notification = db.get_notification(notification_id)
+
+        if not notification:
+            return jsonify({
+                'success': False,
+                'error': '通知不存在'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': notification
+        })
+    except Exception as e:
+        logger.error(f"获取通知详情失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

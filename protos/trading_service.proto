@@ -167,6 +167,10 @@ message PositionTracking {
     
     // 标记
     bool target_is_starred = 37;
+    
+    // 交易员评分信息（来自 trader_metrics）
+    double trader_score = 38;
+    string trader_rating = 39;
 }
 
 message SavePositionTrackingResponse {

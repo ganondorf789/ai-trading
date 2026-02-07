@@ -87,14 +87,18 @@ class PositionTrackingOps:
         获取所有启用且活跃的仓位跟单配置
 
         Returns:
-            启用的跟单配置列表（status 为 pending 或 active）
+            启用的跟单配置列表（status 为 pending 或 active），包含交易员评分信息
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
-                SELECT * FROM copy_position_tracking
-                WHERE is_enabled = TRUE AND status IN ('pending', 'active')
-                ORDER BY updated_at DESC
+                SELECT cpt.*,
+                       tm.overall_score AS trader_score,
+                       tm.rating AS trader_rating
+                FROM copy_position_tracking cpt
+                LEFT JOIN trader_metrics tm ON cpt.target_address = tm.address
+                WHERE cpt.is_enabled = TRUE AND cpt.status IN ('pending', 'active')
+                ORDER BY cpt.updated_at DESC
             """)
             return [dict(row) for row in cursor.fetchall()]
 
