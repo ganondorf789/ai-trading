@@ -212,6 +212,56 @@ class NotificationsOps:
             result = cursor.fetchone()
             return result[0] if result else 0
 
+    def update_notification(
+        self,
+        notification_id: int,
+        title: Optional[str] = None,
+        content: Optional[str] = None
+    ) -> bool:
+        """
+        更新通知
+
+        Args:
+            notification_id: 通知 ID
+            title: 新标题（可选）
+            content: 新内容（可选）
+
+        Returns:
+            是否更新成功
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 构建更新字段
+                updates = []
+                params = []
+                
+                if title is not None:
+                    updates.append("title = %s")
+                    params.append(title)
+                
+                if content is not None:
+                    updates.append("content = %s")
+                    params.append(content)
+                
+                if not updates:
+                    return True  # 没有需要更新的字段
+                
+                params.append(notification_id)
+                
+                cursor.execute(f"""
+                    UPDATE notifications
+                    SET {", ".join(updates)}
+                    WHERE id = %s
+                """, params)
+                
+                return cursor.rowcount > 0
+                
+        except Exception as e:
+            logger.error(f"更新通知失败: {e}")
+            return False
+
     def delete_notification(self, notification_id: int) -> bool:
         """
         删除通知

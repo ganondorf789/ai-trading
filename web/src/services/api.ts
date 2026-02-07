@@ -1001,4 +1001,45 @@ export const appVersionApi = {
     api.get<any, ApiResponse<AppVersionStats>>('/app-versions/stats'),
 };
 
+// ==================== 公告管理 API ====================
+
+export interface Announcement {
+  id: number;
+  type: 'announcement';
+  title: string;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface AnnouncementStats {
+  total_count: number;
+}
+
+export const announcementApi = {
+  // 发布公告（管理员）
+  create: (data: { title: string; content: string }) =>
+    api.post<any, ApiResponse<void> & { message?: string }>('/announcements', data),
+
+  // 获取公告列表（管理员）
+  getList: (params?: { limit?: number; offset?: number }) =>
+    api.get<any, ApiResponse<Announcement[]> & { pagination?: { total: number; limit: number; offset: number; has_more: boolean } }>('/announcements', { params }),
+
+  // 获取公告详情（管理员）
+  getDetail: (id: number) =>
+    api.get<any, ApiResponse<Announcement>>(`/announcements/${id}`),
+
+  // 更新公告（管理员）
+  update: (id: number, data: { title?: string; content?: string }) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/announcements/${id}`, data),
+
+  // 删除公告（管理员）
+  delete: (id: number) =>
+    api.delete<any, ApiResponse<void> & { message?: string }>(`/announcements/${id}`),
+
+  // 获取公告统计（管理员）
+  getStats: () =>
+    api.get<any, ApiResponse<AnnouncementStats>>('/announcements/stats'),
+};
+
 export default api;

@@ -42,3 +42,7 @@ def register_routes(app):
     # 应用版本管理路由
     from .app_versions import app_versions_bp
     app.register_blueprint(app_versions_bp)
+    
+    # 公告管理路由
+    from .announcements import announcements_bp
+    app.register_blueprint(announcements_bp)

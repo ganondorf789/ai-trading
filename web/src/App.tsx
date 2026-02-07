@@ -12,6 +12,7 @@ import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
 import UsersPage from "@/pages/users";
 import SecretKeysPage from "@/pages/secret-keys";
 import AppVersionsPage from "@/pages/app-versions";
+import AnnouncementsPage from "@/pages/announcements";
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
       <Route element={<UsersPage />} path="/users" />
       <Route element={<SecretKeysPage />} path="/secret-keys" />
       <Route element={<AppVersionsPage />} path="/app-versions" />
+      <Route element={<AnnouncementsPage />} path="/announcements" />
     </Routes>
   );
 }

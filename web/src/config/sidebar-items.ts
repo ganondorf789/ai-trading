@@ -116,6 +116,12 @@ export const sidebarItems: SidebarItem[] = [
         icon: "solar:box-line-duotone",
         title: "App Versions",
       },
+      {
+        key: "announcements",
+        href: "/announcements",
+        icon: "solar:bell-line-duotone",
+        title: "Announcements",
+      },
     ],
   },
 ];
