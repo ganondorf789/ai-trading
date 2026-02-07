@@ -98,8 +98,8 @@ class GRPCDatabaseClient:
             # 标记
             'target_is_starred': tracking.target_is_starred,
             # 交易员评分信息
-            'trader_score': tracking.trader_score if tracking.trader_score else None,
-            'trader_rating': tracking.trader_rating if tracking.trader_rating else None,
+            'target_score': tracking.target_score if tracking.target_score else None,
+            'target_rating': tracking.target_rating if tracking.target_rating else None,
         }
     
     def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:
@@ -232,6 +232,12 @@ class GRPCDatabaseClient:
             # 标记
             if 'target_is_starred' in data:
                 request.target_is_starred = data['target_is_starred']
+            
+            # 交易员评分信息
+            if 'target_score' in data and data['target_score'] is not None:
+                request.target_score = float(data['target_score'])
+            if 'target_rating' in data and data['target_rating']:
+                request.target_rating = data['target_rating']
             
             response = self._stub.SavePositionTracking(request)
             if response.success:

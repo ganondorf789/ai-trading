@@ -93,8 +93,8 @@ class PositionTrackingOps:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             cursor.execute("""
                 SELECT cpt.*,
-                       tm.overall_score AS trader_score,
-                       tm.rating AS trader_rating
+                       COALESCE(cpt.target_score, tm.overall_score) AS target_score,
+                       COALESCE(cpt.target_rating, tm.rating) AS target_rating
                 FROM copy_position_tracking cpt
                 LEFT JOIN trader_metrics tm ON cpt.target_address = tm.address
                 WHERE cpt.is_enabled = TRUE AND cpt.status IN ('pending', 'active')
@@ -204,6 +204,8 @@ class PositionTrackingOps:
                         started_at = %s,
                         closed_at = %s,
                         target_is_starred = %s,
+                        target_score = %s,
+                        target_rating = %s,
                         updated_at = %s
                     WHERE id = %s
                     RETURNING id
@@ -234,6 +236,8 @@ class PositionTrackingOps:
                     data.get('started_at'),
                     data.get('closed_at'),
                     data.get('target_is_starred', False),
+                    data.get('target_score'),
+                    data.get('target_rating'),
                     now,
                     data['id']
                 ))
@@ -249,7 +253,7 @@ class PositionTrackingOps:
                         target_initial_size, target_initial_side, target_initial_entry_price, target_initial_leverage,
                         my_size, my_side, my_entry_price,
                         status, closed_pnl, close_reason,
-                        target_is_starred,
+                        target_is_starred, target_score, target_rating,
                         created_at, started_at, closed_at, updated_at
                     ) VALUES (
                         %s, %s, %s,
@@ -259,7 +263,7 @@ class PositionTrackingOps:
                         %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s,
-                        %s,
+                        %s, %s, %s,
                         %s, %s, %s, %s
                     )
                     RETURNING id
@@ -290,6 +294,8 @@ class PositionTrackingOps:
                     data.get('closed_pnl'),
                     data.get('close_reason'),
                     data.get('target_is_starred', False),
+                    data.get('target_score'),
+                    data.get('target_rating'),
                     now,
                     data.get('started_at'),
                     data.get('closed_at'),

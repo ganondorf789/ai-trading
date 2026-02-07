@@ -76,8 +76,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             # 标记
             target_is_starred=tracking.get('target_is_starred', False) or False,
             # 交易员评分信息
-            trader_score=float(tracking.get('trader_score', 0) or 0),
-            trader_rating=tracking.get('trader_rating', '') or '',
+            target_score=float(tracking.get('target_score', 0) or 0),
+            target_rating=tracking.get('target_rating', '') or '',
         )
     
     def _address_to_proto(self, address: dict) -> pb2.CopyAddress:
@@ -212,6 +212,12 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             # 标记
             if request.HasField('target_is_starred'):
                 data['target_is_starred'] = request.target_is_starred
+            
+            # 交易员评分信息
+            if request.HasField('target_score'):
+                data['target_score'] = request.target_score
+            if request.HasField('target_rating'):
+                data['target_rating'] = request.target_rating
             
             tracking_id = self._db.save_position_tracking(data)
             return pb2.SavePositionTrackingResponse(

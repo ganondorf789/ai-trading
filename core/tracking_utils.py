@@ -12,6 +12,8 @@ def build_tracking_data(
     config: Dict[str, Any],
     target_position: Optional[Dict[str, Any]] = None,
     target_is_starred: bool = False,
+    target_score: Optional[float] = None,
+    target_rating: Optional[str] = None,
     status: str = 'pending'
 ) -> Dict[str, Any]:
     """
@@ -39,6 +41,8 @@ def build_tracking_data(
             - entry_price: 入场价格
             - leverage: 杠杆倍数
         target_is_starred: 目标交易员是否被标记
+        target_score: 目标交易员评分
+        target_rating: 目标交易员评级
         status: 初始状态（默认 'pending'）
     
     Returns:
@@ -64,6 +68,8 @@ def build_tracking_data(
         'replenish_max_value_usd': config.get('replenish_max_value_usd', 100.0),
         # 状态
         'target_is_starred': target_is_starred,
+        'target_score': target_score,
+        'target_rating': target_rating,
         'status': status
     }
     
@@ -84,6 +90,8 @@ def build_tracking_data_from_dataclass(
     symbol: str,
     target_position: Dict[str, Any],
     target_is_starred: bool = False,
+    target_score: Optional[float] = None,
+    target_rating: Optional[str] = None,
     status: str = 'pending'
 ) -> Dict[str, Any]:
     """
@@ -95,6 +103,8 @@ def build_tracking_data_from_dataclass(
         symbol: 币种符号
         target_position: 目标仓位信息
         target_is_starred: 目标交易员是否被标记
+        target_score: 目标交易员评分
+        target_rating: 目标交易员评级
         status: 初始状态
     
     Returns:
@@ -124,5 +134,7 @@ def build_tracking_data_from_dataclass(
         config=config,
         target_position=target_position,
         target_is_starred=target_is_starred,
+        target_score=target_score,
+        target_rating=target_rating,
         status=status
     )

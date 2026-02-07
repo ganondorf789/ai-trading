@@ -461,6 +461,8 @@ def create_position_tracking_for_copy(
         config=effective_config,
         target_position=target_position,
         target_is_starred=trader.get('is_starred', False),
+        target_score=trader.get('overall_score'),
+        target_rating=trader.get('rating'),
         status='pending'
     )
     

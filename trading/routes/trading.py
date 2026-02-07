@@ -236,8 +236,8 @@ def get_positions():
                 'tracking_id': tracking.get('id') if tracking else None,
                 'target_address': tracking.get('target_address') if tracking else None,
                 'target_name': tracking.get('target_name') if tracking else None,
-                'trader_score': tracking.get('trader_score') if tracking else None,
-                'trader_rating': tracking.get('trader_rating') if tracking else None,
+                'target_score': tracking.get('target_score') if tracking else None,
+                'target_rating': tracking.get('target_rating') if tracking else None,
                 'is_starred': tracking.get('target_is_starred', False) if tracking else False,
                 'has_tracking': tracking is not None
             }

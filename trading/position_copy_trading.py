@@ -92,6 +92,10 @@ class TrackingState:
     
     # 交易员标记
     target_is_starred: bool = False
+    
+    # 交易员评分信息
+    target_score: Optional[float] = None
+    target_rating: Optional[str] = None
 
 
 @dataclass
@@ -286,6 +290,8 @@ class PositionCopyTradingBot:
                 'target_initial_entry_price': state.target_initial_entry_price,
                 'target_initial_leverage': target_pos.get('leverage'),
                 'target_is_starred': state.target_is_starred,
+                'target_score': state.target_score,
+                'target_rating': state.target_rating,
                 'status': 'pending'
             })
             
@@ -980,7 +986,9 @@ class PositionCopyTradingBot:
             my_side=data.get('my_side'),
             my_entry_price=data.get('my_entry_price'),
             status=data.get('status', 'pending'),
-            target_is_starred=data.get('target_is_starred', False)
+            target_is_starred=data.get('target_is_starred', False),
+            target_score=data.get('target_score'),
+            target_rating=data.get('target_rating')
         )
 
     def reload_configs(self):
@@ -1800,12 +1808,14 @@ class PositionCopyTradingBot:
                     'max_leverage': state.max_leverage,
                     'default_leverage': state.default_leverage,
                     'slippage': state.slippage,
-                'target_initial_size': state.target_initial_size,
-                'target_initial_side': state.target_initial_side,
-                'target_initial_entry_price': state.target_initial_entry_price,
-                'target_initial_leverage': target_pos.get('leverage'),
-                'target_is_starred': state.target_is_starred,
-                'status': 'pending'
+                    'target_initial_size': state.target_initial_size,
+                    'target_initial_side': state.target_initial_side,
+                    'target_initial_entry_price': state.target_initial_entry_price,
+                    'target_initial_leverage': target_pos.get('leverage'),
+                    'target_is_starred': state.target_is_starred,
+                    'target_score': state.target_score,
+                    'target_rating': state.target_rating,
+                    'status': 'pending'
                 })
                 
                 # 计算跟单仓位

@@ -337,6 +337,10 @@ class DatabaseMigrations:
                     -- 交易员标记
                     target_is_starred BOOLEAN DEFAULT FALSE,  -- 目标交易员是否被标记
                     
+                    -- 交易员评分信息
+                    target_score REAL,                        -- 目标交易员评分
+                    target_rating TEXT,                       -- 目标交易员评级
+                    
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     started_at TIMESTAMP,
@@ -937,6 +941,14 @@ class DatabaseMigrations:
         )
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
+        )
+
+        # 添加 target_score 和 target_rating 字段到 copy_position_tracking 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'target_score', 'REAL'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'target_rating', 'TEXT'
         )
 
         # 添加 user_id 字段到 notifications 表（通知与用户关联）
