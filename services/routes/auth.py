@@ -749,10 +749,23 @@ def change_password():
                 'error': '原密码错误'
             }), 401
         
+        # 获取用户信息，生成新的 JWT 令牌
+        user = db.get_user_by_id(user_id)
+        access_token, refresh_token = generate_tokens(
+            user_id=user_id,
+            account=user['account'],
+            role=user.get('role', 'user'),
+            user_expires_at=user.get('expires_at')
+        )
+        
         logger.info(f"用户密码修改成功: user_id={user_id}")
         
         return jsonify({
             'success': True,
+            'data': {
+                'access_token': access_token,
+                'refresh_token': refresh_token
+            },
             'message': '密码修改成功'
         })
         
