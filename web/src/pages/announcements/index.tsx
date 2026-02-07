@@ -7,7 +7,6 @@ import {
   TableRow,
   TableCell,
   Button,
-  Chip,
   Spinner,
   Input,
   Modal,
@@ -17,8 +16,14 @@ import {
   ModalFooter,
   Textarea,
   addToast,
+  Tabs,
+  Tab,
+  Card,
+  CardBody,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
+import ReactMarkdown from "react-markdown";
+import "github-markdown-css/github-markdown-light.css";
 
 import DefaultLayout from "@/layouts/default";
 import { announcementApi, Announcement } from "@/services/api";
@@ -56,6 +61,13 @@ export default function AnnouncementsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingAnnouncement, setDeletingAnnouncement] = useState<Announcement | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // 预览弹窗
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewingAnnouncement, setPreviewingAnnouncement] = useState<Announcement | null>(null);
+
+  // 编辑器预览选项卡
+  const [editorTab, setEditorTab] = useState<string>("edit");
 
   // 加载公告列表
   const fetchAnnouncements = useCallback(async () => {
@@ -168,6 +180,12 @@ export default function AnnouncementsPage() {
   const handleDeleteClick = (announcement: Announcement) => {
     setDeletingAnnouncement(announcement);
     setDeleteModalOpen(true);
+  };
+
+  // 打开预览
+  const handlePreview = (announcement: Announcement) => {
+    setPreviewingAnnouncement(announcement);
+    setPreviewModalOpen(true);
   };
 
   // 确认删除
@@ -293,7 +311,17 @@ export default function AnnouncementsPage() {
                       size="sm"
                       variant="flat"
                       isIconOnly
+                      onPress={() => handlePreview(announcement)}
+                      title="预览"
+                    >
+                      <Icon icon="lucide:eye" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      isIconOnly
                       onPress={() => handleEdit(announcement)}
+                      title="编辑"
                     >
                       <Icon icon="lucide:edit" />
                     </Button>
@@ -303,6 +331,7 @@ export default function AnnouncementsPage() {
                       color="danger"
                       isIconOnly
                       onPress={() => handleDeleteClick(announcement)}
+                      title="删除"
                     >
                       <Icon icon="lucide:trash-2" />
                     </Button>
@@ -316,8 +345,11 @@ export default function AnnouncementsPage() {
         {/* 创建/编辑弹窗 */}
         <Modal
           isOpen={modalOpen}
-          onClose={() => setModalOpen(false)}
-          size="2xl"
+          onClose={() => {
+            setModalOpen(false);
+            setEditorTab("edit");
+          }}
+          size="3xl"
           scrollBehavior="inside"
         >
           <ModalContent>
@@ -334,14 +366,61 @@ export default function AnnouncementsPage() {
                   isRequired
                 />
 
-                <Textarea
-                  label="公告内容"
-                  placeholder="请输入公告内容（支持 Markdown 格式）"
-                  value={formData.content}
-                  onValueChange={(value) => setFormData({ ...formData, content: value })}
-                  minRows={8}
-                  isRequired
-                />
+                <Tabs
+                  selectedKey={editorTab}
+                  onSelectionChange={(key) => setEditorTab(key as string)}
+                  aria-label="编辑器选项"
+                >
+                  <Tab
+                    key="edit"
+                    title={
+                      <div className="flex items-center gap-2">
+                        <Icon icon="lucide:edit-3" />
+                        <span>编辑</span>
+                      </div>
+                    }
+                  >
+                    <div className="pt-2">
+                      <Textarea
+                        placeholder="请输入公告内容（支持 Markdown 格式）"
+                        value={formData.content}
+                        onValueChange={(value) => setFormData({ ...formData, content: value })}
+                        minRows={12}
+                        classNames={{
+                          input: "font-mono text-sm",
+                        }}
+                      />
+                      <p className="text-xs text-default-400 mt-2">
+                        支持 Markdown 格式，可使用标题、列表、代码块、链接等
+                      </p>
+                    </div>
+                  </Tab>
+                  <Tab
+                    key="preview"
+                    title={
+                      <div className="flex items-center gap-2">
+                        <Icon icon="lucide:eye" />
+                        <span>预览</span>
+                      </div>
+                    }
+                  >
+                    <div className="pt-2">
+                      <Card className="min-h-[200px]">
+                        <CardBody>
+                          {formData.content ? (
+                            <div className="markdown-body prose prose-sm dark:prose-invert max-w-none">
+                              <ReactMarkdown>{formData.content}</ReactMarkdown>
+                            </div>
+                          ) : (
+                            <p className="text-default-400 text-center py-8">
+                              暂无内容，请在编辑标签页输入内容
+                            </p>
+                          )}
+                        </CardBody>
+                      </Card>
+                    </div>
+                  </Tab>
+                </Tabs>
 
                 {!editingAnnouncement && (
                   <div className="flex items-center gap-2 p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
@@ -354,7 +433,10 @@ export default function AnnouncementsPage() {
               </div>
             </ModalBody>
             <ModalFooter>
-              <Button variant="flat" onPress={() => setModalOpen(false)}>
+              <Button variant="flat" onPress={() => {
+                setModalOpen(false);
+                setEditorTab("edit");
+              }}>
                 取消
               </Button>
               <Button color="primary" onPress={handleSave} isLoading={saving}>
@@ -379,6 +461,57 @@ export default function AnnouncementsPage() {
               </Button>
               <Button color="danger" onPress={handleDelete} isLoading={deleting}>
                 删除
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* 预览弹窗 */}
+        <Modal
+          isOpen={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          size="3xl"
+          scrollBehavior="inside"
+        >
+          <ModalContent>
+            <ModalHeader>
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:bell" className="text-primary" />
+                {previewingAnnouncement?.title}
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              {previewingAnnouncement && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-default-500">
+                    <Icon icon="lucide:clock" />
+                    <span>发布时间: {formatTime(previewingAnnouncement.created_at)}</span>
+                  </div>
+                  <Card>
+                    <CardBody>
+                      <div className="markdown-body prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{previewingAnnouncement.content}</ReactMarkdown>
+                      </div>
+                    </CardBody>
+                  </Card>
+                </div>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant="flat"
+                onPress={() => {
+                  setPreviewModalOpen(false);
+                  if (previewingAnnouncement) {
+                    handleEdit(previewingAnnouncement);
+                  }
+                }}
+                startContent={<Icon icon="lucide:edit" />}
+              >
+                编辑
+              </Button>
+              <Button color="primary" onPress={() => setPreviewModalOpen(false)}>
+                关闭
               </Button>
             </ModalFooter>
           </ModalContent>
