@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from database import TraderDatabase
 from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
+from ulid import ULID
 from screener.utils import now_shanghai
 from core.tracking_utils import build_tracking_data
 
@@ -504,20 +505,20 @@ def create_position_tracking_for_copy(
         )
         
         try:
+            # 预生成 tracking ULID，传入 save 方法，省去保存后再查询
+            tracking_ulid = str(ULID())
+            tracking_data['ulid'] = tracking_ulid
+            
             tracking_id = db.save_position_tracking(tracking_data)
             
             if tracking_id:
-                # 查询记录的 ULID
-                tracking_record = db.get_position_tracking(tracking_id)
-                tracking_ulid = tracking_record.get('ulid', '') if tracking_record else ''
-                
                 logger.success(
                     f"    ✓ 创建立即跟单记录: {coin} {side} "
                     f"(tracking_id={tracking_id}, ulid={tracking_ulid}, user={user_ulid[:8]}...)"
                 )
                 
                 # 发送 Redis 通知触发开仓（JSON 格式，包含 user_ulid）
-                if redis_client and tracking_ulid:
+                if redis_client:
                     try:
                         open_msg = json.dumps({
                             'tracking_id': tracking_ulid,

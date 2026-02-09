@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
-from .middleware import login_required, get_current_user_id
+from .middleware import login_required, get_current_user_id, get_current_user_ulid
 from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
 
-def _notify_open_position(tracking_id: int, user_id: int = None) -> bool:
+def _notify_open_position(tracking_id: int, user_ulid: str = '') -> bool:
     """
     发送开仓通知到 Redis，机器人收到后立即开仓
     
@@ -23,11 +23,15 @@ def _notify_open_position(tracking_id: int, user_id: int = None) -> bool:
     
     Args:
         tracking_id: 跟单记录整数 ID
-        user_id: 用户整数 ID（用于查询用户 ULID）
+        user_ulid: 用户 ULID（从 JWT 中获取，无需查询数据库）
     """
     redis_client = get_redis_client()
     
     if redis_client is None:
+        return False
+    
+    if not user_ulid:
+        logger.warning(f"发送开仓通知失败: 未提供 user_ulid (tracking_id={tracking_id})")
         return False
     
     try:
@@ -38,16 +42,6 @@ def _notify_open_position(tracking_id: int, user_id: int = None) -> bool:
             return False
         
         tracking_ulid = tracking['ulid']
-        
-        # 查询用户的 ULID
-        user_ulid = ''
-        if user_id:
-            user = db.get_user_by_id(user_id)
-            user_ulid = user.get('ulid', '') if user else ''
-        
-        if not user_ulid:
-            logger.warning(f"发送开仓通知失败: 无法获取用户 ULID (user_id={user_id})")
-            return False
         
         # 发送 JSON 格式的开仓通知
         REDIS_OPEN_CHANNEL = "position_tracking_open"
@@ -983,7 +977,7 @@ def quick_copy_position():
         logger.info(f"[快速跟单] 添加成功: #{tracking_id} {symbol} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
 
         # 发送 Redis 开仓通知，让机器人立即开仓
-        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
+        notified = _notify_open_position(tracking_id, user_ulid=get_current_user_ulid())
 
         return jsonify({
             'success': True,
@@ -1053,7 +1047,7 @@ def notify_tracking_open(tracking_id: int):
             }), 400
 
         # 发送开仓通知
-        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
+        notified = _notify_open_position(tracking_id, user_ulid=get_current_user_ulid())
 
         if notified:
             return jsonify({
