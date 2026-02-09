@@ -70,4 +70,7 @@ cryptography>=42.0.0
 # JWT Authentication
 PyJWT>=2.8.0
 
+# ULID (Universally Unique Lexicographically Sortable Identifier)
+python-ulid>=2.0.0
+
 

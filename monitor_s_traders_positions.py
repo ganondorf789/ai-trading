@@ -470,13 +470,17 @@ def create_position_tracking_for_copy(
         tracking_id = db.save_position_tracking(tracking_data)
         
         if tracking_id:
-            logger.success(f"    ✓ 创建立即跟单记录: {coin} {side} (tracking_id={tracking_id})")
+            # 查询记录的 ULID
+            tracking_record = db.get_position_tracking(tracking_id)
+            tracking_ulid = tracking_record.get('ulid', '') if tracking_record else ''
             
-            # 发送 Redis 通知触发开仓
-            if redis_client:
+            logger.success(f"    ✓ 创建立即跟单记录: {coin} {side} (tracking_id={tracking_id}, ulid={tracking_ulid})")
+            
+            # 发送 Redis 通知触发开仓（使用 ULID）
+            if redis_client and tracking_ulid:
                 try:
-                    redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
-                    logger.info(f"    ✓ 已发送开仓通知 (channel={REDIS_OPEN_CHANNEL})")
+                    redis_client.publish(REDIS_OPEN_CHANNEL, tracking_ulid)
+                    logger.info(f"    ✓ 已发送开仓通知 (channel={REDIS_OPEN_CHANNEL}, ulid={tracking_ulid})")
                 except Exception as e:
                     logger.warning(f"    ⚠ Redis 开仓通知发送失败: {e}")
             

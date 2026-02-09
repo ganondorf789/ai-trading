@@ -5,6 +5,7 @@
 from typing import List, Dict, Optional, Tuple
 import pendulum
 import json
+from ulid import ULID
 from psycopg2 import extras
 from loguru import logger
 
@@ -110,7 +111,7 @@ class PositionTrackingOps:
         获取单个仓位跟单详情
 
         Args:
-            tracking_id: 跟单记录ID
+            tracking_id: 跟单记录ID（整数）
 
         Returns:
             跟单详情
@@ -121,6 +122,25 @@ class PositionTrackingOps:
                 SELECT * FROM copy_position_tracking
                 WHERE id = %s
             """, (tracking_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_position_tracking_by_ulid(self, ulid: str) -> Optional[Dict]:
+        """
+        根据 ULID 获取单个仓位跟单详情
+
+        Args:
+            ulid: 跟单记录 ULID
+
+        Returns:
+            跟单详情
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT * FROM copy_position_tracking
+                WHERE ulid = %s
+            """, (ulid,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -171,7 +191,7 @@ class PositionTrackingOps:
             data: 跟单数据
 
         Returns:
-            记录ID
+            记录ID（整数）
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -246,9 +266,13 @@ class PositionTrackingOps:
                 ))
                 return data['id']
             else:
+                # 生成 ULID
+                tracking_ulid = str(ULID())
+                
                 # 创建新记录
                 cursor.execute("""
                     INSERT INTO copy_position_tracking (
+                        ulid,
                         target_address, target_name, symbol,
                         is_enabled, copy_ratio, max_position_size_usd, min_position_size_usd,
                         copy_leverage, max_leverage, default_leverage, slippage,
@@ -259,6 +283,7 @@ class PositionTrackingOps:
                         target_is_starred, target_score, target_rating,
                         created_at, started_at, closed_at, updated_at
                     ) VALUES (
+                        %s,
                         %s, %s, %s,
                         %s, %s, %s, %s,
                         %s, %s, %s, %s,
@@ -271,6 +296,7 @@ class PositionTrackingOps:
                     )
                     RETURNING id
                 """, (
+                    tracking_ulid,
                     data.get('target_address'),
                     data.get('target_name', ''),
                     data.get('symbol'),
@@ -306,6 +332,82 @@ class PositionTrackingOps:
                 ))
                 result = cursor.fetchone()
                 return result[0] if result else None
+
+    def update_tracking_status_by_ulid(
+        self,
+        ulid: str,
+        status: str,
+        close_reason: Optional[str] = None,
+        closed_pnl: Optional[float] = None
+    ) -> bool:
+        """
+        根据 ULID 更新跟单状态
+
+        Args:
+            ulid: 跟单记录 ULID
+            status: 新状态 (pending/active/closed/stopped)
+            close_reason: 关闭原因
+            closed_pnl: 平仓盈亏
+
+        Returns:
+            是否更新成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
+
+            if status == 'active':
+                cursor.execute("""
+                    UPDATE copy_position_tracking
+                    SET status = %s, started_at = %s, updated_at = %s
+                    WHERE ulid = %s
+                """, (status, now, now, ulid))
+            elif status in ('closed', 'stopped'):
+                cursor.execute("""
+                    UPDATE copy_position_tracking
+                    SET status = %s, close_reason = %s, closed_pnl = %s,
+                        closed_at = %s, updated_at = %s
+                    WHERE ulid = %s
+                """, (status, close_reason, closed_pnl, now, now, ulid))
+            else:
+                cursor.execute("""
+                    UPDATE copy_position_tracking
+                    SET status = %s, updated_at = %s
+                    WHERE ulid = %s
+                """, (status, now, ulid))
+
+            return cursor.rowcount > 0
+
+    def update_tracking_position_by_ulid(
+        self,
+        ulid: str,
+        my_size: float,
+        my_side: str,
+        my_entry_price: Optional[float] = None
+    ) -> bool:
+        """
+        根据 ULID 更新跟单仓位信息
+
+        Args:
+            ulid: 跟单记录 ULID
+            my_size: 我方仓位大小
+            my_side: 我方仓位方向
+            my_entry_price: 我方入场价
+
+        Returns:
+            是否更新成功
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
+
+            cursor.execute("""
+                UPDATE copy_position_tracking
+                SET my_size = %s, my_side = %s, my_entry_price = %s, updated_at = %s
+                WHERE ulid = %s
+            """, (my_size, my_side, my_entry_price, now, ulid))
+
+            return cursor.rowcount > 0
 
     def update_tracking_status(
         self,

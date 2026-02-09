@@ -44,7 +44,7 @@ class AuthServiceServicer(pb2_grpc.AuthServiceServicer):
             if user:
                 return pb2.VerifyApiKeyResponse(
                     valid=True,
-                    user_id=user['id'],
+                    user_id=user.get('ulid', ''),  # 返回 ULID 作为外部标识
                     account=user['account'],
                     role=user.get('role', 'user')
                 )

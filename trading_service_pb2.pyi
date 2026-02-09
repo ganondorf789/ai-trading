@@ -9,8 +9,8 @@ DESCRIPTOR: _descriptor.FileDescriptor
 class GetPositionTrackingRequest(_message.Message):
     __slots__ = ("tracking_id",)
     TRACKING_ID_FIELD_NUMBER: _ClassVar[int]
-    tracking_id: int
-    def __init__(self, tracking_id: _Optional[int] = ...) -> None: ...
+    tracking_id: str
+    def __init__(self, tracking_id: _Optional[str] = ...) -> None: ...
 
 class GetActivePositionTrackingsRequest(_message.Message):
     __slots__ = ()
@@ -53,7 +53,7 @@ class SavePositionTrackingRequest(_message.Message):
     TARGET_IS_STARRED_FIELD_NUMBER: _ClassVar[int]
     TARGET_SCORE_FIELD_NUMBER: _ClassVar[int]
     TARGET_RATING_FIELD_NUMBER: _ClassVar[int]
-    id: int
+    id: str
     target_address: str
     symbol: str
     target_side: str
@@ -65,8 +65,8 @@ class SavePositionTrackingRequest(_message.Message):
     my_size: float
     my_side: str
     my_entry_price: float
-    user_id: int
-    address_id: int
+    user_id: str
+    address_id: str
     target_entry_price: float
     target_size: float
     nickname: str
@@ -88,7 +88,7 @@ class SavePositionTrackingRequest(_message.Message):
     target_is_starred: bool
     target_score: float
     target_rating: str
-    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ..., target_score: _Optional[float] = ..., target_rating: _Optional[str] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[str] = ..., address_id: _Optional[str] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ..., target_score: _Optional[float] = ..., target_rating: _Optional[str] = ...) -> None: ...
 
 class PositionTrackingResponse(_message.Message):
     __slots__ = ("success", "tracking", "error")
@@ -151,7 +151,7 @@ class PositionTracking(_message.Message):
     TARGET_IS_STARRED_FIELD_NUMBER: _ClassVar[int]
     TARGET_SCORE_FIELD_NUMBER: _ClassVar[int]
     TARGET_RATING_FIELD_NUMBER: _ClassVar[int]
-    id: int
+    id: str
     target_address: str
     symbol: str
     target_side: str
@@ -163,8 +163,8 @@ class PositionTracking(_message.Message):
     my_size: float
     my_side: str
     my_entry_price: float
-    user_id: int
-    address_id: int
+    user_id: str
+    address_id: str
     target_entry_price: float
     target_size: float
     nickname: str
@@ -190,7 +190,7 @@ class PositionTracking(_message.Message):
     target_is_starred: bool
     target_score: float
     target_rating: str
-    def __init__(self, id: _Optional[int] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[int] = ..., address_id: _Optional[int] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ..., target_score: _Optional[float] = ..., target_rating: _Optional[str] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., target_address: _Optional[str] = ..., symbol: _Optional[str] = ..., target_side: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., status: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ..., user_id: _Optional[str] = ..., address_id: _Optional[str] = ..., target_entry_price: _Optional[float] = ..., target_size: _Optional[float] = ..., nickname: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ..., auto_replenish: bool = ..., replenish_ratio: _Optional[float] = ..., replenish_min_value_usd: _Optional[float] = ..., replenish_max_value_usd: _Optional[float] = ..., target_name: _Optional[str] = ..., min_position_size: _Optional[float] = ..., copy_leverage: bool = ..., max_leverage: _Optional[int] = ..., default_leverage: _Optional[int] = ..., target_initial_size: _Optional[float] = ..., target_initial_side: _Optional[str] = ..., target_initial_entry_price: _Optional[float] = ..., target_initial_leverage: _Optional[int] = ..., started_at: _Optional[str] = ..., closed_at: _Optional[str] = ..., target_is_starred: bool = ..., target_score: _Optional[float] = ..., target_rating: _Optional[str] = ...) -> None: ...
 
 class SavePositionTrackingResponse(_message.Message):
     __slots__ = ("success", "tracking_id", "error")
@@ -198,9 +198,9 @@ class SavePositionTrackingResponse(_message.Message):
     TRACKING_ID_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     success: bool
-    tracking_id: int
+    tracking_id: str
     error: str
-    def __init__(self, success: bool = ..., tracking_id: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...
+    def __init__(self, success: bool = ..., tracking_id: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
 
 class UpdateTrackingStatusRequest(_message.Message):
     __slots__ = ("tracking_id", "status", "close_reason", "closed_pnl")
@@ -208,11 +208,11 @@ class UpdateTrackingStatusRequest(_message.Message):
     STATUS_FIELD_NUMBER: _ClassVar[int]
     CLOSE_REASON_FIELD_NUMBER: _ClassVar[int]
     CLOSED_PNL_FIELD_NUMBER: _ClassVar[int]
-    tracking_id: int
+    tracking_id: str
     status: str
     close_reason: str
     closed_pnl: float
-    def __init__(self, tracking_id: _Optional[int] = ..., status: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ...) -> None: ...
+    def __init__(self, tracking_id: _Optional[str] = ..., status: _Optional[str] = ..., close_reason: _Optional[str] = ..., closed_pnl: _Optional[float] = ...) -> None: ...
 
 class UpdateTrackingPositionRequest(_message.Message):
     __slots__ = ("tracking_id", "my_size", "my_side", "my_entry_price")
@@ -220,11 +220,11 @@ class UpdateTrackingPositionRequest(_message.Message):
     MY_SIZE_FIELD_NUMBER: _ClassVar[int]
     MY_SIDE_FIELD_NUMBER: _ClassVar[int]
     MY_ENTRY_PRICE_FIELD_NUMBER: _ClassVar[int]
-    tracking_id: int
+    tracking_id: str
     my_size: float
     my_side: str
     my_entry_price: float
-    def __init__(self, tracking_id: _Optional[int] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ...) -> None: ...
+    def __init__(self, tracking_id: _Optional[str] = ..., my_size: _Optional[float] = ..., my_side: _Optional[str] = ..., my_entry_price: _Optional[float] = ...) -> None: ...
 
 class UpdateTrackingResponse(_message.Message):
     __slots__ = ("success", "error")
@@ -237,8 +237,8 @@ class UpdateTrackingResponse(_message.Message):
 class GetEnabledCopyAddressesRequest(_message.Message):
     __slots__ = ("user_id",)
     USER_ID_FIELD_NUMBER: _ClassVar[int]
-    user_id: int
-    def __init__(self, user_id: _Optional[int] = ...) -> None: ...
+    user_id: str
+    def __init__(self, user_id: _Optional[str] = ...) -> None: ...
 
 class CopyAddressListResponse(_message.Message):
     __slots__ = ("success", "addresses", "error")
@@ -266,8 +266,8 @@ class CopyAddress(_message.Message):
     CREATED_AT_FIELD_NUMBER: _ClassVar[int]
     UPDATED_AT_FIELD_NUMBER: _ClassVar[int]
     COPY_ONCE_FIELD_NUMBER: _ClassVar[int]
-    id: int
-    user_id: int
+    id: str
+    user_id: str
     address: str
     nickname: str
     copy_ratio: float
@@ -280,17 +280,17 @@ class CopyAddress(_message.Message):
     created_at: str
     updated_at: str
     copy_once: bool
-    def __init__(self, id: _Optional[int] = ..., user_id: _Optional[int] = ..., address: _Optional[str] = ..., nickname: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., auto_copy: bool = ..., whitelist_symbols: _Optional[str] = ..., blacklist_symbols: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., copy_once: bool = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., user_id: _Optional[str] = ..., address: _Optional[str] = ..., nickname: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., auto_copy: bool = ..., whitelist_symbols: _Optional[str] = ..., blacklist_symbols: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., copy_once: bool = ...) -> None: ...
 
 class ToggleCopyTradingAddressRequest(_message.Message):
     __slots__ = ("user_id", "address", "is_enabled")
     USER_ID_FIELD_NUMBER: _ClassVar[int]
     ADDRESS_FIELD_NUMBER: _ClassVar[int]
     IS_ENABLED_FIELD_NUMBER: _ClassVar[int]
-    user_id: int
+    user_id: str
     address: str
     is_enabled: bool
-    def __init__(self, user_id: _Optional[int] = ..., address: _Optional[str] = ..., is_enabled: bool = ...) -> None: ...
+    def __init__(self, user_id: _Optional[str] = ..., address: _Optional[str] = ..., is_enabled: bool = ...) -> None: ...
 
 class CheckPositionTrackingExistsRequest(_message.Message):
     __slots__ = ("target_address", "symbol")
@@ -388,8 +388,8 @@ class VerifyApiKeyResponse(_message.Message):
     ROLE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     valid: bool
-    user_id: int
+    user_id: str
     account: str
     role: str
     error: str
-    def __init__(self, valid: bool = ..., user_id: _Optional[int] = ..., account: _Optional[str] = ..., role: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+    def __init__(self, valid: bool = ..., user_id: _Optional[str] = ..., account: _Optional[str] = ..., role: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...

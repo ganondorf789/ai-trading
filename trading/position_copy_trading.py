@@ -48,7 +48,7 @@ REDIS_MY_BALANCE_KEY = "copy_trading:my_balance"
 @dataclass
 class TrackingState:
     """单个仓位跟单的状态"""
-    tracking_id: int
+    tracking_id: str  # ULID 字符串
     target_address: str
     target_name: str
     symbol: str
@@ -161,8 +161,8 @@ class PositionCopyTradingBot:
         # gRPC 客户端
         self._grpc_client = grpc_client
         
-        # 跟单状态 (tracking_id -> TrackingState)
-        self.trackings: Dict[int, TrackingState] = {}
+        # 跟单状态 (tracking_id(ULID) -> TrackingState)
+        self.trackings: Dict[str, TrackingState] = {}
         
         # 自己的持仓
         self.my_positions: Dict[str, Position] = {}
@@ -193,7 +193,7 @@ class PositionCopyTradingBot:
         self._notification_cooldown: float = 10.0  # 10秒内相同通知不重复发送
         
         # 自动跟单相关
-        self._user_id: int = settings.bot.user_id  # 从配置读取用户ID
+        self._user_id: str = settings.bot.user_id  # 用户 ULID（从配置读取）
         self.address_configs: Dict[str, AddressConfig] = {}  # 地址配置缓存 (address -> AddressConfig)
         self._address_positions: Dict[str, Dict[str, Dict]] = {}  # 地址仓位缓存 (address -> {symbol -> position})
         
@@ -233,13 +233,16 @@ class PositionCopyTradingBot:
     async def _on_redis_open_message(self, channel: str, data: str):
         """处理开仓通知消息"""
         try:
-            tracking_id = int(data)
+            tracking_id = data.strip()
+            if not tracking_id:
+                logger.warning(f"无效的开仓通知格式: {data}")
+                return
             logger.info(f"收到开仓通知: tracking_id={tracking_id}")
             await self._handle_open_notification(tracking_id)
-        except ValueError:
+        except Exception:
             logger.warning(f"无效的开仓通知格式: {data}")
 
-    async def _handle_open_notification(self, tracking_id: int):
+    async def _handle_open_notification(self, tracking_id: str):
         """处理开仓通知，立即执行开仓"""
         # 防止并发重复处理
         if tracking_id in self._processing_tracking_ids:
@@ -355,7 +358,7 @@ class PositionCopyTradingBot:
         """处理补仓通知消息"""
         try:
             msg_data = json.loads(data)
-            tracking_id = int(msg_data.get('tracking_id', 0))
+            tracking_id = str(msg_data.get('tracking_id', ''))
             ratio = msg_data.get('ratio')
             size = msg_data.get('size')
             direction = msg_data.get('direction')
@@ -367,7 +370,7 @@ class PositionCopyTradingBot:
 
     async def _handle_adjust_notification(
         self, 
-        tracking_id: int, 
+        tracking_id: str, 
         ratio: float = None, 
         size: float = None,
         direction: str = None
@@ -548,7 +551,7 @@ class PositionCopyTradingBot:
         try:
             msg_data = json.loads(data)
             symbol = msg_data.get('symbol')
-            tracking_id = msg_data.get('tracking_id')
+            tracking_id = msg_data.get('tracking_id')  # ULID 字符串
             
             logger.info(f"收到平仓通知: symbol={symbol}, tracking_id={tracking_id}")
             await self._handle_close_notification(symbol=symbol, tracking_id=tracking_id)
@@ -616,7 +619,7 @@ class PositionCopyTradingBot:
     async def _handle_close_notification(
         self, 
         symbol: str = None, 
-        tracking_id: int = None
+        tracking_id: str = None
     ):
         """
         处理平仓通知，立即执行平仓
@@ -970,9 +973,9 @@ class PositionCopyTradingBot:
             return []
 
     def _dict_to_state(self, data: Dict) -> TrackingState:
-        """将数据库记录转换为 TrackingState"""
+        """将数据库记录（通过 gRPC 返回的字典）转换为 TrackingState"""
         return TrackingState(
-            tracking_id=data['id'],
+            tracking_id=data['id'],  # 现在是 ULID 字符串
             target_address=data['target_address'],
             target_name=data.get('target_name', ''),
             symbol=data['symbol'],

@@ -1,6 +1,7 @@
 """
 数据库迁移和表结构初始化 (PostgreSQL)
 """
+from ulid import ULID
 from loguru import logger
 
 
@@ -1003,6 +1004,46 @@ class DatabaseMigrations:
             CREATE INDEX IF NOT EXISTS idx_notification_read_marks_user
             ON notification_read_marks(user_id)
         """)
+
+        # 添加 ULID 字段到 users、copy_position_tracking、copy_trading_addresses 表
+        # ULID 用于对外暴露的标识符，避免暴露自增 ID
+        self._migrate_add_ulid_columns(cursor)
+
+    def _migrate_add_ulid_columns(self, cursor):
+        """
+        为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段
+        
+        ULID 用于对外暴露的标识符（gRPC 通信），避免向客户端暴露自增整数 ID
+        """
+        tables = ['users', 'copy_position_tracking', 'copy_trading_addresses']
+        
+        for table in tables:
+            if not self._column_exists(cursor, table, 'ulid'):
+                # 1. 添加 ulid 列（先不加 NOT NULL，需要先回填现有数据）
+                cursor.execute(f'ALTER TABLE {table} ADD COLUMN ulid TEXT')
+                logger.info(f"数据库迁移: 添加列 {table}.ulid")
+                
+                # 2. 回填现有记录的 ULID
+                cursor.execute(f'SELECT id FROM {table} WHERE ulid IS NULL')
+                rows = cursor.fetchall()
+                for row in rows:
+                    new_ulid = str(ULID())
+                    cursor.execute(
+                        f'UPDATE {table} SET ulid = %s WHERE id = %s',
+                        (new_ulid, row[0])
+                    )
+                if rows:
+                    logger.info(f"数据库迁移: 回填 {table} 表 {len(rows)} 条记录的 ULID")
+                
+                # 3. 设置 NOT NULL 约束
+                cursor.execute(f'ALTER TABLE {table} ALTER COLUMN ulid SET NOT NULL')
+                
+                # 4. 创建唯一索引
+                cursor.execute(f"""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_ulid
+                    ON {table}(ulid)
+                """)
+                logger.info(f"数据库迁移: 创建唯一索引 idx_{table}_ulid")
 
     def _migrate_remove_groups(self, cursor):
         """

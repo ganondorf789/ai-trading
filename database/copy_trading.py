@@ -4,6 +4,7 @@
 from typing import List, Dict, Optional
 import pendulum
 import json
+from ulid import ULID
 from psycopg2 import extras
 from loguru import logger
 
@@ -183,9 +184,12 @@ class CopyTradingOps:
             if isinstance(blacklist, list):
                 blacklist = json.dumps(blacklist)
 
+            # 生成 ULID（仅用于新记录，ON CONFLICT 更新时不会修改）
+            address_ulid = str(ULID())
+            
             cursor.execute("""
                 INSERT INTO copy_trading_addresses (
-                    user_id, address, name, is_enabled,
+                    ulid, user_id, address, name, is_enabled,
                     copy_ratio, max_position_size_usd, min_position_size_usd,
                     copy_leverage, max_leverage, default_leverage,
                     max_total_positions, max_daily_trades, slippage,
@@ -194,7 +198,7 @@ class CopyTradingOps:
                     copy_once,
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -219,6 +223,7 @@ class CopyTradingOps:
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
+                address_ulid,
                 user_id,
                 data.get('address'),
                 data.get('name', ''),

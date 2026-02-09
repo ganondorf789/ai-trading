@@ -66,7 +66,7 @@ service RedisService {
 // ============================================
 
 message GetPositionTrackingRequest {
-    int32 tracking_id = 1;
+    string tracking_id = 1;  // ULID
 }
 
 message GetActivePositionTrackingsRequest {
@@ -74,7 +74,7 @@ message GetActivePositionTrackingsRequest {
 }
 
 message SavePositionTrackingRequest {
-    optional int32 id = 1;
+    optional string id = 1;  // ULID
     string target_address = 2;
     string symbol = 3;
     string target_side = 4;
@@ -86,8 +86,8 @@ message SavePositionTrackingRequest {
     optional double my_size = 10;
     optional string my_side = 11;
     optional double my_entry_price = 12;
-    optional int32 user_id = 13;
-    optional int32 address_id = 14;
+    optional string user_id = 13;  // ULID
+    optional string address_id = 14;  // ULID
     optional double target_entry_price = 15;
     optional double target_size = 16;
     optional string nickname = 17;
@@ -136,7 +136,7 @@ message PositionTrackingListResponse {
 }
 
 message PositionTracking {
-    int32 id = 1;
+    string id = 1;  // ULID
     string target_address = 2;
     string symbol = 3;
     string target_side = 4;
@@ -148,8 +148,8 @@ message PositionTracking {
     double my_size = 10;
     string my_side = 11;
     double my_entry_price = 12;
-    int32 user_id = 13;
-    int32 address_id = 14;
+    string user_id = 13;  // ULID
+    string address_id = 14;  // ULID
     double target_entry_price = 15;
     double target_size = 16;
     string nickname = 17;
@@ -191,19 +191,19 @@ message PositionTracking {
 
 message SavePositionTrackingResponse {
     bool success = 1;
-    int32 tracking_id = 2;
+    string tracking_id = 2;  // ULID
     string error = 3;
 }
 
 message UpdateTrackingStatusRequest {
-    int32 tracking_id = 1;
+    string tracking_id = 1;  // ULID
     string status = 2;
     optional string close_reason = 3;
     optional double closed_pnl = 4;
 }
 
 message UpdateTrackingPositionRequest {
-    int32 tracking_id = 1;
+    string tracking_id = 1;  // ULID
     double my_size = 2;
     string my_side = 3;
     optional double my_entry_price = 4;
@@ -215,7 +215,7 @@ message UpdateTrackingResponse {
 }
 
 message GetEnabledCopyAddressesRequest {
-    int32 user_id = 1;
+    string user_id = 1;  // ULID
 }
 
 message CopyAddressListResponse {
@@ -225,8 +225,8 @@ message CopyAddressListResponse {
 }
 
 message CopyAddress {
-    int32 id = 1;
-    int32 user_id = 2;
+    string id = 1;  // ULID
+    string user_id = 2;  // ULID
     string address = 3;
     string nickname = 4;
     double copy_ratio = 5;
@@ -242,7 +242,7 @@ message CopyAddress {
 }
 
 message ToggleCopyTradingAddressRequest {
-    int32 user_id = 1;
+    string user_id = 1;  // ULID
     string address = 2;
     bool is_enabled = 3;
 }
@@ -312,7 +312,7 @@ message VerifyApiKeyRequest {
 
 message VerifyApiKeyResponse {
     bool valid = 1;
-    int32 user_id = 2;
+    string user_id = 2;  // ULID
     string account = 3;
     string role = 4;
     string error = 5;

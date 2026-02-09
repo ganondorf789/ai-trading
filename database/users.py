@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import base64
 from datetime import datetime, timedelta
+from ulid import ULID
 from psycopg2 import extras
 from loguru import logger
 from cryptography.fernet import Fernet
@@ -156,21 +157,24 @@ class UsersOps:
                 # 哈希密码
                 password_hash = self._hash_password(password)
                 
+                # 生成 ULID
+                user_ulid = str(ULID())
+                
                 # 插入用户
                 cursor.execute("""
                     INSERT INTO users (
-                        account, password_hash, secret_key_id, role,
+                        ulid, account, password_hash, secret_key_id, role,
                         expires_at, is_active,
                         created_at, updated_at
                     ) VALUES (
-                        %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
                         %s, TRUE,
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
-                    RETURNING id, account, secret_key_id, role, api_wallet, wallet_address,
+                    RETURNING id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
                               allowed_ip, allowed_port,
                               expires_at, is_active, created_at, updated_at
-                """, (account, password_hash, secret_key_id, role, expires_at))
+                """, (user_ulid, account, password_hash, secret_key_id, role, expires_at))
                 
                 user = cursor.fetchone()
                 if user:
@@ -201,7 +205,7 @@ class UsersOps:
                 
                 # 查询用户
                 cursor.execute("""
-                    SELECT id, account, password_hash, secret_key_id, role,
+                    SELECT id, ulid, account, password_hash, secret_key_id, role,
                            api_wallet, wallet_address,
                            allowed_ip, allowed_port,
                            expires_at, is_active,
@@ -355,7 +359,7 @@ class UsersOps:
                     UPDATE users
                     SET {', '.join(updates)}
                     WHERE id = %s
-                    RETURNING id, account, secret_key_id, role, api_wallet, wallet_address,
+                    RETURNING id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
                               allowed_ip, allowed_port,
                               expires_at, is_active, created_at, updated_at, last_login_at
                 """, params)
@@ -424,7 +428,7 @@ class UsersOps:
                 cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
                 
                 cursor.execute("""
-                    SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                    SELECT id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
                            allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
@@ -459,7 +463,7 @@ class UsersOps:
                 cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
                 
                 cursor.execute("""
-                    SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                    SELECT id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
                            allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
@@ -477,6 +481,41 @@ class UsersOps:
                 
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
+            return None
+
+    def get_user_by_ulid(self, ulid: str) -> Optional[Dict]:
+        """
+        根据 ULID 获取用户信息
+
+        Args:
+            ulid: 用户 ULID
+
+        Returns:
+            用户信息（不含密码，api_wallet 已解密）
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                
+                cursor.execute("""
+                    SELECT id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
+                           allowed_ip, allowed_port,
+                           expires_at, is_active, created_at, updated_at, last_login_at
+                    FROM users
+                    WHERE ulid = %s
+                """, (ulid,))
+                
+                user = cursor.fetchone()
+                if user:
+                    result = dict(user)
+                    # 解密 api_wallet 后返回
+                    if result.get('api_wallet'):
+                        result['api_wallet'] = self._decrypt_api_wallet(result['api_wallet'])
+                    return result
+                return None
+                
+        except Exception as e:
+            logger.error(f"根据 ULID 获取用户失败: {e}")
             return None
 
     def check_user_active(self, user_id: int) -> bool:
@@ -663,7 +702,7 @@ class UsersOps:
                 where_clause = " AND ".join(conditions) if conditions else "1=1"
                 
                 cursor.execute(f"""
-                    SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                    SELECT id, ulid, account, secret_key_id, role, api_wallet, wallet_address,
                            allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
@@ -880,7 +919,7 @@ class UsersOps:
                 cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
                 
                 cursor.execute("""
-                    SELECT id, account, role, is_active, expires_at
+                    SELECT id, ulid, account, role, is_active, expires_at
                     FROM users
                     WHERE api_key = %s
                 """, (api_key,))

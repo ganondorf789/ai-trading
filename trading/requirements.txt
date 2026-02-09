@@ -26,3 +26,6 @@ grpcio-tools>=1.60.0
 
 # Async HTTP (used by hyperliquid SDK)
 aiohttp>=3.9.0
+
+# ULID (Universally Unique Lexicographically Sortable Identifier)
+python-ulid>=2.0.0

@@ -129,8 +129,8 @@ class GRPCDatabaseClient:
             'copy_once': address.copy_once,
         }
     
-    def get_position_tracking(self, tracking_id: int) -> Optional[Dict]:
-        """获取单个仓位跟单详情"""
+    def get_position_tracking(self, tracking_id: str) -> Optional[Dict]:
+        """获取单个仓位跟单详情（通过 ULID）"""
         self._ensure_connected()
         try:
             response = self._stub.GetPositionTracking(
@@ -159,8 +159,8 @@ class GRPCDatabaseClient:
             logger.error(f"gRPC 错误 (GetActivePositionTrackings): {e}")
             return []
     
-    def save_position_tracking(self, data: Dict) -> int:
-        """保存仓位跟单记录"""
+    def save_position_tracking(self, data: Dict) -> str:
+        """保存仓位跟单记录，返回 ULID"""
         self._ensure_connected()
         try:
             request = pb2.SavePositionTrackingRequest(
@@ -172,9 +172,9 @@ class GRPCDatabaseClient:
                 status=data.get('status', 'pending'),
             )
             
-            # 可选字段
+            # 可选字段（id 现在是 ULID 字符串）
             if 'id' in data and data['id']:
-                request.id = data['id']
+                request.id = str(data['id'])
             # 支持两种字段名
             max_pos = data.get('max_position_size') or data.get('max_position_size_usd')
             if max_pos:
@@ -188,9 +188,9 @@ class GRPCDatabaseClient:
             if 'my_entry_price' in data and data['my_entry_price']:
                 request.my_entry_price = data['my_entry_price']
             if 'user_id' in data and data['user_id']:
-                request.user_id = data['user_id']
+                request.user_id = str(data['user_id'])
             if 'address_id' in data and data['address_id']:
-                request.address_id = data['address_id']
+                request.address_id = str(data['address_id'])
             if 'target_entry_price' in data and data['target_entry_price']:
                 request.target_entry_price = data['target_entry_price']
             if 'target_size' in data and data['target_size']:
@@ -252,22 +252,22 @@ class GRPCDatabaseClient:
             
             response = self._stub.SavePositionTracking(request, metadata=self._get_metadata())
             if response.success:
-                return response.tracking_id
+                return response.tracking_id  # 返回 ULID 字符串
             else:
                 logger.error(f"SavePositionTracking 失败: {response.error}")
-                return 0
+                return ''
         except grpc.RpcError as e:
             logger.error(f"gRPC 错误 (SavePositionTracking): {e}")
-            return 0
+            return ''
     
     def update_tracking_status(
         self,
-        tracking_id: int,
+        tracking_id: str,
         status: str,
         close_reason: Optional[str] = None,
         closed_pnl: Optional[float] = None
     ) -> bool:
-        """更新跟单状态"""
+        """更新跟单状态（通过 ULID）"""
         self._ensure_connected()
         try:
             request = pb2.UpdateTrackingStatusRequest(
@@ -287,12 +287,12 @@ class GRPCDatabaseClient:
     
     def update_tracking_position(
         self,
-        tracking_id: int,
+        tracking_id: str,
         my_size: float,
         my_side: str,
         my_entry_price: Optional[float] = None
     ) -> bool:
-        """更新跟单仓位信息"""
+        """更新跟单仓位信息（通过 ULID）"""
         self._ensure_connected()
         try:
             request = pb2.UpdateTrackingPositionRequest(
@@ -309,8 +309,8 @@ class GRPCDatabaseClient:
             logger.error(f"gRPC 错误 (UpdateTrackingPosition): {e}")
             return False
     
-    def get_enabled_copy_addresses(self, user_id: int) -> List[Dict]:
-        """获取启用的跟单地址配置"""
+    def get_enabled_copy_addresses(self, user_id: str) -> List[Dict]:
+        """获取启用的跟单地址配置（通过用户 ULID）"""
         self._ensure_connected()
         try:
             response = self._stub.GetEnabledCopyAddresses(
@@ -340,8 +340,8 @@ class GRPCDatabaseClient:
             logger.error(f"gRPC 错误 (CheckPositionTrackingExists): {e}")
             return False
     
-    def toggle_copy_trading_address(self, user_id: int, address: str, is_enabled: bool) -> bool:
-        """启用/禁用跟单地址"""
+    def toggle_copy_trading_address(self, user_id: str, address: str, is_enabled: bool) -> bool:
+        """启用/禁用跟单地址（通过用户 ULID）"""
         self._ensure_connected()
         try:
             response = self._stub.ToggleCopyTradingAddress(

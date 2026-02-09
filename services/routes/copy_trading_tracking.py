@@ -14,17 +14,29 @@ copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
 
 def _notify_open_position(tracking_id: int) -> bool:
-    """发送开仓通知到 Redis，机器人收到后立即开仓"""
+    """
+    发送开仓通知到 Redis，机器人收到后立即开仓
+    
+    注意：传入的是整数 ID，需要查询 ULID 后发送给机器人
+    """
     redis_client = get_redis_client()
     
     if redis_client is None:
         return False
     
     try:
+        # 查询记录的 ULID
+        tracking = db.get_position_tracking(tracking_id)
+        if not tracking or not tracking.get('ulid'):
+            logger.warning(f"发送开仓通知失败: 找不到 tracking_id={tracking_id} 的 ULID")
+            return False
+        
+        tracking_ulid = tracking['ulid']
+        
         # 与 position_copy_trading_example.py 使用相同的频道
         REDIS_OPEN_CHANNEL = "copy_trading:position:open"
-        redis_client.publish(REDIS_OPEN_CHANNEL, str(tracking_id))
-        logger.info(f"已发送开仓通知: tracking_id={tracking_id}")
+        redis_client.publish(REDIS_OPEN_CHANNEL, tracking_ulid)
+        logger.info(f"已发送开仓通知: tracking_id={tracking_id}, ulid={tracking_ulid}")
         return True
     except Exception as e:
         logger.warning(f"发送开仓通知失败: {e}")
