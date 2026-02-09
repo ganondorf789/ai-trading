@@ -81,7 +81,8 @@ def analyze_single_trader_sync(
     resume_from: int,
     use_proxy: bool = False,
     api_delay: Optional[float] = None,
-    worker_index: Optional[int] = None
+    worker_index: Optional[int] = None,
+    display_name: str = ''
 ) -> AnalysisResult:
     """
     同步分析单个交易者（在独立线程中运行）
@@ -125,6 +126,9 @@ def analyze_single_trader_sync(
         logger.debug(f"[{short_addr}] analyze_trader 完成，耗时 {time.time() - analyze_start:.1f}s")
         
         if metrics and metrics.total_trades > 0:
+            # 设置排行榜显示名称
+            metrics.display_name = display_name
+            
             # 提取 fills 用于保存到数据库
             fills = metrics.fills
             
@@ -181,7 +185,8 @@ async def analyze_traders_concurrent(
     resume_from: int,
     max_workers: int = 10,
     use_proxy: bool = False,
-    api_delay: Optional[float] = None
+    api_delay: Optional[float] = None,
+    display_names: Optional[Dict[str, str]] = None
 ) -> Tuple[AnalysisStats, bool]:
     """
     并发分析多个交易者
@@ -194,10 +199,12 @@ async def analyze_traders_concurrent(
         max_workers: 最大并发数（默认10）
         use_proxy: 是否启用代理
         api_delay: API调用间隔（秒），None则使用默认值
+        display_names: 地址到显示名称的映射
     
     Returns:
         (统计结果, 是否被中断)
     """
+    display_names = display_names or {}
     stats = AnalysisStats()
     total = len(addresses)
     completed = 0
@@ -241,7 +248,8 @@ async def analyze_traders_concurrent(
                             resume_from,
                             use_proxy,
                             api_delay,
-                            worker_index
+                            worker_index,
+                            display_names.get(address, '')
                         ),
                         timeout=300.0  # 5 分钟超时
                     )
@@ -344,8 +352,13 @@ def screen_leaderboard_traders(
         logger.error("获取排行榜数据失败")
         return
 
-    # 提取地址（取前 limit 个）
-    addresses = [row["ethAddress"] for row in leaderboard_rows[:limit]]
+    # 提取地址和显示名称（取前 limit 个）
+    selected_rows = leaderboard_rows[:limit]
+    addresses = [row["ethAddress"] for row in selected_rows]
+    display_names = {
+        row["ethAddress"]: row.get("displayName", '') or ''
+        for row in selected_rows
+    }
     logger.info(f"获取到 {len(addresses)} 个交易者地址")
 
     # 处理断点续传
@@ -374,7 +387,8 @@ def screen_leaderboard_traders(
                 resume_from=resume_from,
                 max_workers=max_workers,
                 use_proxy=use_proxy,
-                api_delay=api_delay
+                api_delay=api_delay,
+                display_names=display_names
             )
         )
     except KeyboardInterrupt:

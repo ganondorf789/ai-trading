@@ -17,6 +17,7 @@ class DatabaseMigrations:
                 CREATE TABLE IF NOT EXISTS trader_metrics (
                     id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL,
+                    display_name TEXT DEFAULT '',
                     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
                     -- 基础统计
@@ -982,6 +983,11 @@ class DatabaseMigrations:
             CREATE INDEX IF NOT EXISTS idx_notifications_user_id
             ON notifications(user_id)
         """)
+
+        # 添加 display_name 字段到 trader_metrics 表（排行榜显示名称）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'display_name', "TEXT DEFAULT ''"
+        )
 
     def _migrate_remove_groups(self, cursor):
         """

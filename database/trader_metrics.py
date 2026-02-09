@@ -59,6 +59,7 @@ class TraderMetricsOps:
         
         return (
             metrics.address,
+            metrics.display_name or '',
             pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
             sanitize_value(metrics.total_trades, 0),
             sanitize_value(metrics.winning_trades, 0),
@@ -140,7 +141,7 @@ class TraderMetricsOps:
 
             cursor.execute("""
                 INSERT INTO trader_metrics (
-                    address, analyzed_at,
+                    address, display_name, analyzed_at,
                     total_trades, winning_trades, losing_trades,
                     total_pnl, realized_pnl, unrealized_pnl, total_volume,
                     roi, avg_profit_per_trade,
@@ -162,8 +163,9 @@ class TraderMetricsOps:
                     daily_volume, weekly_volume, monthly_volume,
                     tag_capital_scale, tag_trading_direction, tag_trading_cycle,
                     tag_frequency_style, tag_return_risk, tag_strategy_capability
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
                     analyzed_at = EXCLUDED.analyzed_at,
                     total_trades = EXCLUDED.total_trades,
                     winning_trades = EXCLUDED.winning_trades,

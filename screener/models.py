@@ -275,6 +275,7 @@ class TraderMetrics:
     整合所有子指标模块
     """
     address: str
+    display_name: str = ''  # 排行榜显示名称
     
     # 子指标模块
     pnl: PnLMetrics = field(default_factory=PnLMetrics)
@@ -538,6 +539,7 @@ class TraderMetrics:
         """
         result = {
             'address': self.address,
+            'display_name': self.display_name,
             'pnl': self.pnl.to_dict(),
             'risk': self.risk.to_dict(),
             'trade': self.trade.to_dict(),
@@ -573,6 +575,7 @@ class TraderMetrics:
         """
         result = {
             'address': self.address,
+            'display_name': self.display_name,
             
             # PnL
             'total_pnl': self.pnl.total_pnl,
