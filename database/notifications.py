@@ -10,6 +10,18 @@ from loguru import logger
 from screener.trader_screener import SHANGHAI_TZ
 
 
+# SQL CASE 表达式：将通知 type 映射到分类 category
+# 与 services/routes/notifications.py 中的 NOTIFICATION_CATEGORIES 保持一致
+TYPE_TO_CATEGORY_SQL = """
+    CASE
+        WHEN n.type = 'announcement' THEN 'announcement'
+        WHEN n.type IN ('market', 'price_alert') THEN 'market'
+        WHEN n.type IN ('open', 'close', 'adjust') THEN 'trading'
+        ELSE 'error'
+    END
+"""
+
+
 class NotificationsOps:
     """通知相关数据库操作"""
 
@@ -212,6 +224,130 @@ class NotificationsOps:
             result = cursor.fetchone()
             return result[0] if result else 0
 
+    def get_unread_count_by_type(self, user_id: int) -> Dict[str, int]:
+        """
+        按 type 分组统计用户未读通知数量（基于 notification_read_marks 水位线）
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            字典 {type: unread_count}，例如 {'open': 3, 'error': 1, 'announcement': 2}
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute(f"""
+                SELECT n.type, COUNT(*) as count
+                FROM notifications n
+                LEFT JOIN notification_read_marks rm_all
+                    ON rm_all.user_id = %s AND rm_all.category = 'all'
+                LEFT JOIN notification_read_marks rm_cat
+                    ON rm_cat.user_id = %s AND rm_cat.category = ({TYPE_TO_CATEGORY_SQL})
+                WHERE n.id > COALESCE(rm_all.read_before_id, 0)
+                  AND n.id > COALESCE(rm_cat.read_before_id, 0)
+                GROUP BY n.type
+            """, (user_id, user_id))
+
+            return {row['type']: row['count'] for row in cursor.fetchall()}
+
+    # ==================== 已读标记管理 ====================
+
+    def get_user_read_marks(self, user_id: int) -> Dict[str, int]:
+        """
+        获取用户的所有已读水位线
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            字典 {category: read_before_id}，例如 {'all': 100, 'trading': 150}
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cursor.execute("""
+                SELECT category, read_before_id
+                FROM notification_read_marks
+                WHERE user_id = %s
+            """, (user_id,))
+            return {row['category']: row['read_before_id'] for row in cursor.fetchall()}
+
+    def mark_category_read(self, user_id: int, category: str, types: List[str]) -> int:
+        """
+        标记某个分类的所有通知为已读（水位线方式）
+
+        将 read_before_id 设为该分类下当前最大的 notification.id，
+        之后查询时 id <= read_before_id 的通知即视为已读。
+
+        Args:
+            user_id: 用户ID
+            category: 分类名 ('announcement' | 'market' | 'trading' | 'error')
+            types: 该分类包含的通知 type 列表
+
+        Returns:
+            新的 read_before_id 值
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 获取该分类下最大的通知 ID
+            placeholders = ", ".join(["%s"] * len(types))
+            cursor.execute(f"""
+                SELECT COALESCE(MAX(id), 0) FROM notifications
+                WHERE type IN ({placeholders})
+            """, types)
+            max_id = cursor.fetchone()[0]
+
+            if max_id == 0:
+                return 0
+
+            # UPSERT: 用 GREATEST 确保水位线只升不降
+            cursor.execute("""
+                INSERT INTO notification_read_marks (user_id, category, read_before_id, updated_at)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, category) DO UPDATE SET
+                    read_before_id = GREATEST(notification_read_marks.read_before_id, EXCLUDED.read_before_id),
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING read_before_id
+            """, (user_id, category, max_id))
+
+            result = cursor.fetchone()
+            logger.debug(f"用户 {user_id} 标记分类 {category} 已读, read_before_id={result[0]}")
+            return result[0]
+
+    def mark_all_read_for_user(self, user_id: int) -> int:
+        """
+        标记所有通知为已读（水位线方式）
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            新的 read_before_id 值
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 获取所有通知中最大的 ID
+            cursor.execute("SELECT COALESCE(MAX(id), 0) FROM notifications")
+            max_id = cursor.fetchone()[0]
+
+            if max_id == 0:
+                return 0
+
+            cursor.execute("""
+                INSERT INTO notification_read_marks (user_id, category, read_before_id, updated_at)
+                VALUES (%s, 'all', %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, category) DO UPDATE SET
+                    read_before_id = GREATEST(notification_read_marks.read_before_id, EXCLUDED.read_before_id),
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING read_before_id
+            """, (user_id, max_id))
+
+            result = cursor.fetchone()
+            logger.debug(f"用户 {user_id} 标记全部已读, read_before_id={result[0]}")
+            return result[0]
+
     def update_notification(
         self,
         notification_id: int,
@@ -341,6 +477,7 @@ class NotificationsOps:
         before: Optional[int] = None,
         after: Optional[int] = None,
         notification_type: Optional[str] = None,
+        notification_types: Optional[List[str]] = None,
         is_read: Optional[bool] = None,
         symbol: Optional[str] = None,
         target_address: Optional[str] = None
@@ -349,54 +486,85 @@ class NotificationsOps:
         使用游标分页查询通知记录
 
         Args:
-            user_id: 用户ID过滤
+            user_id: 用户ID（用于计算每用户已读状态）
             limit: 返回数量限制
             before: 游标ID，获取此ID之前的记录（不包含此ID），为空则从最新记录开始
             after: 游标ID，获取此ID之后的记录（不包含此ID），用于获取更新的数据
-            notification_type: 按通知类型过滤 ('open' | 'close' | 'adjust' | 'error')
-            is_read: 按已读状态过滤
+            notification_type: 按单个通知类型过滤 ('open' | 'close' | 'adjust' | 'error' 等)
+            notification_types: 按多个通知类型过滤（用于大类查询，如 ['open', 'close', 'adjust']）
+            is_read: 按已读状态过滤（基于 notification_read_marks 水位线）
             symbol: 按交易对过滤
             target_address: 按目标交易员地址过滤
 
         Returns:
-            通知记录列表（按 id 降序排列）
+            通知记录列表（按 id 降序排列），包含计算后的 is_read 字段
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
             
-            # 构建查询条件
-            conditions = []
+            # 构建查询
             params = []
+            conditions = []
+            join_clauses = ""
             
-            # user_id 条件
+            # 根据是否有 user_id 决定 is_read 的计算方式
             if user_id is not None:
-                conditions.append("user_id = %s")
-                params.append(user_id)
+                # 使用 notification_read_marks 水位线计算 is_read
+                select_cols = f"""n.*,
+                    CASE
+                        WHEN n.id <= COALESCE(rm_all.read_before_id, 0) THEN TRUE
+                        WHEN n.id <= COALESCE(rm_cat.read_before_id, 0) THEN TRUE
+                        ELSE FALSE
+                    END as is_read"""
+                join_clauses = f"""
+                    LEFT JOIN notification_read_marks rm_all
+                        ON rm_all.user_id = %s AND rm_all.category = 'all'
+                    LEFT JOIN notification_read_marks rm_cat
+                        ON rm_cat.user_id = %s AND rm_cat.category = ({TYPE_TO_CATEGORY_SQL})
+                """
+                params.extend([user_id, user_id])
+                
+                # is_read 过滤（基于水位线）
+                if is_read is True:
+                    conditions.append(
+                        "(n.id <= COALESCE(rm_all.read_before_id, 0) OR n.id <= COALESCE(rm_cat.read_before_id, 0))"
+                    )
+                elif is_read is False:
+                    conditions.append(
+                        "n.id > COALESCE(rm_all.read_before_id, 0) AND n.id > COALESCE(rm_cat.read_before_id, 0)"
+                    )
+            else:
+                # 无用户上下文，使用表上的 is_read 列（兼容旧逻辑）
+                select_cols = "n.*"
+                if is_read is not None:
+                    conditions.append("n.is_read = %s")
+                    params.append(is_read)
             
             # before 游标条件
             if before is not None:
-                conditions.append("id < %s")
+                conditions.append("n.id < %s")
                 params.append(before)
             
             # after 游标条件
             if after is not None:
-                conditions.append("id > %s")
+                conditions.append("n.id > %s")
                 params.append(after)
             
-            if notification_type:
-                conditions.append("type = %s")
+            # notification_types 优先于 notification_type
+            if notification_types:
+                placeholders = ", ".join(["%s"] * len(notification_types))
+                conditions.append(f"n.type IN ({placeholders})")
+                params.extend(notification_types)
+            elif notification_type:
+                conditions.append("n.type = %s")
                 params.append(notification_type)
             
-            if is_read is not None:
-                conditions.append("is_read = %s")
-                params.append(is_read)
-            
             if symbol:
-                conditions.append("symbol = %s")
+                conditions.append("n.symbol = %s")
                 params.append(symbol)
             
             if target_address:
-                conditions.append("target_address = %s")
+                conditions.append("n.target_address = %s")
                 params.append(target_address)
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
@@ -405,17 +573,19 @@ class NotificationsOps:
             if after is not None and before is None:
                 query = f"""
                     SELECT * FROM (
-                        SELECT * FROM notifications
+                        SELECT {select_cols} FROM notifications n
+                        {join_clauses}
                         WHERE {where_clause}
-                        ORDER BY id ASC
+                        ORDER BY n.id ASC
                         LIMIT %s
                     ) sub ORDER BY id DESC
                 """
             else:
                 query = f"""
-                    SELECT * FROM notifications
+                    SELECT {select_cols} FROM notifications n
+                    {join_clauses}
                     WHERE {where_clause}
-                    ORDER BY id DESC
+                    ORDER BY n.id DESC
                     LIMIT %s
                 """
             params.append(limit)

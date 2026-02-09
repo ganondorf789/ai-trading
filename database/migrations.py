@@ -989,6 +989,21 @@ class DatabaseMigrations:
             cursor, 'trader_metrics', 'display_name', "TEXT DEFAULT ''"
         )
 
+        # 创建通知已读标记表（基于水位线的每用户已读追踪）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notification_read_marks (
+                user_id INTEGER NOT NULL,
+                category TEXT NOT NULL,          -- 'all' | 'announcement' | 'market' | 'trading' | 'error'
+                read_before_id INTEGER NOT NULL DEFAULT 0,  -- notification.id <= 此值视为已读
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, category)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_notification_read_marks_user
+            ON notification_read_marks(user_id)
+        """)
+
     def _migrate_remove_groups(self, cursor):
         """
         移除分组功能相关的表和列
