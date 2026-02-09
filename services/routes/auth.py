@@ -2385,6 +2385,76 @@ def refresh_my_api_key():
         }), 500
 
 
+@auth_bp.route('/api/auth/users/<int:target_user_id>/api-key', methods=['GET'])
+@login_required
+@admin_required
+def admin_get_user_api_key(target_user_id: int):
+    """管理员查看指定用户的 API Key
+    ---
+    tags:
+      - ApiKey
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: target_user_id
+        in: path
+        type: integer
+        required: true
+        description: 目标用户 ID
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                api_key:
+                  type: string
+                  description: API Key（可能为 null）
+      403:
+        description: 无权限
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        # 先验证用户是否存在
+        user = db.get_user_by_id(target_user_id)
+
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+
+        api_key = db.get_user_api_key(target_user_id)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'user_id': target_user_id,
+                'api_key': api_key
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"管理员获取用户 API Key 失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @auth_bp.route('/api/auth/users/<int:target_user_id>/api-key/refresh', methods=['POST'])
 @login_required
 @admin_required

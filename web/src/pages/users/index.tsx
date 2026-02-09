@@ -72,6 +72,14 @@ export default function UsersPage() {
   const [editAllowedPort, setEditAllowedPort] = useState<string>("");
   const [updatingInfo, setUpdatingInfo] = useState(false);
 
+  // API Key 弹窗
+  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
+  const [apiKeyUser, setApiKeyUser] = useState<User | null>(null);
+  const [apiKeyValue, setApiKeyValue] = useState<string | null>(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
+  const [refreshingApiKey, setRefreshingApiKey] = useState(false);
+
   // 加载用户列表
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -192,6 +200,76 @@ export default function UsersPage() {
     }
   };
 
+  // 查看用户 API Key
+  const handleViewApiKey = async (user: User) => {
+    setApiKeyUser(user);
+    setApiKeyValue(null);
+    setApiKeyVisible(false);
+    setApiKeyModalOpen(true);
+    setApiKeyLoading(true);
+
+    try {
+      const response = await userManagementApi.getUserApiKey(user.id);
+      if (response.success && response.data) {
+        setApiKeyValue(response.data.api_key);
+      }
+    } catch (error: any) {
+      addToast({
+        title: "错误",
+        description: error.response?.data?.error || "获取 API Key 失败",
+        color: "danger",
+      });
+    } finally {
+      setApiKeyLoading(false);
+    }
+  };
+
+  // 重置用户 API Key
+  const handleRefreshApiKey = async () => {
+    if (!apiKeyUser) return;
+
+    setRefreshingApiKey(true);
+    try {
+      const response = await userManagementApi.refreshUserApiKey(apiKeyUser.id);
+      if (response.success && response.data) {
+        setApiKeyValue(response.data.api_key);
+        setApiKeyVisible(true);
+        addToast({
+          title: "成功",
+          description: "API Key 已重置",
+          color: "success",
+        });
+      }
+    } catch (error: any) {
+      addToast({
+        title: "错误",
+        description: error.response?.data?.error || "重置 API Key 失败",
+        color: "danger",
+      });
+    } finally {
+      setRefreshingApiKey(false);
+    }
+  };
+
+  // 复制 API Key 到剪贴板
+  const handleCopyApiKey = async () => {
+    if (!apiKeyValue) return;
+    try {
+      await navigator.clipboard.writeText(apiKeyValue);
+      addToast({
+        title: "已复制",
+        description: "API Key 已复制到剪贴板",
+        color: "success",
+      });
+    } catch {
+      addToast({
+        title: "错误",
+        description: "复制失败，请手动复制",
+        color: "danger",
+      });
+    }
+  };
+
   // 初始加载
   useEffect(() => {
     fetchUsers();
@@ -271,7 +349,7 @@ export default function UsersPage() {
             <TableColumn>过期时间</TableColumn>
             <TableColumn>注册时间</TableColumn>
             <TableColumn>最后登录</TableColumn>
-            <TableColumn>操作</TableColumn>
+            <TableColumn width={200}>操作</TableColumn>
           </TableHeader>
           <TableBody
             items={paginatedUsers}
@@ -323,14 +401,25 @@ export default function UsersPage() {
                   {user.last_login_at ? formatTime(user.last_login_at) : "-"}
                 </TableCell>
                 <TableCell>
-                  <Button
-                    size="sm"
-                    variant="flat"
-                    startContent={<Icon icon="lucide:edit" />}
-                    onPress={() => handleEditInfo(user)}
-                  >
-                    编辑
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      startContent={<Icon icon="lucide:edit" />}
+                      onPress={() => handleEditInfo(user)}
+                    >
+                      编辑
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      color="secondary"
+                      startContent={<Icon icon="lucide:key" />}
+                      onPress={() => handleViewApiKey(user)}
+                    >
+                      API Key
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             )}
@@ -402,6 +491,84 @@ export default function UsersPage() {
               </Button>
               <Button color="primary" onPress={handleUpdateInfo} isLoading={updatingInfo}>
                 保存
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+        {/* API Key 弹窗 */}
+        <Modal isOpen={apiKeyModalOpen} onClose={() => setApiKeyModalOpen(false)}>
+          <ModalContent>
+            <ModalHeader>
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:key" />
+                API Key - {apiKeyUser?.account}
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              {apiKeyLoading ? (
+                <div className="flex justify-center py-4">
+                  <Spinner label="加载中..." />
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {apiKeyValue ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm text-default-500">当前 API Key</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          isReadOnly
+                          value={apiKeyVisible ? apiKeyValue : "••••••••••••••••••••••••••••••••"}
+                          className="font-mono flex-1"
+                          endContent={
+                            <button
+                              className="focus:outline-none"
+                              onClick={() => setApiKeyVisible(!apiKeyVisible)}
+                            >
+                              <Icon
+                                icon={apiKeyVisible ? "lucide:eye-off" : "lucide:eye"}
+                                className="text-default-400 hover:text-default-600 cursor-pointer"
+                                width={18}
+                              />
+                            </button>
+                          }
+                        />
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="flat"
+                          onPress={handleCopyApiKey}
+                        >
+                          <Icon icon="lucide:copy" width={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-2">
+                      <p className="text-default-400">该用户尚未生成 API Key</p>
+                    </div>
+                  )}
+                  <div className="bg-warning-50 border border-warning-200 rounded-lg p-3">
+                    <p className="text-warning-700 text-xs">
+                      <Icon icon="lucide:alert-triangle" className="inline mr-1" width={14} />
+                      重置 API Key 后旧的 Key 将立即失效，用户需要更新相关配置。
+                    </p>
+                  </div>
+                </div>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setApiKeyModalOpen(false)}>
+                关闭
+              </Button>
+              <Button
+                color="warning"
+                variant="flat"
+                startContent={<Icon icon="lucide:refresh-cw" />}
+                onPress={handleRefreshApiKey}
+                isLoading={refreshingApiKey}
+                isDisabled={apiKeyLoading}
+              >
+                {apiKeyValue ? "重置 API Key" : "生成 API Key"}
               </Button>
             </ModalFooter>
           </ModalContent>

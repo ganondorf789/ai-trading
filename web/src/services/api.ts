@@ -889,6 +889,14 @@ export const userManagementApi = {
   // 获取用户统计（管理员）
   getUserStats: () =>
     api.get<any, ApiResponse<UserStats>>('/auth/users/stats'),
+
+  // 获取指定用户的 API Key（管理员）
+  getUserApiKey: (targetUserId: number) =>
+    api.get<any, ApiResponse<{ user_id: number; api_key: string | null }>>(`/auth/users/${targetUserId}/api-key`),
+
+  // 刷新指定用户的 API Key（管理员）
+  refreshUserApiKey: (targetUserId: number) =>
+    api.post<any, ApiResponse<{ user_id: number; api_key: string }> & { message?: string }>(`/auth/users/${targetUserId}/api-key/refresh`),
 };
 
 export const secretKeyApi = {
