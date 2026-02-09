@@ -211,7 +211,7 @@ export default function UsersPage() {
         {/* 筛选栏 */}
         <div className="flex flex-wrap gap-4 items-center">
           <Input
-            placeholder="搜索账号/钱包地址..."
+            placeholder="搜索账号"
             value={searchValue}
             onValueChange={setSearchValue}
             startContent={<Icon icon="lucide:search" className="text-default-400" />}
@@ -242,16 +242,6 @@ export default function UsersPage() {
             <SelectItem key="true">活跃</SelectItem>
             <SelectItem key="false">禁用</SelectItem>
           </Select>
-
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => fetchUsers()}
-            isLoading={loading}
-          >
-            刷新
-          </Button>
         </div>
 
         {/* 用户表格 */}
