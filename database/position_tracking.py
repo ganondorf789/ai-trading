@@ -73,9 +73,12 @@ class PositionTrackingOps:
 
             # 查询数据
             cursor.execute(f"""
-                SELECT * FROM copy_position_tracking
+                SELECT cpt.*,
+                       tm.display_name as target_display_name
+                FROM copy_position_tracking cpt
+                LEFT JOIN trader_metrics tm ON cpt.target_address = tm.address
                 WHERE {where_clause}
-                ORDER BY updated_at DESC
+                ORDER BY cpt.updated_at DESC
                 LIMIT %s OFFSET %s
             """, params + [limit, offset])
 

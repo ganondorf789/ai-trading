@@ -1062,10 +1062,9 @@ class PositionHistoryOps:
                     tm.win_rate as trader_win_rate,
                     tm.total_pnl as trader_pnl,
                     tm.is_starred,
-                    ca.name as trader_name
+                    tm.display_name as trader_name
                 FROM position_history ph
                 LEFT JOIN trader_metrics tm ON ph.address = tm.address
-                LEFT JOIN copy_trading_addresses ca ON ph.address = ca.address
                 WHERE {where_clause}
                 ORDER BY ph.open_time DESC
                 LIMIT %s OFFSET %s
@@ -1205,13 +1204,13 @@ class PositionHistoryOps:
             cursor.execute("""
                 SELECT
                     ph.address,
-                    ca.name as trader_name,
+                    tm.display_name as trader_name,
                     COUNT(*) as total_positions,
                     COALESCE(SUM(ph.realized_pnl), 0) as total_pnl,
                     COALESCE(SUM(ph.total_volume), 0) as total_volume
                 FROM position_history ph
-                LEFT JOIN copy_trading_addresses ca ON ph.address = ca.address
-                GROUP BY ph.address, ca.name
+                LEFT JOIN trader_metrics tm ON ph.address = tm.address
+                GROUP BY ph.address, tm.display_name
                 ORDER BY total_pnl DESC
                 LIMIT 20
             """)

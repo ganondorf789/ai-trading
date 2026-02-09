@@ -286,6 +286,7 @@ export interface CopyTradingAddress {
   id: number;
   address: string;
   name: string;
+  display_name?: string;
   is_enabled: boolean;
   // 跟单配置
   copy_ratio: number;

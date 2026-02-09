@@ -109,13 +109,12 @@ class CopyOrdersOps:
             address_list = list(trader_addresses)
             cursor.execute("""
                 SELECT ap.*, 
-                       cta.name as trader_name, 
+                       tm.display_name as trader_name, 
                        tm.is_starred,
                        tm.overall_score,
                        tm.rating,
                        tm.total_pnl as trader_pnl
                 FROM asset_positions ap
-                LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
                 LEFT JOIN trader_metrics tm ON ap.address = tm.address
                 WHERE ap.address = ANY(%s)
                 ORDER BY ABS(ap.position_value) DESC
@@ -202,13 +201,12 @@ class CopyOrdersOps:
 
             cursor.execute("""
                 SELECT ap.*, 
-                       cta.name as trader_name, 
+                       tm.display_name as trader_name, 
                        tm.is_starred,
                        tm.overall_score,
                        tm.rating,
                        tm.total_pnl as trader_pnl
                 FROM asset_positions ap
-                LEFT JOIN copy_trading_addresses cta ON ap.address = cta.address
                 LEFT JOIN trader_metrics tm ON ap.address = tm.address
                 WHERE ap.updated_at >= NOW() - INTERVAL '%s minutes'
                 ORDER BY ABS(ap.position_value) DESC

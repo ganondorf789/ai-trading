@@ -83,6 +83,7 @@ class CopyTradingOps:
             cursor.execute(f"""
                 SELECT
                     cta.*,
+                    tm.display_name,
                     tm.win_rate,
                     tm.total_pnl as trader_pnl,
                     tm.rating,

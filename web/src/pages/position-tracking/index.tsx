@@ -219,29 +219,34 @@ export default function PositionTrackingPage() {
               {statusLabels[item.status] || item.status}
             </Chip>
           );
-        case "target":
+        case "target": {
+          const targetName = item.target_display_name || item.target_name;
+          const targetShortAddr = formatAddress(item.target_address);
           return (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1">
-                {item.target_is_starred && (
-                  <Icon icon="lucide:star" width={14} className="text-warning" />
-                )}
+            <div className="flex items-center gap-1">
+              {item.target_is_starred && (
+                <Icon icon="lucide:star" width={14} className="text-warning" />
+              )}
+              <Tooltip content={item.target_address} placement="top" delay={300}>
                 <a
                   href={`/traders/${item.target_address}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-mono text-sm text-primary hover:underline"
+                  className="text-sm text-primary hover:underline"
                 >
-                  {item.target_name || formatAddress(item.target_address)}
+                  {targetName ? (
+                    <span className="flex items-center gap-1">
+                      <span className="font-medium">{targetName}</span>
+                      <span className="text-xs text-default-400 font-mono">({targetShortAddr})</span>
+                    </span>
+                  ) : (
+                    <span className="font-mono">{targetShortAddr}</span>
+                  )}
                 </a>
-              </div>
-              {item.target_name && (
-                <span className="text-xs text-default-400 font-mono">
-                  {formatAddress(item.target_address)}
-                </span>
-              )}
+              </Tooltip>
             </div>
           );
+        }
         case "symbol":
           return <span className="font-semibold">{item.symbol}</span>;
         case "copy_ratio":

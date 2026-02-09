@@ -285,23 +285,35 @@ export default function CopyTradingPage() {
               onChange={(e) => handleToggle(item.address, e.target.checked)}
             />
           );
-        case "address":
+        case "address": {
+          const addrDisplayName = item.display_name;
+          const addrShortAddr = formatAddress(item.address);
           return (
             <div className="flex flex-col gap-0.5">
-              <a
-                href={`/traders/${item.address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-sm text-primary hover:underline"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {formatAddress(item.address)}
-              </a>
+              <Tooltip content={item.address} placement="top" delay={300}>
+                <a
+                  href={`/traders/${item.address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {addrDisplayName ? (
+                    <span className="flex items-center gap-1">
+                      <span className="font-medium">{addrDisplayName}</span>
+                      <span className="text-xs text-default-400 font-mono">({addrShortAddr})</span>
+                    </span>
+                  ) : (
+                    <span className="font-mono">{addrShortAddr}</span>
+                  )}
+                </a>
+              </Tooltip>
               {item.name && (
                 <span className="text-xs text-default-500">{item.name}</span>
               )}
             </div>
           );
+        }
         case "copy_ratio":
           return `${(item.copy_ratio * 100).toFixed(0)}%`;
         case "position_size":

@@ -74,7 +74,9 @@ export function TraderOverviewCard({
               />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold">Trader Overview</h1>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                {trader.display_name ? trader.display_name : 'Trader Overview'}
+              </h1>
               <p className="text-sm text-gray-500 font-mono mt-1">{address}</p>
             </div>
           </div>

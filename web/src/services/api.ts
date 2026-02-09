@@ -588,6 +588,7 @@ export interface PositionTracking {
   id: number;
   target_address: string;
   target_name: string;
+  target_display_name?: string;
   target_is_starred: boolean;
   symbol: string;
   is_enabled: boolean;

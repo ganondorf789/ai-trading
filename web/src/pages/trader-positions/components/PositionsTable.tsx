@@ -212,18 +212,30 @@ export function PositionsTable({ positions, loading, onRefreshTrader, onToggleSt
             />
           </Button>
         );
-      case 'trader':
+      case 'trader': {
+        const traderName = position.trader_name;
+        const shortAddr = formatAddress(position.address);
         return (
-          <a
-            href={`/traders/${position.address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-sm text-primary hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {position.trader_name || formatAddress(position.address)}
-          </a>
+          <Tooltip content={position.address} placement="top" delay={300}>
+            <a
+              href={`/traders/${position.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {traderName ? (
+                <span className="flex items-center gap-1">
+                  <span className="font-medium">{traderName}</span>
+                  <span className="text-xs text-default-400 font-mono">({shortAddr})</span>
+                </span>
+              ) : (
+                <span className="font-mono">{shortAddr}</span>
+              )}
+            </a>
+          </Tooltip>
         );
+      }
       case 'rating':
         return (
           <span className={`font-bold text-lg ${getRatingColor(position.rating)}`}>
