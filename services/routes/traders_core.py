@@ -183,9 +183,14 @@ def get_traders():
         if rating:
             all_traders = [t for t in all_traders if t.get('rating') == rating]
 
-        # 应用搜索过滤
+        # 应用搜索过滤（支持地址和昵称）
         if search:
-            all_traders = [t for t in all_traders if search.lower() in t['address'].lower()]
+            search_lower = search.lower()
+            all_traders = [
+                t for t in all_traders
+                if search_lower in t['address'].lower()
+                or search_lower in (t.get('display_name') or '').lower()
+            ]
 
         # 应用高级筛选（区间查询）
         min_win_rate = request.args.get('min_win_rate', type=float)

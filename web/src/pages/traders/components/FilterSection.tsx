@@ -46,11 +46,11 @@ export function FilterSection({
         {/* 第一行：地址搜索 + 评级 + 排序 + 列选择 */}
         <div className="flex flex-wrap items-end gap-3">
           <Input
-            className="w-[220px]"
+            className="w-[260px]"
             endContent={<SearchIcon className="text-default-400" width={16} />}
-            label="地址"
+            label="搜索"
             labelPlacement="outside"
-            placeholder="搜索地址..."
+            placeholder="搜索昵称或地址..."
             size="sm"
             value={searchAddress}
             onValueChange={onSearchChange}

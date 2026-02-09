@@ -3,6 +3,7 @@
 export interface Trader {
   id: number;
   address: string;
+  display_name?: string;
   analyzed_at: string;
   // 基础统计
   total_trades: number;

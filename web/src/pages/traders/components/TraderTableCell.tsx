@@ -1,4 +1,4 @@
-import { Button } from '@heroui/react';
+import { Button, Tooltip } from '@heroui/react';
 import { Icon } from '@iconify/react';
 import type { Trader } from '@/services/api';
 import type { ColumnKey } from '../types';
@@ -40,18 +40,30 @@ export function TraderTableCell({ trader, columnKey, onToggleStar, isStarLoading
           {trader.rating}
         </span>
       );
-    case 'address':
+    case 'address': {
+      const shortAddr = `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`;
+      const hasDisplayName = !!trader.display_name;
       return (
-        <a
-          href={`/traders/${trader.address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono text-sm text-primary hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {trader.address.slice(0, 6)}...{trader.address.slice(-4)}
-        </a>
+        <Tooltip content={trader.address} placement="top" delay={300}>
+          <a
+            href={`/traders/${trader.address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {hasDisplayName ? (
+              <span className="flex items-center gap-1">
+                <span className="font-medium">{trader.display_name}</span>
+                <span className="text-xs text-default-400 font-mono">({shortAddr})</span>
+              </span>
+            ) : (
+              <span className="font-mono">{shortAddr}</span>
+            )}
+          </a>
+        </Tooltip>
       );
+    }
     case 'overall_score':
       return <span className="font-bold">{formatNumber(trader.overall_score)}</span>;
     case 'total_trades':
