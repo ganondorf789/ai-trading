@@ -4,6 +4,7 @@ Trading API 路由
 """
 import sys
 import os
+import time
 
 # 添加项目根目录到路径（用于导入 clients）
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -757,6 +758,187 @@ def cancel_all_orders():
         
     except Exception as e:
         logger.error(f"取消所有订单失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ==================== 历史数据 API ====================
+
+@trading_bp.route('/api/trading/funding-history', methods=['GET'])
+@api_key_required
+def get_funding_history():
+    """
+    获取用户资金费历史
+    
+    Query Parameters:
+        days (int): 查询最近 N 天，默认 7，最大 90
+        start_time (int): 起始时间戳（毫秒），与 days 二选一
+        end_time (int): 结束时间戳（毫秒），可选
+        coin (str): 筛选指定币种，可选
+        limit (int): 返回条数限制，默认 200，最大 2000
+    """
+    try:
+        client = get_client()
+        address = client.wallet_address
+
+        # 解析时间范围
+        now_ms = int(time.time() * 1000)
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int, default=now_ms)
+        days = request.args.get('days', type=int, default=7)
+        coin = request.args.get('coin', type=str)
+        limit = request.args.get('limit', type=int, default=200)
+
+        if limit > 2000:
+            limit = 2000
+
+        if start_time is None:
+            if days > 90:
+                days = 90
+            start_time = now_ms - days * 24 * 60 * 60 * 1000
+
+        # 调用 SDK
+        records = client.info.user_funding_history(address, start_time, end_time)
+
+        # 格式化数据
+        funding_list = []
+        for record in records:
+            delta = record.get('delta', {})
+            entry = {
+                'time': record.get('time', 0),
+                'coin': delta.get('coin', ''),
+                'funding_rate': delta.get('fundingRate', '0'),
+                'usdc': float(delta.get('usdc', 0)),
+                'size': float(delta.get('szi', 0)),
+                'hash': record.get('hash', ''),
+            }
+            # 按币种筛选
+            if coin and entry['coin'].upper() != coin.upper():
+                continue
+            funding_list.append(entry)
+
+        # 按时间倒序
+        funding_list.sort(key=lambda x: x['time'], reverse=True)
+        total_count = len(funding_list)
+        funding_list = funding_list[:limit]
+
+        # 按币种汇总
+        coin_summary = {}
+        for entry in funding_list:
+            c = entry['coin']
+            if c not in coin_summary:
+                coin_summary[c] = {'count': 0, 'total_usdc': 0.0}
+            coin_summary[c]['count'] += 1
+            coin_summary[c]['total_usdc'] += entry['usdc']
+
+        return jsonify({
+            'success': True,
+            'data': funding_list,
+            'count': len(funding_list),
+            'total_count': total_count,
+            'summary': coin_summary
+        })
+
+    except Exception as e:
+        logger.error(f"获取资金费历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@trading_bp.route('/api/trading/orders/history', methods=['GET'])
+@api_key_required
+def get_historical_orders():
+    """
+    获取历史委托记录（最近 2000 条）
+    
+    Query Parameters:
+        coin (str): 筛选指定币种，可选
+        status (str): 筛选状态 (open/filled/canceled/triggered/marginCanceled)，可选
+        limit (int): 返回条数限制，默认 200，最大 2000
+    """
+    try:
+        client = get_client()
+        address = client.wallet_address
+
+        coin = request.args.get('coin', type=str)
+        status_filter = request.args.get('status', type=str)
+        limit = request.args.get('limit', type=int, default=200)
+
+        if limit > 2000:
+            limit = 2000
+
+        # 调用 SDK
+        records = client.info.historical_orders(address)
+
+        # 格式化数据
+        orders_list = []
+        for record in records:
+            order = record.get('order', {})
+            status = record.get('status', 'unknown')
+            status_timestamp = record.get('statusTimestamp', 0)
+
+            order_coin = order.get('coin', '')
+
+            # 按币种筛选
+            if coin and order_coin.upper() != coin.upper():
+                continue
+            # 按状态筛选
+            if status_filter and status != status_filter:
+                continue
+
+            entry = {
+                'oid': order.get('oid'),
+                'coin': order_coin,
+                'side': order.get('side', ''),
+                'side_label': '买入' if order.get('side') == 'B' else '卖出',
+                'limit_price': order.get('limitPx', ''),
+                'size': order.get('sz', '0'),
+                'orig_size': order.get('origSz', '0'),
+                'order_type': order.get('orderType', ''),
+                'status': status,
+                'timestamp': order.get('timestamp', 0),
+                'status_timestamp': status_timestamp,
+                'reduce_only': order.get('reduceOnly', False),
+                'is_trigger': order.get('isTrigger', False),
+                'trigger_condition': order.get('triggerCondition', ''),
+                'trigger_price': order.get('triggerPx', ''),
+                'is_position_tpsl': order.get('isPositionTpsl', False),
+                'tif': order.get('tif'),
+                'cloid': order.get('cloid'),
+            }
+            orders_list.append(entry)
+
+        # 按状态时间倒序
+        orders_list.sort(key=lambda x: x['status_timestamp'] or x['timestamp'], reverse=True)
+        total_count = len(orders_list)
+        orders_list = orders_list[:limit]
+
+        # 按状态汇总
+        status_summary = {}
+        coin_summary = {}
+        for entry in orders_list:
+            s = entry['status']
+            status_summary[s] = status_summary.get(s, 0) + 1
+            c = entry['coin']
+            coin_summary[c] = coin_summary.get(c, 0) + 1
+
+        return jsonify({
+            'success': True,
+            'data': orders_list,
+            'count': len(orders_list),
+            'total_count': total_count,
+            'summary': {
+                'by_status': status_summary,
+                'by_coin': coin_summary
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取历史委托失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
