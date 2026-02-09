@@ -309,6 +309,7 @@ def quick_add_copy_trading_address():
             'slippage': default_config.get('slippage', 0.001),
             'symbols_whitelist': default_config.get('symbols_whitelist', []),
             'symbols_blacklist': default_config.get('symbols_blacklist', []),
+            'copy_once': default_config.get('copy_once', False),
             'auto_replenish': default_config.get('auto_replenish', False),
             'replenish_ratio': default_config.get('replenish_ratio', 0.5),
             'replenish_min_value_usd': default_config.get('replenish_min_value_usd', 10),

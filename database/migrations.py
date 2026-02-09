@@ -826,6 +826,11 @@ class DatabaseMigrations:
             cursor, 'copy_trading_addresses', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
         )
 
+        # 添加只跟一次字段到 copy_trading_addresses 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'copy_once', 'BOOLEAN DEFAULT FALSE'
+        )
+
         # 添加 target_is_starred 字段到 detected_new_positions 表
         self._migrate_add_column_if_not_exists(
             cursor, 'detected_new_positions', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'

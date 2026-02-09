@@ -300,6 +300,8 @@ export interface CopyTradingAddress {
   symbols_blacklist: string[];
   check_interval: number;
   dry_run: boolean;
+  // 只跟一次
+  copy_once: boolean;
   // 自动补仓配置
   auto_replenish: boolean;
   replenish_ratio: number;

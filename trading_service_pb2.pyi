@@ -251,7 +251,7 @@ class CopyAddressListResponse(_message.Message):
     def __init__(self, success: bool = ..., addresses: _Optional[_Iterable[_Union[CopyAddress, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
 
 class CopyAddress(_message.Message):
-    __slots__ = ("id", "user_id", "address", "nickname", "copy_ratio", "max_position_size", "slippage", "is_enabled", "auto_copy", "whitelist_symbols", "blacklist_symbols", "created_at", "updated_at")
+    __slots__ = ("id", "user_id", "address", "nickname", "copy_ratio", "max_position_size", "slippage", "is_enabled", "auto_copy", "whitelist_symbols", "blacklist_symbols", "created_at", "updated_at", "copy_once")
     ID_FIELD_NUMBER: _ClassVar[int]
     USER_ID_FIELD_NUMBER: _ClassVar[int]
     ADDRESS_FIELD_NUMBER: _ClassVar[int]
@@ -265,6 +265,7 @@ class CopyAddress(_message.Message):
     BLACKLIST_SYMBOLS_FIELD_NUMBER: _ClassVar[int]
     CREATED_AT_FIELD_NUMBER: _ClassVar[int]
     UPDATED_AT_FIELD_NUMBER: _ClassVar[int]
+    COPY_ONCE_FIELD_NUMBER: _ClassVar[int]
     id: int
     user_id: int
     address: str
@@ -278,7 +279,18 @@ class CopyAddress(_message.Message):
     blacklist_symbols: str
     created_at: str
     updated_at: str
-    def __init__(self, id: _Optional[int] = ..., user_id: _Optional[int] = ..., address: _Optional[str] = ..., nickname: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., auto_copy: bool = ..., whitelist_symbols: _Optional[str] = ..., blacklist_symbols: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ...) -> None: ...
+    copy_once: bool
+    def __init__(self, id: _Optional[int] = ..., user_id: _Optional[int] = ..., address: _Optional[str] = ..., nickname: _Optional[str] = ..., copy_ratio: _Optional[float] = ..., max_position_size: _Optional[float] = ..., slippage: _Optional[float] = ..., is_enabled: bool = ..., auto_copy: bool = ..., whitelist_symbols: _Optional[str] = ..., blacklist_symbols: _Optional[str] = ..., created_at: _Optional[str] = ..., updated_at: _Optional[str] = ..., copy_once: bool = ...) -> None: ...
+
+class ToggleCopyTradingAddressRequest(_message.Message):
+    __slots__ = ("user_id", "address", "is_enabled")
+    USER_ID_FIELD_NUMBER: _ClassVar[int]
+    ADDRESS_FIELD_NUMBER: _ClassVar[int]
+    IS_ENABLED_FIELD_NUMBER: _ClassVar[int]
+    user_id: int
+    address: str
+    is_enabled: bool
+    def __init__(self, user_id: _Optional[int] = ..., address: _Optional[str] = ..., is_enabled: bool = ...) -> None: ...
 
 class CheckPositionTrackingExistsRequest(_message.Message):
     __slots__ = ("target_address", "symbol")
@@ -361,3 +373,23 @@ class GetResponse(_message.Message):
     value: str
     error: str
     def __init__(self, success: bool = ..., value: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
+
+class VerifyApiKeyRequest(_message.Message):
+    __slots__ = ("api_key",)
+    API_KEY_FIELD_NUMBER: _ClassVar[int]
+    api_key: str
+    def __init__(self, api_key: _Optional[str] = ...) -> None: ...
+
+class VerifyApiKeyResponse(_message.Message):
+    __slots__ = ("valid", "user_id", "account", "role", "error")
+    VALID_FIELD_NUMBER: _ClassVar[int]
+    USER_ID_FIELD_NUMBER: _ClassVar[int]
+    ACCOUNT_FIELD_NUMBER: _ClassVar[int]
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    valid: bool
+    user_id: int
+    account: str
+    role: str
+    error: str
+    def __init__(self, valid: bool = ..., user_id: _Optional[int] = ..., account: _Optional[str] = ..., role: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...

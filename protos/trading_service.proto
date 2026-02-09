@@ -38,6 +38,9 @@ service DatabaseService {
     
     // 检查仓位跟单是否存在
     rpc CheckPositionTrackingExists(CheckPositionTrackingExistsRequest) returns (CheckPositionTrackingExistsResponse);
+    
+    // 启用/禁用跟单地址
+    rpc ToggleCopyTradingAddress(ToggleCopyTradingAddressRequest) returns (UpdateTrackingResponse);
 }
 
 // ============================================
@@ -235,6 +238,13 @@ message CopyAddress {
     string blacklist_symbols = 11;  // JSON array string
     string created_at = 12;
     string updated_at = 13;
+    bool copy_once = 14;
+}
+
+message ToggleCopyTradingAddressRequest {
+    int32 user_id = 1;
+    string address = 2;
+    bool is_enabled = 3;
 }
 
 message CheckPositionTrackingExistsRequest {

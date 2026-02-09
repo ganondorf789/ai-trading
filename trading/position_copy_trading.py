@@ -114,6 +114,9 @@ class AddressConfig:
     default_leverage: int = 5
     slippage: float = 0.01
     
+    # 只跟一次
+    copy_once: bool = False  # 开启后只跟第一个新仓位，跟完自动禁用该地址
+    
     # 自动补仓配置
     auto_replenish: bool = False  # 是否启用自动补仓
     replenish_ratio: float = 0.5  # 补仓比例（按目标补仓量的比例）
@@ -1061,6 +1064,7 @@ class PositionCopyTradingBot:
                     max_leverage=data.get('max_leverage', 10),
                     default_leverage=data.get('default_leverage', 5),
                     slippage=data.get('slippage', 0.01),
+                    copy_once=data.get('copy_once', False),
                     auto_replenish=data.get('auto_replenish', False),
                     replenish_ratio=data.get('replenish_ratio', 0.5),
                     replenish_min_value_usd=data.get('replenish_min_value_usd', 10.0),
@@ -1238,6 +1242,17 @@ class PositionCopyTradingBot:
                     tracking_id = self._auto_create_tracking(config, position)
                     if tracking_id:
                         new_trackings_count += 1
+                    
+                    # 只跟一次：不管跟单成功还是失败都自动禁用该地址
+                    if config.copy_once:
+                        result_text = f"跟单{'成功' if tracking_id else '失败'}"
+                        logger.info(
+                            f"[自动跟单] 只跟一次模式: {symbol} {result_text}，自动禁用地址 "
+                            f"{address[:10]}... ({config.name})"
+                        )
+                        self.db.toggle_copy_trading_address(self._user_id, address, False)
+                        config.is_enabled = False
+                        break  # 跳出当前地址的仓位循环
                 
                 # 更新仓位缓存
                 self._address_positions[address] = current_positions

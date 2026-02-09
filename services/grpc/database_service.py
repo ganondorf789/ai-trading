@@ -97,6 +97,7 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             blacklist_symbols=json.dumps(address.get('blacklist_symbols', []) or []),
             created_at=str(address.get('created_at', '')),
             updated_at=str(address.get('updated_at', '')),
+            copy_once=address.get('copy_once', False) or False,
         )
     
     def GetPositionTracking(self, request: pb2.GetPositionTrackingRequest, context) -> pb2.PositionTrackingResponse:
@@ -297,5 +298,21 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             logger.error(f"CheckPositionTrackingExists 错误: {e}")
             return pb2.CheckPositionTrackingExistsResponse(
                 exists=False,
+                error=str(e)
+            )
+    
+    def ToggleCopyTradingAddress(self, request: pb2.ToggleCopyTradingAddressRequest, context) -> pb2.UpdateTrackingResponse:
+        """启用/禁用跟单地址"""
+        try:
+            success = self._db.toggle_copy_trading_address(
+                user_id=request.user_id,
+                address=request.address,
+                is_enabled=request.is_enabled
+            )
+            return pb2.UpdateTrackingResponse(success=success)
+        except Exception as e:
+            logger.error(f"ToggleCopyTradingAddress 错误: {e}")
+            return pb2.UpdateTrackingResponse(
+                success=False,
                 error=str(e)
             )

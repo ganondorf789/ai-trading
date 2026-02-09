@@ -190,9 +190,10 @@ class CopyTradingOps:
                     max_total_positions, max_daily_trades, slippage,
                     symbols_whitelist, symbols_blacklist,
                     check_interval, dry_run,
+                    copy_once,
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -209,6 +210,7 @@ class CopyTradingOps:
                     symbols_blacklist = EXCLUDED.symbols_blacklist,
                     check_interval = EXCLUDED.check_interval,
                     dry_run = EXCLUDED.dry_run,
+                    copy_once = EXCLUDED.copy_once,
                     auto_replenish = EXCLUDED.auto_replenish,
                     replenish_ratio = EXCLUDED.replenish_ratio,
                     replenish_min_value_usd = EXCLUDED.replenish_min_value_usd,
@@ -233,6 +235,7 @@ class CopyTradingOps:
                 blacklist,
                 data.get('check_interval', 10.0),
                 data.get('dry_run', True),
+                data.get('copy_once', False),
                 data.get('auto_replenish', False),
                 data.get('replenish_ratio', 0.5),
                 data.get('replenish_min_value_usd', 10.0),
@@ -417,6 +420,7 @@ class CopyTradingOps:
             'slippage': 0.001,
             'copy_leverage': False,
             'dry_run': False,
+            'copy_once': False,
             'symbols_whitelist': [],
             'symbols_blacklist': [],
             'auto_replenish': False,

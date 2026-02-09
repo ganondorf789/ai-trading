@@ -422,6 +422,12 @@ export default function AddressFormModal({
                 >
                   复制杠杆
                 </Switch>
+                <Switch
+                  isSelected={formData.copy_once || false}
+                  onChange={(e) => setFormData({ ...formData, copy_once: e.target.checked })}
+                >
+                  只跟一次
+                </Switch>
               </div>
             </div>
 

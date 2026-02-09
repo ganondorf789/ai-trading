@@ -126,6 +126,7 @@ class GRPCDatabaseClient:
             'blacklist_symbols': json.loads(address.blacklist_symbols) if address.blacklist_symbols else [],
             'created_at': address.created_at if address.created_at else None,
             'updated_at': address.updated_at if address.updated_at else None,
+            'copy_once': address.copy_once,
         }
     
     def get_position_tracking(self, tracking_id: int) -> Optional[Dict]:
@@ -337,6 +338,23 @@ class GRPCDatabaseClient:
             return response.exists
         except grpc.RpcError as e:
             logger.error(f"gRPC 错误 (CheckPositionTrackingExists): {e}")
+            return False
+    
+    def toggle_copy_trading_address(self, user_id: int, address: str, is_enabled: bool) -> bool:
+        """启用/禁用跟单地址"""
+        self._ensure_connected()
+        try:
+            response = self._stub.ToggleCopyTradingAddress(
+                pb2.ToggleCopyTradingAddressRequest(
+                    user_id=user_id,
+                    address=address,
+                    is_enabled=is_enabled
+                ),
+                metadata=self._get_metadata()
+            )
+            return response.success
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (ToggleCopyTradingAddress): {e}")
             return False
 
 
