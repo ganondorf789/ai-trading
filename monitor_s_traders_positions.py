@@ -356,6 +356,69 @@ def format_position_direction(szi: float) -> tuple[str, str]:
         return "做空", "🔴"
 
 
+def _check_immediate_copy_conditions(
+    matched_config: Dict,
+    trader: Dict,
+    coin: str,
+    szi: float,
+    entry_px: float,
+    leverage: float
+) -> bool:
+    """
+    检查立即跟单条件是否满足
+    
+    Args:
+        matched_config: 匹配的配置规则
+        trader: 交易员信息
+        coin: 币种
+        szi: 仓位数量
+        entry_px: 入场价
+        leverage: 杠杆倍数
+    
+    Returns:
+        是否满足所有条件
+    """
+    # 1. 检查交易员最低评分
+    min_score = matched_config.get('min_trader_overall_score', 0)
+    trader_score = trader.get('overall_score', 0) or 0
+    if min_score > 0 and trader_score < min_score:
+        logger.debug(f"    跳过立即跟单: {coin} 交易员评分 {trader_score} < 要求 {min_score}")
+        return False
+    
+    # 2. 检查目标杠杆范围
+    min_leverage = matched_config.get('min_trader_leverage', 0)
+    max_leverage_cond = matched_config.get('max_trader_leverage', 0)
+    if min_leverage > 0 and leverage < min_leverage:
+        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x < 最小 {min_leverage}x")
+        return False
+    if max_leverage_cond > 0 and leverage > max_leverage_cond:
+        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x > 最大 {max_leverage_cond}x")
+        return False
+    
+    # 3. 检查仓位价值范围
+    position_value = abs(szi) * entry_px
+    min_position_value = matched_config.get('min_position_value_usd', 0)
+    max_position_value = matched_config.get('max_position_value_usd', 0)
+    if min_position_value > 0 and position_value < min_position_value:
+        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} < 最小 ${min_position_value}")
+        return False
+    if max_position_value > 0 and position_value > max_position_value:
+        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} > 最大 ${max_position_value}")
+        return False
+    
+    # 4. 检查币种价格范围（使用入场价作为参考）
+    min_coin_price = matched_config.get('min_coin_price', 0)
+    max_coin_price = matched_config.get('max_coin_price', 0)
+    if min_coin_price > 0 and entry_px < min_coin_price:
+        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} < 最小 ${min_coin_price}")
+        return False
+    if max_coin_price > 0 and entry_px > max_coin_price:
+        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} > 最大 ${max_coin_price}")
+        return False
+    
+    return True
+
+
 def create_position_tracking_for_copy(
     db: TraderDatabase,
     trader: Dict,
@@ -365,10 +428,14 @@ def create_position_tracking_for_copy(
     """
     为符合条件的仓位创建跟单记录并发送 Redis 通知
     
-    会根据币种匹配对应的配置规则：
-    - 如果有匹配的立即跟单配置规则，检查所有跟单条件后使用规则中的参数创建跟单记录
-    - 跟单条件包括：交易员评分、目标杠杆范围、仓位价值范围、币种价格范围
-    - 如果没有匹配的规则或不满足条件，则不创建跟单记录
+    遍历所有用户的立即跟单配置规则，为每个匹配的用户创建独立的跟单记录。
+    Redis 通知包含 tracking ULID 和 user ULID，trading bot 据此校验归属。
+    
+    检查流程：
+    1. 查询所有用户中匹配该币种的立即跟单配置
+    2. 逐条检查跟单条件（交易员评分、杠杆范围、仓位价值、币种价格）
+    3. 检查是否已存在活跃跟单记录
+    4. 创建跟单记录并发送 Redis 通知（JSON 格式，包含 user_ulid）
     
     Args:
         db: 数据库实例
@@ -377,7 +444,7 @@ def create_position_tracking_for_copy(
         redis_client: Redis 客户端
     
     Returns:
-        创建的 tracking_id，如果没有匹配规则/不满足条件/已存在/创建失败则返回 None
+        创建的 tracking_id（最后一个成功的），如果全部失败则返回 None
     """
     address = trader['address']
     coin = position.get('coin', '')
@@ -388,110 +455,90 @@ def create_position_tracking_for_copy(
     leverage = float(position.get('leverage', 1) or 1)
     side = 'long' if szi > 0 else 'short'
     
-    # 根据币种匹配配置规则
-    matched_config = db.get_immediate_config_by_symbol(coin)
-    matched_rule_name = matched_config.get('_matched_rule_name')
+    # 获取所有用户中匹配该币种的立即跟单配置
+    all_configs = db.get_all_immediate_configs_for_symbol(coin)
     
-    # 如果没有匹配的规则，不创建跟单记录
-    if not matched_rule_name:
+    if not all_configs:
         logger.debug(f"    跳过立即跟单: {coin} 无匹配规则")
         return None
     
-    # 检查跟单条件
-    # 1. 检查交易员最低评分
-    min_score = matched_config.get('min_trader_overall_score', 0)
-    trader_score = trader.get('overall_score', 0) or 0
-    if min_score > 0 and trader_score < min_score:
-        logger.debug(f"    跳过立即跟单: {coin} 交易员评分 {trader_score} < 要求 {min_score}")
-        return None
+    last_tracking_id = None
     
-    # 2. 检查目标杠杆范围
-    min_leverage = matched_config.get('min_trader_leverage', 0)
-    max_leverage_cond = matched_config.get('max_trader_leverage', 0)
-    if min_leverage > 0 and leverage < min_leverage:
-        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x < 最小 {min_leverage}x")
-        return None
-    if max_leverage_cond > 0 and leverage > max_leverage_cond:
-        logger.debug(f"    跳过立即跟单: {coin} 杠杆 {leverage}x > 最大 {max_leverage_cond}x")
-        return None
-    
-    # 3. 检查仓位价值范围
-    position_value = abs(szi) * entry_px
-    min_position_value = matched_config.get('min_position_value_usd', 0)
-    max_position_value = matched_config.get('max_position_value_usd', 0)
-    if min_position_value > 0 and position_value < min_position_value:
-        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} < 最小 ${min_position_value}")
-        return None
-    if max_position_value > 0 and position_value > max_position_value:
-        logger.debug(f"    跳过立即跟单: {coin} 仓位价值 ${position_value:.2f} > 最大 ${max_position_value}")
-        return None
-    
-    # 4. 检查币种价格范围（使用入场价作为参考）
-    min_coin_price = matched_config.get('min_coin_price', 0)
-    max_coin_price = matched_config.get('max_coin_price', 0)
-    if min_coin_price > 0 and entry_px < min_coin_price:
-        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} < 最小 ${min_coin_price}")
-        return None
-    if max_coin_price > 0 and entry_px > max_coin_price:
-        logger.debug(f"    跳过立即跟单: {coin} 价格 ${entry_px:.4f} > 最大 ${max_coin_price}")
-        return None
-    
-    # 检查是否已存在活跃的跟单记录
-    if db.check_position_tracking_exists(address, coin):
-        logger.debug(f"    跳过立即跟单: {coin} 已有活跃跟单记录")
-        return None
-    
-    # 使用匹配的配置
-    effective_config = matched_config
-    
-    if matched_rule_name:
-        logger.info(f"    → 币种 {coin} 匹配规则: {matched_rule_name}")
-    
-    # 使用公共方法创建跟单记录
-    target_position = {
-        'size': szi,
-        'side': side,
-        'entry_price': entry_px,
-        'leverage': leverage
-    }
-    tracking_data = build_tracking_data(
-        target_address=address,
-        target_name=trader.get('name', ''),
-        symbol=coin,
-        config=effective_config,
-        target_position=target_position,
-        target_is_starred=trader.get('is_starred', False),
-        target_score=trader.get('overall_score'),
-        target_rating=trader.get('rating'),
-        status='pending'
-    )
-    
-    try:
-        tracking_id = db.save_position_tracking(tracking_data)
+    for matched_config in all_configs:
+        user_ulid = matched_config.get('_user_ulid', '')
+        user_id = matched_config.get('_user_id')
+        matched_rule_name = matched_config.get('_matched_rule_name', '')
         
-        if tracking_id:
-            # 查询记录的 ULID
-            tracking_record = db.get_position_tracking(tracking_id)
-            tracking_ulid = tracking_record.get('ulid', '') if tracking_record else ''
+        if not user_ulid:
+            logger.warning(f"    跳过立即跟单: {coin} 用户 {user_id} 无 ULID")
+            continue
+        
+        # 检查跟单条件
+        if not _check_immediate_copy_conditions(matched_config, trader, coin, szi, entry_px, leverage):
+            continue
+        
+        # 检查是否已存在活跃的跟单记录
+        if db.check_position_tracking_exists(address, coin):
+            logger.debug(f"    跳过立即跟单: {coin} 已有活跃跟单记录 (user={user_ulid[:8]}...)")
+            continue
+        
+        logger.info(f"    → 币种 {coin} 匹配规则: {matched_rule_name} (user={user_ulid[:8]}...)")
+        
+        # 使用公共方法创建跟单记录
+        target_position = {
+            'size': szi,
+            'side': side,
+            'entry_price': entry_px,
+            'leverage': leverage
+        }
+        tracking_data = build_tracking_data(
+            target_address=address,
+            target_name=trader.get('name', ''),
+            symbol=coin,
+            config=matched_config,
+            target_position=target_position,
+            target_is_starred=trader.get('is_starred', False),
+            target_score=trader.get('overall_score'),
+            target_rating=trader.get('rating'),
+            status='pending'
+        )
+        
+        try:
+            tracking_id = db.save_position_tracking(tracking_data)
             
-            logger.success(f"    ✓ 创建立即跟单记录: {coin} {side} (tracking_id={tracking_id}, ulid={tracking_ulid})")
-            
-            # 发送 Redis 通知触发开仓（使用 ULID）
-            if redis_client and tracking_ulid:
-                try:
-                    redis_client.publish(REDIS_OPEN_CHANNEL, tracking_ulid)
-                    logger.info(f"    ✓ 已发送开仓通知 (channel={REDIS_OPEN_CHANNEL}, ulid={tracking_ulid})")
-                except Exception as e:
-                    logger.warning(f"    ⚠ Redis 开仓通知发送失败: {e}")
-            
-            return tracking_id
-        else:
-            logger.error(f"    ✗ 创建跟单记录失败: {coin}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"    ✗ 创建跟单记录异常: {coin} - {e}")
-        return None
+            if tracking_id:
+                # 查询记录的 ULID
+                tracking_record = db.get_position_tracking(tracking_id)
+                tracking_ulid = tracking_record.get('ulid', '') if tracking_record else ''
+                
+                logger.success(
+                    f"    ✓ 创建立即跟单记录: {coin} {side} "
+                    f"(tracking_id={tracking_id}, ulid={tracking_ulid}, user={user_ulid[:8]}...)"
+                )
+                
+                # 发送 Redis 通知触发开仓（JSON 格式，包含 user_ulid）
+                if redis_client and tracking_ulid:
+                    try:
+                        open_msg = json.dumps({
+                            'tracking_id': tracking_ulid,
+                            'user_ulid': user_ulid,
+                        })
+                        redis_client.publish(REDIS_OPEN_CHANNEL, open_msg)
+                        logger.info(
+                            f"    ✓ 已发送开仓通知 "
+                            f"(channel={REDIS_OPEN_CHANNEL}, ulid={tracking_ulid}, user={user_ulid[:8]}...)"
+                        )
+                    except Exception as e:
+                        logger.warning(f"    ⚠ Redis 开仓通知发送失败: {e}")
+                
+                last_tracking_id = tracking_id
+            else:
+                logger.error(f"    ✗ 创建跟单记录失败: {coin} (user={user_ulid[:8]}...)")
+                
+        except Exception as e:
+            logger.error(f"    ✗ 创建跟单记录异常: {coin} - {e}")
+    
+    return last_tracking_id
 
 
 async def fetch_user_state_async(

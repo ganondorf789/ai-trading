@@ -231,13 +231,48 @@ class PositionCopyTradingBot:
         )
     
     async def _on_redis_open_message(self, channel: str, data: str):
-        """处理开仓通知消息"""
+        """
+        处理开仓通知消息
+        
+        消息格式（JSON）：
+            {"tracking_id": "<ULID>", "user_ulid": "<ULID>"}
+        兼容旧格式（纯字符串 tracking ULID，不含 user_ulid 校验）
+        """
         try:
-            tracking_id = data.strip()
-            if not tracking_id:
+            stripped = data.strip()
+            if not stripped:
                 logger.warning(f"无效的开仓通知格式: {data}")
                 return
-            logger.info(f"收到开仓通知: tracking_id={tracking_id}")
+            
+            # 尝试解析 JSON 格式
+            tracking_id = ''
+            user_ulid = ''
+            try:
+                msg = json.loads(stripped)
+                tracking_id = msg.get('tracking_id', '')
+                user_ulid = msg.get('user_ulid', '')
+            except (json.JSONDecodeError, TypeError):
+                # 兼容旧格式：纯 tracking ULID 字符串
+                tracking_id = stripped
+            
+            if not tracking_id:
+                logger.warning(f"无效的开仓通知格式（缺少 tracking_id）: {data}")
+                return
+            
+            # 校验 user_ulid 是否与本 bot 的 BOT_USER_ID 一致
+            my_user_id = settings.bot.user_id
+            if user_ulid and my_user_id:
+                if user_ulid != my_user_id:
+                    logger.debug(
+                        f"跳过开仓通知: user_ulid={user_ulid[:8]}... "
+                        f"与本机 BOT_USER_ID={my_user_id[:8]}... 不匹配"
+                    )
+                    return
+            elif not my_user_id:
+                logger.warning("BOT_USER_ID 未配置，无法校验用户归属，跳过开仓通知")
+                return
+            
+            logger.info(f"收到开仓通知: tracking_id={tracking_id}, user={user_ulid[:8] if user_ulid else 'N/A'}...")
             await self._handle_open_notification(tracking_id)
         except Exception:
             logger.warning(f"无效的开仓通知格式: {data}")

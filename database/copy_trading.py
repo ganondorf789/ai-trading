@@ -579,7 +579,7 @@ class CopyTradingOps:
                     SELECT id, config_type, name, description, 
                            leverage_min, leverage_max, config_data,
                            priority, is_enabled, is_default, symbol,
-                           created_at, updated_at
+                           user_ulid, created_at, updated_at
                     FROM copy_config_rules
                     WHERE user_id = %s AND config_type = %s
                 """
@@ -629,7 +629,7 @@ class CopyTradingOps:
                     SELECT id, config_type, name, description,
                            leverage_min, leverage_max, config_data,
                            priority, is_enabled, is_default, symbol,
-                           created_at, updated_at
+                           user_ulid, created_at, updated_at
                     FROM copy_config_rules
                     WHERE user_id = %s AND id = %s
                 """, (user_id, rule_id,))
@@ -663,7 +663,7 @@ class CopyTradingOps:
                     SELECT id, config_type, name, description,
                            leverage_min, leverage_max, config_data,
                            priority, is_enabled, is_default, symbol,
-                           created_at, updated_at
+                           user_ulid, created_at, updated_at
                     FROM copy_config_rules
                     WHERE user_id = %s AND config_type = 'immediate' AND symbol = %s
                     LIMIT 1
@@ -684,6 +684,9 @@ class CopyTradingOps:
         """
         保存或更新跟单配置规则
         
+        创建时自动查询并存储用户的 ULID（user_ulid 字段），
+        供监控脚本在推送 Redis 通知时携带，trading bot 据此校验归属。
+        
         Args:
             user_id: 用户ID
             data: 规则数据，包含 config_type, name, leverage_min, leverage_max, config_data, symbol 等
@@ -699,14 +702,20 @@ class CopyTradingOps:
                 if isinstance(config_data, dict):
                     config_data = json.dumps(config_data)
                 
+                # 查询用户 ULID
+                cursor.execute("SELECT ulid FROM users WHERE id = %s", (user_id,))
+                user_row = cursor.fetchone()
+                user_ulid = user_row[0] if user_row else None
+                
                 if data.get('id'):
-                    # 更新（只能更新自己的规则）
+                    # 更新（只能更新自己的规则），同时刷新 user_ulid
                     cursor.execute("""
                         UPDATE copy_config_rules
                         SET name = %s, description = %s,
                             leverage_min = %s, leverage_max = %s,
                             config_data = %s, priority = %s,
                             is_enabled = %s, is_default = %s, symbol = %s,
+                            user_ulid = %s,
                             updated_at = CURRENT_TIMESTAMP
                         WHERE user_id = %s AND id = %s
                         RETURNING id
@@ -720,6 +729,7 @@ class CopyTradingOps:
                         data.get('is_enabled', True),
                         data.get('is_default', False),
                         data.get('symbol'),
+                        user_ulid,
                         user_id,
                         data['id']
                     ))
@@ -731,8 +741,8 @@ class CopyTradingOps:
                     cursor.execute("""
                         INSERT INTO copy_config_rules 
                         (user_id, config_type, name, description, leverage_min, leverage_max, 
-                         config_data, priority, is_enabled, is_default, symbol)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         config_data, priority, is_enabled, is_default, symbol, user_ulid)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
                         user_id,
@@ -745,7 +755,8 @@ class CopyTradingOps:
                         data.get('priority', 0),
                         data.get('is_enabled', True),
                         data.get('is_default', False),
-                        data.get('symbol')
+                        data.get('symbol'),
+                        user_ulid
                     ))
                     rule_id = cursor.fetchone()[0]
                     logger.info(f"用户 {user_id} 创建跟单配置规则: id={rule_id}, name={data.get('name')}, symbol={data.get('symbol')}")
@@ -840,6 +851,56 @@ class CopyTradingOps:
         except Exception as e:
             logger.error(f"匹配跟单配置规则失败: {e}")
             return None
+
+    def get_all_immediate_configs_for_symbol(self, symbol: str) -> List[Dict]:
+        """
+        获取所有用户中匹配指定币种的立即跟单配置
+        
+        用于监控脚本：遍历所有用户的立即跟单规则，返回匹配的配置列表。
+        user_ulid 直接从 copy_config_rules 表读取（创建/更新规则时已写入）。
+        
+        Args:
+            symbol: 币种名称
+            
+        Returns:
+            匹配的配置列表，每条包含 _user_id、_user_ulid 和配置参数
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+                cursor.execute("""
+                    SELECT id, user_id, user_ulid, config_type, name, description,
+                           leverage_min, leverage_max, config_data,
+                           priority, is_enabled, is_default, symbol,
+                           created_at, updated_at
+                    FROM copy_config_rules
+                    WHERE config_type = 'immediate'
+                      AND symbol = %s
+                      AND is_enabled = TRUE
+                      AND user_ulid IS NOT NULL
+                    ORDER BY user_id, priority ASC
+                """, (symbol.upper(),))
+                
+                results = []
+                for row in cursor.fetchall():
+                    item = dict(row)
+                    # 解析 JSON 数据
+                    if item.get('config_data'):
+                        if isinstance(item['config_data'], str):
+                            item['config_data'] = json.loads(item['config_data'])
+                    # 展开 config_data 为顶层字段，方便使用
+                    config = item.get('config_data', {})
+                    config['_matched_rule_name'] = item.get('name')
+                    config['_matched_rule_id'] = item.get('id')
+                    config['_matched_symbol'] = item.get('symbol')
+                    config['_user_id'] = item.get('user_id')
+                    config['_user_ulid'] = item.get('user_ulid')
+                    results.append(config)
+                
+                return results
+        except Exception as e:
+            logger.error(f"获取所有用户立即跟单配置失败 (symbol={symbol}): {e}")
+            return []
 
     def get_immediate_config_by_symbol(self, user_id: int, symbol: str) -> Dict:
         """

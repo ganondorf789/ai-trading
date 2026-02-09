@@ -1009,6 +1009,14 @@ class DatabaseMigrations:
         # ULID 用于对外暴露的标识符，避免暴露自增 ID
         self._migrate_add_ulid_columns(cursor)
 
+        # 修复 copy_config_rules 的立即跟单唯一索引（支持多用户）
+        # 旧索引：(config_type, symbol) → 每个币种全局只能有一个配置
+        # 新索引：(user_id, config_type, symbol) → 每个用户每个币种一个配置
+        self._migrate_fix_immediate_symbol_unique_index(cursor)
+
+        # 为 copy_config_rules 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
+        self._migrate_add_config_rules_user_ulid(cursor)
+
     def _migrate_add_ulid_columns(self, cursor):
         """
         为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段
@@ -1044,6 +1052,53 @@ class DatabaseMigrations:
                     ON {table}(ulid)
                 """)
                 logger.info(f"数据库迁移: 创建唯一索引 idx_{table}_ulid")
+
+    def _migrate_fix_immediate_symbol_unique_index(self, cursor):
+        """
+        修复 copy_config_rules 的立即跟单唯一索引，支持多用户
+
+        旧索引 idx_copy_config_rules_immediate_symbol 是 (config_type, symbol)，
+        全局唯一导致多个用户不能对同一币种各自配置立即跟单规则。
+        新索引改为 (user_id, config_type, symbol)，每个用户独立。
+        """
+        # 检查旧索引是否存在
+        cursor.execute("""
+            SELECT 1 FROM pg_indexes
+            WHERE indexname = 'idx_copy_config_rules_immediate_symbol'
+        """)
+        if cursor.fetchone():
+            cursor.execute("DROP INDEX idx_copy_config_rules_immediate_symbol")
+            logger.info("数据库迁移: 删除旧索引 idx_copy_config_rules_immediate_symbol")
+
+        # 创建新的多用户唯一索引
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_user_immediate_symbol
+            ON copy_config_rules(user_id, config_type, symbol)
+            WHERE config_type = 'immediate' AND symbol IS NOT NULL AND user_id IS NOT NULL
+        """)
+        logger.info("数据库迁移: 创建多用户唯一索引 idx_copy_config_rules_user_immediate_symbol")
+
+    def _migrate_add_config_rules_user_ulid(self, cursor):
+        """
+        为 copy_config_rules 表添加 user_ulid 字段
+        
+        冗余存储用户 ULID，这样查询配置规则时无需 JOIN users 表。
+        从 users 表回填已有记录的 user_ulid。
+        """
+        if not self._column_exists(cursor, 'copy_config_rules', 'user_ulid'):
+            cursor.execute('ALTER TABLE copy_config_rules ADD COLUMN user_ulid TEXT')
+            logger.info("数据库迁移: 添加列 copy_config_rules.user_ulid")
+
+            # 回填：从 users 表获取 ulid
+            cursor.execute("""
+                UPDATE copy_config_rules ccr
+                SET user_ulid = u.ulid
+                FROM users u
+                WHERE ccr.user_id = u.id AND ccr.user_ulid IS NULL
+            """)
+            updated = cursor.rowcount
+            if updated:
+                logger.info(f"数据库迁移: 回填 copy_config_rules 表 {updated} 条记录的 user_ulid")
 
     def _migrate_remove_groups(self, cursor):
         """

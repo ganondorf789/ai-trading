@@ -1,11 +1,12 @@
 """
 仓位级别跟单相关路由（第二种跟单模式）
 """
+import json
 from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
-from .middleware import login_required
+from .middleware import login_required, get_current_user_id
 from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -13,11 +14,16 @@ logger = logging.getLogger(__name__)
 copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
 
-def _notify_open_position(tracking_id: int) -> bool:
+def _notify_open_position(tracking_id: int, user_id: int = None) -> bool:
     """
     发送开仓通知到 Redis，机器人收到后立即开仓
     
-    注意：传入的是整数 ID，需要查询 ULID 后发送给机器人
+    消息格式（JSON）：{"tracking_id": "<ULID>", "user_ulid": "<ULID>"}
+    机器人会校验 user_ulid 是否与自身 BOT_USER_ID 一致后才执行开仓
+    
+    Args:
+        tracking_id: 跟单记录整数 ID
+        user_id: 用户整数 ID（用于查询用户 ULID）
     """
     redis_client = get_redis_client()
     
@@ -33,10 +39,24 @@ def _notify_open_position(tracking_id: int) -> bool:
         
         tracking_ulid = tracking['ulid']
         
-        # 与 position_copy_trading_example.py 使用相同的频道
-        REDIS_OPEN_CHANNEL = "copy_trading:position:open"
-        redis_client.publish(REDIS_OPEN_CHANNEL, tracking_ulid)
-        logger.info(f"已发送开仓通知: tracking_id={tracking_id}, ulid={tracking_ulid}")
+        # 查询用户的 ULID
+        user_ulid = ''
+        if user_id:
+            user = db.get_user_by_id(user_id)
+            user_ulid = user.get('ulid', '') if user else ''
+        
+        if not user_ulid:
+            logger.warning(f"发送开仓通知失败: 无法获取用户 ULID (user_id={user_id})")
+            return False
+        
+        # 发送 JSON 格式的开仓通知
+        REDIS_OPEN_CHANNEL = "position_tracking_open"
+        open_msg = json.dumps({
+            'tracking_id': tracking_ulid,
+            'user_ulid': user_ulid,
+        })
+        redis_client.publish(REDIS_OPEN_CHANNEL, open_msg)
+        logger.info(f"已发送开仓通知: tracking_id={tracking_id}, ulid={tracking_ulid}, user={user_ulid[:8]}...")
         return True
     except Exception as e:
         logger.warning(f"发送开仓通知失败: {e}")
@@ -963,7 +983,7 @@ def quick_copy_position():
         logger.info(f"[快速跟单] 添加成功: #{tracking_id} {symbol} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
 
         # 发送 Redis 开仓通知，让机器人立即开仓
-        notified = _notify_open_position(tracking_id)
+        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
 
         return jsonify({
             'success': True,
@@ -1033,7 +1053,7 @@ def notify_tracking_open(tracking_id: int):
             }), 400
 
         # 发送开仓通知
-        notified = _notify_open_position(tracking_id)
+        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
 
         if notified:
             return jsonify({
