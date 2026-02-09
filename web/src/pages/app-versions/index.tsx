@@ -302,16 +302,6 @@ export default function AppVersionsPage() {
             <SelectItem key="ios">iOS</SelectItem>
           </Select>
 
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => fetchVersions()}
-            isLoading={loading}
-          >
-            刷新
-          </Button>
-
           <div className="flex-1" />
 
           <Button

@@ -349,16 +349,6 @@ export default function SecretKeysPage() {
             <SelectItem key="true">已启用</SelectItem>
             <SelectItem key="false">已禁用</SelectItem>
           </Select>
-
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => fetchKeys()}
-            isLoading={loading}
-          >
-            刷新
-          </Button>
         </div>
 
         {/* 秘钥表格 */}
