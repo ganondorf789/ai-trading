@@ -19,6 +19,8 @@ import {
   ModalFooter,
   addToast,
 } from "@heroui/react";
+import { DatePicker } from "@heroui/date-picker";
+import { CalendarDateTime } from "@internationalized/date";
 import { Icon } from "@iconify/react";
 
 import DefaultLayout from "@/layouts/default";
@@ -61,11 +63,14 @@ export default function UsersPage() {
   // 当前页的用户数据
   const paginatedUsers = useMemo(() => getPageItems(users), [getPageItems, users]);
 
-  // 编辑角色弹窗
-  const [editModalOpen, setEditModalOpen] = useState(false);
+  // 编辑用户信息弹窗（身份、过期时间、IP、端口）
+  const [editInfoModalOpen, setEditInfoModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [newRole, setNewRole] = useState<string>("");
-  const [updating, setUpdating] = useState(false);
+  const [editRole, setEditRole] = useState<string>("");
+  const [editExpiresAt, setEditExpiresAt] = useState<CalendarDateTime | null>(null);
+  const [editAllowedIp, setEditAllowedIp] = useState<string>("");
+  const [editAllowedPort, setEditAllowedPort] = useState<string>("");
+  const [updatingInfo, setUpdatingInfo] = useState(false);
 
   // 加载用户列表
   const fetchUsers = useCallback(async () => {
@@ -112,30 +117,68 @@ export default function UsersPage() {
     }
   }, [roleFilter, activeFilter, searchValue]);
 
-  // 打开编辑角色弹窗
-  const handleEditRole = (user: User) => {
+  // 打开编辑信息弹窗
+  const handleEditInfo = (user: User) => {
     setSelectedUser(user);
-    setNewRole(user.role);
-    setEditModalOpen(true);
+    setEditRole(user.role);
+    // 转换过期时间为 CalendarDateTime
+    if (user.expires_at) {
+      try {
+        const d = new Date(user.expires_at);
+        setEditExpiresAt(
+          new CalendarDateTime(
+            d.getFullYear(),
+            d.getMonth() + 1,
+            d.getDate(),
+            d.getHours(),
+            d.getMinutes()
+          )
+        );
+      } catch {
+        setEditExpiresAt(null);
+      }
+    } else {
+      setEditExpiresAt(null);
+    }
+    setEditAllowedIp(user.allowed_ip || "");
+    setEditAllowedPort(user.allowed_port || "");
+    setEditInfoModalOpen(true);
   };
 
-  // 更新用户角色
-  const handleUpdateRole = async () => {
-    if (!selectedUser || !newRole) return;
+  // 更新用户信息
+  const handleUpdateInfo = async () => {
+    if (!selectedUser) return;
 
-    setUpdating(true);
+    setUpdatingInfo(true);
     try {
-      const response = await userManagementApi.updateUserRole(selectedUser.id, {
-        role: newRole,
-      });
+      const updateData: { role?: string; expires_at?: string; allowed_ip?: string; allowed_port?: string } = {
+        role: editRole,
+        allowed_ip: editAllowedIp,
+        allowed_port: editAllowedPort,
+      };
+
+      if (editExpiresAt) {
+        const d = new Date(
+          editExpiresAt.year,
+          editExpiresAt.month - 1,
+          editExpiresAt.day,
+          editExpiresAt.hour,
+          editExpiresAt.minute
+        );
+        updateData.expires_at = d.toISOString();
+      } else {
+        updateData.expires_at = "none";
+      }
+
+      const response = await userManagementApi.updateUserInfo(selectedUser.id, updateData);
 
       if (response.success) {
         addToast({
           title: "成功",
-          description: "用户身份更新成功",
+          description: "用户信息更新成功",
           color: "success",
         });
-        setEditModalOpen(false);
+        setEditInfoModalOpen(false);
         fetchUsers();
       }
     } catch (error: any) {
@@ -145,7 +188,7 @@ export default function UsersPage() {
         color: "danger",
       });
     } finally {
-      setUpdating(false);
+      setUpdatingInfo(false);
     }
   };
 
@@ -233,8 +276,8 @@ export default function UsersPage() {
             <TableColumn>账号</TableColumn>
             <TableColumn>身份</TableColumn>
             <TableColumn>状态</TableColumn>
-            <TableColumn>API钱包</TableColumn>
-            <TableColumn>钱包地址</TableColumn>
+            <TableColumn>IP</TableColumn>
+            <TableColumn>端口</TableColumn>
             <TableColumn>过期时间</TableColumn>
             <TableColumn>注册时间</TableColumn>
             <TableColumn>最后登录</TableColumn>
@@ -268,12 +311,12 @@ export default function UsersPage() {
                 </TableCell>
                 <TableCell>
                   <span className="font-mono text-xs">
-                    {user.api_wallet ? `${user.api_wallet.slice(0, 6)}...${user.api_wallet.slice(-4)}` : "-"}
+                    {user.allowed_ip || "-"}
                   </span>
                 </TableCell>
                 <TableCell>
                   <span className="font-mono text-xs">
-                    {user.wallet_address ? `${user.wallet_address.slice(0, 6)}...${user.wallet_address.slice(-4)}` : "-"}
+                    {user.allowed_port || "-"}
                   </span>
                 </TableCell>
                 <TableCell>
@@ -294,9 +337,9 @@ export default function UsersPage() {
                     size="sm"
                     variant="flat"
                     startContent={<Icon icon="lucide:edit" />}
-                    onPress={() => handleEditRole(user)}
+                    onPress={() => handleEditInfo(user)}
                   >
-                    编辑身份
+                    编辑
                   </Button>
                 </TableCell>
               </TableRow>
@@ -304,10 +347,10 @@ export default function UsersPage() {
           </TableBody>
         </Table>
 
-        {/* 编辑角色弹窗 */}
-        <Modal isOpen={editModalOpen} onClose={() => setEditModalOpen(false)}>
+        {/* 编辑用户信息弹窗 */}
+        <Modal isOpen={editInfoModalOpen} onClose={() => setEditInfoModalOpen(false)}>
           <ModalContent>
-            <ModalHeader>编辑用户身份</ModalHeader>
+            <ModalHeader>编辑用户信息</ModalHeader>
             <ModalBody>
               {selectedUser && (
                 <div className="flex flex-col gap-4">
@@ -317,21 +360,57 @@ export default function UsersPage() {
                   </div>
                   <Select
                     label="用户身份"
-                    selectedKeys={[newRole]}
-                    onSelectionChange={(keys) => setNewRole(Array.from(keys)[0] as string)}
+                    selectedKeys={[editRole]}
+                    onSelectionChange={(keys) => setEditRole(Array.from(keys)[0] as string)}
                   >
                     <SelectItem key="user">普通用户</SelectItem>
                     <SelectItem key="member">会员</SelectItem>
                     <SelectItem key="admin">管理员</SelectItem>
                   </Select>
+                  <DatePicker
+                    label="过期时间"
+                    granularity="minute"
+                    value={editExpiresAt as any}
+                    onChange={(v: any) => setEditExpiresAt(v)}
+                    description="留空表示永不过期"
+                    showMonthAndYearPickers
+                    hourCycle={24}
+                  />
+                  {editExpiresAt && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color="danger"
+                      startContent={<Icon icon="lucide:x" />}
+                      onPress={() => setEditExpiresAt(null)}
+                    >
+                      清除过期时间（设为永久）
+                    </Button>
+                  )}
+                  <Input
+                    label="IP 地址"
+                    placeholder="例如: 192.168.1.1"
+                    value={editAllowedIp}
+                    onValueChange={setEditAllowedIp}
+                    isClearable
+                    onClear={() => setEditAllowedIp("")}
+                  />
+                  <Input
+                    label="端口"
+                    placeholder="例如: 8080"
+                    value={editAllowedPort}
+                    onValueChange={setEditAllowedPort}
+                    isClearable
+                    onClear={() => setEditAllowedPort("")}
+                  />
                 </div>
               )}
             </ModalBody>
             <ModalFooter>
-              <Button variant="flat" onPress={() => setEditModalOpen(false)}>
+              <Button variant="flat" onPress={() => setEditInfoModalOpen(false)}>
                 取消
               </Button>
-              <Button color="primary" onPress={handleUpdateRole} isLoading={updating}>
+              <Button color="primary" onPress={handleUpdateInfo} isLoading={updatingInfo}>
                 保存
               </Button>
             </ModalFooter>

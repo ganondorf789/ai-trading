@@ -111,7 +111,7 @@ def create_announcement():
                 'error': '公告内容不能为空'
             }), 400
         
-        # 构造公告消息（不设置 user_id，将广播给所有用户）
+        # 构造公告数据（不设置 user_id，将广播给所有用户）
         announcement_data = {
             'type': 'announcement',
             'title': title,
@@ -119,18 +119,25 @@ def create_announcement():
             'timestamp': datetime.utcnow().isoformat()
         }
         
-        # 通过 Redis 发布公告（WebSocket 会接收并保存到数据库、广播给客户端）
-        if not _publish_announcement(announcement_data):
+        # 1. 直接保存到数据库（不依赖 Redis Pub/Sub 的消费者来持久化）
+        notification_id = db.save_notification(announcement_data)
+        if not notification_id:
             return jsonify({
                 'success': False,
-                'error': '发布公告失败，请稍后重试'
+                'error': '保存公告到数据库失败，请稍后重试'
             }), 500
         
-        logger.info(f"公告发布成功: {title}")
+        announcement_data['id'] = notification_id
+        
+        # 2. 通过 Redis 广播公告（用于 WebSocket 实时推送给在线客户端）
+        _publish_announcement(announcement_data)
+        
+        logger.info(f"公告发布成功: id={notification_id}, title={title}")
         
         return jsonify({
             'success': True,
-            'message': '公告发布成功'
+            'message': '公告发布成功',
+            'data': {'id': notification_id}
         })
         
     except Exception as e:

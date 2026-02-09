@@ -303,7 +303,7 @@ def _handle_notification(data: dict):
     
     Args:
         data: 通知数据，包含:
-            - type: 通知类型 ('open' | 'close' | 'adjust' | 'error')
+            - type: 通知类型 ('open' | 'close' | 'adjust' | 'error' | 'announcement')
             - title: 通知标题
             - content: Markdown 格式内容
             - target_address: 目标交易员地址
@@ -313,20 +313,24 @@ def _handle_notification(data: dict):
             - pnl: 盈亏
             - timestamp: 时间戳
             - user_id: 目标用户ID（可选，如果指定则只发送给该用户）
+            - id: 已保存的通知ID（可选，如已有则跳过数据库保存）
     """
     global socketio
     
     user_id = data.get('user_id')
     
-    # 1. 保存通知到数据库
-    try:
-        db = _get_db()
-        notification_id = db.save_notification(data)
-        if notification_id:
-            data['id'] = notification_id
-            logger.info(f"通知已保存: id={notification_id}, type={data.get('type')}, symbol={data.get('symbol')}, user_id={user_id}")
-    except Exception as e:
-        logger.error(f"保存通知到数据库失败: {e}")
+    # 1. 保存通知到数据库（如果消息中已带 id，说明发布端已保存，跳过避免重复插入）
+    if not data.get('id'):
+        try:
+            db = _get_db()
+            notification_id = db.save_notification(data)
+            if notification_id:
+                data['id'] = notification_id
+                logger.info(f"通知已保存: id={notification_id}, type={data.get('type')}, symbol={data.get('symbol')}, user_id={user_id}")
+        except Exception as e:
+            logger.error(f"保存通知到数据库失败: {e}")
+    else:
+        logger.info(f"通知已由发布端保存: id={data['id']}, type={data.get('type')}")
     
     # 2. 发送通知给 WebSocket 客户端
     if socketio is None:

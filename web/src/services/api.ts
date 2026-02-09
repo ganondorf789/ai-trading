@@ -65,6 +65,8 @@ export interface User {
   role: 'user' | 'member' | 'admin';
   api_wallet: string;
   wallet_address: string;
+  allowed_ip: string;
+  allowed_port: string;
   expires_at: string | null;
   is_active: boolean;
   created_at: string;
@@ -878,6 +880,10 @@ export const userManagementApi = {
   // 更新用户身份（管理员）
   updateUserRole: (targetUserId: number, data: { role: string }) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/role`, data),
+
+  // 更新用户信息（管理员）- 过期时间、IP、端口
+  updateUserInfo: (targetUserId: number, data: { role?: string; expires_at?: string | null; allowed_ip?: string; allowed_port?: string }) =>
+    api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/info`, data),
 
   // 获取用户统计（管理员）
   getUserStats: () =>

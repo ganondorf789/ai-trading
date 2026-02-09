@@ -230,25 +230,10 @@ export default function AnnouncementsPage() {
             <Icon icon="lucide:megaphone" width={28} />
             公告管理
           </h1>
-          <p className="text-default-500 mt-1">
-            发布系统公告，公告将实时推送给所有在线用户
-          </p>
         </div>
 
         {/* 操作栏 */}
         <div className="flex flex-wrap gap-4 items-center">
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Icon icon="lucide:refresh-cw" />}
-            onPress={() => fetchAnnouncements()}
-            isLoading={loading}
-          >
-            刷新
-          </Button>
-
-          <div className="flex-1" />
-
           <Button
             color="primary"
             startContent={<Icon icon="lucide:plus" />}
@@ -421,15 +406,6 @@ export default function AnnouncementsPage() {
                     </div>
                   </Tab>
                 </Tabs>
-
-                {!editingAnnouncement && (
-                  <div className="flex items-center gap-2 p-3 bg-warning-50 dark:bg-warning-900/20 rounded-lg">
-                    <Icon icon="lucide:info" className="text-warning" />
-                    <span className="text-sm text-warning-600 dark:text-warning-400">
-                      发布后公告将立即推送给所有在线用户
-                    </span>
-                  </div>
-                )}
               </div>
             </ModalBody>
             <ModalFooter>

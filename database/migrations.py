@@ -961,6 +961,14 @@ class DatabaseMigrations:
             WHERE api_key IS NOT NULL
         """)
 
+        # 添加 allowed_ip 和 allowed_port 字段到 users 表
+        self._migrate_add_column_if_not_exists(
+            cursor, 'users', 'allowed_ip', "TEXT DEFAULT ''"
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'users', 'allowed_port', "TEXT DEFAULT ''"
+        )
+
         # 添加 user_id 字段到 notifications 表（通知与用户关联）
         self._migrate_add_column_if_not_exists(
             cursor, 'notifications', 'user_id', 'INTEGER'

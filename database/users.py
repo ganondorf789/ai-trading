@@ -168,6 +168,7 @@ class UsersOps:
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     )
                     RETURNING id, account, secret_key_id, role, api_wallet, wallet_address,
+                              allowed_ip, allowed_port,
                               expires_at, is_active, created_at, updated_at
                 """, (account, password_hash, secret_key_id, role, expires_at))
                 
@@ -202,6 +203,7 @@ class UsersOps:
                 cursor.execute("""
                     SELECT id, account, password_hash, secret_key_id, role,
                            api_wallet, wallet_address,
+                           allowed_ip, allowed_port,
                            expires_at, is_active,
                            created_at, updated_at, last_login_at
                     FROM users
@@ -354,6 +356,7 @@ class UsersOps:
                     SET {', '.join(updates)}
                     WHERE id = %s
                     RETURNING id, account, secret_key_id, role, api_wallet, wallet_address,
+                              allowed_ip, allowed_port,
                               expires_at, is_active, created_at, updated_at, last_login_at
                 """, params)
                 
@@ -422,6 +425,7 @@ class UsersOps:
                 
                 cursor.execute("""
                     SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                           allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
                     WHERE id = %s
@@ -456,6 +460,7 @@ class UsersOps:
                 
                 cursor.execute("""
                     SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                           allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
                     WHERE account = %s
@@ -659,6 +664,7 @@ class UsersOps:
                 
                 cursor.execute(f"""
                     SELECT id, account, secret_key_id, role, api_wallet, wallet_address,
+                           allowed_ip, allowed_port,
                            expires_at, is_active, created_at, updated_at, last_login_at
                     FROM users
                     WHERE {where_clause}
@@ -716,6 +722,78 @@ class UsersOps:
         except Exception as e:
             logger.error(f"获取用户统计失败: {e}")
             return {}
+
+    def update_user_info(
+        self,
+        user_id: int,
+        role: Optional[str] = None,
+        expires_at=None,
+        allowed_ip: Optional[str] = None,
+        allowed_port: Optional[str] = None
+    ) -> bool:
+        """
+        管理员更新用户信息（身份、过期时间、IP、端口）
+
+        Args:
+            user_id: 用户 ID
+            role: 用户身份 (user/member/admin)
+            expires_at: 过期时间（'none' 表示永不过期）
+            allowed_ip: 允许的 IP 地址
+            allowed_port: 允许的端口
+
+        Returns:
+            是否更新成功
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                updates = []
+                params = []
+
+                if role is not None:
+                    if role not in self.VALID_ROLES:
+                        logger.warning(f"更新用户信息失败: 无效的身份 - {role}")
+                        return False
+                    updates.append("role = %s")
+                    params.append(role)
+
+                if expires_at is not None:
+                    updates.append("expires_at = %s")
+                    # 'none' 或空值 表示永不过期
+                    if expires_at == 'none' or expires_at == '':
+                        params.append(None)
+                    else:
+                        params.append(expires_at)
+
+                if allowed_ip is not None:
+                    updates.append("allowed_ip = %s")
+                    params.append(allowed_ip)
+
+                if allowed_port is not None:
+                    updates.append("allowed_port = %s")
+                    params.append(allowed_port)
+
+                if not updates:
+                    return False
+
+                updates.append("updated_at = CURRENT_TIMESTAMP")
+                params.append(user_id)
+
+                cursor.execute(f"""
+                    UPDATE users
+                    SET {', '.join(updates)}
+                    WHERE id = %s
+                """, params)
+
+                if cursor.rowcount > 0:
+                    logger.info(f"用户信息更新成功: id={user_id}")
+                    return True
+                return False
+
+        except Exception as e:
+            logger.error(f"更新用户信息失败: {e}")
+            return False
 
     def is_admin(self, user_id: int) -> bool:
         """

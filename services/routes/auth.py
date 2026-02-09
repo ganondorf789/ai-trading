@@ -1018,6 +1018,8 @@ def get_current_user_info():
             'role': user.get('role', 'user'),
             'api_wallet': user.get('api_wallet', ''),
             'wallet_address': user.get('wallet_address', ''),
+            'allowed_ip': user.get('allowed_ip', ''),
+            'allowed_port': user.get('allowed_port', ''),
             'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
             'is_active': user.get('is_active', True),
             'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
@@ -1103,6 +1105,8 @@ def get_user_info(user_id: int):
             'role': user.get('role', 'user'),
             'api_wallet': user.get('api_wallet', ''),
             'wallet_address': user.get('wallet_address', ''),
+            'allowed_ip': user.get('allowed_ip', ''),
+            'allowed_port': user.get('allowed_port', ''),
             'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
             'is_active': user.get('is_active', True),
             'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
@@ -1936,6 +1940,8 @@ def get_users():
                 'role': u.get('role', 'user'),
                 'api_wallet': u.get('api_wallet', ''),
                 'wallet_address': u.get('wallet_address', ''),
+                'allowed_ip': u.get('allowed_ip', ''),
+                'allowed_port': u.get('allowed_port', ''),
                 'expires_at': u['expires_at'].isoformat() if u.get('expires_at') else None,
                 'is_active': u.get('is_active', True),
                 'created_at': u['created_at'].isoformat() if u.get('created_at') else None,
@@ -2030,6 +2036,127 @@ def update_user_role(target_user_id: int):
         
     except Exception as e:
         logger.error(f"更新用户身份失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/users/<int:target_user_id>/info', methods=['PUT'])
+@login_required
+@admin_required
+def update_user_info(target_user_id: int):
+    """更新用户信息（管理员权限）- 身份、过期时间、IP、端口
+    ---
+    tags:
+      - UserManagement
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+      - name: target_user_id
+        in: path
+        type: integer
+        required: true
+        description: 目标用户 ID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            role:
+              type: string
+              enum: [user, member, admin]
+              description: 用户身份
+            expires_at:
+              type: string
+              description: 过期时间（ISO格式，'none' 或空字符串表示永不过期）
+            allowed_ip:
+              type: string
+              description: 允许的 IP 地址
+            allowed_port:
+              type: string
+              description: 允许的端口
+    responses:
+      200:
+        description: 更新成功
+      400:
+        description: 请求参数错误
+      403:
+        description: 无权限
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': '请求参数不能为空'
+            }), 400
+
+        role = data.get('role')
+        expires_at = data.get('expires_at')
+        allowed_ip = data.get('allowed_ip')
+        allowed_port = data.get('allowed_port')
+
+        # 至少提供一个参数
+        if role is None and expires_at is None and allowed_ip is None and allowed_port is None:
+            return jsonify({
+                'success': False,
+                'error': '至少需要提供一个更新参数'
+            }), 400
+
+        # 验证身份
+        if role is not None and role not in [ROLE_USER, ROLE_MEMBER, ROLE_ADMIN]:
+            return jsonify({
+                'success': False,
+                'error': '无效的用户身份'
+            }), 400
+
+        # 处理过期时间
+        parsed_expires_at = None
+        if expires_at is not None:
+            if expires_at == 'none' or expires_at == '' or expires_at is None:
+                parsed_expires_at = 'none'
+            else:
+                try:
+                    parsed_expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    return jsonify({
+                        'success': False,
+                        'error': '过期时间格式不正确'
+                    }), 400
+
+        success = db.update_user_info(
+            user_id=target_user_id,
+            role=role,
+            expires_at=parsed_expires_at,
+            allowed_ip=allowed_ip,
+            allowed_port=allowed_port
+        )
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在或更新失败'
+            }), 404
+
+        logger.info(f"管理员更新用户信息: user_id={target_user_id}")
+
+        return jsonify({
+            'success': True,
+            'message': '用户信息更新成功'
+        })
+
+    except Exception as e:
+        logger.error(f"更新用户信息失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
