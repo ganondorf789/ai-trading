@@ -1,6 +1,6 @@
 """
 用户认证相关路由
-包括：注册、登录、修改密码、Hyperliquid 设置、秘钥管理
+包括：注册、登录、修改密码、用户信息、Hyperliquid 设置、秘钥管理
 """
 from flask import Blueprint, jsonify, request, g
 import logging
@@ -1031,6 +1031,117 @@ def get_current_user_info():
             'data': response_data
         })
         
+    except Exception as e:
+        logger.error(f"获取用户信息失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@auth_bp.route('/api/auth/userinfo', methods=['GET'])
+@login_required
+def get_userinfo():
+    """获取当前用户完整信息（包含 Hyperliquid 设置和 API Key 状态）
+    ---
+    tags:
+      - Auth
+    parameters:
+      - name: Authorization
+        in: header
+        type: string
+        required: true
+        description: Bearer Token
+    responses:
+      200:
+        description: 获取成功
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                id:
+                  type: integer
+                account:
+                  type: string
+                role:
+                  type: string
+                api_wallet:
+                  type: string
+                wallet_address:
+                  type: string
+                allowed_ip:
+                  type: string
+                allowed_port:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+                is_active:
+                  type: boolean
+                is_expired:
+                  type: boolean
+                created_at:
+                  type: string
+                  format: date-time
+                last_login_at:
+                  type: string
+                  format: date-time
+                has_hyperliquid_settings:
+                  type: boolean
+                has_api_key:
+                  type: boolean
+      404:
+        description: 用户不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        user_id = get_current_user_id()
+        user = db.get_user_by_id(user_id)
+
+        if not user:
+            return jsonify({
+                'success': False,
+                'error': '用户不存在'
+            }), 404
+
+        # 检查是否已过期
+        is_expired = False
+        if user.get('role') != ROLE_ADMIN and user.get('expires_at'):
+            is_expired = user['expires_at'] < datetime.now()
+
+        # 检查是否配置了 Hyperliquid 设置
+        has_hyperliquid_settings = bool(user.get('api_wallet')) and bool(user.get('wallet_address'))
+
+        # 检查是否有 API Key
+        has_api_key = bool(user.get('api_key'))
+
+        response_data = {
+            'id': user['id'],
+            'account': user['account'],
+            'role': user.get('role', 'user'),
+            'api_wallet': user.get('api_wallet', ''),
+            'wallet_address': user.get('wallet_address', ''),
+            'allowed_ip': user.get('allowed_ip', ''),
+            'allowed_port': user.get('allowed_port', ''),
+            'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
+            'is_active': user.get('is_active', True),
+            'is_expired': is_expired,
+            'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
+            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None,
+            'has_hyperliquid_settings': has_hyperliquid_settings,
+            'has_api_key': has_api_key,
+        }
+
+        return jsonify({
+            'success': True,
+            'data': response_data
+        })
+
     except Exception as e:
         logger.error(f"获取用户信息失败: {e}")
         return jsonify({
