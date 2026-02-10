@@ -794,6 +794,131 @@ class DatabaseMigrations:
                 ON copy_config_rules(config_type, priority)
             """)
 
+            # 创建资金费历史表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_funding_history (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+
+                    -- 资金费信息
+                    coin TEXT NOT NULL,
+                    funding_rate TEXT,             -- 资金费率（保留字符串精度）
+                    szi REAL DEFAULT 0.0,          -- 持仓数量
+                    usdc REAL DEFAULT 0.0,         -- 资金费金额（USDC）
+                    n_samples INTEGER,             -- 采样数
+                    hash TEXT,                     -- 交易哈希
+                    time BIGINT NOT NULL,          -- 毫秒时间戳
+
+                    -- 唯一约束：同一地址、时间、币种只会有一条资金费记录
+                    UNIQUE(address, time, coin)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_funding_history_address
+                ON trader_funding_history(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_funding_history_time
+                ON trader_funding_history(time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_funding_history_address_time
+                ON trader_funding_history(address, time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_funding_history_coin
+                ON trader_funding_history(coin)
+            """)
+
+            # 创建历史委托表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_historical_orders (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+
+                    -- 委托信息
+                    coin TEXT,
+                    side CHAR(1),                   -- 'A' 或 'B'
+                    limit_px TEXT,                   -- 限价（保留字符串精度）
+                    sz TEXT,                         -- 当前数量
+                    orig_sz TEXT,                    -- 原始数量
+                    oid BIGINT NOT NULL,             -- 委托 ID
+                    order_type TEXT DEFAULT 'Limit', -- 委托类型
+                    is_trigger BOOLEAN DEFAULT FALSE,
+                    trigger_condition TEXT DEFAULT '',
+                    trigger_px TEXT DEFAULT '',
+                    is_position_tpsl BOOLEAN DEFAULT FALSE,
+                    reduce_only BOOLEAN DEFAULT FALSE,
+                    order_timestamp BIGINT DEFAULT 0, -- 下单时间（毫秒）
+                    cloid TEXT DEFAULT '',            -- 客户端委托 ID
+
+                    -- 状态
+                    status TEXT DEFAULT '',           -- filled/canceled/rejected/triggered/open/marginCanceled
+                    status_timestamp BIGINT DEFAULT 0, -- 状态更新时间（毫秒）
+
+                    -- 唯一约束：同一地址的同一委托 ID 唯一
+                    UNIQUE(address, oid)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_historical_orders_address
+                ON trader_historical_orders(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_historical_orders_status
+                ON trader_historical_orders(status)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_historical_orders_address_status_ts
+                ON trader_historical_orders(address, status_timestamp DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_historical_orders_coin
+                ON trader_historical_orders(coin)
+            """)
+
+            # 创建出入金（非资金费账本更新）表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_ledger_updates (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+
+                    -- 账本信息
+                    delta_type TEXT NOT NULL,         -- 类型: deposit, withdraw, internalTransfer,
+                                                     -- spotTransfer, accountClassTransfer, liquidation 等
+                    usdc REAL DEFAULT 0.0,            -- 金额（USDC）
+                    fee REAL DEFAULT 0.0,             -- 手续费
+                    nonce BIGINT,                     -- 交易 nonce（部分类型有）
+                    destination TEXT DEFAULT '',      -- 目标地址（转账时有）
+                    user_field TEXT DEFAULT '',       -- 用户字段（部分类型有）
+                    hash TEXT,                        -- 交易哈希
+                    time BIGINT NOT NULL,             -- 毫秒时间戳
+                    delta_json JSONB,                 -- 完整 delta 数据（灵活存储）
+
+                    -- 唯一约束
+                    UNIQUE(address, hash, time)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ledger_updates_address
+                ON trader_ledger_updates(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ledger_updates_time
+                ON trader_ledger_updates(time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ledger_updates_address_time
+                ON trader_ledger_updates(address, time DESC)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ledger_updates_delta_type
+                ON trader_ledger_updates(delta_type)
+            """)
+
             # 运行增量迁移
             self._run_migrations(cursor)
 

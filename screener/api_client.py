@@ -512,6 +512,118 @@ class SyncAPIClient(BaseAPIClient):
             logger.debug(f"获取最近交易失败 {symbol}: {e}")
             return []
     
+    def get_user_funding_history(
+        self,
+        address: str,
+        start_time_ms: int,
+        end_time_ms: int = None
+    ) -> List[Dict]:
+        """
+        获取用户资金费历史
+
+        Args:
+            address: 用户地址
+            start_time_ms: 开始时间（毫秒）
+            end_time_ms: 结束时间（毫秒），默认当前时间
+
+        Returns:
+            资金费记录列表
+        """
+        try:
+            if self._use_proxy:
+                data = {
+                    "type": "userFunding",
+                    "user": address,
+                    "startTime": start_time_ms,
+                }
+                if end_time_ms is not None:
+                    data["endTime"] = end_time_ms
+                result = self._post_with_proxy(data)
+            else:
+                if end_time_ms is not None:
+                    result = self._call_with_retry(
+                        self._info.user_funding_history,
+                        address, start_time_ms, end_time_ms
+                    )
+                else:
+                    result = self._call_with_retry(
+                        self._info.user_funding_history,
+                        address, start_time_ms
+                    )
+            return result if result else []
+        except APIError as e:
+            logger.debug(f"获取资金费历史失败 {address[:10]}...: {e}")
+            return []
+
+    def get_historical_orders(self, address: str) -> List[Dict]:
+        """
+        获取用户历史委托（最多返回 2000 条最近的记录）
+
+        Args:
+            address: 用户地址
+
+        Returns:
+            历史委托列表
+        """
+        try:
+            if self._use_proxy:
+                result = self._post_with_proxy({
+                    "type": "historicalOrders",
+                    "user": address,
+                })
+            else:
+                result = self._call_with_retry(
+                    self._info.historical_orders,
+                    address
+                )
+            return result if result else []
+        except APIError as e:
+            logger.debug(f"获取历史委托失败 {address[:10]}...: {e}")
+            return []
+
+    def get_user_non_funding_ledger(
+        self,
+        address: str,
+        start_time_ms: int,
+        end_time_ms: int = None
+    ) -> List[Dict]:
+        """
+        获取用户非资金费账本更新（存款、提款、转账、清算等）
+
+        Args:
+            address: 用户地址
+            start_time_ms: 开始时间（毫秒）
+            end_time_ms: 结束时间（毫秒），默认当前时间
+
+        Returns:
+            账本记录列表
+        """
+        try:
+            if self._use_proxy:
+                data = {
+                    "type": "userNonFundingLedgerUpdates",
+                    "user": address,
+                    "startTime": start_time_ms,
+                }
+                if end_time_ms is not None:
+                    data["endTime"] = end_time_ms
+                result = self._post_with_proxy(data)
+            else:
+                if end_time_ms is not None:
+                    result = self._call_with_retry(
+                        self._info.user_non_funding_ledger_updates,
+                        address, start_time_ms, end_time_ms
+                    )
+                else:
+                    result = self._call_with_retry(
+                        self._info.user_non_funding_ledger_updates,
+                        address, start_time_ms
+                    )
+            return result if result else []
+        except APIError as e:
+            logger.debug(f"获取账本更新失败 {address[:10]}...: {e}")
+            return []
+
     def delay(self) -> None:
         """执行 API 调用延迟"""
         if self.config.api_call_delay > 0:

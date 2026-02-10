@@ -11,6 +11,8 @@ Hyperliquid 交易者筛选模块
 - metrics_calculator: 指标计算 (MetricsCalculator)
 - scorer: 评分系统 (TraderScorer)
 - trader_screener: 主筛选器 (TraderScreener)
+- incremental_fetcher: 增量成交记录获取
+- account_history_fetcher: 账户历史数据获取（资金费、委托、出入金）
 - utils: 工具函数
 - exceptions: 异常类
 
@@ -145,6 +147,14 @@ from screener.incremental_fetcher import (
     find_first_fill_half_year,
 )
 
+# 账户历史获取（资金费、委托、出入金）
+from screener.account_history_fetcher import (
+    fetch_all_funding_history,
+    fetch_all_historical_orders,
+    fetch_all_ledger_updates,
+    fetch_trader_account_history,
+)
+
 # 评分系统
 from screener.scorer import (
     TraderScorer,
@@ -258,6 +268,12 @@ __all__ = [
     "fetch_fills_by_minutes",
     "probe_trader_fills",
     "find_first_fill_half_year",
+    
+    # 账户历史获取
+    "fetch_all_funding_history",
+    "fetch_all_historical_orders",
+    "fetch_all_ledger_updates",
+    "fetch_trader_account_history",
     
     # 评分系统
     "TraderScorer",

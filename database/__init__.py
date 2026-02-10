@@ -9,6 +9,9 @@ from .cache import RedisCache, cache
 from .migrations import DatabaseMigrations
 from .trader_metrics import TraderMetricsOps
 from .trader_fills import TraderFillsOps
+from .trader_funding import TraderFundingOps
+from .trader_orders import TraderOrdersOps
+from .trader_ledger import TraderLedgerOps
 from .positions import PositionsOps
 from .copy_trading import CopyTradingOps
 from .copy_orders import CopyOrdersOps
@@ -29,6 +32,9 @@ class TraderDatabase(
     DatabaseMigrations,
     TraderMetricsOps,
     TraderFillsOps,
+    TraderFundingOps,
+    TraderOrdersOps,
+    TraderLedgerOps,
     PositionsOps,
     CopyTradingOps,
     CopyOrdersOps,
@@ -56,6 +62,9 @@ class TraderDatabase(
     - 仓位级别跟单管理
     - 新仓位检测记录
     - 通知管理
+    - 资金费历史管理
+    - 历史委托管理
+    - 出入金（账本更新）管理
     """
 
     def __init__(self):
