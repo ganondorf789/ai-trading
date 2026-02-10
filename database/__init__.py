@@ -25,6 +25,7 @@ from .users import UsersOps
 from .secret_keys import SecretKeysOps
 from .app_versions import AppVersionsOps
 from .user_favorites import UserFavoritesOps
+from .address_tracking import AddressTrackingOps
 
 
 class TraderDatabase(
@@ -47,7 +48,8 @@ class TraderDatabase(
     UsersOps,
     SecretKeysOps,
     AppVersionsOps,
-    UserFavoritesOps
+    UserFavoritesOps,
+    AddressTrackingOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

@@ -46,3 +46,7 @@ def register_routes(app):
     # 公告管理路由
     from .announcements import announcements_bp
     app.register_blueprint(announcements_bp)
+    
+    # 地址跟踪路由
+    from .address_tracking import address_tracking_bp
+    app.register_blueprint(address_tracking_bp)
