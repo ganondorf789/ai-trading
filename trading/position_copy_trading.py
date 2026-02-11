@@ -617,9 +617,35 @@ class PositionCopyTradingBot:
         )
     
     async def _on_redis_config_reload_message(self, channel: str, data: str):
-        """处理配置重载通知消息"""
-        logger.info(f"收到配置重载通知，立即重载配置...")
-        self.reload_configs()
+        """
+        处理配置重载通知消息
+        
+        消息格式（JSON）：{"user_ulid": "<ULID>"}
+        兼容旧格式（纯字符串 "reload"，不含 user_ulid 校验）
+        """
+        try:
+            # 尝试解析 JSON 格式
+            user_ulid = ''
+            try:
+                msg = json.loads(data.strip())
+                user_ulid = msg.get('user_ulid', '')
+            except (json.JSONDecodeError, TypeError):
+                pass  # 兼容旧格式
+            
+            # 校验 user_ulid 是否与本 bot 的 BOT_USER_ID 一致
+            my_user_id = settings.bot.user_id
+            if user_ulid and my_user_id:
+                if user_ulid != my_user_id:
+                    logger.debug(
+                        f"跳过配置重载通知: user_ulid={user_ulid[:8]}... "
+                        f"与本机 BOT_USER_ID={my_user_id[:8]}... 不匹配"
+                    )
+                    return
+            
+            logger.info(f"收到配置重载通知 (user={user_ulid[:8] + '...' if user_ulid else 'N/A'})，立即重载配置...")
+            self.reload_configs()
+        except Exception as e:
+            logger.warning(f"处理配置重载通知失败: {e}")
     
     async def _listen_redis_grpc(self, channels: List[str], handler, name: str):
         """

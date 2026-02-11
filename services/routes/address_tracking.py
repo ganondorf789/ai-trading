@@ -2,15 +2,34 @@
 地址跟踪相关路由
 用于监控特定地址的交易活动并发送通知
 """
+import json
 from flask import Blueprint, jsonify, request, g
 import logging
 
 from .db import db
-from .middleware import login_required
+from .middleware import login_required, get_current_user_ulid
+from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 address_tracking_bp = Blueprint('address_tracking', __name__)
+
+# Redis 配置重载通知 channel（与 copy_trading_tracking 共用，bot 统一监听）
+REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
+
+
+def _notify_tracking_config_changed():
+    """发送配置变更通知到 Redis，机器人收到后立即重载地址跟踪配置"""
+    user_ulid = get_current_user_ulid() or ''
+    redis_client = get_redis_client()
+    if redis_client is None:
+        return
+    try:
+        reload_msg = json.dumps({'user_ulid': user_ulid}) if user_ulid else "reload"
+        redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, reload_msg)
+        logger.info(f"已发送地址跟踪配置重载通知: user={user_ulid[:8] + '...' if user_ulid else 'N/A'}")
+    except Exception as e:
+        logger.warning(f"发送地址跟踪配置重载通知失败: {e}")
 
 
 # ==================== 地址跟踪 API ====================
@@ -281,6 +300,9 @@ def create_address_tracking():
         # 保存到数据库
         tracking_id = db.save_address_tracking(user_id, tracking_data, user_ulid=user_ulid)
 
+        # 通知机器人重载配置
+        _notify_tracking_config_changed()
+
         return jsonify({
             'success': True,
             'data': {'id': tracking_id},
@@ -358,6 +380,9 @@ def update_address_tracking(tracking_id: int):
 
         db.save_address_tracking(user_id, update_data, user_ulid=user_ulid)
 
+        # 通知机器人重载配置
+        _notify_tracking_config_changed()
+
         return jsonify({
             'success': True,
             'message': '更新成功'
@@ -395,6 +420,9 @@ def delete_address_tracking(tracking_id: int):
         user_id = g.current_user['user_id']
         success = db.delete_address_tracking(user_id, tracking_id)
         if success:
+            # 通知机器人重载配置
+            _notify_tracking_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '删除成功'
@@ -458,6 +486,9 @@ def toggle_address_tracking(tracking_id: int):
         success = db.toggle_address_tracking(user_id, tracking_id, is_enabled)
 
         if success:
+            # 通知机器人重载配置
+            _notify_tracking_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '已启用' if is_enabled else '已禁用'
@@ -521,6 +552,9 @@ def toggle_address_tracking_notification(tracking_id: int):
         success = db.toggle_address_tracking_notification(user_id, tracking_id, enable_notification)
 
         if success:
+            # 通知机器人重载配置
+            _notify_tracking_config_changed()
+
             return jsonify({
                 'success': True,
                 'message': '通知已启用' if enable_notification else '通知已禁用'
@@ -584,6 +618,10 @@ def batch_delete_address_trackings():
             }), 400
 
         deleted_count = db.batch_delete_address_trackings(user_id, tracking_ids)
+
+        if deleted_count > 0:
+            # 通知机器人重载配置
+            _notify_tracking_config_changed()
 
         return jsonify({
             'success': True,

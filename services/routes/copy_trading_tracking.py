@@ -57,8 +57,16 @@ def _notify_open_position(tracking_id: int, user_ulid: str = '') -> bool:
         return False
 
 
-def _notify_config_changed() -> bool:
-    """发送配置变更通知到 Redis，机器人收到后立即重载配置"""
+def _notify_config_changed(user_ulid: str = '') -> bool:
+    """
+    发送配置变更通知到 Redis，机器人收到后立即重载配置
+    
+    消息格式（JSON）：{"user_ulid": "<ULID>"}
+    机器人会校验 user_ulid 是否与自身 BOT_USER_ID 一致后才执行重载
+    
+    Args:
+        user_ulid: 用户 ULID（从 JWT 中获取）
+    """
     redis_client = get_redis_client()
     
     if redis_client is None:
@@ -66,8 +74,9 @@ def _notify_config_changed() -> bool:
     
     try:
         REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
-        redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, "reload")
-        logger.info("已发送配置重载通知")
+        reload_msg = json.dumps({'user_ulid': user_ulid}) if user_ulid else "reload"
+        redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, reload_msg)
+        logger.info(f"已发送配置重载通知: user={user_ulid[:8] + '...' if user_ulid else 'N/A'}")
         return True
     except Exception as e:
         logger.warning(f"发送配置重载通知失败: {e}")
@@ -362,7 +371,7 @@ def create_position_tracking():
         tracking_id = db.save_position_tracking(tracking_data)
 
         # 通知引擎重载配置
-        _notify_config_changed()
+        _notify_config_changed(user_ulid=get_current_user_ulid())
 
         return jsonify({
             'success': True,
@@ -456,7 +465,7 @@ def update_position_tracking(tracking_id: int):
         db.save_position_tracking(update_data)
 
         # 通知引擎重载配置
-        _notify_config_changed()
+        _notify_config_changed(user_ulid=get_current_user_ulid())
 
         return jsonify({
             'success': True,
@@ -512,7 +521,7 @@ def delete_position_tracking(tracking_id: int):
         success = db.delete_position_tracking(tracking_id)
         if success:
             # 通知引擎重载配置
-            _notify_config_changed()
+            _notify_config_changed(user_ulid=get_current_user_ulid())
 
             return jsonify({
                 'success': True,
@@ -577,7 +586,7 @@ def toggle_position_tracking(tracking_id: int):
 
         if success:
             # 通知引擎重载配置
-            _notify_config_changed()
+            _notify_config_changed(user_ulid=get_current_user_ulid())
 
             return jsonify({
                 'success': True,
@@ -644,7 +653,7 @@ def stop_position_tracking(tracking_id: int):
 
         if success:
             # 通知引擎重载配置
-            _notify_config_changed()
+            _notify_config_changed(user_ulid=get_current_user_ulid())
 
             return jsonify({
                 'success': True,
@@ -765,7 +774,7 @@ def quick_add_position_tracking():
         tracking_id = db.save_position_tracking(tracking_data)
 
         # 通知引擎重载配置
-        _notify_config_changed()
+        _notify_config_changed(user_ulid=get_current_user_ulid())
 
         trader_display = data.get('target_name') or f"{target_address[:10]}..."
 
