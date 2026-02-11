@@ -1177,6 +1177,9 @@ class DatabaseMigrations:
         # 为 copy_config_rules 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
         self._migrate_add_config_rules_user_ulid(cursor)
 
+        # 为 address_tracking 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
+        self._migrate_add_address_tracking_user_ulid(cursor)
+
     def _migrate_add_ulid_columns(self, cursor):
         """
         为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段
@@ -1259,6 +1262,28 @@ class DatabaseMigrations:
             updated = cursor.rowcount
             if updated:
                 logger.info(f"数据库迁移: 回填 copy_config_rules 表 {updated} 条记录的 user_ulid")
+
+    def _migrate_add_address_tracking_user_ulid(self, cursor):
+        """
+        为 address_tracking 表添加 user_ulid 字段
+
+        冗余存储用户 ULID，这样查询跟踪配置时无需 JOIN users 表。
+        从 users 表回填已有记录的 user_ulid。
+        """
+        if not self._column_exists(cursor, 'address_tracking', 'user_ulid'):
+            cursor.execute('ALTER TABLE address_tracking ADD COLUMN user_ulid TEXT')
+            logger.info("数据库迁移: 添加列 address_tracking.user_ulid")
+
+            # 回填：从 users 表获取 ulid
+            cursor.execute("""
+                UPDATE address_tracking at
+                SET user_ulid = u.ulid
+                FROM users u
+                WHERE at.user_id = u.id AND at.user_ulid IS NULL
+            """)
+            updated = cursor.rowcount
+            if updated:
+                logger.info(f"数据库迁移: 回填 address_tracking 表 {updated} 条记录的 user_ulid")
 
     def _migrate_remove_groups(self, cursor):
         """

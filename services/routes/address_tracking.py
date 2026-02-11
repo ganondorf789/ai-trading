@@ -59,7 +59,7 @@ def get_address_trackings():
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         is_enabled = request.args.get('is_enabled')
@@ -121,7 +121,7 @@ def get_address_tracking_stats():
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         stats = db.get_address_tracking_stats(user_id)
         return jsonify({
             'success': True,
@@ -164,7 +164,7 @@ def get_address_tracking(tracking_id: int):
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         tracking = db.get_address_tracking(user_id, tracking_id)
         if not tracking:
             return jsonify({
@@ -228,7 +228,8 @@ def create_address_tracking():
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
+        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if not data:
             return jsonify({
@@ -278,7 +279,7 @@ def create_address_tracking():
         }
 
         # 保存到数据库
-        tracking_id = db.save_address_tracking(user_id, tracking_data)
+        tracking_id = db.save_address_tracking(user_id, tracking_data, user_ulid=user_ulid)
 
         return jsonify({
             'success': True,
@@ -322,7 +323,8 @@ def update_address_tracking(tracking_id: int):
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
+        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if not data:
             return jsonify({
@@ -354,7 +356,7 @@ def update_address_tracking(tracking_id: int):
             'monitor_events': monitor_events,
         }
 
-        db.save_address_tracking(user_id, update_data)
+        db.save_address_tracking(user_id, update_data, user_ulid=user_ulid)
 
         return jsonify({
             'success': True,
@@ -390,7 +392,7 @@ def delete_address_tracking(tracking_id: int):
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         success = db.delete_address_tracking(user_id, tracking_id)
         if success:
             return jsonify({
@@ -444,7 +446,7 @@ def toggle_address_tracking(tracking_id: int):
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if data is None or 'is_enabled' not in data:
             return jsonify({
@@ -507,7 +509,7 @@ def toggle_address_tracking_notification(tracking_id: int):
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if data is None or 'enable_notification' not in data:
             return jsonify({
@@ -566,7 +568,7 @@ def batch_delete_address_trackings():
         description: 服务器错误
     """
     try:
-        user_id = g.user_id
+        user_id = g.current_user['user_id']
         data = request.get_json()
         if not data or 'tracking_ids' not in data:
             return jsonify({

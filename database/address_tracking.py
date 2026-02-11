@@ -137,13 +137,17 @@ class AddressTrackingOps:
                 item['monitor_events'] = []
             return item
 
-    def save_address_tracking(self, user_id: int, data: Dict) -> Optional[int]:
+    def save_address_tracking(self, user_id: int, data: Dict, user_ulid: Optional[str] = None) -> Optional[int]:
         """
         保存或更新地址跟踪记录
+
+        创建时自动存储用户的 ULID（user_ulid 字段），
+        供监控脚本查询时无需 JOIN users 表。
 
         Args:
             user_id: 用户ID
             data: 跟踪数据
+            user_ulid: 用户ULID（可选，不传则从 users 表查询）
 
         Returns:
             记录ID
@@ -152,13 +156,19 @@ class AddressTrackingOps:
             cursor = conn.cursor()
             now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
 
+            # 如果没有传入 user_ulid，从 users 表查询
+            if not user_ulid:
+                cursor.execute("SELECT ulid FROM users WHERE id = %s", (user_id,))
+                user_row = cursor.fetchone()
+                user_ulid = user_row[0] if user_row else None
+
             # 处理 JSON 字段
             monitor_events = data.get('monitor_events', ['open', 'close', 'add', 'reduce'])
             if isinstance(monitor_events, list):
                 monitor_events = json.dumps(monitor_events)
 
             if data.get('id'):
-                # 更新现有记录
+                # 更新现有记录，同时刷新 user_ulid
                 cursor.execute("""
                     UPDATE address_tracking
                     SET tracking_address = %s,
@@ -166,6 +176,7 @@ class AddressTrackingOps:
                         is_enabled = %s,
                         enable_notification = %s,
                         monitor_events = %s,
+                        user_ulid = %s,
                         updated_at = %s
                     WHERE user_id = %s AND id = %s
                     RETURNING id
@@ -175,6 +186,7 @@ class AddressTrackingOps:
                     data.get('is_enabled', True),
                     data.get('enable_notification', True),
                     monitor_events,
+                    user_ulid,
                     now,
                     user_id,
                     data['id']
@@ -185,13 +197,14 @@ class AddressTrackingOps:
                 # 创建新记录
                 cursor.execute("""
                     INSERT INTO address_tracking (
-                        user_id, tracking_address, address_remark,
+                        user_id, user_ulid, tracking_address, address_remark,
                         is_enabled, enable_notification, monitor_events,
                         created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     user_id,
+                    user_ulid,
                     data.get('tracking_address'),
                     data.get('address_remark', ''),
                     data.get('is_enabled', True),
@@ -280,7 +293,7 @@ class AddressTrackingOps:
             user_id: 用户ID（可选，不传则获取所有用户的）
 
         Returns:
-            启用的跟踪配置列表
+            启用的跟踪配置列表（包含 user_ulid 字段）
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
@@ -295,6 +308,7 @@ class AddressTrackingOps:
                 cursor.execute("""
                     SELECT * FROM address_tracking
                     WHERE is_enabled = TRUE
+                      AND user_ulid IS NOT NULL
                     ORDER BY user_id, updated_at DESC
                 """)
 
