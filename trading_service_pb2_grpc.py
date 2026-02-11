@@ -163,6 +163,11 @@ class DatabaseServiceStub(object):
                 request_serializer=trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
                 response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
                 _registered_method=True)
+        self.GetEnabledAddressTrackings = channel.unary_unary(
+                '/trading.DatabaseService/GetEnabledAddressTrackings',
+                request_serializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.AddressTrackingListResponse.FromString,
+                _registered_method=True)
 
 
 class DatabaseServiceServicer(object):
@@ -228,6 +233,13 @@ class DatabaseServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetEnabledAddressTrackings(self, request, context):
+        """获取启用的地址跟踪配置
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DatabaseServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -270,6 +282,11 @@ def add_DatabaseServiceServicer_to_server(servicer, server):
                     servicer.ToggleCopyTradingAddress,
                     request_deserializer=trading__service__pb2.ToggleCopyTradingAddressRequest.FromString,
                     response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
+            ),
+            'GetEnabledAddressTrackings': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetEnabledAddressTrackings,
+                    request_deserializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.FromString,
+                    response_serializer=trading__service__pb2.AddressTrackingListResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -492,6 +509,33 @@ class DatabaseService(object):
             '/trading.DatabaseService/ToggleCopyTradingAddress',
             trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
             trading__service__pb2.UpdateTrackingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetEnabledAddressTrackings(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.DatabaseService/GetEnabledAddressTrackings',
+            trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
+            trading__service__pb2.AddressTrackingListResponse.FromString,
             options,
             channel_credentials,
             insecure,

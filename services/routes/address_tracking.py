@@ -2,56 +2,15 @@
 地址跟踪相关路由
 用于监控特定地址的交易活动并发送通知
 """
-import json
 from flask import Blueprint, jsonify, request, g
 import logging
 
 from .db import db
 from .middleware import login_required
-from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
 
 address_tracking_bp = Blueprint('address_tracking', __name__)
-
-# Redis 缓存 key 前缀（供 trading bot 通过 gRPC 读取）
-REDIS_ADDRESS_TRACKING_CONFIGS_KEY = "address_tracking:enabled_configs"
-
-
-def _refresh_address_tracking_cache(user_id: int, user_ulid: str):
-    """
-    刷新 Redis 中该用户的地址跟踪配置缓存
-    
-    trading bot 通过 gRPC Redis Get 读取此缓存，
-    避免 proto 变更，也避免 bot 直连数据库。
-    
-    Args:
-        user_id: 用户ID（数据库查询用）
-        user_ulid: 用户ULID（Redis key 用）
-    """
-    if not user_ulid:
-        return
-    try:
-        configs = db.get_enabled_address_trackings(user_id)
-        # 序列化为 JSON（只保留 bot 需要的字段）
-        slim_configs = []
-        for c in configs:
-            slim_configs.append({
-                'id': c.get('id'),
-                'tracking_address': c.get('tracking_address'),
-                'address_remark': c.get('address_remark', ''),
-                'monitor_events': c.get('monitor_events', []),
-                'is_enabled': c.get('is_enabled', True),
-                'enable_notification': c.get('enable_notification', True),
-            })
-        
-        redis_client = get_redis_client()
-        if redis_client:
-            key = f"{REDIS_ADDRESS_TRACKING_CONFIGS_KEY}:{user_ulid}"
-            redis_client.setex(key, 300, json.dumps(slim_configs, ensure_ascii=False))  # 5分钟过期
-            logger.debug(f"已刷新地址跟踪配置缓存: user_ulid={user_ulid[:8]}..., {len(slim_configs)} 条")
-    except Exception as e:
-        logger.warning(f"刷新地址跟踪配置缓存失败: {e}")
 
 
 # ==================== 地址跟踪 API ====================
@@ -322,9 +281,6 @@ def create_address_tracking():
         # 保存到数据库
         tracking_id = db.save_address_tracking(user_id, tracking_data, user_ulid=user_ulid)
 
-        # 刷新 Redis 缓存（供 trading bot 读取）
-        _refresh_address_tracking_cache(user_id, user_ulid)
-
         return jsonify({
             'success': True,
             'data': {'id': tracking_id},
@@ -402,9 +358,6 @@ def update_address_tracking(tracking_id: int):
 
         db.save_address_tracking(user_id, update_data, user_ulid=user_ulid)
 
-        # 刷新 Redis 缓存
-        _refresh_address_tracking_cache(user_id, user_ulid)
-
         return jsonify({
             'success': True,
             'message': '更新成功'
@@ -440,11 +393,8 @@ def delete_address_tracking(tracking_id: int):
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         success = db.delete_address_tracking(user_id, tracking_id)
         if success:
-            # 刷新 Redis 缓存
-            _refresh_address_tracking_cache(user_id, user_ulid)
             return jsonify({
                 'success': True,
                 'message': '删除成功'
@@ -497,7 +447,6 @@ def toggle_address_tracking(tracking_id: int):
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if data is None or 'is_enabled' not in data:
             return jsonify({
@@ -509,8 +458,6 @@ def toggle_address_tracking(tracking_id: int):
         success = db.toggle_address_tracking(user_id, tracking_id, is_enabled)
 
         if success:
-            # 刷新 Redis 缓存
-            _refresh_address_tracking_cache(user_id, user_ulid)
             return jsonify({
                 'success': True,
                 'message': '已启用' if is_enabled else '已禁用'
@@ -563,7 +510,6 @@ def toggle_address_tracking_notification(tracking_id: int):
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if data is None or 'enable_notification' not in data:
             return jsonify({
@@ -575,8 +521,6 @@ def toggle_address_tracking_notification(tracking_id: int):
         success = db.toggle_address_tracking_notification(user_id, tracking_id, enable_notification)
 
         if success:
-            # 刷新 Redis 缓存
-            _refresh_address_tracking_cache(user_id, user_ulid)
             return jsonify({
                 'success': True,
                 'message': '通知已启用' if enable_notification else '通知已禁用'
@@ -625,7 +569,6 @@ def batch_delete_address_trackings():
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if not data or 'tracking_ids' not in data:
             return jsonify({
@@ -641,10 +584,6 @@ def batch_delete_address_trackings():
             }), 400
 
         deleted_count = db.batch_delete_address_trackings(user_id, tracking_ids)
-
-        # 刷新 Redis 缓存
-        if deleted_count > 0:
-            _refresh_address_tracking_cache(user_id, user_ulid)
 
         return jsonify({
             'success': True,

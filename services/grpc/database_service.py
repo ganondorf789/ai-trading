@@ -405,3 +405,47 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
                 success=False,
                 error=str(e)
             )
+    
+    def GetEnabledAddressTrackings(self, request: pb2.GetEnabledAddressTrackingsRequest, context) -> pb2.AddressTrackingListResponse:
+        """获取启用的地址跟踪配置（通过用户 ULID）"""
+        try:
+            import json as _json
+            
+            # 将用户 ULID 解析为整数 ID
+            user_int_id = self._resolve_user_int_id(request.user_id)
+            if not user_int_id:
+                return pb2.AddressTrackingListResponse(
+                    success=False,
+                    error=f"用户不存在: {request.user_id}"
+                )
+            
+            configs = self._db.get_enabled_address_trackings(user_int_id)
+            
+            tracking_items = []
+            for c in configs:
+                # monitor_events 在数据库层已被解析为 list，这里需要序列化回 JSON 字符串
+                events = c.get('monitor_events', [])
+                if isinstance(events, list):
+                    events_str = _json.dumps(events)
+                else:
+                    events_str = str(events)
+                
+                tracking_items.append(pb2.AddressTrackingItem(
+                    id=c.get('id', 0),
+                    tracking_address=c.get('tracking_address', ''),
+                    address_remark=c.get('address_remark', ''),
+                    monitor_events=events_str,
+                    is_enabled=c.get('is_enabled', True),
+                    enable_notification=c.get('enable_notification', True),
+                ))
+            
+            return pb2.AddressTrackingListResponse(
+                success=True,
+                trackings=tracking_items
+            )
+        except Exception as e:
+            logger.error(f"GetEnabledAddressTrackings 错误: {e}")
+            return pb2.AddressTrackingListResponse(
+                success=False,
+                error=str(e)
+            )

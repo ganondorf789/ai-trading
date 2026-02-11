@@ -308,6 +308,38 @@ class CheckPositionTrackingExistsResponse(_message.Message):
     error: str
     def __init__(self, exists: bool = ..., error: _Optional[str] = ...) -> None: ...
 
+class GetEnabledAddressTrackingsRequest(_message.Message):
+    __slots__ = ("user_id",)
+    USER_ID_FIELD_NUMBER: _ClassVar[int]
+    user_id: str
+    def __init__(self, user_id: _Optional[str] = ...) -> None: ...
+
+class AddressTrackingListResponse(_message.Message):
+    __slots__ = ("success", "trackings", "error")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    TRACKINGS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    trackings: _containers.RepeatedCompositeFieldContainer[AddressTrackingItem]
+    error: str
+    def __init__(self, success: bool = ..., trackings: _Optional[_Iterable[_Union[AddressTrackingItem, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
+
+class AddressTrackingItem(_message.Message):
+    __slots__ = ("id", "tracking_address", "address_remark", "monitor_events", "is_enabled", "enable_notification")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    TRACKING_ADDRESS_FIELD_NUMBER: _ClassVar[int]
+    ADDRESS_REMARK_FIELD_NUMBER: _ClassVar[int]
+    MONITOR_EVENTS_FIELD_NUMBER: _ClassVar[int]
+    IS_ENABLED_FIELD_NUMBER: _ClassVar[int]
+    ENABLE_NOTIFICATION_FIELD_NUMBER: _ClassVar[int]
+    id: int
+    tracking_address: str
+    address_remark: str
+    monitor_events: str
+    is_enabled: bool
+    enable_notification: bool
+    def __init__(self, id: _Optional[int] = ..., tracking_address: _Optional[str] = ..., address_remark: _Optional[str] = ..., monitor_events: _Optional[str] = ..., is_enabled: bool = ..., enable_notification: bool = ...) -> None: ...
+
 class PublishRequest(_message.Message):
     __slots__ = ("channel", "message")
     CHANNEL_FIELD_NUMBER: _ClassVar[int]

@@ -1153,10 +1153,7 @@ class PositionCopyTradingBot:
         通过 gRPC 读取 Redis 中由 API 服务器缓存的配置
         """
         try:
-            if not self._grpc_client:
-                return
-            
-            configs = self._grpc_client.get_enabled_address_trackings(self._user_id)
+            configs = self.db.get_enabled_address_trackings(self._user_id)
             
             current_addresses = set(self.tracking_configs.keys())
             new_addresses = set()

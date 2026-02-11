@@ -41,6 +41,9 @@ service DatabaseService {
     
     // 启用/禁用跟单地址
     rpc ToggleCopyTradingAddress(ToggleCopyTradingAddressRequest) returns (UpdateTrackingResponse);
+    
+    // 获取启用的地址跟踪配置
+    rpc GetEnabledAddressTrackings(GetEnabledAddressTrackingsRequest) returns (AddressTrackingListResponse);
 }
 
 // ============================================
@@ -255,6 +258,25 @@ message CheckPositionTrackingExistsRequest {
 message CheckPositionTrackingExistsResponse {
     bool exists = 1;
     string error = 2;
+}
+
+message GetEnabledAddressTrackingsRequest {
+    string user_id = 1;  // 用户 ULID
+}
+
+message AddressTrackingListResponse {
+    bool success = 1;
+    repeated AddressTrackingItem trackings = 2;
+    string error = 3;
+}
+
+message AddressTrackingItem {
+    int32 id = 1;
+    string tracking_address = 2;
+    string address_remark = 3;
+    string monitor_events = 4;     // JSON 数组字符串，如 '["open","close","add","reduce"]'
+    bool is_enabled = 5;
+    bool enable_notification = 6;
 }
 
 // ============================================
