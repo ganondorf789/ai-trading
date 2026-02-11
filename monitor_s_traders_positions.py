@@ -59,6 +59,117 @@ MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
 MARKET_ACTIVITY_THRESHOLD = 5  # 触发阈值：新仓位数量
 MARKET_ACTIVITY_COOLDOWN = 600  # 10分钟冷却时间（秒）
 
+# 巨鲸锚点缓存（从数据库加载，定期刷新）
+_whale_thresholds: Dict[str, float] = {}
+_whale_thresholds_loaded_at: float = 0
+WHALE_THRESHOLDS_REFRESH_INTERVAL = 300  # 5分钟刷新一次
+
+
+def load_whale_thresholds(db: 'TraderDatabase', force: bool = False) -> Dict[str, float]:
+    """
+    从数据库加载巨鲸锚点阈值映射（带缓存）
+
+    Args:
+        db: 数据库实例
+        force: 是否强制刷新
+
+    Returns:
+        {coin: threshold_usd} 字典
+    """
+    global _whale_thresholds, _whale_thresholds_loaded_at
+
+    now = time.time()
+    if not force and _whale_thresholds and (now - _whale_thresholds_loaded_at) < WHALE_THRESHOLDS_REFRESH_INTERVAL:
+        return _whale_thresholds
+
+    try:
+        _whale_thresholds = db.get_whale_thresholds_map()
+        _whale_thresholds_loaded_at = now
+        if _whale_thresholds:
+            logger.info(f"已加载巨鲸锚点: {len(_whale_thresholds)} 个币种")
+        else:
+            logger.debug("巨鲸锚点表为空，跳过巨鲸检测")
+    except Exception as e:
+        logger.warning(f"加载巨鲸锚点失败: {e}")
+
+    return _whale_thresholds
+
+
+def check_and_notify_whale(
+    db: 'TraderDatabase',
+    redis_client,
+    trader: Dict,
+    coin: str,
+    position_value: float,
+    direction: str,
+    szi: float,
+    entry_px: float,
+    leverage: int,
+):
+    """
+    检查仓位是否达到巨鲸锚点并发送通知
+
+    Args:
+        db: 数据库实例
+        redis_client: Redis 客户端
+        trader: 交易员信息
+        coin: 币种
+        position_value: 仓位价值 (USD)
+        direction: 方向 ('long' | 'short')
+        szi: 持仓量
+        entry_px: 入场价
+        leverage: 杠杆倍数
+    """
+    if not redis_client:
+        return
+
+    thresholds = load_whale_thresholds(db)
+    threshold = thresholds.get(coin)
+    if threshold is None or threshold <= 0:
+        return
+
+    if position_value < threshold:
+        return
+
+    address = trader['address']
+    name = trader.get('name', '')
+    rating = trader.get('rating', '?')
+    score = trader.get('overall_score', 0) or 0
+    ratio = position_value / threshold
+
+    logger.warning(
+        f"🐋 巨鲸仓位! {coin} {direction} "
+        f"${position_value:,.0f} >= 阈值 ${threshold:,.0f} ({ratio:.1f}x) "
+        f"| {name or address[:16]}"
+    )
+
+    content = (
+        f"**{coin}** {direction.upper()} 仓位达到巨鲸级别\n\n"
+        f"👤 交易员: **{name or address[:10] + '...'}** ({rating}/{score:.1f})\n"
+        f"💰 仓位价值: **${position_value:,.2f}**\n"
+        f"🎯 巨鲸阈值: ${threshold:,.2f} ({ratio:.1f}x)\n"
+        f"📊 持仓: {szi} @ ${entry_px:,.4f} ({leverage}x)\n"
+        f"⏰ 时间: {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}\n"
+        f"🔗 [查看交易](https://app.hyperliquid.xyz/trade/{coin})"
+    )
+
+    whale_notification = {
+        'type': 'whale_open',
+        'title': f'🐋 巨鲸仓位: {coin} {direction.upper()}',
+        'content': content,
+        'target_address': address,
+        'symbol': coin,
+        'side': direction,
+        'size': position_value,
+        'pnl': None,
+    }
+
+    try:
+        redis_client.publish(REDIS_NOTIFICATIONS_CHANNEL, json.dumps(whale_notification))
+        logger.success(f"    ✓ 已发送巨鲸通知: {coin} ${position_value:,.0f}")
+    except Exception as e:
+        logger.error(f"    发送巨鲸通知失败: {e}")
+
 
 class AsyncRateLimiter:
     """异步速率限制器 - 令牌桶算法"""
@@ -686,6 +797,19 @@ def process_trader_result(
                 }
                 redis_client.publish(REDIS_WS_CHANNEL, json.dumps(ws_data))
                 logger.debug(f"    ✓ 已发送 WebSocket 广播")
+
+                # 巨鲸检测：仓位价值 >= 巨鲸锚点阈值时发送通知
+                check_and_notify_whale(
+                    db=db,
+                    redis_client=redis_client,
+                    trader=trader,
+                    coin=coin,
+                    position_value=ws_data['position_value'],
+                    direction=ws_data['direction'],
+                    szi=ws_data['szi'],
+                    entry_px=ws_data['entry_px'],
+                    leverage=ws_data['leverage'],
+                )
             except Exception as e:
                 logger.debug(f"    WebSocket 广播失败: {e}")
         

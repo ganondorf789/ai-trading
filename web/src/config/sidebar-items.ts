@@ -83,6 +83,18 @@ export const sidebarItems: SidebarItem[] = [
     ],
   },
   {
+    key: "market",
+    title: "Market",
+    items: [
+      {
+        key: "whale-anchor",
+        href: "/whale-anchor",
+        icon: "solar:chart-2-line-duotone",
+        title: "Whale Anchor",
+      },
+    ],
+  },
+  {
     key: "settings",
     title: "Settings",
     items: [

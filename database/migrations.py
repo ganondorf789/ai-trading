@@ -1180,6 +1180,9 @@ class DatabaseMigrations:
         # 为 address_tracking 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
         self._migrate_add_address_tracking_user_ulid(cursor)
 
+        # 创建巨鲸锚点表
+        self._migrate_create_whale_anchor_table(cursor)
+
     def _migrate_add_ulid_columns(self, cursor):
         """
         为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段
@@ -1313,3 +1316,37 @@ class DatabaseMigrations:
         # 删除分组表
         cursor.execute("DROP TABLE IF EXISTS copy_trading_groups")
         logger.info("数据库迁移: 删除表 copy_trading_groups")
+
+    def _migrate_create_whale_anchor_table(self, cursor):
+        """
+        创建巨鲸锚点表
+
+        存储每个币种的巨鲸仓位阈值及相关市场数据。
+        管理员手动刷新时全量更新。
+        """
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS whale_anchor (
+                id SERIAL PRIMARY KEY,
+                coin TEXT NOT NULL UNIQUE,
+                mark_price REAL NOT NULL DEFAULT 0,
+                price_change_24h_pct REAL NOT NULL DEFAULT 0,
+                day_volume_usd REAL NOT NULL DEFAULT 0,
+                open_interest_usd REAL NOT NULL DEFAULT 0,
+                depth_1pct_usd REAL NOT NULL DEFAULT 0,
+                volume_component REAL NOT NULL DEFAULT 0,
+                oi_component REAL NOT NULL DEFAULT 0,
+                depth_component REAL NOT NULL DEFAULT 0,
+                whale_threshold REAL NOT NULL DEFAULT 0,
+                dominant_factor TEXT NOT NULL DEFAULT 'none',
+                max_leverage INTEGER NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_whale_anchor_coin
+            ON whale_anchor(coin)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_whale_anchor_threshold
+            ON whale_anchor(whale_threshold DESC)
+        """)

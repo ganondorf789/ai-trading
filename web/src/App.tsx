@@ -8,6 +8,7 @@ import TraderPositionsPage from "@/pages/trader-positions";
 import PositionHistoryPage from "@/pages/position-history";
 import PositionTrackingPage from "@/pages/position-tracking";
 import AddressTrackingPage from "@/pages/address-tracking";
+import WhaleAnchorPage from "@/pages/whale-anchor";
 import DefaultConfigRulesPage from "@/pages/default-config-rules";
 import ImmediateConfigRulesPage from "@/pages/immediate-config-rules";
 import UsersPage from "@/pages/users";
@@ -27,6 +28,7 @@ function App() {
       <Route element={<PositionHistoryPage />} path="/position-history" />
       <Route element={<PositionTrackingPage />} path="/position-tracking" />
       <Route element={<AddressTrackingPage />} path="/address-tracking" />
+      <Route element={<WhaleAnchorPage />} path="/whale-anchor" />
       <Route element={<DefaultConfigRulesPage />} path="/default-config-rules" />
       <Route element={<ImmediateConfigRulesPage />} path="/immediate-config-rules" />
       <Route element={<UsersPage />} path="/users" />

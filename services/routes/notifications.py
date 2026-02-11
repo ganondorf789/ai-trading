@@ -19,6 +19,7 @@ NOTIFICATION_CATEGORIES = {
     'market':       ['market', 'price_alert'],  # 行情
     'trading':      ['open', 'close', 'adjust'],# 交易
     'tracking':     ['tracking_open', 'tracking_close', 'tracking_add', 'tracking_reduce'],  # 地址跟踪
+    'whale':        ['whale_open'],             # 巨鲸
     'error':        ['error'],                  # 错误
 }
 

@@ -50,3 +50,7 @@ def register_routes(app):
     # 地址跟踪路由
     from .address_tracking import address_tracking_bp
     app.register_blueprint(address_tracking_bp)
+    
+    # 巨鲸锚点路由
+    from .whale_anchor import whale_anchor_bp
+    app.register_blueprint(whale_anchor_bp)

@@ -1078,6 +1078,33 @@ export interface AddressTrackingStats {
   notification_enabled_count: number;
 }
 
+// ==================== 巨鲸锚点 API ====================
+
+export interface WhaleAnchorItem {
+  coin: string;
+  mark_price: number;
+  price_change_24h_pct: number;
+  day_volume_usd: number;
+  open_interest_usd: number;
+  depth_1pct_usd: number;
+  volume_component: number;
+  oi_component: number;
+  depth_component: number;
+  whale_threshold: number;
+  dominant_factor: 'volume' | 'oi' | 'depth' | 'none';
+  max_leverage: number;
+}
+
+export const whaleAnchorApi = {
+  // 获取巨鲸锚点数据（从数据库读取，所有用户可访问）
+  getData: () =>
+    api.get<any, ApiResponse<WhaleAnchorItem[]> & { total?: number; updated_at?: string }>('/whale-anchor'),
+
+  // 刷新巨鲸锚点数据（从 Hyperliquid API 拉取，仅管理员）
+  refresh: () =>
+    api.post<any, ApiResponse<void> & { message?: string; total?: number }>('/whale-anchor/refresh'),
+};
+
 export const addressTrackingApi = {
   // 获取地址跟踪列表
   getTrackings: (params?: {

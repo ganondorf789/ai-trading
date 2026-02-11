@@ -22,9 +22,11 @@ import sys
 import asyncio
 import argparse
 import time
+import json
 from pathlib import Path
 from typing import List, Dict, Optional
 
+import redis as redis_lib
 from loguru import logger
 
 # 添加项目根目录到路径
@@ -32,7 +34,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from database import TraderDatabase
 from clients.hyperliquid_client import HyperliquidClient
+from config.settings import settings
 from screener.utils import now_shanghai
+
+# Redis 通知 channel（与 monitor_s_traders_positions.py 和 services/websocket.py 一致）
+REDIS_NOTIFICATIONS_CHANNEL = "notifications"
+
+# 巨鲸通知去重 Redis key
+WHALE_NOTIFIED_SET_KEY = "whale_notified_positions"
+WHALE_NOTIFIED_EXPIRE = 86400  # 去重记录保留24小时
 
 
 class AsyncRateLimiter:
@@ -131,15 +141,19 @@ async def fetch_user_state_async(
 def update_trader_positions(
     db: TraderDatabase,
     trader: Dict,
-    user_state: Optional[Dict]
+    user_state: Optional[Dict],
+    redis_client=None,
+    whale_thresholds: Optional[Dict[str, float]] = None
 ) -> int:
     """
-    更新单个交易员的持仓
+    更新单个交易员的持仓，并检测巨鲸仓位
 
     Args:
         db: 数据库实例
         trader: 交易员信息
         user_state: 从API获取的用户状态
+        redis_client: Redis 客户端（可选，用于发送巨鲸通知）
+        whale_thresholds: 巨鲸阈值映射（可选）
 
     Returns:
         保存的持仓数量
@@ -154,6 +168,76 @@ def update_trader_positions(
     # 保存持仓到数据库（空列表会清空该交易员的持仓）
     positions_saved = db.save_positions(address, asset_positions)
 
+    # 巨鲸检测
+    if redis_client and whale_thresholds:
+        for pos_data in asset_positions:
+            pos = pos_data.get('position', {})
+            coin = pos.get('coin', '')
+            szi = float(pos.get('szi', 0) or 0)
+            entry_px = float(pos.get('entryPx', 0) or 0)
+
+            if not coin or szi == 0 or entry_px == 0:
+                continue
+
+            position_value = abs(szi) * entry_px
+            threshold = whale_thresholds.get(coin, 0)
+
+            if threshold <= 0 or position_value < threshold:
+                continue
+
+            # 去重：检查是否已通知过
+            dedup_key = f"{address}:{coin}"
+            try:
+                already = redis_client.sismember(WHALE_NOTIFIED_SET_KEY, dedup_key)
+                if already:
+                    continue
+            except Exception:
+                pass
+
+            direction = 'long' if szi > 0 else 'short'
+            leverage_info = pos.get('leverage', {})
+            leverage = leverage_info.get('value', 1) if isinstance(leverage_info, dict) else int(leverage_info or 1)
+            name = trader.get('name', '')
+            rating = trader.get('rating', '?')
+            score = trader.get('overall_score', 0) or 0
+            ratio = position_value / threshold
+
+            logger.warning(
+                f"🐋 巨鲸仓位! {coin} {direction} "
+                f"${position_value:,.0f} >= 阈值 ${threshold:,.0f} ({ratio:.1f}x) "
+                f"| {name or address[:16]}"
+            )
+
+            content = (
+                f"**{coin}** {direction.upper()} 仓位达到巨鲸级别\n\n"
+                f"👤 交易员: **{name or address[:10] + '...'}** ({rating}/{score:.1f})\n"
+                f"💰 仓位价值: **${position_value:,.2f}**\n"
+                f"🎯 巨鲸阈值: ${threshold:,.2f} ({ratio:.1f}x)\n"
+                f"📊 持仓: {abs(szi)} @ ${entry_px:,.4f} ({leverage}x)\n"
+                f"⏰ 时间: {now_shanghai().format('YYYY-MM-DD HH:mm:ss')}\n"
+                f"🔗 [查看交易](https://app.hyperliquid.xyz/trade/{coin})"
+            )
+
+            whale_notification = {
+                'type': 'whale_open',
+                'title': f'🐋 巨鲸仓位: {coin} {direction.upper()}',
+                'content': content,
+                'target_address': address,
+                'symbol': coin,
+                'side': direction,
+                'size': position_value,
+                'pnl': None,
+            }
+
+            try:
+                redis_client.publish(REDIS_NOTIFICATIONS_CHANNEL, json.dumps(whale_notification))
+                # 标记已通知（去重）
+                redis_client.sadd(WHALE_NOTIFIED_SET_KEY, dedup_key)
+                redis_client.expire(WHALE_NOTIFIED_SET_KEY, WHALE_NOTIFIED_EXPIRE)
+                logger.success(f"    ✓ 已发送巨鲸通知: {coin} ${position_value:,.0f}")
+            except Exception as e:
+                logger.error(f"    发送巨鲸通知失败: {e}")
+
     return positions_saved
 
 
@@ -162,7 +246,8 @@ async def run_update(
     hl_client: HyperliquidClient,
     rate: float = 10.0,
     limit: int = 0,
-    offset: int = 0
+    offset: int = 0,
+    redis_client=None,
 ) -> Dict:
     """
     异步运行持仓更新
@@ -194,6 +279,15 @@ async def run_update(
 
     stats['traders_total'] = len(traders)
 
+    # 加载巨鲸阈值（如果有 Redis 则进行巨鲸检测）
+    whale_thresholds = None
+    if redis_client:
+        whale_thresholds = db.get_whale_thresholds_map()
+        if whale_thresholds:
+            logger.info(f"已加载巨鲸锚点: {len(whale_thresholds)} 个币种")
+        else:
+            logger.info("巨鲸锚点表为空，跳过巨鲸检测")
+
     logger.info(f"开始更新 {len(traders)} 个交易员的持仓，速率: {rate} 请求/秒")
     logger.info("-" * 60)
 
@@ -224,9 +318,9 @@ async def run_update(
         positions = user_state.get('assetPositions', [])
         positions_count = len([p for p in positions if float(p.get('position', {}).get('szi', 0)) != 0])
 
-        # 更新持仓
+        # 更新持仓（含巨鲸检测）
         try:
-            saved = update_trader_positions(db, trader, user_state)
+            saved = update_trader_positions(db, trader, user_state, redis_client, whale_thresholds)
             if positions_count > 0:
                 logger.info(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... ({rating}/{score:.1f}) 持仓: {positions_count}")
             else:
@@ -279,6 +373,7 @@ async def main_async(args):
     logger.info(f"请求速率: {args.rate} 请求/秒")
     logger.info(f"交易员偏移: {args.offset}（跳过前N个）")
     logger.info(f"交易员限制: {args.limit if args.limit > 0 else '不限制'}（按评分排序）")
+    logger.info(f"巨鲸检测: {'启用' if args.redis else '禁用'}")
     logger.info("")
 
     # 初始化 Hyperliquid 客户端
@@ -291,6 +386,24 @@ async def main_async(args):
     db = TraderDatabase()
     logger.success("✓ 数据库连接成功")
 
+    # 初始化 Redis（可选，用于巨鲸通知）
+    redis_client = None
+    if args.redis:
+        logger.info("初始化 Redis 连接...")
+        try:
+            redis_client = redis_lib.Redis(
+                host=settings.redis.host,
+                port=settings.redis.port,
+                password=settings.redis.password or None,
+                db=settings.redis.db,
+                decode_responses=True
+            )
+            redis_client.ping()
+            logger.success(f"✓ Redis 已连接 ({settings.redis.host}:{settings.redis.port})")
+        except Exception as e:
+            logger.warning(f"⚠ Redis 连接失败: {e}，巨鲸检测将被禁用")
+            redis_client = None
+
     logger.info("")
 
     try:
@@ -298,7 +411,8 @@ async def main_async(args):
             db, hl_client,
             rate=args.rate,
             limit=args.limit,
-            offset=args.offset
+            offset=args.offset,
+            redis_client=redis_client,
         )
 
         logger.info("")
@@ -346,6 +460,11 @@ def main():
         type=int,
         default=0,
         help="跳过前N个交易员（默认: 0，不跳过）"
+    )
+    parser.add_argument(
+        "--redis",
+        action="store_true",
+        help="启用 Redis 连接，用于巨鲸仓位检测和通知推送"
     )
 
     args = parser.parse_args()

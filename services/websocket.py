@@ -303,7 +303,7 @@ def _handle_notification(data: dict):
     
     Args:
         data: 通知数据，包含:
-            - type: 通知类型 ('open' | 'close' | 'adjust' | 'tracking_open' | 'tracking_close' | 'tracking_add' | 'tracking_reduce' | 'error' | 'announcement')
+            - type: 通知类型 ('open' | 'close' | 'adjust' | 'tracking_open' | 'tracking_close' | 'tracking_add' | 'tracking_reduce' | 'whale_open' | 'error' | 'announcement')
             - title: 通知标题
             - content: Markdown 格式内容
             - target_address: 目标交易员地址
