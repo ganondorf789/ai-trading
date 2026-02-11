@@ -99,6 +99,17 @@ class TrackingState:
 
 
 @dataclass
+class AddressTrackingConfig:
+    """地址跟踪配置（用于监控特定地址的交易活动并发送通知）"""
+    id: int
+    tracking_address: str
+    address_remark: str = ''
+    monitor_events: List[str] = field(default_factory=lambda: ['open', 'close', 'add', 'reduce'])
+    is_enabled: bool = True
+    enable_notification: bool = True
+
+
+@dataclass
 class AddressConfig:
     """跟单地址配置（用于自动跟单）"""
     address: str
@@ -196,6 +207,10 @@ class PositionCopyTradingBot:
         self._user_id: str = settings.bot.user_id  # 用户 ULID（从配置读取）
         self.address_configs: Dict[str, AddressConfig] = {}  # 地址配置缓存 (address -> AddressConfig)
         self._address_positions: Dict[str, Dict[str, Dict]] = {}  # 地址仓位缓存 (address -> {symbol -> position})
+        
+        # 地址跟踪相关（仅监控，不交易）
+        self.tracking_configs: Dict[str, AddressTrackingConfig] = {}  # 跟踪配置缓存 (address -> config)
+        self._tracked_positions: Dict[str, Dict[str, Dict]] = {}  # 跟踪地址的仓位缓存 (address -> {symbol -> position})
         
         logger.info("使用 gRPC 模式连接数据库和 Redis")
 
@@ -1078,6 +1093,9 @@ class PositionCopyTradingBot:
         
         # 加载自动跟单地址配置
         self._load_address_configs()
+        
+        # 加载地址跟踪配置（仅监控，不交易）
+        self._load_tracking_configs()
 
     def _load_address_configs(self):
         """从数据库加载启用的跟单地址配置（用于自动跟单）"""
@@ -1127,6 +1145,53 @@ class PositionCopyTradingBot:
             
         except Exception as e:
             logger.error(f"加载自动跟单地址配置失败: {e}")
+
+    def _load_tracking_configs(self):
+        """
+        从 Redis 加载启用的地址跟踪配置（仅监控，不交易）
+        
+        通过 gRPC 读取 Redis 中由 API 服务器缓存的配置
+        """
+        try:
+            if not self._grpc_client:
+                return
+            
+            configs = self._grpc_client.get_enabled_address_trackings(self._user_id)
+            
+            current_addresses = set(self.tracking_configs.keys())
+            new_addresses = set()
+            
+            for data in configs:
+                address = data.get('tracking_address', '')
+                if not address:
+                    continue
+                
+                new_addresses.add(address)
+                
+                config = AddressTrackingConfig(
+                    id=data.get('id', 0),
+                    tracking_address=address,
+                    address_remark=data.get('address_remark', ''),
+                    monitor_events=data.get('monitor_events', ['open', 'close', 'add', 'reduce']),
+                    is_enabled=data.get('is_enabled', True),
+                    enable_notification=data.get('enable_notification', True),
+                )
+                
+                self.tracking_configs[address] = config
+                logger.debug(f"加载地址跟踪: {address[:10]}... ({config.address_remark})")
+            
+            # 移除已删除/禁用的配置
+            for address in current_addresses - new_addresses:
+                del self.tracking_configs[address]
+                if address in self._tracked_positions:
+                    del self._tracked_positions[address]
+                logger.info(f"移除地址跟踪: {address[:10]}...")
+            
+            if self.tracking_configs:
+                logger.info(f"地址跟踪配置加载完成: 共 {len(self.tracking_configs)} 个")
+            
+        except Exception as e:
+            logger.error(f"加载地址跟踪配置失败: {e}")
 
     # ==================== 自动跟单 ====================
 
@@ -1302,6 +1367,193 @@ class PositionCopyTradingBot:
             logger.info(f"[自动跟单] 本轮创建了 {new_trackings_count} 个新跟单")
             # 重载配置以加载新创建的跟单
             self.reload_configs()
+
+    # ==================== 地址跟踪监控 ====================
+
+    async def _sync_address_tracking(self):
+        """
+        地址跟踪主循环
+        
+        检测被跟踪地址的仓位变化（开仓、平仓、加仓、减仓），
+        并通过 Redis 发送通知给对应用户
+        """
+        if not self.tracking_configs:
+            return
+        
+        for address, config in self.tracking_configs.items():
+            if not config.is_enabled or not config.enable_notification:
+                continue
+            
+            try:
+                # 获取当前仓位
+                current_positions = self._get_target_positions(address)
+                
+                # 获取上次缓存的仓位
+                old_positions = self._tracked_positions.get(address, {})
+                
+                # 检测仓位变化并发送通知
+                self._detect_and_notify_tracking_changes(config, old_positions, current_positions)
+                
+                # 更新仓位缓存
+                self._tracked_positions[address] = current_positions
+                
+            except Exception as e:
+                logger.error(f"[地址跟踪] 检测 {address[:10]}... 仓位变化失败: {e}")
+
+    def _detect_and_notify_tracking_changes(
+        self,
+        config: AddressTrackingConfig,
+        old_positions: Dict[str, Dict],
+        new_positions: Dict[str, Dict]
+    ):
+        """
+        检测仓位变化并发送跟踪通知
+        
+        Args:
+            config: 跟踪配置
+            old_positions: 上次的仓位快照 {symbol: position_dict}
+            new_positions: 当前的仓位 {symbol: position_dict}
+        """
+        address = config.tracking_address
+        remark = config.address_remark or address[:10] + '...'
+        monitor_events = set(config.monitor_events)
+        
+        old_symbols = set(old_positions.keys())
+        new_symbols = set(new_positions.keys())
+        
+        # 1. 新开仓：新出现的币种
+        if 'open' in monitor_events:
+            for symbol in new_symbols - old_symbols:
+                pos = new_positions[symbol]
+                self._notify_tracking_open(address, remark, symbol, pos)
+        
+        # 2. 平仓：消失的币种
+        if 'close' in monitor_events:
+            for symbol in old_symbols - new_symbols:
+                old_pos = old_positions[symbol]
+                self._notify_tracking_close(address, remark, symbol, old_pos)
+        
+        # 3. 加仓/减仓：仍存在的币种，但仓位大小变化
+        for symbol in old_symbols & new_symbols:
+            old_pos = old_positions[symbol]
+            new_pos = new_positions[symbol]
+            
+            old_size = abs(old_pos.get('size', 0))
+            new_size = abs(new_pos.get('size', 0))
+            
+            # 忽略微小变化（< 1%）
+            if old_size > 0 and abs(new_size - old_size) / old_size < 0.01:
+                continue
+            
+            if new_size > old_size and 'add' in monitor_events:
+                self._notify_tracking_add(address, remark, symbol, new_pos, new_size - old_size)
+            elif new_size < old_size and 'reduce' in monitor_events:
+                self._notify_tracking_reduce(address, remark, symbol, new_pos, old_size - new_size)
+
+    def _notify_tracking_open(self, address: str, remark: str, symbol: str, pos: Dict):
+        """发送跟踪开仓通知"""
+        notification_key = f"tracking_open:{address}:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        side = pos.get('side', 'unknown')
+        side_cn = "做多" if side == 'long' else "做空"
+        size = abs(pos.get('size', 0))
+        
+        content = f"**跟踪地址**: {remark}\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**数量**: {size}"
+        
+        self._publish_notification({
+            'type': 'tracking_open',
+            'title': f'🔔 [{remark}] 新开仓 {symbol}',
+            'content': content,
+            'target_address': address,
+            'symbol': symbol,
+            'side': side,
+            'size': size,
+            'pnl': None,
+        })
+
+    def _notify_tracking_close(self, address: str, remark: str, symbol: str, old_pos: Dict):
+        """发送跟踪平仓通知"""
+        notification_key = f"tracking_close:{address}:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        side = old_pos.get('side', 'unknown')
+        side_cn = "做多" if side == 'long' else "做空"
+        
+        content = f"**跟踪地址**: {remark}\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**已全部平仓**"
+        
+        self._publish_notification({
+            'type': 'tracking_close',
+            'title': f'🔕 [{remark}] 平仓 {symbol}',
+            'content': content,
+            'target_address': address,
+            'symbol': symbol,
+            'side': side,
+            'size': None,
+            'pnl': None,
+        })
+
+    def _notify_tracking_add(self, address: str, remark: str, symbol: str, pos: Dict, added_size: float):
+        """发送跟踪加仓通知"""
+        notification_key = f"tracking_add:{address}:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        side = pos.get('side', 'unknown')
+        side_cn = "做多" if side == 'long' else "做空"
+        total_size = abs(pos.get('size', 0))
+        
+        content = f"**跟踪地址**: {remark}\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**加仓数量**: +{added_size:.4f}\n"
+        content += f"**当前总量**: {total_size}"
+        
+        self._publish_notification({
+            'type': 'tracking_add',
+            'title': f'📈 [{remark}] 加仓 {symbol}',
+            'content': content,
+            'target_address': address,
+            'symbol': symbol,
+            'side': side,
+            'size': total_size,
+            'pnl': None,
+        })
+
+    def _notify_tracking_reduce(self, address: str, remark: str, symbol: str, pos: Dict, reduced_size: float):
+        """发送跟踪减仓通知"""
+        notification_key = f"tracking_reduce:{address}:{symbol}"
+        if not self._should_notify(notification_key):
+            return
+        
+        side = pos.get('side', 'unknown')
+        side_cn = "做多" if side == 'long' else "做空"
+        total_size = abs(pos.get('size', 0))
+        
+        content = f"**跟踪地址**: {remark}\n"
+        content += f"**交易对**: {symbol}\n"
+        content += f"**方向**: {side_cn}\n"
+        content += f"**减仓数量**: -{reduced_size:.4f}\n"
+        content += f"**当前总量**: {total_size}"
+        
+        self._publish_notification({
+            'type': 'tracking_reduce',
+            'title': f'📉 [{remark}] 减仓 {symbol}',
+            'content': content,
+            'target_address': address,
+            'symbol': symbol,
+            'side': side,
+            'size': total_size,
+            'pnl': None,
+        })
 
     # ==================== 持仓获取 ====================
 
@@ -2003,12 +2255,15 @@ class PositionCopyTradingBot:
         # 加载初始配置
         self.reload_configs()
 
-        if not self.trackings and not self.address_configs:
-            logger.warning("没有启用的仓位跟单和自动跟单地址，等待添加...")
-        elif not self.trackings:
-            logger.info(f"无手动跟单，已加载 {len(self.address_configs)} 个自动跟单地址")
-        elif not self.address_configs:
-            logger.info(f"已加载 {len(self.trackings)} 个手动跟单，无自动跟单地址")
+        if not self.trackings and not self.address_configs and not self.tracking_configs:
+            logger.warning("没有启用的仓位跟单、自动跟单地址和地址跟踪，等待添加...")
+        else:
+            if self.trackings:
+                logger.info(f"已加载 {len(self.trackings)} 个手动跟单")
+            if self.address_configs:
+                logger.info(f"已加载 {len(self.address_configs)} 个自动跟单地址")
+            if self.tracking_configs:
+                logger.info(f"已加载 {len(self.tracking_configs)} 个地址跟踪")
 
         # 启动 Redis 通知监听任务
         redis_open_task = asyncio.create_task(self._listen_redis_open())
@@ -2031,6 +2286,10 @@ class PositionCopyTradingBot:
                     # 自动跟单检测
                     if self.address_configs:
                         await self._sync_auto_copy()
+                    
+                    # 地址跟踪监控（仅监控仓位变化，不交易）
+                    if self.tracking_configs:
+                        await self._sync_address_tracking()
 
                 except asyncio.CancelledError:
                     raise

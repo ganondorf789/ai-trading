@@ -13,11 +13,12 @@ notifications_bp = Blueprint('notifications', __name__)
 
 
 # ==================== 通知分类定义 ====================
-# 将通知 type 映射到 4 个大类：公告、行情、交易、错误
+# 将通知 type 映射到 5 个大类：公告、行情、交易、跟踪、错误
 NOTIFICATION_CATEGORIES = {
     'announcement': ['announcement'],           # 公告
     'market':       ['market', 'price_alert'],  # 行情
     'trading':      ['open', 'close', 'adjust'],# 交易
+    'tracking':     ['tracking_open', 'tracking_close', 'tracking_add', 'tracking_reduce'],  # 地址跟踪
     'error':        ['error'],                  # 错误
 }
 
@@ -56,12 +57,12 @@ def get_notifications():
       - name: category
         in: query
         type: string
-        enum: [announcement, market, trading, error]
-        description: 通知大类筛选（公告/行情/交易/错误），与 type 互斥
+        enum: [announcement, market, trading, tracking, error]
+        description: 通知大类筛选（公告/行情/交易/跟踪/错误），与 type 互斥
       - name: type
         in: query
         type: string
-        enum: [open, close, adjust, error, announcement, market, price_alert]
+        enum: [open, close, adjust, tracking_open, tracking_close, tracking_add, tracking_reduce, error, announcement, market, price_alert]
         description: 通知类型筛选（细分类型）
       - name: is_read
         in: query
@@ -225,6 +226,9 @@ def get_unread_summary():
                     trading:
                       type: integer
                       description: 交易未读数
+                    tracking:
+                      type: integer
+                      description: 跟踪未读数
                     error:
                       type: integer
                       description: 错误未读数
@@ -286,7 +290,7 @@ def mark_notifications_read():
           properties:
             category:
               type: string
-              enum: [all, announcement, market, trading, error]
+              enum: [all, announcement, market, trading, tracking, error]
               description: >
                 要标记已读的分类。
                 传 'all' 标记所有通知为已读；

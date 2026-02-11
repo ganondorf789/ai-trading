@@ -679,6 +679,43 @@ class GRPCClient:
             logger.error(f"gRPC 错误 (VerifyApiKey): {e}")
             return None
     
+    def get_enabled_address_trackings(self, user_ulid: str) -> List[Dict]:
+        """
+        获取启用的地址跟踪配置（通过用户 ULID）
+        
+        从 Redis 缓存读取，key 格式：address_tracking:enabled_configs:{user_ulid}
+        由 API 服务器在地址跟踪配置变更时写入
+        
+        Args:
+            user_ulid: 用户 ULID
+        
+        Returns:
+            启用的地址跟踪配置列表，每项包含:
+            - tracking_address: 跟踪地址
+            - address_remark: 地址备注
+            - monitor_events: 监控事件列表 (open/close/add/reduce)
+            - is_enabled: 是否启用
+            - enable_notification: 是否开启通知
+        """
+        if not user_ulid:
+            logger.warning("get_enabled_address_trackings: user_ulid 为空")
+            return []
+        
+        try:
+            value = self._redis.get(f"address_tracking:enabled_configs:{user_ulid}")
+            
+            if not value:
+                return []
+            
+            configs = json.loads(value)
+            return configs if isinstance(configs, list) else []
+        except json.JSONDecodeError:
+            logger.warning("地址跟踪配置 JSON 解析失败")
+            return []
+        except Exception as e:
+            logger.error(f"获取地址跟踪配置失败: {e}")
+            return []
+    
     def ping(self) -> bool:
         """测试连接（同时验证 API Key）"""
         try:
