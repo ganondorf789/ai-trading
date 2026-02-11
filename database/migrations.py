@@ -1183,6 +1183,11 @@ class DatabaseMigrations:
         # 创建巨鲸锚点表
         self._migrate_create_whale_anchor_table(cursor)
 
+        # 为 detected_new_positions 表添加 is_whale 字段
+        self._migrate_add_column_if_not_exists(
+            cursor, 'detected_new_positions', 'is_whale', 'BOOLEAN DEFAULT FALSE'
+        )
+
     def _migrate_add_ulid_columns(self, cursor):
         """
         为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段

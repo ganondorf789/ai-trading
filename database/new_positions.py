@@ -22,7 +22,9 @@ class NewPositionsOps:
         trader_rating: Optional[str] = None,
         trader_score: Optional[float] = None,
         notified: bool = False,
-        target_is_starred: bool = False
+        target_is_starred: bool = False,
+        is_whale: bool = False,
+        position_value: Optional[float] = None
     ) -> Optional[int]:
         """
         保存检测到的新仓位记录
@@ -35,6 +37,8 @@ class NewPositionsOps:
             trader_score: 交易员评分
             notified: 是否已发送通知
             target_is_starred: 目标交易员是否被标记
+            is_whale: 仓位价值是否达到巨鲸锚点
+            position_value: 仓位价值（已预先计算），为 None 时自动计算
 
         Returns:
             新记录的 ID，失败返回 None
@@ -43,7 +47,8 @@ class NewPositionsOps:
             coin = position.get('coin', '')
             szi = float(position.get('szi', 0) or 0)
             entry_px = float(position.get('entry_px', 0) or 0)
-            position_value = abs(szi) * entry_px
+            if position_value is None:
+                position_value = abs(szi) * entry_px
             leverage = position.get('leverage', 1)
             if isinstance(leverage, dict):
                 leverage = leverage.get('value', 1)
@@ -58,8 +63,8 @@ class NewPositionsOps:
                     INSERT INTO detected_new_positions (
                         trader_address, trader_name, trader_rating, trader_score,
                         coin, direction, szi, entry_px, position_value, leverage,
-                        detected_at, notified, target_is_starred
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        detected_at, notified, target_is_starred, is_whale
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     trader_address,
@@ -74,7 +79,8 @@ class NewPositionsOps:
                     leverage,
                     pendulum.now(SHANGHAI_TZ).to_iso8601_string(),
                     notified,
-                    target_is_starred
+                    target_is_starred,
+                    is_whale
                 ))
                 
                 row = cursor.fetchone()
@@ -210,7 +216,8 @@ class NewPositionsOps:
         min_position_value: Optional[float] = None,
         max_position_value: Optional[float] = None,
         min_leverage: Optional[int] = None,
-        max_leverage: Optional[int] = None
+        max_leverage: Optional[int] = None,
+        is_whale: Optional[bool] = None
     ) -> List[Dict]:
         """
         使用游标分页查询新仓位记录
@@ -281,6 +288,11 @@ class NewPositionsOps:
             if max_leverage is not None:
                 conditions.append("leverage <= %s")
                 params.append(max_leverage)
+            
+            # 巨鲸筛选
+            if is_whale is not None:
+                conditions.append("is_whale = %s")
+                params.append(is_whale)
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             

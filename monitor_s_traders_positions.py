@@ -59,45 +59,9 @@ MARKET_ACTIVITY_WINDOW = 60  # 1分钟窗口（秒）
 MARKET_ACTIVITY_THRESHOLD = 5  # 触发阈值：新仓位数量
 MARKET_ACTIVITY_COOLDOWN = 600  # 10分钟冷却时间（秒）
 
-# 巨鲸锚点缓存（从数据库加载，定期刷新）
-_whale_thresholds: Dict[str, float] = {}
-_whale_thresholds_loaded_at: float = 0
-WHALE_THRESHOLDS_REFRESH_INTERVAL = 300  # 5分钟刷新一次
-
-
-def load_whale_thresholds(db: 'TraderDatabase', force: bool = False) -> Dict[str, float]:
-    """
-    从数据库加载巨鲸锚点阈值映射（带缓存）
-
-    Args:
-        db: 数据库实例
-        force: 是否强制刷新
-
-    Returns:
-        {coin: threshold_usd} 字典
-    """
-    global _whale_thresholds, _whale_thresholds_loaded_at
-
-    now = time.time()
-    if not force and _whale_thresholds and (now - _whale_thresholds_loaded_at) < WHALE_THRESHOLDS_REFRESH_INTERVAL:
-        return _whale_thresholds
-
-    try:
-        _whale_thresholds = db.get_whale_thresholds_map()
-        _whale_thresholds_loaded_at = now
-        if _whale_thresholds:
-            logger.info(f"已加载巨鲸锚点: {len(_whale_thresholds)} 个币种")
-        else:
-            logger.debug("巨鲸锚点表为空，跳过巨鲸检测")
-    except Exception as e:
-        logger.warning(f"加载巨鲸锚点失败: {e}")
-
-    return _whale_thresholds
-
-
 def check_and_notify_whale(
-    db: 'TraderDatabase',
     redis_client,
+    whale_thresholds: Dict[str, float],
     trader: Dict,
     coin: str,
     position_value: float,
@@ -110,8 +74,8 @@ def check_and_notify_whale(
     检查仓位是否达到巨鲸锚点并发送通知
 
     Args:
-        db: 数据库实例
         redis_client: Redis 客户端
+        whale_thresholds: 巨鲸阈值映射 {coin: threshold_usd}
         trader: 交易员信息
         coin: 币种
         position_value: 仓位价值 (USD)
@@ -120,11 +84,10 @@ def check_and_notify_whale(
         entry_px: 入场价
         leverage: 杠杆倍数
     """
-    if not redis_client:
+    if not redis_client or not whale_thresholds:
         return
 
-    thresholds = load_whale_thresholds(db)
-    threshold = thresholds.get(coin)
+    threshold = whale_thresholds.get(coin)
     if threshold is None or threshold <= 0:
         return
 
@@ -681,7 +644,8 @@ def process_trader_result(
     trader: Dict,
     user_state: Optional[Dict],
     old_positions: Dict[str, Dict],
-    redis_client: redis.Redis = None
+    redis_client: redis.Redis = None,
+    whale_thresholds: Optional[Dict[str, float]] = None
 ) -> int:
     """
     处理单个交易员的持仓结果
@@ -692,6 +656,7 @@ def process_trader_result(
         user_state: 从API获取的用户状态
         old_positions: 更新前的持仓
         redis_client: Redis 客户端
+        whale_thresholds: 巨鲸阈值映射 {coin: threshold_usd}
     
     Returns:
         新仓位数量
@@ -749,6 +714,13 @@ def process_trader_result(
         # 获取原始仓位数据（包含杠杆等完整信息）
         raw_pos = raw_positions_map.get(coin, pos)
         
+        # 判断是否巨鲸仓位
+        _szi_val = float(raw_pos.get('szi', 0) or 0)
+        _entry_px_val = float(raw_pos.get('entry_px', 0) or 0)
+        _position_value = abs(_szi_val) * _entry_px_val
+        _whale_threshold = (whale_thresholds or {}).get(coin, 0)
+        is_whale = _whale_threshold > 0 and _position_value >= _whale_threshold
+        
         # 保存新仓位记录到数据库
         record_id = db.save_new_position(
             trader_address=address,
@@ -757,7 +729,9 @@ def process_trader_result(
             trader_rating=rating,
             trader_score=score,
             notified=True,  # 通过 Redis WebSocket 通知
-            target_is_starred=trader.get('is_starred', False)
+            target_is_starred=trader.get('is_starred', False),
+            is_whale=is_whale,
+            position_value=_position_value
         )
         if record_id:
             logger.debug(f"    ✓ 已保存新仓位记录: id={record_id}")
@@ -773,8 +747,6 @@ def process_trader_result(
             
             # 发送详细数据到 WebSocket 广播 channel
             try:
-                szi_val = float(raw_pos.get('szi', 0) or 0)
-                entry_px_val = float(raw_pos.get('entry_px', 0) or 0)
                 leverage_val = raw_pos.get('leverage', 1)
                 if isinstance(leverage_val, dict):
                     leverage_val = leverage_val.get('value', 1)
@@ -787,11 +759,12 @@ def process_trader_result(
                     'trader_score': score,
                     'target_is_starred': trader.get('is_starred', False),
                     'coin': coin,
-                    'direction': 'long' if szi_val > 0 else 'short',
-                    'szi': abs(szi_val),
-                    'entry_px': entry_px_val,
-                    'position_value': abs(szi_val) * entry_px_val,
+                    'direction': 'long' if _szi_val > 0 else 'short',
+                    'szi': abs(_szi_val),
+                    'entry_px': _entry_px_val,
+                    'position_value': _position_value,
                     'leverage': int(leverage_val or 1),
+                    'is_whale': is_whale,
                     'detected_at': now_shanghai().to_iso8601_string(),
                     'trade_url': f"https://app.hyperliquid.xyz/trade/{coin}"
                 }
@@ -800,8 +773,8 @@ def process_trader_result(
 
                 # 巨鲸检测：仓位价值 >= 巨鲸锚点阈值时发送通知
                 check_and_notify_whale(
-                    db=db,
                     redis_client=redis_client,
+                    whale_thresholds=whale_thresholds or {},
                     trader=trader,
                     coin=coin,
                     position_value=ws_data['position_value'],
@@ -866,6 +839,15 @@ async def run_monitoring_cycle_async(
         address = trader['address']
         old_positions_map[address] = get_current_positions_from_db(db, address)
     
+    # 每轮循环开始时加载巨鲸锚点阈值
+    whale_thresholds: Dict[str, float] = {}
+    try:
+        whale_thresholds = db.get_whale_thresholds_map()
+        if whale_thresholds:
+            logger.info(f"已加载巨鲸锚点: {len(whale_thresholds)} 个币种")
+    except Exception as e:
+        logger.warning(f"加载巨鲸锚点失败: {e}")
+    
     logger.info(f"开始处理 {len(traders)} 个S级交易员，速率: {rate} 请求/秒")
     logger.info("-" * 60)
     
@@ -898,7 +880,8 @@ async def run_monitoring_cycle_async(
         try:
             new_count = process_trader_result(
                 db, trader, user_state, old_positions,
-                redis_client=redis_client
+                redis_client=redis_client,
+                whale_thresholds=whale_thresholds
             )
             if new_count > 0:
                 logger.success(f"[{idx+1}/{total_traders}] ✓ {address[:16]}... 仓位: {positions_count}, 新增: {new_count}")

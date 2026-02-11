@@ -689,6 +689,11 @@ def get_new_positions():
         max_position_value = request.args.get('max_position_value', type=float)
         min_leverage = request.args.get('min_leverage', type=int)
         max_leverage = request.args.get('max_leverage', type=int)
+        is_whale = request.args.get('is_whale')
+        # 转换 is_whale 参数
+        is_whale_bool = None
+        if is_whale is not None:
+            is_whale_bool = is_whale.lower() in ('true', '1', 'yes')
 
         # 查询数据（多取一条用于判断是否有更多）
         positions = db.get_new_positions_cursor(
@@ -702,7 +707,8 @@ def get_new_positions():
             min_position_value=min_position_value,
             max_position_value=max_position_value,
             min_leverage=min_leverage,
-            max_leverage=max_leverage
+            max_leverage=max_leverage,
+            is_whale=is_whale_bool
         )
 
         # 判断是否有更多数据
