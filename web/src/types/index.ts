@@ -19,8 +19,6 @@ export type {
   ApiResponse,
   // Copy trading types
   CopyTradingAddress,
-  CopyPositionState,
-  CopyPositionStats,
   // Hyperliquid types
   HyperliquidCoin,
 } from './api';

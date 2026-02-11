@@ -60,7 +60,7 @@ export type {
 
 // Forward declaration for User type (defined later in the file)
 export interface User {
-  id: number;
+  id: string;
   account: string;
   role: 'user' | 'member' | 'admin';
   api_wallet: string;
@@ -470,11 +470,11 @@ export const copyTradingApi = {
 
   // 添加跟单地址
   createAddress: (data: Partial<CopyTradingAddress>) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/addresses', data),
+    api.post<any, ApiResponse<{ id: string }> & { message?: string }>('/copy-trading/addresses', data),
 
   // 快速添加跟单地址（使用默认配置）
   quickAddAddress: (data: { address: string; name?: string }) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string; exists?: boolean }>('/copy-trading/addresses/quick-add', data),
+    api.post<any, ApiResponse<{ id: string }> & { message?: string; exists?: boolean }>('/copy-trading/addresses/quick-add', data),
 
   // 更新跟单地址
   updateAddress: (address: string, data: Partial<CopyTradingAddress>) =>
@@ -585,7 +585,7 @@ export const traderPositionsApi = {
 // ==================== 仓位级别跟单 API（第二种跟单模式） ====================
 
 export interface PositionTracking {
-  id: number;
+  id: string;
   target_address: string;
   target_name: string;
   target_display_name?: string;
@@ -666,26 +666,26 @@ export const positionTrackingApi = {
     default_leverage?: number;
     slippage?: number;
   }) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/copy-trading/position-tracking', data),
+    api.post<any, ApiResponse<{ id: string }> & { message?: string }>('/copy-trading/position-tracking', data),
 
   // 快速添加仓位跟单（使用默认配置）
   quickAdd: (data: { target_address: string; symbol: string; target_name?: string }) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string; exists?: boolean }>('/copy-trading/position-tracking/quick-add', data),
+    api.post<any, ApiResponse<{ id: string }> & { message?: string; exists?: boolean }>('/copy-trading/position-tracking/quick-add', data),
 
   // 更新仓位跟单配置
-  updateTracking: (trackingId: number, data: Partial<PositionTracking>) =>
+  updateTracking: (trackingId: string, data: Partial<PositionTracking>) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}`, data),
 
   // 删除仓位跟单
-  deleteTracking: (trackingId: number) =>
+  deleteTracking: (trackingId: string) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}`),
 
   // 启用/禁用仓位跟单
-  toggleTracking: (trackingId: number, isEnabled: boolean) =>
+  toggleTracking: (trackingId: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/toggle`, { is_enabled: isEnabled }),
 
   // 停止仓位跟单
-  stopTracking: (trackingId: number) =>
+  stopTracking: (trackingId: string) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
 };
 
@@ -717,7 +717,7 @@ export const riskControlApi = {
     }),
 
   // 获取单个默认跟单配置规则
-  getDefaultConfigRule: (ruleId: number) =>
+  getDefaultConfigRule: (ruleId: string) =>
     api.get<any, ApiResponse<DefaultCopyConfigRule>>(`/copy-trading/default-config-rules/${ruleId}`),
 
   // 创建默认跟单配置规则
@@ -725,11 +725,11 @@ export const riskControlApi = {
     api.post<any, ApiResponse<DefaultCopyConfigRule> & { message?: string }>('/copy-trading/default-config-rules', data),
 
   // 更新默认跟单配置规则
-  updateDefaultConfigRule: (ruleId: number, data: Partial<CopyConfigRuleCreateData> & { id?: number }) =>
+  updateDefaultConfigRule: (ruleId: string, data: Partial<CopyConfigRuleCreateData> & { id?: string }) =>
     api.put<any, ApiResponse<DefaultCopyConfigRule> & { message?: string }>(`/copy-trading/default-config-rules/${ruleId}`, data),
 
   // 删除默认跟单配置规则
-  deleteDefaultConfigRule: (ruleId: number) =>
+  deleteDefaultConfigRule: (ruleId: string) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/default-config-rules/${ruleId}`),
 
   // ==================== 立即跟单配置规则 ====================
@@ -741,7 +741,7 @@ export const riskControlApi = {
     }),
 
   // 获取单个立即跟单配置规则
-  getImmediateConfigRule: (ruleId: number) =>
+  getImmediateConfigRule: (ruleId: string) =>
     api.get<any, ApiResponse<ImmediateCopyConfigRule>>(`/copy-trading/immediate-config-rules/${ruleId}`),
 
   // 创建立即跟单配置规则
@@ -749,11 +749,11 @@ export const riskControlApi = {
     api.post<any, ApiResponse<ImmediateCopyConfigRule> & { message?: string }>('/copy-trading/immediate-config-rules', data),
 
   // 更新立即跟单配置规则
-  updateImmediateConfigRule: (ruleId: number, data: Partial<CopyConfigRuleCreateData> & { id?: number }) =>
+  updateImmediateConfigRule: (ruleId: string, data: Partial<CopyConfigRuleCreateData> & { id?: string }) =>
     api.put<any, ApiResponse<ImmediateCopyConfigRule> & { message?: string }>(`/copy-trading/immediate-config-rules/${ruleId}`, data),
 
   // 删除立即跟单配置规则
-  deleteImmediateConfigRule: (ruleId: number) =>
+  deleteImmediateConfigRule: (ruleId: string) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/copy-trading/immediate-config-rules/${ruleId}`),
 
   // ==================== 配置规则匹配测试 ====================
@@ -774,7 +774,7 @@ export interface SecretKey {
   user_role: 'user' | 'member' | 'admin';
   expires_days: number;
   is_used: boolean;
-  used_by_user_id: number | null;
+  used_by_user_id: string | null;
   is_active: boolean;
   expires_at: string | null;
   created_by: number | null;
@@ -803,7 +803,7 @@ export interface SecretKeyStats {
 }
 
 export interface LoginResponse {
-  id: number;
+  id: string;
   account: string;
   role: 'user' | 'member' | 'admin';
   api_wallet: string;
@@ -832,7 +832,7 @@ export const authApi = {
 
   // 用户注册
   register: (data: { account: string; password: string; secret_key: string }) =>
-    api.post<any, ApiResponse<{ id: number; account: string; role: string }> & { message?: string }>('/auth/register', data),
+    api.post<any, ApiResponse<{ id: string; account: string; role: string }> & { message?: string }>('/auth/register', data),
 
   // 修改密码（不再需要 user_id，从 token 获取）
   changePassword: (data: { old_password: string; new_password: string }) =>
@@ -843,12 +843,12 @@ export const authApi = {
     api.get<any, ApiResponse<User>>('/auth/me'),
 
   // 获取指定用户信息（管理员）
-  getUserInfo: (userId: number) =>
+  getUserInfo: (userId: string) =>
     api.get<any, ApiResponse<User>>(`/auth/user/${userId}`),
 
   // 验证 token 有效性
   verifyToken: () =>
-    api.get<any, ApiResponse<{ valid: boolean; user_id: number; account: string; role: string; expires_at: string }>>('/auth/verify-token'),
+    api.get<any, ApiResponse<{ valid: boolean; user_id: string; account: string; role: string; expires_at: string }>>('/auth/verify-token'),
 
   // 刷新 token
   refreshToken: async (refreshToken: string) => {
@@ -879,11 +879,11 @@ export const userManagementApi = {
     api.get<any, ApiResponse<User[]>>('/auth/users', { params }),
 
   // 更新用户身份（管理员）
-  updateUserRole: (targetUserId: number, data: { role: string }) =>
+  updateUserRole: (targetUserId: string, data: { role: string }) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/role`, data),
 
   // 更新用户信息（管理员）- 过期时间、IP、端口
-  updateUserInfo: (targetUserId: number, data: { role?: string; expires_at?: string | null; allowed_ip?: string; allowed_port?: string }) =>
+  updateUserInfo: (targetUserId: string, data: { role?: string; expires_at?: string | null; allowed_ip?: string; allowed_port?: string }) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/info`, data),
 
   // 获取用户统计（管理员）
@@ -891,12 +891,12 @@ export const userManagementApi = {
     api.get<any, ApiResponse<UserStats>>('/auth/users/stats'),
 
   // 获取指定用户的 API Key（管理员）
-  getUserApiKey: (targetUserId: number) =>
-    api.get<any, ApiResponse<{ user_id: number; api_key: string | null }>>(`/auth/users/${targetUserId}/api-key`),
+  getUserApiKey: (targetUserId: string) =>
+    api.get<any, ApiResponse<{ user_id: string; api_key: string | null }>>(`/auth/users/${targetUserId}/api-key`),
 
   // 刷新指定用户的 API Key（管理员）
-  refreshUserApiKey: (targetUserId: number) =>
-    api.post<any, ApiResponse<{ user_id: number; api_key: string }> & { message?: string }>(`/auth/users/${targetUserId}/api-key/refresh`),
+  refreshUserApiKey: (targetUserId: string) =>
+    api.post<any, ApiResponse<{ user_id: string; api_key: string }> & { message?: string }>(`/auth/users/${targetUserId}/api-key/refresh`),
 };
 
 export const secretKeyApi = {
@@ -942,7 +942,7 @@ export interface AppVersion {
   is_visible: boolean;
   min_supported_version: string;
   platform: 'all' | 'android' | 'ios' | 'web';
-  created_by: number | null;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1060,8 +1060,8 @@ export const announcementApi = {
 // ==================== 地址跟踪 API ====================
 
 export interface AddressTracking {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   tracking_address: string;
   address_remark: string;
   is_enabled: boolean;
@@ -1120,7 +1120,7 @@ export const addressTrackingApi = {
     api.get<any, ApiResponse<AddressTrackingStats>>('/address-tracking/stats'),
 
   // 获取单个跟踪详情
-  getTracking: (trackingId: number) =>
+  getTracking: (trackingId: string) =>
     api.get<any, ApiResponse<AddressTracking>>(`/address-tracking/${trackingId}`),
 
   // 创建地址跟踪
@@ -1131,26 +1131,26 @@ export const addressTrackingApi = {
     enable_notification?: boolean;
     monitor_events?: ('open' | 'close' | 'add' | 'reduce')[];
   }) =>
-    api.post<any, ApiResponse<{ id: number }> & { message?: string }>('/address-tracking', data),
+    api.post<any, ApiResponse<{ id: string }> & { message?: string }>('/address-tracking', data),
 
   // 更新地址跟踪配置
-  updateTracking: (trackingId: number, data: Partial<AddressTracking>) =>
+  updateTracking: (trackingId: string, data: Partial<AddressTracking>) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/address-tracking/${trackingId}`, data),
 
   // 删除地址跟踪
-  deleteTracking: (trackingId: number) =>
+  deleteTracking: (trackingId: string) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/address-tracking/${trackingId}`),
 
   // 启用/禁用地址跟踪
-  toggleTracking: (trackingId: number, isEnabled: boolean) =>
+  toggleTracking: (trackingId: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/address-tracking/${trackingId}/toggle`, { is_enabled: isEnabled }),
 
   // 启用/禁用地址跟踪通知
-  toggleNotification: (trackingId: number, enableNotification: boolean) =>
+  toggleNotification: (trackingId: string, enableNotification: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/address-tracking/${trackingId}/toggle-notification`, { enable_notification: enableNotification }),
 
   // 批量删除地址跟踪
-  batchDelete: (trackingIds: number[]) =>
+  batchDelete: (trackingIds: string[]) =>
     api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/address-tracking/batch-delete', { tracking_ids: trackingIds }),
 };
 

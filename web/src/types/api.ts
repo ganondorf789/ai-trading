@@ -283,7 +283,7 @@ export interface ApiResponse<T> {
 // ==================== 跟单交易类型 ====================
 
 export interface CopyTradingAddress {
-  id: number;
+  id: string;
   address: string;
   name: string;
   display_name?: string;
@@ -479,7 +479,7 @@ export interface ImmediateCopyConfig {
 // ==================== 跟单配置规则类型（多配置支持） ====================
 
 export interface CopyConfigRuleBase {
-  id?: number;
+  id?: string;
   config_type: 'default' | 'immediate';
   name: string;
   description?: string;
@@ -499,7 +499,7 @@ export interface DefaultCopyConfigRule extends CopyConfigRuleBase {
 
 // 立即跟单配置规则（按币种配置，每个币种最多一个配置）
 export interface ImmediateCopyConfigRule {
-  id?: number;
+  id?: string;
   config_type: 'immediate';
   name: string;
   description?: string;
