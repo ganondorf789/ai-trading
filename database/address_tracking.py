@@ -18,7 +18,7 @@ class AddressTrackingOps:
 
     def get_address_trackings(
         self,
-        user_id: int,
+        user_id: str,
         is_enabled: Optional[bool] = None,
         search: Optional[str] = None,
         limit: int = 20,
@@ -81,7 +81,7 @@ class AddressTrackingOps:
 
             return results, total_count
 
-    def get_address_tracking(self, user_id: int, tracking_id: int) -> Optional[Dict]:
+    def get_address_tracking(self, user_id: str, tracking_id: int) -> Optional[Dict]:
         """
         获取单个地址跟踪详情
 
@@ -109,7 +109,7 @@ class AddressTrackingOps:
                 item['monitor_events'] = []
             return item
 
-    def get_address_tracking_by_address(self, user_id: int, tracking_address: str) -> Optional[Dict]:
+    def get_address_tracking_by_address(self, user_id: str, tracking_address: str) -> Optional[Dict]:
         """
         按跟踪地址查询跟踪记录
 
@@ -137,17 +137,13 @@ class AddressTrackingOps:
                 item['monitor_events'] = []
             return item
 
-    def save_address_tracking(self, user_id: int, data: Dict, user_ulid: Optional[str] = None) -> Optional[int]:
+    def save_address_tracking(self, user_id: str, data: Dict) -> Optional[int]:
         """
         保存或更新地址跟踪记录
 
-        创建时自动存储用户的 ULID（user_ulid 字段），
-        供监控脚本查询时无需 JOIN users 表。
-
         Args:
-            user_id: 用户ID
+            user_id: 用户ID (ULID)
             data: 跟踪数据
-            user_ulid: 用户ULID（可选，不传则从 users 表查询）
 
         Returns:
             记录ID
@@ -156,19 +152,13 @@ class AddressTrackingOps:
             cursor = conn.cursor()
             now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
 
-            # 如果没有传入 user_ulid，从 users 表查询
-            if not user_ulid:
-                cursor.execute("SELECT ulid FROM users WHERE id = %s", (user_id,))
-                user_row = cursor.fetchone()
-                user_ulid = user_row[0] if user_row else None
-
             # 处理 JSON 字段
             monitor_events = data.get('monitor_events', ['open', 'close', 'add', 'reduce'])
             if isinstance(monitor_events, list):
                 monitor_events = json.dumps(monitor_events)
 
             if data.get('id'):
-                # 更新现有记录，同时刷新 user_ulid
+                # 更新现有记录
                 cursor.execute("""
                     UPDATE address_tracking
                     SET tracking_address = %s,
@@ -176,7 +166,6 @@ class AddressTrackingOps:
                         is_enabled = %s,
                         enable_notification = %s,
                         monitor_events = %s,
-                        user_ulid = %s,
                         updated_at = %s
                     WHERE user_id = %s AND id = %s
                     RETURNING id
@@ -186,7 +175,6 @@ class AddressTrackingOps:
                     data.get('is_enabled', True),
                     data.get('enable_notification', True),
                     monitor_events,
-                    user_ulid,
                     now,
                     user_id,
                     data['id']
@@ -197,14 +185,13 @@ class AddressTrackingOps:
                 # 创建新记录
                 cursor.execute("""
                     INSERT INTO address_tracking (
-                        user_id, user_ulid, tracking_address, address_remark,
+                        user_id, tracking_address, address_remark,
                         is_enabled, enable_notification, monitor_events,
                         created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     user_id,
-                    user_ulid,
                     data.get('tracking_address'),
                     data.get('address_remark', ''),
                     data.get('is_enabled', True),
@@ -216,7 +203,7 @@ class AddressTrackingOps:
                 result = cursor.fetchone()
                 return result[0] if result else None
 
-    def delete_address_tracking(self, user_id: int, tracking_id: int) -> bool:
+    def delete_address_tracking(self, user_id: str, tracking_id: int) -> bool:
         """
         删除地址跟踪记录
 
@@ -235,7 +222,7 @@ class AddressTrackingOps:
             )
             return cursor.rowcount > 0
 
-    def toggle_address_tracking(self, user_id: int, tracking_id: int, is_enabled: bool) -> bool:
+    def toggle_address_tracking(self, user_id: str, tracking_id: int, is_enabled: bool) -> bool:
         """
         启用/禁用地址跟踪
 
@@ -260,7 +247,7 @@ class AddressTrackingOps:
             return cursor.rowcount > 0
 
     def toggle_address_tracking_notification(
-        self, user_id: int, tracking_id: int, enable_notification: bool
+        self, user_id: str, tracking_id: int, enable_notification: bool
     ) -> bool:
         """
         启用/禁用地址跟踪通知
@@ -285,15 +272,15 @@ class AddressTrackingOps:
 
             return cursor.rowcount > 0
 
-    def get_enabled_address_trackings(self, user_id: Optional[int] = None) -> List[Dict]:
+    def get_enabled_address_trackings(self, user_id: Optional[str] = None) -> List[Dict]:
         """
         获取所有启用的地址跟踪配置
 
         Args:
-            user_id: 用户ID（可选，不传则获取所有用户的）
+            user_id: 用户ID (ULID)（可选，不传则获取所有用户的）
 
         Returns:
-            启用的跟踪配置列表（包含 user_ulid 字段）
+            启用的跟踪配置列表
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
@@ -308,7 +295,6 @@ class AddressTrackingOps:
                 cursor.execute("""
                     SELECT * FROM address_tracking
                     WHERE is_enabled = TRUE
-                      AND user_ulid IS NOT NULL
                     ORDER BY user_id, updated_at DESC
                 """)
 
@@ -323,7 +309,7 @@ class AddressTrackingOps:
 
             return results
 
-    def get_address_tracking_stats(self, user_id: int) -> Dict:
+    def get_address_tracking_stats(self, user_id: str) -> Dict:
         """
         获取地址跟踪统计信息
 
@@ -354,7 +340,7 @@ class AddressTrackingOps:
                 'notification_enabled_count': 0
             }
 
-    def check_address_tracking_exists(self, user_id: int, tracking_address: str) -> bool:
+    def check_address_tracking_exists(self, user_id: str, tracking_address: str) -> bool:
         """
         检查是否已存在该地址的跟踪记录
 
@@ -374,7 +360,7 @@ class AddressTrackingOps:
             """, (user_id, tracking_address,))
             return cursor.fetchone() is not None
 
-    def batch_delete_address_trackings(self, user_id: int, tracking_ids: List[int]) -> int:
+    def batch_delete_address_trackings(self, user_id: str, tracking_ids: List[int]) -> int:
         """
         批量删除地址跟踪记录
 

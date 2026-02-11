@@ -15,16 +15,15 @@ from .db import db
 logger = logging.getLogger(__name__)
 
 
-def generate_tokens(user_id: int, account: str, role: str, user_expires_at: Optional[datetime] = None, user_ulid: str = '') -> Tuple[str, str]:
+def generate_tokens(user_id: str, account: str, role: str, user_expires_at: Optional[datetime] = None) -> Tuple[str, str]:
     """
     生成访问令牌和刷新令牌
     
     Args:
-        user_id: 用户 ID
+        user_id: 用户 ID（ULID 字符串）
         account: 账号
         role: 用户角色
         user_expires_at: 用户账户过期时间（None 表示永不过期）
-        user_ulid: 用户 ULID（写入 JWT，避免后续查询）
         
     Returns:
         (access_token, refresh_token) 元组
@@ -34,7 +33,6 @@ def generate_tokens(user_id: int, account: str, role: str, user_expires_at: Opti
     # 访问令牌
     access_payload = {
         'user_id': user_id,
-        'user_ulid': user_ulid,
         'account': account,
         'role': role,
         'type': 'access',
@@ -163,7 +161,6 @@ def login_required(f):
         # 将用户信息存储到 g 对象中
         g.current_user = {
             'user_id': user_id,
-            'user_ulid': payload.get('user_ulid', ''),
             'account': payload.get('account'),
             'role': role
         }
@@ -231,27 +228,15 @@ def member_required(f):
     return decorated_function
 
 
-def get_current_user_id() -> Optional[int]:
+def get_current_user_id() -> Optional[str]:
     """
-    获取当前登录用户的 ID
+    获取当前登录用户的 ID（ULID 字符串）
     
     Returns:
-        用户 ID，未登录返回 None
+        用户 ID（ULID），未登录返回 None
     """
     if hasattr(g, 'current_user'):
         return g.current_user.get('user_id')
-    return None
-
-
-def get_current_user_ulid() -> Optional[str]:
-    """
-    获取当前登录用户的 ULID
-    
-    Returns:
-        用户 ULID，未登录返回 None
-    """
-    if hasattr(g, 'current_user'):
-        return g.current_user.get('user_ulid')
     return None
 
 

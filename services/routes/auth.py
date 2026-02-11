@@ -425,13 +425,12 @@ def login():
         
         logger.info(f"用户登录成功: {account}")
         
-        # 生成 JWT 令牌（将用户过期时间和 ULID 写入 token）
+        # 生成 JWT 令牌（将用户过期时间写入 token，user_id 即为 ULID）
         access_token, refresh_token = generate_tokens(
             user_id=user['id'],
             account=user['account'],
             role=user.get('role', 'user'),
-            user_expires_at=user.get('expires_at'),
-            user_ulid=user.get('ulid', '')
+            user_expires_at=user.get('expires_at')
         )
         
         # 格式化返回数据
@@ -550,13 +549,12 @@ def refresh_token():
                     'code': 'USER_INACTIVE'
                 }), 403
         
-        # 生成新的令牌（将用户过期时间写入 token）
+        # 生成新的令牌（将用户过期时间写入 token，user_id 即为 ULID）
         access_token, new_refresh_token = generate_tokens(
             user_id=user['id'],
             account=user['account'],
             role=role,
-            user_expires_at=expires_at,
-            user_ulid=user.get('ulid', '')
+            user_expires_at=expires_at
         )
         
         logger.info(f"Token 刷新成功: user_id={user_id}")
@@ -757,8 +755,7 @@ def change_password():
             user_id=user_id,
             account=user['account'],
             role=user.get('role', 'user'),
-            user_expires_at=user.get('expires_at'),
-            user_ulid=user.get('ulid', '')
+            user_expires_at=user.get('expires_at')
         )
         
         logger.info(f"用户密码修改成功: user_id={user_id}")
@@ -1423,8 +1420,7 @@ def redeem_secret_key():
             user_id=user_id,
             account=user['account'],
             role=new_role,
-            user_expires_at=new_expires_at,
-            user_ulid=user.get('ulid', '')
+            user_expires_at=new_expires_at
         )
         
         logger.info(f"用户兑换秘钥成功: user_id={user_id}, added_days={key_expires_days}, role_upgraded={role_upgraded}")

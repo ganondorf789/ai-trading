@@ -226,8 +226,9 @@ class DatabaseMigrations:
             # 创建跟单地址表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_trading_addresses (
-                    id SERIAL PRIMARY KEY,
-                    address TEXT NOT NULL UNIQUE,
+                    id TEXT PRIMARY KEY,                  -- ULID
+                    user_id TEXT,                         -- 用户ID (ULID)
+                    address TEXT NOT NULL,
                     name TEXT DEFAULT '',
                     is_enabled BOOLEAN DEFAULT TRUE,
 
@@ -246,10 +247,22 @@ class DatabaseMigrations:
                     check_interval REAL DEFAULT 10.0,
                     dry_run BOOLEAN DEFAULT TRUE,
                     sync_position BOOLEAN DEFAULT TRUE,
+                    
+                    -- 自动补仓
+                    auto_replenish BOOLEAN DEFAULT FALSE,
+                    replenish_ratio REAL DEFAULT 0.5,
+                    replenish_min_value_usd REAL DEFAULT 10.0,
+                    replenish_max_value_usd REAL DEFAULT 100.0,
+                    
+                    -- 只跟一次
+                    copy_once BOOLEAN DEFAULT FALSE,
 
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    
+                    -- 唯一约束：每个用户对同一地址只能有一条记录
+                    UNIQUE(user_id, address)
                 )
             """)
 
@@ -305,7 +318,7 @@ class DatabaseMigrations:
             # 创建仓位级别跟单表（第二种跟单模式：跟单特定仓位）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_position_tracking (
-                    id SERIAL PRIMARY KEY,
+                    id TEXT PRIMARY KEY,                  -- ULID
                     target_address TEXT NOT NULL,         -- 目标交易员地址
                     target_name TEXT DEFAULT '',          -- 交易员名称
                     symbol TEXT NOT NULL,                 -- 跟单币种
@@ -319,6 +332,12 @@ class DatabaseMigrations:
                     max_leverage INTEGER DEFAULT 10,
                     default_leverage INTEGER DEFAULT 5,
                     slippage REAL DEFAULT 0.01,
+                    
+                    -- 自动补仓
+                    auto_replenish BOOLEAN DEFAULT FALSE,
+                    replenish_ratio REAL DEFAULT 0.5,
+                    replenish_min_value_usd REAL DEFAULT 10.0,
+                    replenish_max_value_usd REAL DEFAULT 100.0,
                     
                     -- 目标仓位快照（开始跟单时的状态）
                     target_initial_size REAL,
@@ -337,11 +356,11 @@ class DatabaseMigrations:
                     close_reason TEXT,
                     
                     -- 交易员标记
-                    target_is_starred BOOLEAN DEFAULT FALSE,  -- 目标交易员是否被标记
+                    target_is_starred BOOLEAN DEFAULT FALSE,
                     
                     -- 交易员评分信息
-                    target_score REAL,                        -- 目标交易员评分
-                    target_rating TEXT,                       -- 目标交易员评级
+                    target_score REAL,
+                    target_rating TEXT,
                     
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -585,6 +604,9 @@ class DatabaseMigrations:
                     size REAL,                             -- 仓位大小
                     pnl REAL,                              -- 盈亏（平仓时）
                     
+                    -- 用户关联
+                    user_id TEXT,                              -- 用户ID (ULID)
+                    
                     -- 状态
                     is_read BOOLEAN DEFAULT FALSE,         -- 是否已读
                     
@@ -621,7 +643,7 @@ class DatabaseMigrations:
                     user_role TEXT DEFAULT 'user',               -- 使用此秘钥注册的用户身份: user/member/admin
                     expires_days INTEGER DEFAULT 30,             -- 注册用户的有效天数（0表示永不过期）
                     is_used BOOLEAN DEFAULT FALSE,               -- 是否已使用
-                    used_by_user_id INTEGER,                     -- 使用此秘钥的用户ID
+                    used_by_user_id TEXT,                        -- 使用此秘钥的用户ID (ULID)
                     
                     -- 状态
                     is_active BOOLEAN DEFAULT TRUE,              -- 是否启用
@@ -645,7 +667,7 @@ class DatabaseMigrations:
             # 创建用户表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
+                    id TEXT PRIMARY KEY,                         -- ULID
                     account TEXT NOT NULL UNIQUE,                -- 账号（唯一）
                     password_hash TEXT NOT NULL,                 -- 密码哈希
                     secret_key_id INTEGER,                       -- 关联的秘钥ID
@@ -656,6 +678,11 @@ class DatabaseMigrations:
                     -- Hyperliquid API 设置
                     api_wallet TEXT DEFAULT '',                  -- API 钱包地址
                     wallet_address TEXT DEFAULT '',              -- 钱包地址
+                    api_key TEXT,                                -- Trading 服务认证用
+                    
+                    -- 访问控制
+                    allowed_ip TEXT DEFAULT '',                  -- 允许的IP
+                    allowed_port TEXT DEFAULT '',                -- 允许的端口
                     
                     -- 账户状态
                     expires_at TIMESTAMP,                        -- 过期时间（NULL表示永不过期）
@@ -691,14 +718,12 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_favorites (
                     id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,              -- 用户 ID
+                    user_id TEXT NOT NULL,                 -- 用户 ID (ULID)
                     trader_address TEXT NOT NULL,          -- 交易者地址
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     
                     -- 唯一约束：每个用户对每个交易者只能收藏一次
-                    UNIQUE(user_id, trader_address),
-                    
-                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    UNIQUE(user_id, trader_address)
                 )
             """)
 
@@ -757,7 +782,7 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS address_tracking (
                     id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL,                    -- 用户ID
+                    user_id TEXT NOT NULL,                       -- 用户ID (ULID)
                     tracking_address TEXT NOT NULL,              -- 跟踪地址
                     address_remark TEXT DEFAULT '',              -- 地址备注
                     
@@ -791,12 +816,14 @@ class DatabaseMigrations:
             # 创建跟单配置规则表（支持按杠杆区间分配不同配置）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS copy_config_rules (
-                    id SERIAL PRIMARY KEY,
+                    id TEXT PRIMARY KEY,                -- ULID
+                    user_id TEXT,                       -- 用户ID (ULID)
                     
                     -- 规则类型和名称
                     config_type TEXT NOT NULL,          -- 'default' 或 'immediate'
                     name TEXT NOT NULL,                 -- 规则名称
                     description TEXT DEFAULT '',        -- 规则描述
+                    symbol TEXT,                        -- 币种（立即跟单时指定）
                     
                     -- 杠杆区间（左开右闭: leverage_min < leverage <= leverage_max）
                     leverage_min REAL DEFAULT 0,        -- 杠杆下限（不包含），0表示从最小开始
@@ -974,122 +1001,6 @@ class DatabaseMigrations:
             cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
         )
 
-        # 添加自动补仓相关字段到 copy_trading_addresses 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'auto_replenish', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'replenish_ratio', 'REAL DEFAULT 0.5'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'replenish_min_value_usd', 'REAL DEFAULT 10.0'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
-        )
-
-        # 添加只跟一次字段到 copy_trading_addresses 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'copy_once', 'BOOLEAN DEFAULT FALSE'
-        )
-
-        # 添加 target_is_starred 字段到 detected_new_positions 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'detected_new_positions', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'
-        )
-
-        # 添加 target_is_starred 字段到 copy_position_tracking 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'target_is_starred', 'BOOLEAN DEFAULT FALSE'
-        )
-
-        # 添加 target_initial_leverage 字段到 copy_position_tracking 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'target_initial_leverage', 'REAL'
-        )
-
-        # 添加自动补仓相关字段到 copy_position_tracking 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'auto_replenish', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'replenish_ratio', 'REAL DEFAULT 0.5'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'replenish_min_value_usd', 'REAL DEFAULT 10.0'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'replenish_max_value_usd', 'REAL DEFAULT 100.0'
-        )
-
-        # 添加 symbol 字段到 copy_config_rules 表（立即跟单按币种配置）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_config_rules', 'symbol', 'TEXT'
-        )
-        
-        # 创建立即跟单配置规则的币种唯一索引（每个币种最多一个配置）
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_immediate_symbol
-            ON copy_config_rules(config_type, symbol)
-            WHERE config_type = 'immediate' AND symbol IS NOT NULL
-        """)
-
-        # 添加 role 字段到 users 表（用户身份）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'users', 'role', "TEXT DEFAULT 'user'"
-        )
-        
-        # 添加 secret_key_id 字段到 users 表（关联秘钥）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'users', 'secret_key_id', 'INTEGER'
-        )
-        
-        # 添加 is_used 字段到 secret_keys 表（是否已使用）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'secret_keys', 'is_used', 'BOOLEAN DEFAULT FALSE'
-        )
-        
-        # 添加 used_by_user_id 字段到 secret_keys 表（使用秘钥的用户ID）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'secret_keys', 'used_by_user_id', 'INTEGER'
-        )
-
-        # 添加 user_id 字段到 copy_trading_addresses 表（每个用户独立的跟单地址配置）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'user_id', 'INTEGER'
-        )
-        # 创建用户+地址的唯一索引，并移除旧的地址唯一约束
-        cursor.execute("""
-            ALTER TABLE copy_trading_addresses 
-            DROP CONSTRAINT IF EXISTS copy_trading_addresses_address_key
-        """)
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_address
-            ON copy_trading_addresses(user_id, address)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
-            ON copy_trading_addresses(user_id)
-        """)
-
-        # 添加 user_id 字段到 copy_config_rules 表（每个用户独立的配置规则）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_config_rules', 'user_id', 'INTEGER'
-        )
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_copy_config_rules_user_id
-            ON copy_config_rules(user_id)
-        """)
-        # 更新立即跟单配置规则的唯一索引，加入 user_id
-        cursor.execute("""
-            DROP INDEX IF EXISTS idx_copy_config_rules_immediate_symbol
-        """)
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_immediate_symbol
-            ON copy_config_rules(user_id, config_type, symbol)
-            WHERE config_type = 'immediate' AND symbol IS NOT NULL
-        """)
-
         # 添加交易者标签字段到 trader_metrics 表
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'tag_capital_scale', 'TEXT'
@@ -1110,52 +1021,47 @@ class DatabaseMigrations:
             cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
         )
 
-        # 添加 target_score 和 target_rating 字段到 copy_position_tracking 表
+        # 添加 display_name 字段到 trader_metrics 表（排行榜显示名称）
         self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'target_score', 'REAL'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'target_rating', 'TEXT'
+            cursor, 'trader_metrics', 'display_name', "TEXT DEFAULT ''"
         )
 
-        # 添加 api_key 字段到 users 表（Trading 服务认证用）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'users', 'api_key', 'TEXT'
-        )
+        # users 表相关索引
         cursor.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key
             ON users(api_key)
             WHERE api_key IS NOT NULL
         """)
 
-        # 添加 allowed_ip 和 allowed_port 字段到 users 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'users', 'allowed_ip', "TEXT DEFAULT ''"
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'users', 'allowed_port', "TEXT DEFAULT ''"
-        )
+        # copy_trading_addresses 表相关索引
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
+            ON copy_trading_addresses(user_id)
+        """)
 
-        # 添加 user_id 字段到 notifications 表（通知与用户关联）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'notifications', 'user_id', 'INTEGER'
-        )
+        # copy_config_rules 表相关索引
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_copy_config_rules_user_id
+            ON copy_config_rules(user_id)
+        """)
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_user_immediate_symbol
+            ON copy_config_rules(user_id, config_type, symbol)
+            WHERE config_type = 'immediate' AND symbol IS NOT NULL AND user_id IS NOT NULL
+        """)
+
+        # notifications 表相关索引
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_notifications_user_id
             ON notifications(user_id)
         """)
 
-        # 添加 display_name 字段到 trader_metrics 表（排行榜显示名称）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'display_name', "TEXT DEFAULT ''"
-        )
-
         # 创建通知已读标记表（基于水位线的每用户已读追踪）
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS notification_read_marks (
-                user_id INTEGER NOT NULL,
-                category TEXT NOT NULL,          -- 'all' | 'announcement' | 'market' | 'trading' | 'error'
-                read_before_id INTEGER NOT NULL DEFAULT 0,  -- notification.id <= 此值视为已读
+                user_id TEXT NOT NULL,
+                category TEXT NOT NULL,
+                read_before_id INTEGER NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, category)
             )
@@ -1165,21 +1071,6 @@ class DatabaseMigrations:
             ON notification_read_marks(user_id)
         """)
 
-        # 添加 ULID 字段到 users、copy_position_tracking、copy_trading_addresses 表
-        # ULID 用于对外暴露的标识符，避免暴露自增 ID
-        self._migrate_add_ulid_columns(cursor)
-
-        # 修复 copy_config_rules 的立即跟单唯一索引（支持多用户）
-        # 旧索引：(config_type, symbol) → 每个币种全局只能有一个配置
-        # 新索引：(user_id, config_type, symbol) → 每个用户每个币种一个配置
-        self._migrate_fix_immediate_symbol_unique_index(cursor)
-
-        # 为 copy_config_rules 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
-        self._migrate_add_config_rules_user_ulid(cursor)
-
-        # 为 address_tracking 添加 user_ulid 字段（冗余存储，避免查询时 JOIN users）
-        self._migrate_add_address_tracking_user_ulid(cursor)
-
         # 创建巨鲸锚点表
         self._migrate_create_whale_anchor_table(cursor)
 
@@ -1187,111 +1078,6 @@ class DatabaseMigrations:
         self._migrate_add_column_if_not_exists(
             cursor, 'detected_new_positions', 'is_whale', 'BOOLEAN DEFAULT FALSE'
         )
-
-    def _migrate_add_ulid_columns(self, cursor):
-        """
-        为 users、copy_position_tracking、copy_trading_addresses 表添加 ULID 字段
-        
-        ULID 用于对外暴露的标识符（gRPC 通信），避免向客户端暴露自增整数 ID
-        """
-        tables = ['users', 'copy_position_tracking', 'copy_trading_addresses']
-        
-        for table in tables:
-            if not self._column_exists(cursor, table, 'ulid'):
-                # 1. 添加 ulid 列（先不加 NOT NULL，需要先回填现有数据）
-                cursor.execute(f'ALTER TABLE {table} ADD COLUMN ulid TEXT')
-                logger.info(f"数据库迁移: 添加列 {table}.ulid")
-                
-                # 2. 回填现有记录的 ULID
-                cursor.execute(f'SELECT id FROM {table} WHERE ulid IS NULL')
-                rows = cursor.fetchall()
-                for row in rows:
-                    new_ulid = str(ULID())
-                    cursor.execute(
-                        f'UPDATE {table} SET ulid = %s WHERE id = %s',
-                        (new_ulid, row[0])
-                    )
-                if rows:
-                    logger.info(f"数据库迁移: 回填 {table} 表 {len(rows)} 条记录的 ULID")
-                
-                # 3. 设置 NOT NULL 约束
-                cursor.execute(f'ALTER TABLE {table} ALTER COLUMN ulid SET NOT NULL')
-                
-                # 4. 创建唯一索引
-                cursor.execute(f"""
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_ulid
-                    ON {table}(ulid)
-                """)
-                logger.info(f"数据库迁移: 创建唯一索引 idx_{table}_ulid")
-
-    def _migrate_fix_immediate_symbol_unique_index(self, cursor):
-        """
-        修复 copy_config_rules 的立即跟单唯一索引，支持多用户
-
-        旧索引 idx_copy_config_rules_immediate_symbol 是 (config_type, symbol)，
-        全局唯一导致多个用户不能对同一币种各自配置立即跟单规则。
-        新索引改为 (user_id, config_type, symbol)，每个用户独立。
-        """
-        # 检查旧索引是否存在
-        cursor.execute("""
-            SELECT 1 FROM pg_indexes
-            WHERE indexname = 'idx_copy_config_rules_immediate_symbol'
-        """)
-        if cursor.fetchone():
-            cursor.execute("DROP INDEX idx_copy_config_rules_immediate_symbol")
-            logger.info("数据库迁移: 删除旧索引 idx_copy_config_rules_immediate_symbol")
-
-        # 创建新的多用户唯一索引
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_user_immediate_symbol
-            ON copy_config_rules(user_id, config_type, symbol)
-            WHERE config_type = 'immediate' AND symbol IS NOT NULL AND user_id IS NOT NULL
-        """)
-        logger.info("数据库迁移: 创建多用户唯一索引 idx_copy_config_rules_user_immediate_symbol")
-
-    def _migrate_add_config_rules_user_ulid(self, cursor):
-        """
-        为 copy_config_rules 表添加 user_ulid 字段
-        
-        冗余存储用户 ULID，这样查询配置规则时无需 JOIN users 表。
-        从 users 表回填已有记录的 user_ulid。
-        """
-        if not self._column_exists(cursor, 'copy_config_rules', 'user_ulid'):
-            cursor.execute('ALTER TABLE copy_config_rules ADD COLUMN user_ulid TEXT')
-            logger.info("数据库迁移: 添加列 copy_config_rules.user_ulid")
-
-            # 回填：从 users 表获取 ulid
-            cursor.execute("""
-                UPDATE copy_config_rules ccr
-                SET user_ulid = u.ulid
-                FROM users u
-                WHERE ccr.user_id = u.id AND ccr.user_ulid IS NULL
-            """)
-            updated = cursor.rowcount
-            if updated:
-                logger.info(f"数据库迁移: 回填 copy_config_rules 表 {updated} 条记录的 user_ulid")
-
-    def _migrate_add_address_tracking_user_ulid(self, cursor):
-        """
-        为 address_tracking 表添加 user_ulid 字段
-
-        冗余存储用户 ULID，这样查询跟踪配置时无需 JOIN users 表。
-        从 users 表回填已有记录的 user_ulid。
-        """
-        if not self._column_exists(cursor, 'address_tracking', 'user_ulid'):
-            cursor.execute('ALTER TABLE address_tracking ADD COLUMN user_ulid TEXT')
-            logger.info("数据库迁移: 添加列 address_tracking.user_ulid")
-
-            # 回填：从 users 表获取 ulid
-            cursor.execute("""
-                UPDATE address_tracking at
-                SET user_ulid = u.ulid
-                FROM users u
-                WHERE at.user_id = u.id AND at.user_ulid IS NULL
-            """)
-            updated = cursor.rowcount
-            if updated:
-                logger.info(f"数据库迁移: 回填 address_tracking 表 {updated} 条记录的 user_ulid")
 
     def _migrate_remove_groups(self, cursor):
         """

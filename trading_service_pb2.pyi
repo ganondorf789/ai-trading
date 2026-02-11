@@ -340,6 +340,14 @@ class AddressTrackingItem(_message.Message):
     enable_notification: bool
     def __init__(self, id: _Optional[int] = ..., tracking_address: _Optional[str] = ..., address_remark: _Optional[str] = ..., monitor_events: _Optional[str] = ..., is_enabled: bool = ..., enable_notification: bool = ...) -> None: ...
 
+class ToggleConfigRuleRequest(_message.Message):
+    __slots__ = ("rule_id", "is_enabled")
+    RULE_ID_FIELD_NUMBER: _ClassVar[int]
+    IS_ENABLED_FIELD_NUMBER: _ClassVar[int]
+    rule_id: str
+    is_enabled: bool
+    def __init__(self, rule_id: _Optional[str] = ..., is_enabled: bool = ...) -> None: ...
+
 class PublishRequest(_message.Message):
     __slots__ = ("channel", "message")
     CHANNEL_FIELD_NUMBER: _ClassVar[int]

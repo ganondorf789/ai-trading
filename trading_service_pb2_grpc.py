@@ -168,6 +168,11 @@ class DatabaseServiceStub(object):
                 request_serializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
                 response_deserializer=trading__service__pb2.AddressTrackingListResponse.FromString,
                 _registered_method=True)
+        self.ToggleConfigRule = channel.unary_unary(
+                '/trading.DatabaseService/ToggleConfigRule',
+                request_serializer=trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
+                _registered_method=True)
 
 
 class DatabaseServiceServicer(object):
@@ -240,6 +245,13 @@ class DatabaseServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ToggleConfigRule(self, request, context):
+        """启用/禁用跟单配置规则（立即跟单等）
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DatabaseServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -287,6 +299,11 @@ def add_DatabaseServiceServicer_to_server(servicer, server):
                     servicer.GetEnabledAddressTrackings,
                     request_deserializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.FromString,
                     response_serializer=trading__service__pb2.AddressTrackingListResponse.SerializeToString,
+            ),
+            'ToggleConfigRule': grpc.unary_unary_rpc_method_handler(
+                    servicer.ToggleConfigRule,
+                    request_deserializer=trading__service__pb2.ToggleConfigRuleRequest.FromString,
+                    response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -536,6 +553,33 @@ class DatabaseService(object):
             '/trading.DatabaseService/GetEnabledAddressTrackings',
             trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
             trading__service__pb2.AddressTrackingListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ToggleConfigRule(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.DatabaseService/ToggleConfigRule',
+            trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
+            trading__service__pb2.UpdateTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,

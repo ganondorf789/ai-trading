@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 import logging
 
 from .db import db
-from .middleware import login_required, get_current_user_id, get_current_user_ulid
+from .middleware import login_required, get_current_user_id
 from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 copy_trading_tracking_bp = Blueprint('copy_trading_tracking', __name__)
 
 
-def _notify_open_position(tracking_id: int, user_ulid: str = '') -> bool:
+def _notify_open_position(tracking_id: int, user_id: str = '') -> bool:
     """
     发送开仓通知到 Redis，机器人收到后立即开仓
     
@@ -23,41 +23,41 @@ def _notify_open_position(tracking_id: int, user_ulid: str = '') -> bool:
     
     Args:
         tracking_id: 跟单记录整数 ID
-        user_ulid: 用户 ULID（从 JWT 中获取，无需查询数据库）
+        user_id: 用户 ID/ULID（从 JWT 中获取，无需查询数据库）
     """
     redis_client = get_redis_client()
     
     if redis_client is None:
         return False
     
-    if not user_ulid:
-        logger.warning(f"发送开仓通知失败: 未提供 user_ulid (tracking_id={tracking_id})")
+    if not user_id:
+        logger.warning(f"发送开仓通知失败: 未提供 user_id (tracking_id={tracking_id})")
         return False
     
     try:
-        # 查询记录的 ULID
+        # 查询记录的 ID (ULID)
         tracking = db.get_position_tracking(tracking_id)
-        if not tracking or not tracking.get('ulid'):
-            logger.warning(f"发送开仓通知失败: 找不到 tracking_id={tracking_id} 的 ULID")
+        if not tracking or not tracking.get('id'):
+            logger.warning(f"发送开仓通知失败: 找不到 tracking_id={tracking_id} 的 ID")
             return False
         
-        tracking_ulid = tracking['ulid']
+        tracking_ulid = tracking['id']
         
         # 发送 JSON 格式的开仓通知
         REDIS_OPEN_CHANNEL = "position_tracking_open"
         open_msg = json.dumps({
             'tracking_id': tracking_ulid,
-            'user_ulid': user_ulid,
+            'user_ulid': user_id,
         })
         redis_client.publish(REDIS_OPEN_CHANNEL, open_msg)
-        logger.info(f"已发送开仓通知: tracking_id={tracking_id}, ulid={tracking_ulid}, user={user_ulid[:8]}...")
+        logger.info(f"已发送开仓通知: tracking_id={tracking_id}, id={tracking_ulid}, user={user_id[:8]}...")
         return True
     except Exception as e:
         logger.warning(f"发送开仓通知失败: {e}")
         return False
 
 
-def _notify_config_changed(user_ulid: str = '') -> bool:
+def _notify_config_changed(user_id: str = '') -> bool:
     """
     发送配置变更通知到 Redis，机器人收到后立即重载配置
     
@@ -65,7 +65,7 @@ def _notify_config_changed(user_ulid: str = '') -> bool:
     机器人会校验 user_ulid 是否与自身 BOT_USER_ID 一致后才执行重载
     
     Args:
-        user_ulid: 用户 ULID（从 JWT 中获取）
+        user_id: 用户 ID/ULID（从 JWT 中获取）
     """
     redis_client = get_redis_client()
     
@@ -74,9 +74,9 @@ def _notify_config_changed(user_ulid: str = '') -> bool:
     
     try:
         REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
-        reload_msg = json.dumps({'user_ulid': user_ulid}) if user_ulid else "reload"
+        reload_msg = json.dumps({'user_ulid': user_id}) if user_id else "reload"
         redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, reload_msg)
-        logger.info(f"已发送配置重载通知: user={user_ulid[:8] + '...' if user_ulid else 'N/A'}")
+        logger.info(f"已发送配置重载通知: user={user_id[:8] + '...' if user_id else 'N/A'}")
         return True
     except Exception as e:
         logger.warning(f"发送配置重载通知失败: {e}")
@@ -371,7 +371,7 @@ def create_position_tracking():
         tracking_id = db.save_position_tracking(tracking_data)
 
         # 通知引擎重载配置
-        _notify_config_changed(user_ulid=get_current_user_ulid())
+        _notify_config_changed(user_id=get_current_user_id())
 
         return jsonify({
             'success': True,
@@ -465,7 +465,7 @@ def update_position_tracking(tracking_id: int):
         db.save_position_tracking(update_data)
 
         # 通知引擎重载配置
-        _notify_config_changed(user_ulid=get_current_user_ulid())
+        _notify_config_changed(user_id=get_current_user_id())
 
         return jsonify({
             'success': True,
@@ -521,7 +521,7 @@ def delete_position_tracking(tracking_id: int):
         success = db.delete_position_tracking(tracking_id)
         if success:
             # 通知引擎重载配置
-            _notify_config_changed(user_ulid=get_current_user_ulid())
+            _notify_config_changed(user_id=get_current_user_id())
 
             return jsonify({
                 'success': True,
@@ -586,7 +586,7 @@ def toggle_position_tracking(tracking_id: int):
 
         if success:
             # 通知引擎重载配置
-            _notify_config_changed(user_ulid=get_current_user_ulid())
+            _notify_config_changed(user_id=get_current_user_id())
 
             return jsonify({
                 'success': True,
@@ -653,7 +653,7 @@ def stop_position_tracking(tracking_id: int):
 
         if success:
             # 通知引擎重载配置
-            _notify_config_changed(user_ulid=get_current_user_ulid())
+            _notify_config_changed(user_id=get_current_user_id())
 
             return jsonify({
                 'success': True,
@@ -774,7 +774,7 @@ def quick_add_position_tracking():
         tracking_id = db.save_position_tracking(tracking_data)
 
         # 通知引擎重载配置
-        _notify_config_changed(user_ulid=get_current_user_ulid())
+        _notify_config_changed(user_id=get_current_user_id())
 
         trader_display = data.get('target_name') or f"{target_address[:10]}..."
 
@@ -986,7 +986,7 @@ def quick_copy_position():
         logger.info(f"[快速跟单] 添加成功: #{tracking_id} {symbol} @ {trader_display} (比例: {copy_ratio * 100:.0f}%)")
 
         # 发送 Redis 开仓通知，让机器人立即开仓
-        notified = _notify_open_position(tracking_id, user_ulid=get_current_user_ulid())
+        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
 
         return jsonify({
             'success': True,
@@ -1056,7 +1056,7 @@ def notify_tracking_open(tracking_id: int):
             }), 400
 
         # 发送开仓通知
-        notified = _notify_open_position(tracking_id, user_ulid=get_current_user_ulid())
+        notified = _notify_open_position(tracking_id, user_id=get_current_user_id())
 
         if notified:
             return jsonify({

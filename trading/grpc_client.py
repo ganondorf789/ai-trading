@@ -357,6 +357,22 @@ class GRPCDatabaseClient:
             logger.error(f"gRPC 错误 (ToggleCopyTradingAddress): {e}")
             return False
     
+    def toggle_config_rule(self, rule_id: str, is_enabled: bool) -> bool:
+        """启用/禁用跟单配置规则（立即跟单等）"""
+        self._ensure_connected()
+        try:
+            response = self._stub.ToggleConfigRule(
+                pb2.ToggleConfigRuleRequest(
+                    rule_id=rule_id,
+                    is_enabled=is_enabled
+                ),
+                metadata=self._get_metadata()
+            )
+            return response.success
+        except grpc.RpcError as e:
+            logger.error(f"gRPC 错误 (ToggleConfigRule): {e}")
+            return False
+    
     def get_enabled_address_trackings(self, user_id: str) -> List[Dict]:
         """
         获取启用的地址跟踪配置（通过用户 ULID）

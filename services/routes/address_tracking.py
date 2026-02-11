@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, g
 import logging
 
 from .db import db
-from .middleware import login_required, get_current_user_ulid
+from .middleware import login_required, get_current_user_id
 from ..shared import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -20,14 +20,14 @@ REDIS_CONFIG_RELOAD_CHANNEL = "copy_trading:config:reload"
 
 def _notify_tracking_config_changed():
     """发送配置变更通知到 Redis，机器人收到后立即重载地址跟踪配置"""
-    user_ulid = get_current_user_ulid() or ''
+    user_id = get_current_user_id() or ''
     redis_client = get_redis_client()
     if redis_client is None:
         return
     try:
-        reload_msg = json.dumps({'user_ulid': user_ulid}) if user_ulid else "reload"
+        reload_msg = json.dumps({'user_ulid': user_id}) if user_id else "reload"
         redis_client.publish(REDIS_CONFIG_RELOAD_CHANNEL, reload_msg)
-        logger.info(f"已发送地址跟踪配置重载通知: user={user_ulid[:8] + '...' if user_ulid else 'N/A'}")
+        logger.info(f"已发送地址跟踪配置重载通知: user={str(user_id)[:8] + '...' if user_id else 'N/A'}")
     except Exception as e:
         logger.warning(f"发送地址跟踪配置重载通知失败: {e}")
 
@@ -248,7 +248,6 @@ def create_address_tracking():
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if not data:
             return jsonify({
@@ -298,7 +297,7 @@ def create_address_tracking():
         }
 
         # 保存到数据库
-        tracking_id = db.save_address_tracking(user_id, tracking_data, user_ulid=user_ulid)
+        tracking_id = db.save_address_tracking(user_id, tracking_data)
 
         # 通知机器人重载配置
         _notify_tracking_config_changed()
@@ -346,7 +345,6 @@ def update_address_tracking(tracking_id: int):
     """
     try:
         user_id = g.current_user['user_id']
-        user_ulid = g.current_user.get('user_ulid', '')
         data = request.get_json()
         if not data:
             return jsonify({
@@ -378,7 +376,7 @@ def update_address_tracking(tracking_id: int):
             'monitor_events': monitor_events,
         }
 
-        db.save_address_tracking(user_id, update_data, user_ulid=user_ulid)
+        db.save_address_tracking(user_id, update_data)
 
         # 通知机器人重载配置
         _notify_tracking_config_changed()

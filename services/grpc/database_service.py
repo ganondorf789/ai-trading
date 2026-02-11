@@ -30,70 +30,10 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
         self._db = db or TraderDatabase()
         logger.info("DatabaseService 初始化完成")
     
-    def _resolve_user_ulid(self, user_id_int: int) -> str:
-        """将用户整数 ID 解析为 ULID"""
-        if not user_id_int:
-            return ''
-        try:
-            user = self._db.get_user_by_id(user_id_int)
-            return user.get('ulid', '') if user else ''
-        except Exception:
-            return ''
-
-    def _resolve_address_ulid(self, address_id_int: int) -> str:
-        """将跟单地址整数 ID 解析为 ULID"""
-        if not address_id_int:
-            return ''
-        try:
-            with self._db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT ulid FROM copy_trading_addresses WHERE id = %s", (address_id_int,))
-                row = cursor.fetchone()
-                return row[0] if row else ''
-        except Exception:
-            return ''
-    
-    def _resolve_user_int_id(self, user_ulid: str) -> int:
-        """将用户 ULID 解析为整数 ID"""
-        if not user_ulid:
-            return 0
-        try:
-            user = self._db.get_user_by_ulid(user_ulid)
-            return user.get('id', 0) if user else 0
-        except Exception:
-            return 0
-
-    def _resolve_tracking_int_id(self, tracking_ulid: str) -> int:
-        """将跟单记录 ULID 解析为整数 ID"""
-        if not tracking_ulid:
-            return 0
-        try:
-            tracking = self._db.get_position_tracking_by_ulid(tracking_ulid)
-            return tracking.get('id', 0) if tracking else 0
-        except Exception:
-            return 0
-    
-    def _resolve_address_int_id(self, address_ulid: str) -> int:
-        """将跟单地址 ULID 解析为整数 ID"""
-        if not address_ulid:
-            return 0
-        try:
-            with self._db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM copy_trading_addresses WHERE ulid = %s", (address_ulid,))
-                row = cursor.fetchone()
-                return row[0] if row else 0
-        except Exception:
-            return 0
-
     def _tracking_to_proto(self, tracking: dict) -> pb2.PositionTracking:
-        """将数据库记录转换为 proto 消息（使用 ULID 作为外部标识）"""
-        # 解析关联的用户和地址 ULID
-        user_ulid = tracking.get('user_ulid', '') or self._resolve_user_ulid(tracking.get('user_id'))
-        address_ulid = tracking.get('address_ulid', '') or self._resolve_address_ulid(tracking.get('address_id'))
-        
+        """将数据库记录转换为 proto 消息（ID 字段均为 ULID TEXT）"""
         return pb2.PositionTracking(
-            id=tracking.get('ulid', ''),  # 使用 ULID 作为对外 ID
+            id=tracking.get('id', ''),
             target_address=tracking.get('target_address', ''),
             symbol=tracking.get('symbol', ''),
             target_side=tracking.get('target_side', ''),
@@ -105,8 +45,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             my_size=float(tracking.get('my_size', 0) or 0),
             my_side=tracking.get('my_side', '') or '',
             my_entry_price=float(tracking.get('my_entry_price', 0) or 0),
-            user_id=user_ulid,
-            address_id=address_ulid,
+            user_id=tracking.get('user_id', '') or '',
+            address_id=tracking.get('address_id', '') or '',
             target_entry_price=float(tracking.get('target_entry_price', 0) or 0),
             target_size=float(tracking.get('target_size', 0) or 0),
             nickname=tracking.get('nickname', '') or tracking.get('target_name', '') or '',
@@ -140,14 +80,12 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             target_rating=tracking.get('target_rating', '') or '',
         )
     
-    def _address_to_proto(self, address: dict, user_ulid: str = '') -> pb2.CopyAddress:
-        """将地址配置转换为 proto 消息（使用 ULID 作为外部标识）"""
+    def _address_to_proto(self, address: dict) -> pb2.CopyAddress:
+        """将地址配置转换为 proto 消息（ID 字段均为 ULID TEXT）"""
         import json
-        # 解析用户 ULID
-        resolved_user_ulid = user_ulid or self._resolve_user_ulid(address.get('user_id'))
         return pb2.CopyAddress(
-            id=address.get('ulid', ''),  # 使用 ULID 作为对外 ID
-            user_id=resolved_user_ulid,
+            id=address.get('id', ''),
+            user_id=address.get('user_id', '') or '',
             address=address.get('address', ''),
             nickname=address.get('nickname', '') or '',
             copy_ratio=float(address.get('copy_ratio', 1.0)),
@@ -165,7 +103,7 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
     def GetPositionTracking(self, request: pb2.GetPositionTrackingRequest, context) -> pb2.PositionTrackingResponse:
         """获取单个仓位跟单详情（通过 ULID）"""
         try:
-            tracking = self._db.get_position_tracking_by_ulid(request.tracking_id)
+            tracking = self._db.get_position_tracking(request.tracking_id)
             if tracking:
                 return pb2.PositionTrackingResponse(
                     success=True,
@@ -210,11 +148,9 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
                 'status': request.status,
             }
             
-            # 可选字段：id（ULID → 整数 ID）
+            # 可选字段：id（ULID TEXT 主键）
             if request.HasField('id') and request.id:
-                int_id = self._resolve_tracking_int_id(request.id)
-                if int_id:
-                    data['id'] = int_id
+                data['id'] = request.id
             if request.HasField('max_position_size'):
                 data['max_position_size_usd'] = request.max_position_size
             if request.HasField('slippage'):
@@ -225,12 +161,12 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
                 data['my_side'] = request.my_side
             if request.HasField('my_entry_price'):
                 data['my_entry_price'] = request.my_entry_price
-            # user_id（ULID → 整数 ID）
+            # user_id（ULID TEXT）
             if request.HasField('user_id') and request.user_id:
-                data['user_id'] = self._resolve_user_int_id(request.user_id)
-            # address_id（ULID → 整数 ID）
+                data['user_id'] = request.user_id
+            # address_id（ULID TEXT）
             if request.HasField('address_id') and request.address_id:
-                data['address_id'] = self._resolve_address_int_id(request.address_id)
+                data['address_id'] = request.address_id
             if request.HasField('target_entry_price'):
                 data['target_entry_price'] = request.target_entry_price
             if request.HasField('target_size'):
@@ -286,17 +222,11 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             if request.HasField('target_rating'):
                 data['target_rating'] = request.target_rating
             
-            int_id = self._db.save_position_tracking(data)
-            
-            # 将返回的整数 ID 转换为 ULID
-            tracking_ulid = ''
-            if int_id:
-                tracking = self._db.get_position_tracking(int_id)
-                tracking_ulid = tracking.get('ulid', '') if tracking else ''
+            tracking_id = self._db.save_position_tracking(data)
             
             return pb2.SavePositionTrackingResponse(
-                success=bool(int_id),
-                tracking_id=tracking_ulid
+                success=bool(tracking_id),
+                tracking_id=str(tracking_id) if tracking_id else ''
             )
         except Exception as e:
             logger.error(f"SavePositionTracking 错误: {e}")
@@ -311,8 +241,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             close_reason = request.close_reason if request.HasField('close_reason') else None
             closed_pnl = request.closed_pnl if request.HasField('closed_pnl') else None
             
-            success = self._db.update_tracking_status_by_ulid(
-                ulid=request.tracking_id,
+            success = self._db.update_tracking_status(
+                tracking_id=request.tracking_id,
                 status=request.status,
                 close_reason=close_reason,
                 closed_pnl=closed_pnl
@@ -330,8 +260,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
         try:
             my_entry_price = request.my_entry_price if request.HasField('my_entry_price') else None
             
-            success = self._db.update_tracking_position_by_ulid(
-                ulid=request.tracking_id,
+            success = self._db.update_tracking_position(
+                tracking_id=request.tracking_id,
                 my_size=request.my_size,
                 my_side=request.my_side,
                 my_entry_price=my_entry_price
@@ -347,18 +277,10 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
     def GetEnabledCopyAddresses(self, request: pb2.GetEnabledCopyAddressesRequest, context) -> pb2.CopyAddressListResponse:
         """获取启用的跟单地址配置（通过用户 ULID）"""
         try:
-            # 将用户 ULID 解析为整数 ID
-            user_int_id = self._resolve_user_int_id(request.user_id)
-            if not user_int_id:
-                return pb2.CopyAddressListResponse(
-                    success=False,
-                    error=f"用户不存在: {request.user_id}"
-                )
-            
-            addresses = self._db.get_enabled_copy_addresses(user_int_id)
+            addresses = self._db.get_enabled_copy_addresses(request.user_id)
             return pb2.CopyAddressListResponse(
                 success=True,
-                addresses=[self._address_to_proto(a, user_ulid=request.user_id) for a in addresses]
+                addresses=[self._address_to_proto(a) for a in addresses]
             )
         except Exception as e:
             logger.error(f"GetEnabledCopyAddresses 错误: {e}")
@@ -385,16 +307,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
     def ToggleCopyTradingAddress(self, request: pb2.ToggleCopyTradingAddressRequest, context) -> pb2.UpdateTrackingResponse:
         """启用/禁用跟单地址（通过用户 ULID）"""
         try:
-            # 将用户 ULID 解析为整数 ID
-            user_int_id = self._resolve_user_int_id(request.user_id)
-            if not user_int_id:
-                return pb2.UpdateTrackingResponse(
-                    success=False,
-                    error=f"用户不存在: {request.user_id}"
-                )
-            
             success = self._db.toggle_copy_trading_address(
-                user_id=user_int_id,
+                user_id=request.user_id,
                 address=request.address,
                 is_enabled=request.is_enabled
             )
@@ -411,15 +325,7 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
         try:
             import json as _json
             
-            # 将用户 ULID 解析为整数 ID
-            user_int_id = self._resolve_user_int_id(request.user_id)
-            if not user_int_id:
-                return pb2.AddressTrackingListResponse(
-                    success=False,
-                    error=f"用户不存在: {request.user_id}"
-                )
-            
-            configs = self._db.get_enabled_address_trackings(user_int_id)
+            configs = self._db.get_enabled_address_trackings(request.user_id)
             
             tracking_items = []
             for c in configs:
@@ -446,6 +352,21 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
         except Exception as e:
             logger.error(f"GetEnabledAddressTrackings 错误: {e}")
             return pb2.AddressTrackingListResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def ToggleConfigRule(self, request: pb2.ToggleConfigRuleRequest, context) -> pb2.UpdateTrackingResponse:
+        """启用/禁用跟单配置规则"""
+        try:
+            success = self._db.toggle_config_rule_enabled(
+                rule_id=request.rule_id,
+                is_enabled=request.is_enabled
+            )
+            return pb2.UpdateTrackingResponse(success=success)
+        except Exception as e:
+            logger.error(f"ToggleConfigRule 错误: {e}")
+            return pb2.UpdateTrackingResponse(
                 success=False,
                 error=str(e)
             )

@@ -44,6 +44,9 @@ service DatabaseService {
     
     // 获取启用的地址跟踪配置
     rpc GetEnabledAddressTrackings(GetEnabledAddressTrackingsRequest) returns (AddressTrackingListResponse);
+    
+    // 启用/禁用跟单配置规则（立即跟单等）
+    rpc ToggleConfigRule(ToggleConfigRuleRequest) returns (UpdateTrackingResponse);
 }
 
 // ============================================
@@ -277,6 +280,11 @@ message AddressTrackingItem {
     string monitor_events = 4;     // JSON 数组字符串，如 '["open","close","add","reduce"]'
     bool is_enabled = 5;
     bool enable_notification = 6;
+}
+
+message ToggleConfigRuleRequest {
+    string rule_id = 1;      // 配置规则 ID (ULID)
+    bool is_enabled = 2;     // 是否启用
 }
 
 // ============================================

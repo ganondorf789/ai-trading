@@ -252,6 +252,9 @@ class PositionCopyTradingBot:
         消息格式（JSON）：
             {"tracking_id": "<ULID>", "user_ulid": "<ULID>"}
         兼容旧格式（纯字符串 tracking ULID，不含 user_ulid 校验）
+        
+        注意: 支持 user_ulid 和 user_id 两种 key，以兼容新旧消息格式。
+        user_ulid 的值现在是用户的 ULID 主键（来自 user.id）。
         """
         try:
             stripped = data.strip()
@@ -265,7 +268,7 @@ class PositionCopyTradingBot:
             try:
                 msg = json.loads(stripped)
                 tracking_id = msg.get('tracking_id', '')
-                user_ulid = msg.get('user_ulid', '')
+                user_ulid = msg.get('user_ulid') or msg.get('user_id', '')
             except (json.JSONDecodeError, TypeError):
                 # 兼容旧格式：纯 tracking ULID 字符串
                 tracking_id = stripped
@@ -622,13 +625,16 @@ class PositionCopyTradingBot:
         
         消息格式（JSON）：{"user_ulid": "<ULID>"}
         兼容旧格式（纯字符串 "reload"，不含 user_ulid 校验）
+        
+        注意: 支持 user_ulid 和 user_id 两种 key，以兼容新旧消息格式。
+        user_ulid 的值现在是用户的 ULID 主键（来自 user.id）。
         """
         try:
             # 尝试解析 JSON 格式
             user_ulid = ''
             try:
                 msg = json.loads(data.strip())
-                user_ulid = msg.get('user_ulid', '')
+                user_ulid = msg.get('user_ulid') or msg.get('user_id', '')
             except (json.JSONDecodeError, TypeError):
                 pass  # 兼容旧格式
             

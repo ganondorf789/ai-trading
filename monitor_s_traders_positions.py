@@ -41,7 +41,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from database import TraderDatabase
 from clients.hyperliquid_client import HyperliquidClient
 from config.settings import settings
-from ulid import ULID
 from screener.utils import now_shanghai
 from core.tracking_utils import build_tracking_data
 
@@ -499,7 +498,7 @@ def create_position_tracking_for_copy(
     trader: Dict,
     position: Dict,
     redis_client: redis.Redis = None
-) -> Optional[int]:
+) -> Optional[str]:
     """
     为符合条件的仓位创建跟单记录并发送 Redis 通知
     
@@ -540,12 +539,11 @@ def create_position_tracking_for_copy(
     last_tracking_id = None
     
     for matched_config in all_configs:
-        user_ulid = matched_config.get('_user_ulid', '')
-        user_id = matched_config.get('_user_id')
+        user_ulid = matched_config.get('_user_id', '')
         matched_rule_name = matched_config.get('_matched_rule_name', '')
         
         if not user_ulid:
-            logger.warning(f"    跳过立即跟单: {coin} 用户 {user_id} 无 ULID")
+            logger.warning(f"    跳过立即跟单: {coin} 用户无 ULID")
             continue
         
         # 检查跟单条件
@@ -579,32 +577,41 @@ def create_position_tracking_for_copy(
         )
         
         try:
-            # 预生成 tracking ULID，传入 save 方法，省去保存后再查询
-            tracking_ulid = str(ULID())
-            tracking_data['ulid'] = tracking_ulid
-            
             tracking_id = db.save_position_tracking(tracking_data)
             
             if tracking_id:
                 logger.success(
                     f"    ✓ 创建立即跟单记录: {coin} {side} "
-                    f"(tracking_id={tracking_id}, ulid={tracking_ulid}, user={user_ulid[:8]}...)"
+                    f"(tracking_id={tracking_id}, user={user_ulid[:8]}...)"
                 )
                 
                 # 发送 Redis 通知触发开仓（JSON 格式，包含 user_ulid）
                 if redis_client:
                     try:
                         open_msg = json.dumps({
-                            'tracking_id': tracking_ulid,
+                            'tracking_id': tracking_id,
                             'user_ulid': user_ulid,
                         })
                         redis_client.publish(REDIS_OPEN_CHANNEL, open_msg)
                         logger.info(
                             f"    ✓ 已发送开仓通知 "
-                            f"(channel={REDIS_OPEN_CHANNEL}, ulid={tracking_ulid}, user={user_ulid[:8]}...)"
+                            f"(channel={REDIS_OPEN_CHANNEL}, tracking_id={tracking_id}, user={user_ulid[:8]}...)"
                         )
                     except Exception as e:
                         logger.warning(f"    ⚠ Redis 开仓通知发送失败: {e}")
+                
+                # 只跟一次：成功创建跟单后自动禁用该配置规则
+                if matched_config.get('copy_only_once', False):
+                    rule_id = matched_config.get('_matched_rule_id')
+                    if rule_id:
+                        try:
+                            db.toggle_config_rule_enabled(rule_id, False)
+                            logger.info(
+                                f"    ✓ 只跟一次模式: 已禁用规则 {matched_rule_name} "
+                                f"(rule_id={rule_id}, user={user_ulid[:8]}...)"
+                            )
+                        except Exception as e:
+                            logger.warning(f"    ⚠ 禁用规则失败 (rule_id={rule_id}): {e}")
                 
                 last_tracking_id = tracking_id
             else:
