@@ -27,6 +27,7 @@ from .app_versions import AppVersionsOps
 from .user_favorites import UserFavoritesOps
 from .address_tracking import AddressTrackingOps
 from .whale_anchor import WhaleAnchorOps
+from .trader_dashboard import TraderDashboardOps
 
 
 class TraderDatabase(
@@ -51,7 +52,8 @@ class TraderDatabase(
     AppVersionsOps,
     UserFavoritesOps,
     AddressTrackingOps,
-    WhaleAnchorOps
+    WhaleAnchorOps,
+    TraderDashboardOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

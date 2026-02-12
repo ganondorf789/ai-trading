@@ -609,6 +609,62 @@ def get_trader_detail(address: str):
         }), 500
 
 
+@traders_core_bp.route('/api/traders/<address>/dashboard', methods=['GET'])
+@login_required
+def get_trader_dashboard(address: str):
+    """获取交易者仪表盘汇总数据
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: start_date
+        in: query
+        type: string
+        format: date
+        description: 开始日期 (YYYY-MM-DD)
+      - name: end_date
+        in: query
+        type: string
+        format: date
+        description: 结束日期 (YYYY-MM-DD)
+    responses:
+      200:
+        description: 仪表盘数据
+      404:
+        description: 交易者不存在
+      500:
+        description: 服务器错误
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        data = db.get_trader_dashboard(address, start_date, end_date)
+
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Trader not found'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'data': data
+        })
+
+    except Exception as e:
+        logger.error(f"获取交易者仪表盘失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @traders_core_bp.route('/api/traders/<address>/refresh', methods=['POST'])
 @login_required
 def refresh_trader(address: str):
