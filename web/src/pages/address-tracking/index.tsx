@@ -369,9 +369,6 @@ export default function AddressTrackingPage() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold">地址跟踪</h1>
-            <p className="text-default-500 text-sm mt-1">
-              监控特定地址的交易活动，支持开仓、平仓、加仓、减仓通知
-            </p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -380,14 +377,6 @@ export default function AddressTrackingPage() {
               onPress={handleOpenAddModal}
             >
               添加跟踪
-            </Button>
-            <Button
-              color="primary"
-              variant="flat"
-              startContent={<Icon icon="lucide:refresh-cw" width={18} />}
-              onPress={() => loadTrackings()}
-            >
-              刷新
             </Button>
           </div>
         </div>

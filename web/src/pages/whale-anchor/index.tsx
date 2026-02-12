@@ -339,7 +339,10 @@ export default function WhaleAnchorPage() {
         {/* 页面标题 */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Whale Anchor</h1>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Icon icon="lucide:anchor" width={28} />
+              Whale Anchor
+            </h1>
           </div>
           <div className="flex gap-2">
             {isAdmin && (

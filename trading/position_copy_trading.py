@@ -1334,24 +1334,24 @@ class PositionCopyTradingBot:
             logger.error(f"[自动跟单] 创建跟单记录异常: {symbol} - {e}")
             return None
 
-    async def _sync_auto_copy(self):
+    async def _sync_auto_copy(self, target_positions_cache: Dict[str, Dict[str, Dict]]):
         """
         自动跟单主循环
-        
+
         检测配置地址的新仓位，根据白名单/黑名单筛选后自动创建跟单
         """
         if not self.address_configs:
             return
-        
+
         new_trackings_count = 0
-        
+
         for address, config in self.address_configs.items():
             if not config.is_enabled:
                 continue
-                
+
             try:
-                # 获取当前仓位
-                current_positions = self._get_target_positions(address)
+                # 获取当前仓位（从缓存中获取）
+                current_positions = target_positions_cache.get(address, {})
                 
                 # 获取上次缓存的仓位
                 old_positions = self._address_positions.get(address, {})
@@ -1399,23 +1399,23 @@ class PositionCopyTradingBot:
 
     # ==================== 地址跟踪监控 ====================
 
-    async def _sync_address_tracking(self):
+    async def _sync_address_tracking(self, target_positions_cache: Dict[str, Dict[str, Dict]]):
         """
         地址跟踪主循环
-        
+
         检测被跟踪地址的仓位变化（开仓、平仓、加仓、减仓），
         并通过 Redis 发送通知给对应用户
         """
         if not self.tracking_configs:
             return
-        
+
         for address, config in self.tracking_configs.items():
             if not config.is_enabled or not config.enable_notification:
                 continue
-            
+
             try:
-                # 获取当前仓位
-                current_positions = self._get_target_positions(address)
+                # 获取当前仓位（从缓存中获取）
+                current_positions = target_positions_cache.get(address, {})
                 
                 # 获取上次缓存的仓位
                 old_positions = self._tracked_positions.get(address, {})
@@ -2236,34 +2236,22 @@ class PositionCopyTradingBot:
         
         state.last_sync = pendulum.now()
 
-    async def _sync_all_trackings(self):
+    async def _sync_all_trackings(self, target_positions_cache: Dict[str, Dict[str, Dict]]):
         """同步所有仓位跟单"""
         async with self._sync_lock:
-            # 更新自己的持仓和余额
-            if not self._update_my_account():
-                # 获取账户信息失败，跳过本轮同步，避免基于过期数据做出错误决策
-                logger.warning("获取账户信息失败，跳过本轮同步")
-                return
-            
             # 过滤出活跃的跟单
             active_trackings = [
                 s for s in self.trackings.values()
                 if s.status in ('pending', 'active')
             ]
-            
-            # 按 target_address 分组，每个交易员只获取一次仓位
-            target_addresses = set(s.target_address for s in active_trackings)
-            target_positions_cache: Dict[str, Dict[str, Dict]] = {}
-            for address in target_addresses:
-                target_positions_cache[address] = self._get_target_positions(address)
-            
+
             # 异步并行同步所有仓位
             async def sync_with_error_handling(state):
                 try:
                     await self._sync_tracking(state, target_positions_cache)
                 except Exception as e:
                     logger.error(f"同步仓位跟单 {state.tracking_id} 失败: {e}")
-            
+
             await asyncio.gather(*[
                 sync_with_error_handling(state) for state in active_trackings
             ])
@@ -2309,16 +2297,41 @@ class PositionCopyTradingBot:
                         self.reload_configs()
 
                     # 同步现有跟单
+                    # 更新自己的持仓和余额
+                    if not self._update_my_account():
+                        logger.warning("获取账户信息失败，跳过本轮同步")
+                        await asyncio.sleep(self.check_interval)
+                        continue
+
+                    # 收集所有需要获取仓位的目标地址
+                    all_target_addresses: set = set()
                     if self.trackings:
-                        await self._sync_all_trackings()
-                    
-                    # 自动跟单检测
+                        all_target_addresses.update(
+                            s.target_address for s in self.trackings.values()
+                            if s.status in ('pending', 'active')
+                        )
                     if self.address_configs:
-                        await self._sync_auto_copy()
-                    
-                    # 地址跟踪监控（仅监控仓位变化，不交易）
+                        all_target_addresses.update(
+                            addr for addr, cfg in self.address_configs.items() if cfg.is_enabled
+                        )
                     if self.tracking_configs:
-                        await self._sync_address_tracking()
+                        all_target_addresses.update(
+                            addr for addr, cfg in self.tracking_configs.items()
+                            if cfg.is_enabled and cfg.enable_notification
+                        )
+
+                    # 每个地址只获取一次仓位
+                    target_positions_cache: Dict[str, Dict[str, Dict]] = {}
+                    for address in all_target_addresses:
+                        target_positions_cache[address] = self._get_target_positions(address)
+
+                    # 同步
+                    if self.trackings:
+                        await self._sync_all_trackings(target_positions_cache)
+                    if self.address_configs:
+                        await self._sync_auto_copy(target_positions_cache)
+                    if self.tracking_configs:
+                        await self._sync_address_tracking(target_positions_cache)
 
                 except asyncio.CancelledError:
                     raise

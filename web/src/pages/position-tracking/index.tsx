@@ -366,14 +366,6 @@ export default function PositionTrackingPage() {
               仓位跟单管理
             </h1>
           </div>
-          <Button
-            color="primary"
-            variant="flat"
-            startContent={<Icon icon="lucide:refresh-cw" width={18} />}
-            onPress={() => loadTrackings()}
-          >
-            刷新
-          </Button>
         </div>
 
         {/* 筛选工具栏 */}
