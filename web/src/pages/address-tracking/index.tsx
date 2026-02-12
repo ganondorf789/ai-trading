@@ -52,12 +52,12 @@ export default function AddressTrackingPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // 选择状态（批量操作）
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Modal 状态
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingTracking, setEditingTracking] = useState<AddressTracking | null>(null);
   const [isBatchDelete, setIsBatchDelete] = useState(false);
 
@@ -135,7 +135,7 @@ export default function AddressTrackingPage() {
   };
 
   // 打开删除确认弹窗
-  const handleOpenDeleteModal = useCallback((id: number) => {
+  const handleOpenDeleteModal = useCallback((id: string) => {
     setDeletingId(id);
     setIsBatchDelete(false);
     setIsDeleteModalOpen(true);
@@ -155,7 +155,7 @@ export default function AddressTrackingPage() {
   const handleConfirmDelete = async () => {
     try {
       if (isBatchDelete) {
-        const response = await addressTrackingApi.batchDelete(Array.from(selectedIds));
+        const response = await addressTrackingApi.batchDelete([...selectedIds]);
         addToast({
           title: "删除成功",
           description: `已删除 ${response.data?.deleted_count || selectedIds.size} 条记录`,
@@ -181,7 +181,7 @@ export default function AddressTrackingPage() {
   };
 
   // 处理启用/禁用
-  const handleToggle = useCallback(async (id: number, isEnabled: boolean) => {
+  const handleToggle = useCallback(async (id: string, isEnabled: boolean) => {
     // 乐观更新
     setTrackings((prev) =>
       prev.map((t) => (t.id === id ? { ...t, is_enabled: isEnabled } : t))
@@ -200,7 +200,7 @@ export default function AddressTrackingPage() {
   }, []);
 
   // 处理通知开关
-  const handleToggleNotification = useCallback(async (id: number, enableNotification: boolean) => {
+  const handleToggleNotification = useCallback(async (id: string, enableNotification: boolean) => {
     // 乐观更新
     setTrackings((prev) =>
       prev.map((t) => (t.id === id ? { ...t, enable_notification: enableNotification } : t))
@@ -228,7 +228,7 @@ export default function AddressTrackingPage() {
   }, [trackings]);
 
   // 处理单选
-  const handleSelectOne = useCallback((id: number, checked: boolean) => {
+  const handleSelectOne = useCallback((id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const newSet = new Set(prev);
       if (checked) {

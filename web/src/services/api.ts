@@ -1168,6 +1168,18 @@ export const tradingApi = {
   // 获取 TWAP 切片成交
   getTwapSliceFills: (address: string) =>
     api.get<any, ApiResponse<any>>(`/trading/${address}/twap`),
+
+  // 获取历史订单
+  getHistoricalOrders: (address: string, params?: { coin?: string; status?: string; side?: string }) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/historical-orders`, { params }),
+
+  // 获取资金费率历史
+  getFundingHistory: (address: string, params?: { coin?: string }) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/funding`, { params }),
+
+  // 获取账本记录（出入金等）
+  getLedgerUpdates: (address: string, params?: { delta_type?: string }) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/ledger`, { params }),
 };
 
 export default api;

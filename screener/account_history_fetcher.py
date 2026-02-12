@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .api_client import SyncAPIClient
 
 # 每次 API 返回的上限（资金费 / 账本更新）
-PAGE_LIMIT = 500
+PAGE_LIMIT = 2000
 
 
 # ============================================================
