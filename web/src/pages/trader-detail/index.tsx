@@ -1,36 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Tab } from '@heroui/tabs';
-import {
-  Table,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
-} from '@heroui/table';
-import { Chip } from '@heroui/chip';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { Card, CardBody } from '@heroui/card';
 import { addToast } from '@heroui/react';
 import { tradingApi } from '@/services/api';
+import { PerpPositions } from './components/PerpPositions';
+import { OpenOrders } from './components/OpenOrders';
+import { TwapSliceFills } from './components/TwapSliceFills';
+import type { PerpPosition } from './components/PerpPositions';
+import type { OpenOrderItem } from './components/OpenOrders';
+import type { TwapSliceFill } from './components/TwapSliceFills';
 
-// ==================== 类型定义 ====================
-
-interface PerpPosition {
-  coin: string;
-  size: number;
-  side: 'long' | 'short';
-  entryPx: string;
-  positionValue: string;
-  unrealizedPnl: string;
-  returnOnEquity: string;
-  leverage: { type: string; value: number };
-  liquidationPx: string | null;
-  marginUsed: string;
-  maxLeverage: number;
-}
+// ==================== 类型 ====================
 
 interface MarginSummary {
   accountValue: string;
@@ -39,79 +22,13 @@ interface MarginSummary {
   totalRawUsd: string;
 }
 
-interface OpenOrder {
-  coin: string;
-  limitPx: string;
-  oid: number;
-  side: string;
-  sz: string;
-  timestamp: number;
-  orderType: string;
-  tif: string;
-  origSz: string;
-  isTrigger: boolean;
-  triggerPx: string;
-  triggerCondition: string;
-  isPositionTpsl: boolean;
-  children: any[];
-  reduceOnly?: boolean;
-  cloid?: string | null;
-}
-
-interface TwapSliceFill {
-  coin: string;
-  px: string;
-  sz: string;
-  side: string;
-  time: number;
-  fee: string;
-  oid: number;
-  twapId: number;
-  closedPnl?: string;
-}
-
 // ==================== 工具函数 ====================
-
-function fmt(value: string | number | null | undefined, decimals = 2): string {
-  if (value == null || value === '') return '-';
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(n)) return '-';
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
 
 function fmtUsd(value: string | number | null | undefined): string {
   if (value == null || value === '') return '-';
   const n = typeof value === 'string' ? parseFloat(value) : value;
   if (isNaN(n)) return '-';
-  return '$' + fmt(n);
-}
-
-function fmtPct(value: string | number | null | undefined): string {
-  if (value == null || value === '') return '-';
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(n)) return '-';
-  return (n * 100).toFixed(2) + '%';
-}
-
-function pnlColor(value: string | number | null | undefined): string {
-  if (value == null || value === '') return '';
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(n)) return '';
-  return n >= 0 ? 'text-green-500' : 'text-red-500';
-}
-
-function fmtTime(ts: number): string {
-  if (!ts) return '-';
-  return new Date(ts).toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // ==================== 组件 ====================
@@ -123,7 +40,7 @@ export default function TraderDetailPage() {
   const [selectedTab, setSelectedTab] = useState<string>('positions');
   const [positions, setPositions] = useState<PerpPosition[]>([]);
   const [marginSummary, setMarginSummary] = useState<MarginSummary | null>(null);
-  const [openOrders, setOpenOrders] = useState<OpenOrder[]>([]);
+  const [openOrders, setOpenOrders] = useState<OpenOrderItem[]>([]);
   const [twapFills, setTwapFills] = useState<TwapSliceFill[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -231,150 +148,9 @@ export default function TraderDetailPage() {
         </div>
       ) : (
         <>
-          {/* ========== Perp Positions ========== */}
-          {selectedTab === 'positions' && (
-            <Table
-              isHeaderSticky
-              aria-label="Perp positions"
-              classNames={{ wrapper: 'max-h-[600px]' }}
-            >
-              <TableHeader>
-                <TableColumn>Coin</TableColumn>
-                <TableColumn>Side</TableColumn>
-                <TableColumn>Size</TableColumn>
-                <TableColumn>Entry Price</TableColumn>
-                <TableColumn>Position Value</TableColumn>
-                <TableColumn>Unrealized PnL</TableColumn>
-                <TableColumn>ROE</TableColumn>
-                <TableColumn>Leverage</TableColumn>
-                <TableColumn>Liq. Price</TableColumn>
-                <TableColumn>Margin Used</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent="No positions">
-                {positions.map((pos, idx) => (
-                  <TableRow key={`${pos.coin}-${idx}`}>
-                    <TableCell><span className="font-bold">{pos.coin}</span></TableCell>
-                    <TableCell>
-                      <Chip size="sm" color={pos.side === 'long' ? 'success' : 'danger'} variant="flat">
-                        {pos.side.toUpperCase()}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>{fmt(Math.abs(pos.size), 4)}</TableCell>
-                    <TableCell>{fmtUsd(pos.entryPx)}</TableCell>
-                    <TableCell>{fmtUsd(pos.positionValue)}</TableCell>
-                    <TableCell>
-                      <span className={pnlColor(pos.unrealizedPnl)}>{fmtUsd(pos.unrealizedPnl)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={pnlColor(pos.returnOnEquity)}>{fmtPct(pos.returnOnEquity)}</span>
-                    </TableCell>
-                    <TableCell>
-                      {pos.leverage?.value ?? '-'}x
-                      <span className="text-xs text-default-400 ml-1">
-                        ({pos.leverage?.type === 'cross' ? 'Cross' : 'Isolated'})
-                      </span>
-                    </TableCell>
-                    <TableCell>{pos.liquidationPx ? fmtUsd(pos.liquidationPx) : '-'}</TableCell>
-                    <TableCell>{fmtUsd(pos.marginUsed)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {/* ========== Open Orders ========== */}
-          {selectedTab === 'orders' && (
-            <Table
-              isHeaderSticky
-              aria-label="Open orders"
-              classNames={{ wrapper: 'max-h-[600px]' }}
-            >
-              <TableHeader>
-                <TableColumn>Coin</TableColumn>
-                <TableColumn>Side</TableColumn>
-                <TableColumn>Type</TableColumn>
-                <TableColumn>Size</TableColumn>
-                <TableColumn>Price</TableColumn>
-                <TableColumn>Trigger</TableColumn>
-                <TableColumn>TIF</TableColumn>
-                <TableColumn>Reduce Only</TableColumn>
-                <TableColumn>TP/SL</TableColumn>
-                <TableColumn>Time</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent="No open orders">
-                {openOrders.map((order) => (
-                  <TableRow key={order.oid}>
-                    <TableCell><span className="font-bold">{order.coin}</span></TableCell>
-                    <TableCell>
-                      <Chip size="sm" color={order.side === 'B' ? 'success' : 'danger'} variant="flat">
-                        {order.side === 'B' ? 'BUY' : 'SELL'}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>
-                      <Chip size="sm" variant="bordered">
-                        {order.orderType || 'Limit'}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>{fmt(order.sz, 4)}</TableCell>
-                    <TableCell>{fmtUsd(order.limitPx)}</TableCell>
-                    <TableCell>
-                      {order.isTrigger ? (
-                        <span className="text-xs">
-                          {order.triggerCondition} {fmtUsd(order.triggerPx)}
-                        </span>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>{order.tif || '-'}</TableCell>
-                    <TableCell>{order.reduceOnly ? 'Yes' : 'No'}</TableCell>
-                    <TableCell>{order.isPositionTpsl ? 'Yes' : '-'}</TableCell>
-                    <TableCell className="text-xs">{fmtTime(order.timestamp)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {/* ========== TWAP ========== */}
-          {selectedTab === 'twap' && (
-            <Table
-              isHeaderSticky
-              aria-label="TWAP slice fills"
-              classNames={{ wrapper: 'max-h-[600px]' }}
-            >
-              <TableHeader>
-                <TableColumn>Coin</TableColumn>
-                <TableColumn>Side</TableColumn>
-                <TableColumn>Price</TableColumn>
-                <TableColumn>Size</TableColumn>
-                <TableColumn>Fee</TableColumn>
-                <TableColumn>Closed PnL</TableColumn>
-                <TableColumn>TWAP ID</TableColumn>
-                <TableColumn>Order ID</TableColumn>
-                <TableColumn>Time</TableColumn>
-              </TableHeader>
-              <TableBody emptyContent="No TWAP records">
-                {twapFills.map((fill, idx) => (
-                  <TableRow key={`${fill.oid}-${idx}`}>
-                    <TableCell><span className="font-bold">{fill.coin}</span></TableCell>
-                    <TableCell>
-                      <Chip size="sm" color={fill.side === 'B' ? 'success' : 'danger'} variant="flat">
-                        {fill.side === 'B' ? 'BUY' : 'SELL'}
-                      </Chip>
-                    </TableCell>
-                    <TableCell>{fmtUsd(fill.px)}</TableCell>
-                    <TableCell>{fmt(fill.sz, 4)}</TableCell>
-                    <TableCell>{fmtUsd(fill.fee)}</TableCell>
-                    <TableCell>
-                      <span className={pnlColor(fill.closedPnl)}>{fmtUsd(fill.closedPnl)}</span>
-                    </TableCell>
-                    <TableCell>{fill.twapId}</TableCell>
-                    <TableCell>{fill.oid}</TableCell>
-                    <TableCell className="text-xs">{fmtTime(fill.time)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          {selectedTab === 'positions' && <PerpPositions positions={positions} />}
+          {selectedTab === 'orders' && <OpenOrders orders={openOrders} />}
+          {selectedTab === 'twap' && <TwapSliceFills fills={twapFills} />}
         </>
       )}
     </div>
