@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { SortDescriptor } from '@heroui/react';
-import { Chip } from '@heroui/chip';
+import { Chip, addToast } from '@heroui/react';
+import { Spinner } from '@heroui/spinner';
 import {
   Table,
   TableHeader,
@@ -9,7 +10,9 @@ import {
   TableRow,
   TableCell,
 } from '@heroui/table';
-import { TablePagination, useLocalPagination } from '@/components/TablePagination';
+import { TablePagination } from '@/components/TablePagination';
+import { traderApi } from '@/services/api';
+import type { PaginationInfo, FillsStats } from '@/types';
 
 // ==================== 类型 ====================
 
@@ -44,7 +47,7 @@ const columns: Column[] = [
   { uid: 'px', name: 'Price', sortable: true },
   { uid: 'sz', name: 'Size', sortable: true },
   { uid: 'start_position', name: 'Start Pos', sortable: true },
-  { uid: 'value', name: 'Value', sortable: true },
+  { uid: 'value', name: 'Value', sortable: false },
   { uid: 'closed_pnl', name: 'Closed PnL', sortable: true },
   { uid: 'fee', name: 'Fee', sortable: true },
 ];
@@ -64,66 +67,82 @@ function fmtTime(time: string): string {
   });
 }
 
-const tradeTypeMap: Record<string, { label: string; color: 'success' | 'danger' | 'warning' }> = {
-  'open_long': { label: '开多', color: 'success' },
-  'add_long': { label: '加多', color: 'success' },
-  'close_long': { label: '平多', color: 'warning' },
-  'open_short': { label: '开空', color: 'danger' },
-  'add_short': { label: '加空', color: 'danger' },
-  'close_short': { label: '平空', color: 'warning' },
+const tradeTypeMap: Record<string, { label: string; color: 'success' | 'danger' | 'warning' | 'default' }> = {
+  '1': { label: '开多', color: 'success' },
+  '2': { label: '加多', color: 'success' },
+  '3': { label: '平多', color: 'warning' },
+  '4': { label: '开空', color: 'danger' },
+  '5': { label: '加空', color: 'danger' },
+  '6': { label: '平空', color: 'warning' },
 };
+
+// sort descriptor direction -> API sort_order
+function toSortOrder(direction: 'ascending' | 'descending' | undefined): 'asc' | 'desc' {
+  return direction === 'ascending' ? 'asc' : 'desc';
+}
 
 // ==================== 组件 ====================
 
 interface RecentFillsProps {
-  fills: RecentFillItem[];
+  address: string;
+  onTotalCountChange?: (count: number) => void;
 }
 
-export function RecentFills({ fills }: RecentFillsProps) {
+export function RecentFills({ address, onTotalCountChange }: RecentFillsProps) {
+  const [fills, setFills] = useState<RecentFillItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
+  const [_stats, setStats] = useState<FillsStats | null>(null);
+
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
     column: 'trade_time',
     direction: 'descending',
   });
 
-  const sortedItems = useMemo(() => {
-    const col = sortDescriptor.column as ColumnKey;
-    const dir = sortDescriptor.direction;
-
-    return [...fills].sort((a, b) => {
-      let aVal: number, bVal: number;
-      switch (col) {
-        case 'trade_time':
-          return dir === 'ascending'
-            ? new Date(a.trade_time).getTime() - new Date(b.trade_time).getTime()
-            : new Date(b.trade_time).getTime() - new Date(a.trade_time).getTime();
-        case 'coin':
-          return dir === 'ascending' ? a.coin.localeCompare(b.coin) : b.coin.localeCompare(a.coin);
-        case 'side':
-          return dir === 'ascending' ? a.side.localeCompare(b.side) : b.side.localeCompare(a.side);
-        case 'trade_type':
-          return dir === 'ascending'
-            ? (a.trade_type || '').localeCompare(b.trade_type || '')
-            : (b.trade_type || '').localeCompare(a.trade_type || '');
-        case 'px': aVal = a.px; bVal = b.px; break;
-        case 'sz': aVal = a.sz; bVal = b.sz; break;
-        case 'start_position': aVal = a.start_position ?? 0; bVal = b.start_position ?? 0; break;
-        case 'value': aVal = a.px * a.sz; bVal = b.px * b.sz; break;
-        case 'closed_pnl': aVal = a.closed_pnl; bVal = b.closed_pnl; break;
-        case 'fee': aVal = a.fee; bVal = b.fee; break;
-        default: return 0;
+  const fetchFills = useCallback(async () => {
+    if (!address) return;
+    setLoading(true);
+    try {
+      const res = await traderApi.getTraderFills(address, {
+        page,
+        limit: rowsPerPage,
+        sort_by: sortDescriptor.column as string,
+        sort_order: toSortOrder(sortDescriptor.direction),
+      });
+      if (res.success) {
+        setFills(res.data || []);
+        if (res.pagination) setPagination(res.pagination);
+        if (res.stats) setStats(res.stats);
+        onTotalCountChange?.(res.pagination?.total_count ?? 0);
       }
-      return dir === 'ascending' ? aVal - bVal : bVal - aVal;
-    });
-  }, [fills, sortDescriptor]);
+    } catch (err: any) {
+      addToast({ title: '获取成交失败', description: err.message, color: 'danger' });
+    } finally {
+      setLoading(false);
+    }
+  }, [address, page, rowsPerPage, sortDescriptor, onTotalCountChange]);
 
-  const { page, setPage, rowsPerPage, setRowsPerPage, totalPages, getPageItems } =
-    useLocalPagination({ totalItems: sortedItems.length });
-  const pageItems = useMemo(() => getPageItems(sortedItems), [getPageItems, sortedItems]);
+  useEffect(() => { fetchFills(); }, [fetchFills]);
+
+  const handleSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor);
+    setPage(1);
+  }, []);
+
+  const handleRowsPerPageChange = useCallback((value: number) => {
+    setRowsPerPage(value);
+    setPage(1);
+  }, []);
+
+  const totalPages = pagination?.total_pages ?? 1;
+  const totalCount = pagination?.total_count ?? 0;
 
   const bottomContent = useMemo(() => (
     <TablePagination page={page} totalPages={totalPages} onPageChange={setPage}
-      totalCount={sortedItems.length} rowsPerPage={rowsPerPage} onRowsPerPageChange={setRowsPerPage} />
-  ), [page, totalPages, setPage, sortedItems.length, rowsPerPage, setRowsPerPage]);
+      totalCount={totalCount} rowsPerPage={rowsPerPage} onRowsPerPageChange={handleRowsPerPageChange} />
+  ), [page, totalPages, setPage, totalCount, rowsPerPage, handleRowsPerPageChange]);
 
   const renderCell = useCallback((fill: RecentFillItem, columnKey: ColumnKey) => {
     switch (columnKey) {
@@ -157,13 +176,17 @@ export function RecentFills({ fills }: RecentFillsProps) {
     }
   }, []);
 
+  if (loading && fills.length === 0) {
+    return <div className="flex justify-center py-12"><Spinner size="lg" /></div>;
+  }
+
   return (
     <Table isHeaderSticky aria-label="Recent fills table" sortDescriptor={sortDescriptor}
-      onSortChange={setSortDescriptor} bottomContent={bottomContent} bottomContentPlacement="outside">
+      onSortChange={handleSortChange} bottomContent={bottomContent} bottomContentPlacement="outside">
       <TableHeader columns={columns}>
         {(column) => <TableColumn key={column.uid} allowsSorting={column.sortable}>{column.name}</TableColumn>}
       </TableHeader>
-      <TableBody items={pageItems} emptyContent="No fills">
+      <TableBody items={fills} emptyContent="No fills" isLoading={loading} loadingContent={<Spinner />}>
         {(item) => (
           <TableRow key={item.id}>
             {(columnKey) => <TableCell>{renderCell(item, columnKey as ColumnKey)}</TableCell>}

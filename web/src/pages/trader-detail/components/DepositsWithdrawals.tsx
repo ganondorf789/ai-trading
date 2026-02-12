@@ -14,20 +14,20 @@ import { TablePagination, useLocalPagination } from '@/components/TablePaginatio
 // ==================== 类型 ====================
 
 export interface LedgerItem {
-  id?: number;
+  id: number;
   delta_type: string;
   usdc: number | string;
-  amount?: number | string;
-  token?: string;
-  fee?: number | string;
-  nonce?: number;
+  fee: number | string;
   time: number;
   hash?: string;
+  destination?: string;
+  user_field?: string;
+  nonce?: number | null;
 }
 
 // ==================== 列配置 ====================
 
-type ColumnKey = 'time' | 'delta_type' | 'usdc' | 'amount' | 'token' | 'fee' | 'hash';
+type ColumnKey = 'time' | 'delta_type' | 'usdc' | 'fee' | 'destination' | 'hash';
 
 interface Column {
   uid: ColumnKey;
@@ -39,9 +39,8 @@ const columns: Column[] = [
   { uid: 'time', name: 'Time', sortable: true },
   { uid: 'delta_type', name: 'Type', sortable: true },
   { uid: 'usdc', name: 'USDC', sortable: true },
-  { uid: 'amount', name: 'Amount', sortable: true },
-  { uid: 'token', name: 'Token', sortable: true },
   { uid: 'fee', name: 'Fee', sortable: true },
+  { uid: 'destination', name: 'Destination', sortable: false },
   { uid: 'hash', name: 'Tx Hash', sortable: false },
 ];
 
@@ -67,10 +66,16 @@ function numVal(value: string | number | null | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
+function shortAddr(addr: string): string {
+  if (!addr || addr.length < 10) return addr || '-';
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
 const typeColorMap: Record<string, 'success' | 'danger' | 'warning' | 'primary' | 'default'> = {
   deposit: 'success',
   withdraw: 'danger',
   internalTransfer: 'primary',
+  subAccountTransfer: 'primary',
   spotTransfer: 'primary',
   accountClassTransfer: 'warning',
   liquidation: 'danger',
@@ -96,13 +101,8 @@ export function DepositsWithdrawals({ records }: DepositsWithdrawalsProps) {
       switch (col) {
         case 'delta_type':
           return dir === 'ascending' ? a.delta_type.localeCompare(b.delta_type) : b.delta_type.localeCompare(a.delta_type);
-        case 'token':
-          return dir === 'ascending'
-            ? (a.token || '').localeCompare(b.token || '')
-            : (b.token || '').localeCompare(a.token || '');
         case 'time': aVal = a.time; bVal = b.time; break;
         case 'usdc': aVal = numVal(a.usdc); bVal = numVal(b.usdc); break;
-        case 'amount': aVal = numVal(a.amount); bVal = numVal(b.amount); break;
         case 'fee': aVal = numVal(a.fee); bVal = numVal(b.fee); break;
         default: return 0;
       }
@@ -127,9 +127,11 @@ export function DepositsWithdrawals({ records }: DepositsWithdrawalsProps) {
         return <Chip size="sm" color={typeColorMap[item.delta_type] || 'default'} variant="flat">{item.delta_type}</Chip>;
       case 'usdc':
         return <span className={usdc >= 0 ? 'text-green-500' : 'text-red-500'}>${fmt(usdc)}</span>;
-      case 'amount': return <span>{fmt(item.amount, 4)}</span>;
-      case 'token': return <span>{item.token || '-'}</span>;
-      case 'fee': return <span className="text-orange-500">{item.fee ? '$' + fmt(item.fee, 4) : '-'}</span>;
+      case 'fee': return <span className="text-orange-500">{numVal(item.fee) ? '$' + fmt(item.fee, 4) : '-'}</span>;
+      case 'destination':
+        return item.destination ? (
+          <span className="text-xs font-mono">{shortAddr(item.destination)}</span>
+        ) : <span>-</span>;
       case 'hash':
         return item.hash ? (
           <a href={`https://arbiscan.io/tx/${item.hash}`} target="_blank" rel="noreferrer"
@@ -147,7 +149,7 @@ export function DepositsWithdrawals({ records }: DepositsWithdrawalsProps) {
       </TableHeader>
       <TableBody items={pageItems} emptyContent="No records">
         {(item) => (
-          <TableRow key={`${item.delta_type}-${item.time}-${item.usdc}`}>
+          <TableRow key={item.id}>
             {(columnKey) => <TableCell>{renderCell(item, columnKey as ColumnKey)}</TableCell>}
           </TableRow>
         )}

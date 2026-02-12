@@ -34,7 +34,7 @@ export interface OpenOrderItem {
 
 // ==================== 列配置 ====================
 
-type ColumnKey = 'coin' | 'side' | 'orderType' | 'sz' | 'limitPx' | 'trigger' | 'tif' | 'reduceOnly' | 'tpsl' | 'timestamp';
+type ColumnKey = 'coin' | 'side' | 'orderType' | 'sz' | 'limitPx' | 'trigger' | 'tif' | 'reduceOnly' | 'timestamp';
 
 interface Column {
   uid: ColumnKey;
@@ -51,7 +51,6 @@ const columns: Column[] = [
   { uid: 'trigger', name: 'Trigger', sortable: false },
   { uid: 'tif', name: 'TIF', sortable: true },
   { uid: 'reduceOnly', name: 'Reduce Only', sortable: true },
-  { uid: 'tpsl', name: 'TP/SL', sortable: true },
   { uid: 'timestamp', name: 'Time', sortable: true },
 ];
 
@@ -126,8 +125,6 @@ export function OpenOrders({ orders }: OpenOrdersProps) {
             : (b.tif || '').localeCompare(a.tif || '');
         case 'reduceOnly':
           aVal = a.reduceOnly ? 1 : 0; bVal = b.reduceOnly ? 1 : 0; break;
-        case 'tpsl':
-          aVal = a.isPositionTpsl ? 1 : 0; bVal = b.isPositionTpsl ? 1 : 0; break;
         case 'timestamp':
           aVal = a.timestamp; bVal = b.timestamp; break;
         default:
@@ -183,8 +180,6 @@ export function OpenOrders({ orders }: OpenOrdersProps) {
         return <span>{order.tif || '-'}</span>;
       case 'reduceOnly':
         return <span>{order.reduceOnly ? 'Yes' : 'No'}</span>;
-      case 'tpsl':
-        return <span>{order.isPositionTpsl ? 'Yes' : '-'}</span>;
       case 'timestamp':
         return <span className="text-xs">{fmtTime(order.timestamp)}</span>;
       default:

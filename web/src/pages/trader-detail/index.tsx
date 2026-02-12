@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Tabs, Tab } from '@heroui/tabs';
 import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
-import { Card, CardBody } from '@heroui/card';
 import { addToast } from '@heroui/react';
 import { tradingApi, traderApi } from '@/services/api';
 import { PerpPositions } from './components/PerpPositions';
@@ -17,29 +16,10 @@ import { DepositsWithdrawals } from './components/DepositsWithdrawals';
 import type { PerpPosition } from './components/PerpPositions';
 import type { OpenOrderItem } from './components/OpenOrders';
 import type { TwapSliceFill } from './components/TwapSliceFills';
-import type { RecentFillItem } from './components/RecentFills';
 import type { CompletedTradeItem } from './components/CompletedTrades';
 import type { HistoricalOrderItem } from './components/HistoricalOrders';
 import type { FundingHistoryItem } from './components/FundingHistory';
 import type { LedgerItem } from './components/DepositsWithdrawals';
-
-// ==================== 类型 ====================
-
-interface MarginSummary {
-  accountValue: string;
-  totalMarginUsed: string;
-  totalNtlPos: string;
-  totalRawUsd: string;
-}
-
-// ==================== 工具函数 ====================
-
-function fmtUsd(value: string | number | null | undefined): string {
-  if (value == null || value === '') return '-';
-  const n = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(n)) return '-';
-  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 // ==================== Tab 定义 ====================
 
@@ -56,26 +36,12 @@ export default function TraderDetailPage() {
 
   // 各 tab 数据
   const [positions, setPositions] = useState<PerpPosition[]>([]);
-  const [marginSummary, setMarginSummary] = useState<MarginSummary | null>(null);
   const [openOrders, setOpenOrders] = useState<OpenOrderItem[]>([]);
   const [twapFills, setTwapFills] = useState<TwapSliceFill[]>([]);
-  const [recentFills, setRecentFills] = useState<RecentFillItem[]>([]);
   const [completedTrades, setCompletedTrades] = useState<CompletedTradeItem[]>([]);
   const [historicalOrders, setHistoricalOrders] = useState<HistoricalOrderItem[]>([]);
   const [fundingRecords, setFundingRecords] = useState<FundingHistoryItem[]>([]);
   const [ledgerRecords, setLedgerRecords] = useState<LedgerItem[]>([]);
-
-  // 记录每个 tab 的数量（用于标签显示）
-  const counts: Record<TabKey, number> = {
-    positions: positions.length,
-    orders: openOrders.length,
-    twap: twapFills.length,
-    fills: recentFills.length,
-    trades: completedTrades.length,
-    history: historicalOrders.length,
-    funding: fundingRecords.length,
-    ledger: ledgerRecords.length,
-  };
 
   // ==================== 数据加载 ====================
 
@@ -86,7 +52,6 @@ export default function TraderDetailPage() {
       const res = await tradingApi.getPositions(address);
       if (res.success && res.data) {
         setPositions(res.data.positions || []);
-        setMarginSummary(res.data.marginSummary || null);
       }
     } catch (err: any) {
       addToast({ title: '获取持仓失败', description: err.message, color: 'danger' });
@@ -121,18 +86,9 @@ export default function TraderDetailPage() {
     }
   }, [address]);
 
-  const loadRecentFills = useCallback(async () => {
-    if (!address) return;
-    setLoading(true);
-    try {
-      const res = await traderApi.getTraderFills(address, { limit: 10000, sort_order: 'desc' });
-      if (res.success) setRecentFills(res.data || []);
-    } catch (err: any) {
-      addToast({ title: '获取成交失败', description: err.message, color: 'danger' });
-    } finally {
-      setLoading(false);
-    }
-  }, [address]);
+  const loadRecentFills = useCallback(() => {
+    // RecentFills 组件自行管理数据加载和分页
+  }, []);
 
   const loadCompletedTrades = useCallback(async () => {
     if (!address) return;
@@ -210,28 +166,6 @@ export default function TraderDetailPage() {
         <span className="text-sm text-default-500 font-mono">{address}</span>
       </div>
 
-      {/* 账户概览 */}
-      {marginSummary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card shadow="sm"><CardBody className="p-3">
-            <p className="text-xs text-default-500">Account Value</p>
-            <p className="text-lg font-semibold">{fmtUsd(marginSummary.accountValue)}</p>
-          </CardBody></Card>
-          <Card shadow="sm"><CardBody className="p-3">
-            <p className="text-xs text-default-500">Margin Used</p>
-            <p className="text-lg font-semibold">{fmtUsd(marginSummary.totalMarginUsed)}</p>
-          </CardBody></Card>
-          <Card shadow="sm"><CardBody className="p-3">
-            <p className="text-xs text-default-500">Total Notional</p>
-            <p className="text-lg font-semibold">{fmtUsd(marginSummary.totalNtlPos)}</p>
-          </CardBody></Card>
-          <Card shadow="sm"><CardBody className="p-3">
-            <p className="text-xs text-default-500">Total Raw USD</p>
-            <p className="text-lg font-semibold">{fmtUsd(marginSummary.totalRawUsd)}</p>
-          </CardBody></Card>
-        </div>
-      )}
-
       {/* Tabs */}
       <Tabs
         selectedKey={selectedTab}
@@ -240,14 +174,14 @@ export default function TraderDetailPage() {
         color="primary"
         variant="underlined"
       >
-        <Tab key="positions" title={`Perp Positions (${counts.positions})`} />
-        <Tab key="orders" title={`Open Orders (${counts.orders})`} />
-        <Tab key="twap" title={`TWAP (${counts.twap})`} />
-        <Tab key="fills" title={`Recent Fills (${counts.fills})`} />
-        <Tab key="trades" title={`Completed Trades (${counts.trades})`} />
-        <Tab key="history" title={`Historical Orders (${counts.history})`} />
-        <Tab key="funding" title={`Funding History (${counts.funding})`} />
-        <Tab key="ledger" title={`Deposits & Withdrawals (${counts.ledger})`} />
+        <Tab key="positions" title="Perp Positions" />
+        <Tab key="orders" title="Open Orders" />
+        <Tab key="twap" title="TWAP" />
+        <Tab key="fills" title="Recent Fills" />
+        <Tab key="trades" title="Completed Trades" />
+        <Tab key="history" title="Historical Orders" />
+        <Tab key="funding" title="Funding History" />
+        <Tab key="ledger" title="Deposits & Withdrawals" />
       </Tabs>
 
       {/* 内容区域 */}
@@ -260,7 +194,7 @@ export default function TraderDetailPage() {
           {selectedTab === 'positions' && <PerpPositions positions={positions} />}
           {selectedTab === 'orders' && <OpenOrders orders={openOrders} />}
           {selectedTab === 'twap' && <TwapSliceFills fills={twapFills} />}
-          {selectedTab === 'fills' && <RecentFills fills={recentFills} />}
+          {selectedTab === 'fills' && address && <RecentFills address={address} />}
           {selectedTab === 'trades' && <CompletedTrades trades={completedTrades} />}
           {selectedTab === 'history' && <HistoricalOrders orders={historicalOrders} />}
           {selectedTab === 'funding' && <FundingHistory records={fundingRecords} />}

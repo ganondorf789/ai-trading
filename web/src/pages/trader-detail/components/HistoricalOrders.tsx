@@ -19,20 +19,22 @@ export interface HistoricalOrderItem {
   side: string;
   limit_px: string;
   sz: string;
-  filled_sz?: string;
-  order_status: string;
+  orig_sz: string;
   order_type: string;
-  tif?: string;
-  trigger_px?: string;
-  trigger_condition?: string;
-  reduce_only?: boolean;
-  timestamp: number;
+  status: string;
+  is_trigger: boolean;
+  trigger_px: string;
+  trigger_condition: string;
+  is_position_tpsl: boolean;
+  reduce_only: boolean;
+  order_timestamp: number;
+  status_timestamp: number;
   cloid?: string;
 }
 
 // ==================== 列配置 ====================
 
-type ColumnKey = 'coin' | 'side' | 'order_type' | 'sz' | 'filled_sz' | 'limit_px' | 'trigger_px' | 'order_status' | 'tif' | 'timestamp';
+type ColumnKey = 'oid' | 'coin' | 'side' | 'order_type' | 'sz' | 'filled' | 'limit_px' | 'trigger_px' | 'status' | 'status_timestamp';
 
 interface Column {
   uid: ColumnKey;
@@ -41,16 +43,16 @@ interface Column {
 }
 
 const columns: Column[] = [
+  { uid: 'oid', name: 'OID', sortable: true },
   { uid: 'coin', name: 'Coin', sortable: true },
   { uid: 'side', name: 'Side', sortable: true },
   { uid: 'order_type', name: 'Type', sortable: true },
   { uid: 'sz', name: 'Size', sortable: true },
-  { uid: 'filled_sz', name: 'Filled', sortable: true },
+  { uid: 'filled', name: 'Filled', sortable: true },
   { uid: 'limit_px', name: 'Price', sortable: true },
   { uid: 'trigger_px', name: 'Trigger', sortable: true },
-  { uid: 'order_status', name: 'Status', sortable: true },
-  { uid: 'tif', name: 'TIF', sortable: true },
-  { uid: 'timestamp', name: 'Time', sortable: true },
+  { uid: 'status', name: 'Status', sortable: true },
+  { uid: 'status_timestamp', name: 'Time', sortable: true },
 ];
 
 // ==================== 工具函数 ====================
@@ -99,7 +101,7 @@ interface HistoricalOrdersProps {
 
 export function HistoricalOrders({ orders }: HistoricalOrdersProps) {
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
-    column: 'timestamp',
+    column: 'status_timestamp',
     direction: 'descending',
   });
 
@@ -109,21 +111,20 @@ export function HistoricalOrders({ orders }: HistoricalOrdersProps) {
     return [...orders].sort((a, b) => {
       let aVal: number, bVal: number;
       switch (col) {
+        case 'oid': aVal = a.oid; bVal = b.oid; break;
         case 'coin':
           return dir === 'ascending' ? a.coin.localeCompare(b.coin) : b.coin.localeCompare(a.coin);
         case 'side':
           return dir === 'ascending' ? a.side.localeCompare(b.side) : b.side.localeCompare(a.side);
         case 'order_type':
           return dir === 'ascending' ? a.order_type.localeCompare(b.order_type) : b.order_type.localeCompare(a.order_type);
-        case 'order_status':
-          return dir === 'ascending' ? a.order_status.localeCompare(b.order_status) : b.order_status.localeCompare(a.order_status);
-        case 'tif':
-          return dir === 'ascending' ? (a.tif || '').localeCompare(b.tif || '') : (b.tif || '').localeCompare(a.tif || '');
+        case 'status':
+          return dir === 'ascending' ? a.status.localeCompare(b.status) : b.status.localeCompare(a.status);
         case 'sz': aVal = numVal(a.sz); bVal = numVal(b.sz); break;
-        case 'filled_sz': aVal = numVal(a.filled_sz); bVal = numVal(b.filled_sz); break;
+        case 'filled': aVal = numVal(a.orig_sz) - numVal(a.sz); bVal = numVal(b.orig_sz) - numVal(b.sz); break;
         case 'limit_px': aVal = numVal(a.limit_px); bVal = numVal(b.limit_px); break;
         case 'trigger_px': aVal = numVal(a.trigger_px); bVal = numVal(b.trigger_px); break;
-        case 'timestamp': aVal = a.timestamp; bVal = b.timestamp; break;
+        case 'status_timestamp': aVal = a.status_timestamp; bVal = b.status_timestamp; break;
         default: return 0;
       }
       return dir === 'ascending' ? aVal - bVal : bVal - aVal;
@@ -141,19 +142,22 @@ export function HistoricalOrders({ orders }: HistoricalOrdersProps) {
 
   const renderCell = useCallback((order: HistoricalOrderItem, columnKey: ColumnKey) => {
     switch (columnKey) {
+      case 'oid': return <span className="text-xs font-mono">{order.oid}</span>;
       case 'coin': return <span className="font-bold">{order.coin}</span>;
       case 'side':
         return <Chip size="sm" color={order.side === 'B' ? 'success' : 'danger'} variant="flat">{order.side === 'B' ? 'BUY' : 'SELL'}</Chip>;
       case 'order_type':
         return <Chip size="sm" variant="bordered">{order.order_type || 'Limit'}</Chip>;
-      case 'sz': return <span>{fmt(order.sz, 4)}</span>;
-      case 'filled_sz': return <span>{fmt(order.filled_sz, 4)}</span>;
+      case 'sz': return <span>{fmt(order.orig_sz, 4)}</span>;
+      case 'filled': {
+        const filled = numVal(order.orig_sz) - numVal(order.sz);
+        return <span>{fmt(filled, 4)}</span>;
+      }
       case 'limit_px': return <span>{fmtUsd(order.limit_px)}</span>;
-      case 'trigger_px': return <span>{order.trigger_px ? fmtUsd(order.trigger_px) : '-'}</span>;
-      case 'order_status':
-        return <Chip size="sm" color={statusColorMap[order.order_status] || 'default'} variant="flat">{order.order_status}</Chip>;
-      case 'tif': return <span>{order.tif || '-'}</span>;
-      case 'timestamp': return <span className="text-xs">{fmtTime(order.timestamp)}</span>;
+      case 'trigger_px': return <span>{order.trigger_condition && order.trigger_condition !== 'N/A' ? `${order.trigger_condition} ${fmtUsd(order.trigger_px)}` : '-'}</span>;
+      case 'status':
+        return <Chip size="sm" color={statusColorMap[order.status] || 'default'} variant="flat">{order.status}</Chip>;
+      case 'status_timestamp': return <span className="text-xs">{fmtTime(order.status_timestamp)}</span>;
       default: return null;
     }
   }, []);

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .api_client import SyncAPIClient
 
 # 每次 API 返回的上限
-PAGE_LIMIT_FUNDING = 2000   # userFunding / userNonFundingLedgerUpdates
+PAGE_LIMIT_FUNDING = 500   # userFunding / userNonFundingLedgerUpdates
 PAGE_LIMIT_ORDERS = 2000   # historicalOrders
 
 
