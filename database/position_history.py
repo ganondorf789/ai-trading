@@ -174,11 +174,17 @@ class PositionHistoryOps:
 
             # 开仓（从零仓位）
             if trade_type in (1, 4):
-                # 如果有旧的未平仓仓位，先关闭它
+                # 如果有旧的未平仓仓位，先关闭它（翻仓场景）
                 if fill_coin in positions_by_coin:
                     old_pos = positions_by_coin[fill_coin]
                     old_pos['status'] = 'closed'
                     old_pos['close_time'] = trade_time
+                    # 翻仓时用当前成交价作为旧仓位的平仓价
+                    if old_pos['avg_close_price'] is None:
+                        old_pos['avg_close_price'] = px
+                        old_pos['total_close_value'] = px * old_pos['current_size']
+                        old_pos['total_close_size'] = old_pos['current_size']
+                        old_pos['close_trades'] = 1
                     if old_pos.get('open_time_ms') and time_ms:
                         old_pos['holding_hours'] = (time_ms - old_pos['open_time_ms']) / (1000 * 3600)
                     new_closed_positions.append(old_pos)
