@@ -32,7 +32,8 @@
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\positions.tsx\")",
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\traders\\\\utils.ts\")",
       "Bash(del \"D:\\\\auto-trading\\\\web\\\\src\\\\pages\\\\group-comparison\\\\utils.ts\")",
-      "Bash(git -C /Users/md142/Documents/UGit/ai-trading log --oneline -10)"
+      "Bash(git -C /Users/md142/Documents/UGit/ai-trading log --oneline -10)",
+      "Bash(grep:*)"
     ]
   }
 }

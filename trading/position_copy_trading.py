@@ -97,6 +97,9 @@ class TrackingState:
     target_score: Optional[float] = None
     target_rating: Optional[str] = None
 
+    # 仓位模式
+    position_mode: str = 'cross'  # 仓位模式: cross(全仓) / isolated(逐仓)
+
 
 @dataclass
 class AddressTrackingConfig:
@@ -127,6 +130,9 @@ class AddressConfig:
     
     # 只跟一次
     copy_once: bool = False  # 开启后只跟第一个新仓位，跟完自动禁用该地址
+
+    # 仓位模式
+    position_mode: str = 'cross'  # 仓位模式: cross(全仓) / isolated(逐仓)
     
     # 自动补仓配置
     auto_replenish: bool = False  # 是否启用自动补仓
@@ -1081,7 +1087,8 @@ class PositionCopyTradingBot:
             status=data.get('status', 'pending'),
             target_is_starred=data.get('target_is_starred', False),
             target_score=data.get('target_score'),
-            target_rating=data.get('target_rating')
+            target_rating=data.get('target_rating'),
+            position_mode=data.get('position_mode', 'cross'),
         )
 
     def reload_configs(self):
@@ -1818,7 +1825,8 @@ class PositionCopyTradingBot:
 
             try:
                 # 设置杠杆
-                self.client.set_leverage(symbol, leverage)
+                is_cross = state.position_mode != 'isolated'
+                self.client.set_leverage(symbol, leverage, is_cross=is_cross)
                 await asyncio.sleep(0.3)
 
                 # 下单

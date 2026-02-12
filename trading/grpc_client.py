@@ -108,6 +108,8 @@ class GRPCDatabaseClient:
             # 交易员评分信息
             'target_score': tracking.target_score if tracking.target_score else None,
             'target_rating': tracking.target_rating if tracking.target_rating else None,
+            # 仓位模式
+            'position_mode': tracking.position_mode or 'cross',
         }
     
     def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:
@@ -249,7 +251,11 @@ class GRPCDatabaseClient:
                 request.target_score = float(data['target_score'])
             if 'target_rating' in data and data['target_rating']:
                 request.target_rating = data['target_rating']
-            
+
+            # 仓位模式
+            if 'position_mode' in data and data['position_mode']:
+                request.position_mode = data['position_mode']
+
             response = self._stub.SavePositionTracking(request, metadata=self._get_metadata())
             if response.success:
                 return response.tracking_id  # 返回 ULID 字符串

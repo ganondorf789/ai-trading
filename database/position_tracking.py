@@ -210,6 +210,7 @@ class PositionTrackingOps:
                         target_is_starred = %s,
                         target_score = %s,
                         target_rating = %s,
+                        position_mode = %s,
                         updated_at = %s
                     WHERE id = %s
                     RETURNING id
@@ -242,6 +243,7 @@ class PositionTrackingOps:
                     data.get('target_is_starred', False),
                     data.get('target_score'),
                     data.get('target_rating'),
+                    data.get('position_mode', 'cross'),
                     now,
                     data['id']
                 ))
@@ -262,6 +264,7 @@ class PositionTrackingOps:
                         my_size, my_side, my_entry_price,
                         status, closed_pnl, close_reason,
                         target_is_starred, target_score, target_rating,
+                        position_mode,
                         created_at, started_at, closed_at, updated_at
                     ) VALUES (
                         %s,
@@ -273,6 +276,7 @@ class PositionTrackingOps:
                         %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s,
+                        %s,
                         %s, %s, %s, %s
                     )
                     RETURNING id
@@ -306,6 +310,7 @@ class PositionTrackingOps:
                     data.get('target_is_starred', False),
                     data.get('target_score'),
                     data.get('target_rating'),
+                    data.get('position_mode', 'cross'),
                     now,
                     data.get('started_at'),
                     data.get('closed_at'),

@@ -364,6 +364,7 @@ def create_position_tracking():
             'replenish_ratio': data.get('replenish_ratio', 0.5),
             'replenish_min_value_usd': data.get('replenish_min_value_usd', 10.0),
             'replenish_max_value_usd': data.get('replenish_max_value_usd', 100.0),
+            'position_mode': data.get('position_mode', 'cross'),
             'status': 'pending',
         }
 
@@ -460,6 +461,7 @@ def update_position_tracking(tracking_id: int):
             'close_reason': existing.get('close_reason'),
             'started_at': existing.get('started_at'),
             'closed_at': existing.get('closed_at'),
+            'position_mode': data.get('position_mode', existing.get('position_mode', 'cross')),
         }
 
         db.save_position_tracking(update_data)
@@ -767,6 +769,7 @@ def quick_add_position_tracking():
             'replenish_ratio': 0.5,
             'replenish_min_value_usd': 10.0,
             'replenish_max_value_usd': 100.0,
+            'position_mode': default_config.get('position_mode', 'cross'),
             'status': 'pending',
         }
 
@@ -970,6 +973,7 @@ def quick_copy_position():
             'replenish_ratio': 0.5,
             'replenish_min_value_usd': 10.0,
             'replenish_max_value_usd': 100.0,
+            'position_mode': matched_config.get('position_mode', 'cross'),
             'status': 'pending',
         }
 

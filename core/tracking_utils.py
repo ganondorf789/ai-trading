@@ -70,7 +70,9 @@ def build_tracking_data(
         'target_is_starred': target_is_starred,
         'target_score': target_score,
         'target_rating': target_rating,
-        'status': status
+        'status': status,
+        # 仓位模式
+        'position_mode': config.get('position_mode', 'cross'),
     }
     
     # 如果提供了目标仓位信息，添加快照
@@ -123,6 +125,7 @@ def build_tracking_data_from_dataclass(
         'replenish_ratio': getattr(config_obj, 'replenish_ratio', 0.5),
         'replenish_min_value_usd': getattr(config_obj, 'replenish_min_value_usd', 10.0),
         'replenish_max_value_usd': getattr(config_obj, 'replenish_max_value_usd', 100.0),
+        'position_mode': getattr(config_obj, 'position_mode', 'cross'),
     }
     
     target_name = getattr(config_obj, 'name', '') or target_address[:10] + '...'

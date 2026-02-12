@@ -78,6 +78,8 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             # 交易员评分信息
             target_score=float(tracking.get('target_score', 0) or 0),
             target_rating=tracking.get('target_rating', '') or '',
+            # 仓位模式
+            position_mode=tracking.get('position_mode', 'cross') or 'cross',
         )
     
     def _address_to_proto(self, address: dict) -> pb2.CopyAddress:
@@ -221,7 +223,11 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
                 data['target_score'] = request.target_score
             if request.HasField('target_rating'):
                 data['target_rating'] = request.target_rating
-            
+
+            # 仓位模式
+            if request.HasField('position_mode'):
+                data['position_mode'] = request.position_mode
+
             tracking_id = self._db.save_position_tracking(data)
             
             return pb2.SavePositionTrackingResponse(

@@ -127,6 +127,9 @@ message SavePositionTrackingRequest {
     // 交易员评分信息
     optional double target_score = 34;
     optional string target_rating = 35;
+
+    // 仓位模式
+    optional string position_mode = 36;  // 仓位模式: cross(全仓) / isolated(逐仓)
 }
 
 message PositionTrackingResponse {
@@ -193,6 +196,9 @@ message PositionTracking {
     // 交易员评分信息
     double target_score = 38;
     string target_rating = 39;
+
+    // 仓位模式
+    string position_mode = 40;  // 仓位模式: cross(全仓) / isolated(逐仓)
 }
 
 message SavePositionTrackingResponse {

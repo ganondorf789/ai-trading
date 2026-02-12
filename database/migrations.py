@@ -1087,6 +1087,11 @@ class DatabaseMigrations:
             cursor, 'copy_trading_addresses', 'margin_mode', "TEXT DEFAULT 'cross'"
         )
 
+        # 为 copy_position_tracking 表添加 position_mode 字段（全仓/逐仓）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'position_mode', "TEXT DEFAULT 'cross'"
+        )
+
     def _migrate_remove_groups(self, cursor):
         """
         移除分组功能相关的表和列
