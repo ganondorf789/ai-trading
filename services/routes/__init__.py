@@ -54,3 +54,7 @@ def register_routes(app):
     # 巨鲸锚点路由
     from .whale_anchor import whale_anchor_bp
     app.register_blueprint(whale_anchor_bp)
+
+    # 交易数据代理路由
+    from .trading import trading_bp
+    app.register_blueprint(trading_bp)
