@@ -721,6 +721,55 @@ def get_trader_closed_performance(address: str):
         }), 500
 
 
+@traders_core_bp.route('/api/traders/<address>/pnl-curve', methods=['GET'])
+@login_required
+def get_trader_pnl_curve(address: str):
+    """获取交易者总盈亏曲线
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: start_date
+        in: query
+        type: string
+        format: date
+        description: 开始日期 (YYYY-MM-DD)，不传默认最近24小时
+      - name: end_date
+        in: query
+        type: string
+        format: date
+        description: 结束日期 (YYYY-MM-DD)
+    responses:
+      200:
+        description: 盈亏曲线数据
+      500:
+        description: 服务器错误
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        data = db.get_trader_pnl_curve(address, start_date, end_date)
+
+        return jsonify({
+            'success': True,
+            'data': data,
+            'count': len(data['points'])
+        })
+
+    except Exception as e:
+        logger.error(f"获取交易者盈亏曲线失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @traders_core_bp.route('/api/traders/<address>/refresh', methods=['POST'])
 @login_required
 def refresh_trader(address: str):

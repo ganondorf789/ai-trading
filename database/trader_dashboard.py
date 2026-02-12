@@ -249,3 +249,150 @@ class TraderDashboardOps:
                     'avg_hours': round(avg_holding_hours, 4),
                 },
             }
+
+    def get_trader_pnl_curve(self, address: str, start_date: str = None, end_date: str = None) -> Dict[str, Any]:
+        """
+        获取交易者总盈亏曲线（合并交易盈亏 + 资金费 + 存取款）
+
+        数据源：
+        - trader_fills: closed_pnl（交易盈亏）
+        - trader_funding_history: usdc（资金费收支）
+        - trader_ledger_updates: usdc（存取款/转账）
+
+        不传日期范围时默认返回最近24小时。
+
+        Args:
+            address: 交易者地址
+            start_date: 开始日期 (YYYY-MM-DD)，可选
+            end_date: 结束日期 (YYYY-MM-DD)，可选
+
+        Returns:
+            包含曲线数据点和基准值的字典
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 构建时间范围
+            time_lower = None
+            time_upper = None
+
+            if start_date or end_date:
+                if start_date:
+                    start_dt = pendulum.parse(start_date, tz=SHANGHAI_TZ).start_of('day')
+                    time_lower = int(start_dt.timestamp() * 1000)
+                if end_date:
+                    end_dt = pendulum.parse(end_date, tz=SHANGHAI_TZ).end_of('day')
+                    time_upper = int(end_dt.timestamp() * 1000)
+            else:
+                since = pendulum.now(SHANGHAI_TZ).subtract(hours=24)
+                time_lower = int(since.timestamp() * 1000)
+
+            # --- 基准值：时间范围之前的各项累计 ---
+            base_pnl = 0.0
+            base_funding = 0.0
+            base_deposit = 0.0
+
+            if time_lower:
+                cursor.execute(
+                    "SELECT COALESCE(SUM(closed_pnl), 0) as v FROM trader_fills WHERE address = %s AND time < %s",
+                    (address, time_lower)
+                )
+                base_pnl = float(cursor.fetchone()['v'])
+
+                cursor.execute(
+                    "SELECT COALESCE(SUM(usdc), 0) as v FROM trader_funding_history WHERE address = %s AND time < %s",
+                    (address, time_lower)
+                )
+                base_funding = float(cursor.fetchone()['v'])
+
+                cursor.execute(
+                    "SELECT COALESCE(SUM(usdc), 0) as v FROM trader_ledger_updates WHERE address = %s AND time < %s",
+                    (address, time_lower)
+                )
+                base_deposit = float(cursor.fetchone()['v'])
+
+            # --- UNION ALL 查询范围内的事件 ---
+            time_conds = ""
+            union_params: List[Any] = []
+
+            if time_lower and time_upper:
+                time_conds = "AND time >= %s AND time <= %s"
+                union_params = [time_lower, time_upper]
+            elif time_lower:
+                time_conds = "AND time >= %s"
+                union_params = [time_lower]
+            elif time_upper:
+                time_conds = "AND time <= %s"
+                union_params = [time_upper]
+
+            query = f"""
+                SELECT time, amount, fee, type, coin FROM (
+                    SELECT time, closed_pnl as amount, fee, 'trade' as type, coin
+                    FROM trader_fills
+                    WHERE address = %s {time_conds}
+
+                    UNION ALL
+
+                    SELECT time, usdc as amount, 0 as fee, 'funding' as type, coin
+                    FROM trader_funding_history
+                    WHERE address = %s {time_conds}
+
+                    UNION ALL
+
+                    SELECT time, usdc as amount, fee, delta_type as type, '' as coin
+                    FROM trader_ledger_updates
+                    WHERE address = %s {time_conds}
+                ) combined
+                ORDER BY time ASC
+            """
+            # 每个子查询都需要 address + 时间参数
+            all_params: List[Any] = []
+            for _ in range(3):
+                all_params.append(address)
+                all_params.extend(union_params)
+
+            cursor.execute(query, all_params)
+            rows = cursor.fetchall()
+
+            # --- 构建曲线 ---
+            cum_pnl = base_pnl
+            cum_funding = base_funding
+            cum_deposit = base_deposit
+            cum_total = cum_pnl + cum_funding + cum_deposit
+
+            points = []
+            for row in rows:
+                amount = float(row['amount'] or 0)
+                event_type = row['type']
+
+                if event_type == 'trade':
+                    cum_pnl += amount
+                elif event_type == 'funding':
+                    cum_funding += amount
+                else:
+                    # deposit / withdraw / internalTransfer 等
+                    cum_deposit += amount
+
+                cum_total = cum_pnl + cum_funding + cum_deposit
+
+                points.append({
+                    'time': row['time'],
+                    'amount': round(amount, 2),
+                    'fee': round(float(row['fee'] or 0), 4),
+                    'type': event_type,
+                    'coin': row['coin'] or '',
+                    'cumulative_pnl': round(cum_pnl, 2),
+                    'cumulative_funding': round(cum_funding, 2),
+                    'cumulative_deposit': round(cum_deposit, 2),
+                    'cumulative_total': round(cum_total, 2),
+                })
+
+            return {
+                'base': {
+                    'pnl': round(base_pnl, 2),
+                    'funding': round(base_funding, 2),
+                    'deposit': round(base_deposit, 2),
+                    'total': round(base_pnl + base_funding + base_deposit, 2),
+                },
+                'points': points,
+            }
