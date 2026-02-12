@@ -1154,4 +1154,20 @@ export const addressTrackingApi = {
     api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/address-tracking/batch-delete', { tracking_ids: trackingIds }),
 };
 
+// ==================== 交易数据代理 API ====================
+
+export const tradingApi = {
+  // 获取永续合约持仓
+  getPositions: (address: string) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/positions`),
+
+  // 获取挂单
+  getOpenOrders: (address: string) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/open-orders`),
+
+  // 获取 TWAP 切片成交
+  getTwapSliceFills: (address: string) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/twap`),
+};
+
 export default api;
