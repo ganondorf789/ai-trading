@@ -1,7 +1,7 @@
 """
 增量获取成交记录模块
 
-使用自适应5层细分策略（月→周→天→小时→分钟）获取新的成交记录
+使用自适应6层细分策略（月→周→天→小时→10分钟→2分钟→30秒）获取新的成交记录
 """
 import time
 from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
@@ -288,9 +288,11 @@ def fetch_fills_by_2minutes(
             continue
         
         if chunk_fills:
-            all_fills.extend(_enrich_fills(chunk_fills))
             if len(chunk_fills) >= 2000:
-                logger.warning(f"            2分钟 [{current.format('HH:mm')}-{next_chunk.format('HH:mm')}]: {len(chunk_fills)} 条（达到上限，无法进一步细分）")
+                # 2分钟还达到2000条，按30秒细分
+                logger.debug(f"            2分钟 [{current.format('HH:mm')}-{next_chunk.format('HH:mm')}] 达到 2000 条，按30秒细分...")
+                fine_fills = fetch_fills_by_30seconds(client, address, current, next_chunk, delay)
+                all_fills.extend(fine_fills)
             else:
                 logger.debug(f"            2分钟 [{chunk_num}/{total_chunks}] {current.format('HH:mm')}-{next_chunk.format('HH:mm')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
         
@@ -299,6 +301,49 @@ def fetch_fills_by_2minutes(
             time.sleep(delay)
     
     logger.debug(f"            2分钟细分完成: 共 {len(all_fills)} 条")
+    return all_fills
+
+
+def fetch_fills_by_30seconds(
+    client: 'SyncAPIClient',
+    address: str,
+    start_dt: pendulum.DateTime,
+    end_dt: pendulum.DateTime,
+    delay: float = 0.0
+) -> List[Dict]:
+    """按30秒获取交易记录（用于极度活跃的2分钟段）"""
+    all_fills = []
+    current = start_dt
+    total_chunks = int((end_dt - start_dt).total_seconds() / 30) + 1
+    chunk_num = 0
+
+    while current < end_dt:
+        next_chunk = min(current.add(seconds=30), end_dt)
+        start_ms = int(current.timestamp() * 1000)
+        end_ms = int(next_chunk.timestamp() * 1000)
+        chunk_num += 1
+
+        try:
+            chunk_fills = client.get_user_fills_by_time(address, start_ms, end_ms)
+        except Exception as e:
+            logger.error(f"              获取30秒数据失败 [{current.format('HH:mm:ss')}]: {repr(e)}")
+            current = next_chunk
+            if delay > 0:
+                time.sleep(delay)
+            continue
+
+        if chunk_fills:
+            all_fills.extend(_enrich_fills(chunk_fills))
+            if len(chunk_fills) >= 2000:
+                logger.warning(f"              30秒 [{current.format('HH:mm:ss')}-{next_chunk.format('HH:mm:ss')}]: {len(chunk_fills)} 条（达到上限，无法进一步细分）")
+            else:
+                logger.debug(f"              30秒 [{chunk_num}/{total_chunks}] {current.format('HH:mm:ss')}-{next_chunk.format('HH:mm:ss')}: {len(chunk_fills)} 条，累计 {len(all_fills)} 条")
+
+        current = next_chunk
+        if delay > 0:
+            time.sleep(delay)
+
+    logger.debug(f"              30秒细分完成: 共 {len(all_fills)} 条")
     return all_fills
 
 
