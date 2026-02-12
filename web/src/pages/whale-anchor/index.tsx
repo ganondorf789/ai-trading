@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import type { SortDescriptor, Selection } from "@heroui/react";
 import {
   Table,
   TableHeader,
@@ -16,6 +17,10 @@ import {
   Select,
   SelectItem,
   addToast,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
@@ -54,17 +59,81 @@ const factorColors: Record<string, "primary" | "secondary" | "warning" | "defaul
   none: "default",
 };
 
-// 排序选项
-type SortField = "whale_threshold" | "day_volume_usd" | "open_interest_usd" | "depth_1pct_usd" | "mark_price" | "price_change_24h_pct";
+// 表格列配置
+type ColumnKey =
+  | "rank"
+  | "coin"
+  | "mark_price"
+  | "price_change_24h_pct"
+  | "whale_threshold"
+  | "components"
+  | "dominant_factor"
+  | "day_volume_usd"
+  | "open_interest_usd"
+  | "depth_1pct_usd"
+  | "max_leverage";
 
-const sortOptions: { key: SortField; label: string }[] = [
-  { key: "whale_threshold", label: "Whale Threshold" },
-  { key: "day_volume_usd", label: "24h Volume" },
-  { key: "open_interest_usd", label: "Open Interest" },
-  { key: "depth_1pct_usd", label: "1% Depth" },
-  { key: "mark_price", label: "Price" },
-  { key: "price_change_24h_pct", label: "24h Change" },
+interface Column {
+  uid: ColumnKey;
+  name: string;
+  sortable?: boolean;
+  width?: number;
+}
+
+const columns: Column[] = [
+  { uid: "rank", name: "#", width: 50 },
+  { uid: "coin", name: "Coin", width: 100, sortable: true },
+  { uid: "mark_price", name: "Price", sortable: true, width: 110 },
+  { uid: "price_change_24h_pct", name: "24h Chg", sortable: true, width: 90 },
+  { uid: "whale_threshold", name: "Whale Threshold", sortable: true, width: 130 },
+  { uid: "components", name: "Components", width: 150 },
+  { uid: "dominant_factor", name: "Dominant", width: 90 },
+  { uid: "day_volume_usd", name: "24h Volume", sortable: true, width: 120 },
+  { uid: "open_interest_usd", name: "Open Interest", sortable: true, width: 120 },
+  { uid: "depth_1pct_usd", name: "1% Depth", sortable: true, width: 120 },
+  { uid: "max_leverage", name: "Max Lev", sortable: true, width: 80 },
 ];
+
+const INITIAL_VISIBLE_COLUMNS: ColumnKey[] = [
+  "rank",
+  "coin",
+  "mark_price",
+  "price_change_24h_pct",
+  "whale_threshold",
+  "components",
+  "dominant_factor",
+  "day_volume_usd",
+  "open_interest_usd",
+  "depth_1pct_usd",
+  "max_leverage",
+];
+
+// 组件比例条
+const ComponentBar = ({ item }: { item: WhaleAnchorItem }) => {
+  const total = item.volume_component + item.oi_component + item.depth_component;
+  if (total === 0) return <span className="text-default-400">-</span>;
+  const vPct = (item.volume_component / total) * 100;
+  const oiPct = (item.oi_component / total) * 100;
+  const dPct = (item.depth_component / total) * 100;
+
+  return (
+    <Tooltip
+      content={
+        <div className="px-2 py-1 text-xs space-y-1">
+          <div>Volume: {formatUsd(item.volume_component)} ({vPct.toFixed(1)}%)</div>
+          <div>OI: {formatUsd(item.oi_component)} ({oiPct.toFixed(1)}%)</div>
+          <div>Depth: {formatUsd(item.depth_component)} ({dPct.toFixed(1)}%)</div>
+        </div>
+      }
+    >
+      <div className="flex w-full h-2 rounded-full overflow-hidden bg-default-100 cursor-help" style={{ minWidth: 80 }}>
+        {vPct > 0 && <div className="h-full bg-primary" style={{ width: `${vPct}%` }} />}
+        {oiPct > 0 && <div className="h-full bg-secondary" style={{ width: `${oiPct}%` }} />}
+        {dPct > 0 && <div className="h-full bg-warning" style={{ width: `${dPct}%` }} />}
+      </div>
+    </Tooltip>
+  );
+};
 
 export default function WhaleAnchorPage() {
   const [data, setData] = useState<WhaleAnchorItem[]>([]);
@@ -73,9 +142,12 @@ export default function WhaleAnchorPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortField, setSortField] = useState<SortField>("whale_threshold");
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: "whale_threshold",
+    direction: "descending",
+  });
   const [dominantFilter, setDominantFilter] = useState<string>("all");
+  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
 
   // 获取当前用户角色
   const currentUser = tokenManager.getUser();
@@ -135,6 +207,12 @@ export default function WhaleAnchorPage() {
     loadData();
   }, [loadData]);
 
+  // 可见列
+  const headerColumns = useMemo(() => {
+    if (visibleColumns === "all") return columns;
+    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
+  }, [visibleColumns]);
+
   // 过滤和排序
   const filteredData = useMemo(() => {
     let result = [...data];
@@ -151,60 +229,109 @@ export default function WhaleAnchorPage() {
     }
 
     // 排序
-    result.sort((a, b) => {
-      const aVal = a[sortField];
-      const bVal = b[sortField];
-      return sortAsc ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
-    });
+    if (sortDescriptor.column) {
+      const field = sortDescriptor.column as keyof WhaleAnchorItem;
+      const direction = sortDescriptor.direction === "ascending" ? 1 : -1;
+      result.sort((a, b) => {
+        const aVal = a[field];
+        const bVal = b[field];
+        if (typeof aVal === "string" && typeof bVal === "string") {
+          return direction * aVal.localeCompare(bVal);
+        }
+        return direction * ((aVal as number) - (bVal as number));
+      });
+    }
 
     return result;
-  }, [data, searchQuery, sortField, sortAsc, dominantFilter]);
+  }, [data, searchQuery, sortDescriptor, dominantFilter]);
 
   // 分页
   const { page, setPage, rowsPerPage, setRowsPerPage, totalPages, getPageItems } =
-    useLocalPagination({ totalItems: filteredData.length, defaultRowsPerPage: 50 });
+    useLocalPagination({ totalItems: filteredData.length, defaultRowsPerPage: 20 });
 
   const pageItems = useMemo(() => getPageItems(filteredData), [getPageItems, filteredData]);
 
-  // 统计卡片数据
-  const stats = useMemo(() => {
-    if (data.length === 0) return null;
-    const totalCoins = data.length;
-    const avgThreshold = data.reduce((s, d) => s + d.whale_threshold, 0) / totalCoins;
-    const maxThreshold = Math.max(...data.map((d) => d.whale_threshold));
-    const minThreshold = Math.min(...data.filter((d) => d.whale_threshold > 0).map((d) => d.whale_threshold));
-    const volumeDominant = data.filter((d) => d.dominant_factor === "volume").length;
-    const oiDominant = data.filter((d) => d.dominant_factor === "oi").length;
-    const depthDominant = data.filter((d) => d.dominant_factor === "depth").length;
-    return { totalCoins, avgThreshold, maxThreshold, minThreshold, volumeDominant, oiDominant, depthDominant };
-  }, [data]);
+  // 排序变更
+  const handleSortChange = useCallback((descriptor: SortDescriptor) => {
+    setSortDescriptor(descriptor);
+  }, []);
 
-  // 组件比例条
-  const ComponentBar = ({ item }: { item: WhaleAnchorItem }) => {
-    const total = item.volume_component + item.oi_component + item.depth_component;
-    if (total === 0) return <span className="text-default-400">-</span>;
-    const vPct = (item.volume_component / total) * 100;
-    const oiPct = (item.oi_component / total) * 100;
-    const dPct = (item.depth_component / total) * 100;
+  // 重置筛选
+  const handleReset = useCallback(() => {
+    setSearchQuery("");
+    setDominantFilter("all");
+    setSortDescriptor({ column: "whale_threshold", direction: "descending" });
+  }, []);
 
-    return (
-      <Tooltip
-        content={
-          <div className="px-2 py-1 text-xs space-y-1">
-            <div>Volume: {formatUsd(item.volume_component)} ({vPct.toFixed(1)}%)</div>
-            <div>OI: {formatUsd(item.oi_component)} ({oiPct.toFixed(1)}%)</div>
-            <div>Depth: {formatUsd(item.depth_component)} ({dPct.toFixed(1)}%)</div>
-          </div>
-        }
-      >
-        <div className="flex w-full h-2 rounded-full overflow-hidden bg-default-100 cursor-help" style={{ minWidth: 80 }}>
-          {vPct > 0 && <div className="h-full bg-primary" style={{ width: `${vPct}%` }} />}
-          {oiPct > 0 && <div className="h-full bg-secondary" style={{ width: `${oiPct}%` }} />}
-          {dPct > 0 && <div className="h-full bg-warning" style={{ width: `${dPct}%` }} />}
-        </div>
-      </Tooltip>
-    );
-  };
+  // 活跃筛选数量
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (dominantFilter !== "all") count++;
+    return count;
+  }, [searchQuery, dominantFilter]);
+
+  // 单元格渲染
+  const renderCell = useCallback(
+    (item: WhaleAnchorItem, columnKey: ColumnKey, idx: number) => {
+      switch (columnKey) {
+        case "rank":
+          return <span className="text-default-400 text-xs">{(page - 1) * rowsPerPage + idx + 1}</span>;
+        case "coin":
+          return <span className="font-semibold">{item.coin}</span>;
+        case "mark_price":
+          return <span className="text-sm">{formatPrice(item.mark_price)}</span>;
+        case "price_change_24h_pct":
+          return (
+            <span
+              className={`text-sm font-medium ${
+                item.price_change_24h_pct > 0
+                  ? "text-success"
+                  : item.price_change_24h_pct < 0
+                    ? "text-danger"
+                    : "text-default-500"
+              }`}
+            >
+              {item.price_change_24h_pct > 0 ? "+" : ""}
+              {item.price_change_24h_pct.toFixed(2)}%
+            </span>
+          );
+        case "whale_threshold":
+          return <span className="font-bold text-sm">{formatUsd(item.whale_threshold)}</span>;
+        case "components":
+          return <ComponentBar item={item} />;
+        case "dominant_factor":
+          return (
+            <Chip size="sm" variant="flat" color={factorColors[item.dominant_factor]}>
+              {factorLabels[item.dominant_factor]}
+            </Chip>
+          );
+        case "day_volume_usd":
+          return (
+            <Tooltip content={`Component: ${formatUsd(item.volume_component)}`}>
+              <span className="text-sm cursor-help">{formatUsd(item.day_volume_usd)}</span>
+            </Tooltip>
+          );
+        case "open_interest_usd":
+          return (
+            <Tooltip content={`Component: ${formatUsd(item.oi_component)}`}>
+              <span className="text-sm cursor-help">{formatUsd(item.open_interest_usd)}</span>
+            </Tooltip>
+          );
+        case "depth_1pct_usd":
+          return (
+            <Tooltip content={`Component: ${formatUsd(item.depth_component)}`}>
+              <span className="text-sm cursor-help">{formatUsd(item.depth_1pct_usd)}</span>
+            </Tooltip>
+          );
+        case "max_leverage":
+          return <span className="text-sm">{item.max_leverage}x</span>;
+        default:
+          return null;
+      }
+    },
+    [page, rowsPerPage],
+  );
 
   return (
     <DefaultLayout>
@@ -213,21 +340,12 @@ export default function WhaleAnchorPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Whale Anchor</h1>
-            <p className="text-default-500 text-sm mt-1">
-              Whale position threshold for each coin. Formula: max(0.4% x 24h Vol, 1% x OI, 30% x 1% Depth)
-            </p>
-            {updatedAt && (
-              <p className="text-default-400 text-xs mt-1">
-                Last updated: {updatedAt}
-              </p>
-            )}
           </div>
           <div className="flex gap-2">
             {isAdmin && (
               <Tooltip content="Fetch latest data from Hyperliquid API and save to database">
                 <Button
                   color="primary"
-                  startContent={<Icon icon="solar:refresh-line-duotone" width={18} />}
                   isLoading={refreshing}
                   onPress={handleRefresh}
                 >
@@ -237,40 +355,6 @@ export default function WhaleAnchorPage() {
             )}
           </div>
         </div>
-
-        {/* 统计卡片 */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card>
-              <CardBody className="py-3 px-4">
-                <p className="text-xs text-default-500">Total Coins</p>
-                <p className="text-xl font-bold">{stats.totalCoins}</p>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3 px-4">
-                <p className="text-xs text-default-500">Avg Threshold</p>
-                <p className="text-xl font-bold">{formatUsd(stats.avgThreshold)}</p>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3 px-4">
-                <p className="text-xs text-default-500">Dominant Factor</p>
-                <div className="flex gap-2 mt-1">
-                  <Chip size="sm" color="primary" variant="flat">Vol: {stats.volumeDominant}</Chip>
-                  <Chip size="sm" color="secondary" variant="flat">OI: {stats.oiDominant}</Chip>
-                  <Chip size="sm" color="warning" variant="flat">Dep: {stats.depthDominant}</Chip>
-                </div>
-              </CardBody>
-            </Card>
-            <Card>
-              <CardBody className="py-3 px-4">
-                <p className="text-xs text-default-500">Threshold Range</p>
-                <p className="text-sm font-semibold">{formatUsd(stats.minThreshold)} ~ {formatUsd(stats.maxThreshold)}</p>
-              </CardBody>
-            </Card>
-          </div>
-        )}
 
         {/* 无数据提示 */}
         {!loading && data.length === 0 && !error && (
@@ -284,57 +368,131 @@ export default function WhaleAnchorPage() {
 
         {/* 工具栏 */}
         {data.length > 0 && (
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <Input
-              className="w-full sm:w-64"
-              placeholder="Search coin..."
-              size="sm"
-              startContent={<Icon icon="solar:magnifer-line-duotone" width={16} className="text-default-400" />}
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-              isClearable
-              onClear={() => setSearchQuery("")}
-            />
-            <Select
-              className="w-full sm:w-48"
-              size="sm"
-              label="Sort By"
-              selectedKeys={[sortField]}
-              onChange={(e) => {
-                if (e.target.value) setSortField(e.target.value as SortField);
-              }}
-            >
-              {sortOptions.map((opt) => (
-                <SelectItem key={opt.key}>{opt.label}</SelectItem>
-              ))}
-            </Select>
-            <Button
-              size="sm"
-              variant="flat"
-              isIconOnly
-              onPress={() => setSortAsc(!sortAsc)}
-            >
-              <Icon
-                icon={sortAsc ? "solar:sort-from-bottom-to-top-line-duotone" : "solar:sort-from-top-to-bottom-line-duotone"}
-                width={18}
+          <div className="flex items-center justify-between gap-4 px-[6px] py-[4px]">
+            {/* 左侧：筛选条件 */}
+            <div className="flex items-center gap-4 overflow-auto">
+              <Input
+                className="w-full sm:w-64"
+                placeholder="Search coin..."
+                size="sm"
+                startContent={<Icon icon="solar:magnifer-line-duotone" width={16} className="text-default-400" />}
+                value={searchQuery}
+                onValueChange={setSearchQuery}
+                isClearable
+                onClear={() => setSearchQuery("")}
               />
-            </Button>
-            <Select
-              className="w-full sm:w-48"
-              size="sm"
-              label="Dominant Factor"
-              selectedKeys={[dominantFilter]}
-              onChange={(e) => {
-                if (e.target.value) setDominantFilter(e.target.value);
-              }}
-            >
-              <SelectItem key="all">All</SelectItem>
-              <SelectItem key="volume">Volume</SelectItem>
-              <SelectItem key="oi">OI</SelectItem>
-              <SelectItem key="depth">Depth</SelectItem>
-            </Select>
-            <div className="text-sm text-default-500 whitespace-nowrap">
-              {filteredData.length} coins
+
+              {/* 主导因子筛选 */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-sm whitespace-nowrap">Dominant</span>
+                <Select
+                  className="min-w-[120px]"
+                  size="sm"
+                  selectedKeys={[dominantFilter]}
+                  onSelectionChange={(keys) => {
+                    const selected = Array.from(keys)[0] as string;
+                    if (selected) setDominantFilter(selected);
+                  }}
+                >
+                  <SelectItem key="all">All</SelectItem>
+                  <SelectItem key="volume">Volume</SelectItem>
+                  <SelectItem key="oi">OI</SelectItem>
+                  <SelectItem key="depth">Depth</SelectItem>
+                </Select>
+              </div>
+
+              {activeFiltersCount > 0 && (
+                <Button
+                  className="bg-default-100 text-default-800 shrink-0"
+                  size="sm"
+                  variant="flat"
+                  onPress={handleReset}
+                  startContent={
+                    <Icon className="text-default-400" icon="solar:restart-linear" width={16} />
+                  }
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+
+            {/* 右侧：排序和列 */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="text-sm text-default-500 whitespace-nowrap">
+                {filteredData.length} coins
+              </div>
+
+              {/* Sort 下拉 */}
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button
+                    className="bg-default-100 text-default-800"
+                    size="sm"
+                    startContent={
+                      <Icon className="text-default-400" icon="solar:sort-linear" width={16} />
+                    }
+                  >
+                    Sort
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  aria-label="Sort"
+                  items={columns.filter((c) => c.sortable)}
+                >
+                  {(item) => (
+                    <DropdownItem
+                      key={item.uid}
+                      onPress={() => {
+                        handleSortChange({
+                          column: item.uid,
+                          direction:
+                            sortDescriptor.column === item.uid && sortDescriptor.direction === "descending"
+                              ? "ascending"
+                              : "descending",
+                        });
+                      }}
+                    >
+                      {item.name}
+                      {sortDescriptor.column === item.uid && (
+                        <Icon
+                          className="inline ml-1"
+                          icon={
+                            sortDescriptor.direction === "ascending"
+                              ? "solar:sort-from-bottom-to-top-line-duotone"
+                              : "solar:sort-from-top-to-bottom-line-duotone"
+                          }
+                          width={14}
+                        />
+                      )}
+                    </DropdownItem>
+                  )}
+                </DropdownMenu>
+              </Dropdown>
+
+              {/* Columns 下拉 */}
+              <Dropdown closeOnSelect={false}>
+                <DropdownTrigger>
+                  <Button
+                    className="bg-default-100 text-default-800"
+                    size="sm"
+                    startContent={
+                      <Icon className="text-default-400" icon="solar:sort-horizontal-linear" width={16} />
+                    }
+                  >
+                    Columns
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  disallowEmptySelection
+                  aria-label="Columns"
+                  items={columns}
+                  selectedKeys={visibleColumns}
+                  selectionMode="multiple"
+                  onSelectionChange={setVisibleColumns}
+                >
+                  {(item) => <DropdownItem key={item.uid}>{item.name}</DropdownItem>}
+                </DropdownMenu>
+              </Dropdown>
             </div>
           </div>
         )}
@@ -354,22 +512,22 @@ export default function WhaleAnchorPage() {
             aria-label="Whale anchor data"
             isStriped
             isHeaderSticky
+            sortDescriptor={sortDescriptor}
+            onSortChange={handleSortChange}
             classNames={{
-              wrapper: "max-h-[calc(100vh-400px)]",
+              wrapper: "max-h-none overflow-visible",
             }}
           >
-            <TableHeader>
-              <TableColumn key="rank" width={50}>#</TableColumn>
-              <TableColumn key="coin" width={100}>Coin</TableColumn>
-              <TableColumn key="mark_price" width={110}>Price</TableColumn>
-              <TableColumn key="price_change" width={90}>24h Chg</TableColumn>
-              <TableColumn key="whale_threshold" width={130}>Whale Threshold</TableColumn>
-              <TableColumn key="components" width={150}>Components</TableColumn>
-              <TableColumn key="dominant" width={90}>Dominant</TableColumn>
-              <TableColumn key="volume" width={120}>24h Volume</TableColumn>
-              <TableColumn key="oi" width={120}>Open Interest</TableColumn>
-              <TableColumn key="depth" width={120}>1% Depth</TableColumn>
-              <TableColumn key="leverage" width={80}>Max Lev</TableColumn>
+            <TableHeader columns={headerColumns}>
+              {(column) => (
+                <TableColumn
+                  key={column.uid}
+                  width={column.width}
+                  allowsSorting={column.sortable}
+                >
+                  {column.name}
+                </TableColumn>
+              )}
             </TableHeader>
             <TableBody
               isLoading={loading}
@@ -378,62 +536,9 @@ export default function WhaleAnchorPage() {
             >
               {pageItems.map((item, idx) => (
                 <TableRow key={item.coin}>
-                  <TableCell>
-                    <span className="text-default-400 text-xs">{(page - 1) * rowsPerPage + idx + 1}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-semibold">{item.coin}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{formatPrice(item.mark_price)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`text-sm font-medium ${
-                        item.price_change_24h_pct > 0
-                          ? "text-success"
-                          : item.price_change_24h_pct < 0
-                          ? "text-danger"
-                          : "text-default-500"
-                      }`}
-                    >
-                      {item.price_change_24h_pct > 0 ? "+" : ""}
-                      {item.price_change_24h_pct.toFixed(2)}%
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-bold text-sm">{formatUsd(item.whale_threshold)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <ComponentBar item={item} />
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="sm"
-                      variant="flat"
-                      color={factorColors[item.dominant_factor]}
-                    >
-                      {factorLabels[item.dominant_factor]}
-                    </Chip>
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip content={`Component: ${formatUsd(item.volume_component)}`}>
-                      <span className="text-sm cursor-help">{formatUsd(item.day_volume_usd)}</span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip content={`Component: ${formatUsd(item.oi_component)}`}>
-                      <span className="text-sm cursor-help">{formatUsd(item.open_interest_usd)}</span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip content={`Component: ${formatUsd(item.depth_component)}`}>
-                      <span className="text-sm cursor-help">{formatUsd(item.depth_1pct_usd)}</span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{item.max_leverage}x</span>
-                  </TableCell>
+                  {(columnKey) => (
+                    <TableCell>{renderCell(item, columnKey as ColumnKey, idx)}</TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -451,31 +556,6 @@ export default function WhaleAnchorPage() {
             onRowsPerPageChange={setRowsPerPage}
           />
         )}
-
-        {/* 公式说明 */}
-        <Card>
-          <CardBody className="py-3 px-4">
-            <h3 className="text-sm font-semibold mb-2">Calculation Formula</h3>
-            <div className="text-xs text-default-500 space-y-1">
-              <p>
-                <strong>Whale Threshold</strong> = max(
-                <Chip size="sm" color="primary" variant="flat" className="mx-1">0.4% x 24h Volume</Chip>,
-                <Chip size="sm" color="secondary" variant="flat" className="mx-1">1% x OI</Chip>,
-                <Chip size="sm" color="warning" variant="flat" className="mx-1">30% x 1% Depth</Chip>
-                )
-              </p>
-              <p>
-                <strong>24h Volume</strong>: Notional trading volume in the last 24 hours (USD).
-              </p>
-              <p>
-                <strong>OI (Open Interest)</strong>: Total outstanding contracts value (USD).
-              </p>
-              <p>
-                <strong>1% Depth</strong>: Total orderbook liquidity within 1% of mid price on both sides (USD).
-              </p>
-            </div>
-          </CardBody>
-        </Card>
       </div>
     </DefaultLayout>
   );
