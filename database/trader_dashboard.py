@@ -396,3 +396,49 @@ class TraderDashboardOps:
                 },
                 'points': points,
             }
+
+    def get_trader_best_trades(self, address: str, start_date: str = None, end_date: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        获取交易者盈利最高的 Top N 交易（基于 position_history 已平仓仓位）
+
+        Args:
+            address: 交易者地址
+            start_date: 开始日期 (YYYY-MM-DD)，可选
+            end_date: 结束日期 (YYYY-MM-DD)，可选
+            limit: 返回数量，默认 10
+
+        Returns:
+            按 realized_pnl 降序排列的仓位列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            conditions = ["address = %s", "status = 'closed'"]
+            params: List[Any] = [address]
+
+            if start_date:
+                start_dt = pendulum.parse(start_date, tz=SHANGHAI_TZ).start_of('day')
+                conditions.append("close_time >= %s")
+                params.append(start_dt.to_iso8601_string())
+
+            if end_date:
+                end_dt = pendulum.parse(end_date, tz=SHANGHAI_TZ).end_of('day')
+                conditions.append("close_time <= %s")
+                params.append(end_dt.to_iso8601_string())
+
+            where_clause = " AND ".join(conditions)
+            params.append(limit)
+
+            cursor.execute(f"""
+                SELECT
+                    coin, direction, open_time, close_time,
+                    max_size, avg_entry_price, avg_close_price,
+                    realized_pnl, total_fee, holding_hours,
+                    open_trades, close_trades, total_volume
+                FROM position_history
+                WHERE {where_clause}
+                ORDER BY realized_pnl DESC
+                LIMIT %s
+            """, params)
+
+            return [dict(row) for row in cursor.fetchall()]
