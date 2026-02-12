@@ -3,7 +3,7 @@
 跨表查询: trader_metrics, trader_fills, position_history, position_calc_state
 """
 import json
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
 import pendulum
 from psycopg2 import extras
 
@@ -152,5 +152,100 @@ class TraderDashboardOps:
                 'profit_loss': {
                     'roi': round(roi, 2),
                     'unrealized_pnl': round(unrealized_pnl, 2),
+                },
+            }
+
+    def get_trader_closed_performance(self, address: str, start_date: str = None, end_date: str = None) -> Optional[Dict[str, Any]]:
+        """
+        获取交易者平仓表现统计（基于 position_history 已平仓仓位）
+
+        Args:
+            address: 交易者地址
+            start_date: 开始日期 (YYYY-MM-DD)，可选
+            end_date: 结束日期 (YYYY-MM-DD)，可选
+
+        Returns:
+            平仓表现数据字典，如果无数据则返回 None
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 构建日期范围条件
+            conditions = ["address = %s", "status = 'closed'"]
+            params: List[Any] = [address]
+
+            if start_date:
+                start_dt = pendulum.parse(start_date, tz=SHANGHAI_TZ).start_of('day')
+                conditions.append("close_time >= %s")
+                params.append(start_dt.to_iso8601_string())
+
+            if end_date:
+                end_dt = pendulum.parse(end_date, tz=SHANGHAI_TZ).end_of('day')
+                conditions.append("close_time <= %s")
+                params.append(end_dt.to_iso8601_string())
+
+            where_clause = " AND ".join(conditions)
+
+            # 单条查询聚合所有需要的统计
+            cursor.execute(f"""
+                SELECT
+                    COUNT(*) as closed_count,
+                    COUNT(CASE WHEN realized_pnl > 0 THEN 1 END) as winning_count,
+                    COUNT(CASE WHEN realized_pnl < 0 THEN 1 END) as losing_count,
+                    COALESCE(SUM(realized_pnl), 0) as total_realized_pnl,
+                    COALESCE(SUM(total_fee), 0) as total_fee,
+                    COALESCE(SUM(realized_pnl) FILTER (WHERE direction = 'long'), 0) as long_pnl,
+                    COALESCE(SUM(realized_pnl) FILTER (WHERE direction = 'short'), 0) as short_pnl,
+                    COALESCE(SUM(holding_hours), 0) as total_holding_hours,
+                    MIN(holding_hours) as min_holding_hours,
+                    MAX(holding_hours) as max_holding_hours,
+                    AVG(holding_hours) as avg_holding_hours
+                FROM position_history
+                WHERE {where_clause}
+            """, params)
+
+            row = cursor.fetchone()
+
+            if not row or row['closed_count'] == 0:
+                return None
+
+            closed_count = row['closed_count']
+            winning_count = row['winning_count']
+            losing_count = row['losing_count']
+            total_realized_pnl = float(row['total_realized_pnl'])
+            total_fee = float(row['total_fee'])
+            long_pnl = float(row['long_pnl'])
+            short_pnl = float(row['short_pnl'])
+
+            win_rate = round(winning_count / closed_count * 100, 2)
+            net_pnl = total_realized_pnl - total_fee
+
+            # 持仓时间
+            total_holding_hours = float(row['total_holding_hours'] or 0)
+            min_holding_hours = float(row['min_holding_hours'] or 0)
+            max_holding_hours = float(row['max_holding_hours'] or 0)
+            avg_holding_hours = float(row['avg_holding_hours'] or 0)
+
+            return {
+                'overview': {
+                    'win_rate': win_rate,
+                    'realized_pnl': round(total_realized_pnl, 2),
+                    'total_fee': round(total_fee, 2),
+                },
+                'closed_stats': {
+                    'closed_count': closed_count,
+                    'winning_count': winning_count,
+                    'losing_count': losing_count,
+                },
+                'pnl_summary': {
+                    'net_pnl': round(net_pnl, 2),
+                    'long_pnl': round(long_pnl, 2),
+                    'short_pnl': round(short_pnl, 2),
+                },
+                'holding_time': {
+                    'total_hours': round(total_holding_hours, 4),
+                    'min_hours': round(min_holding_hours, 4),
+                    'max_hours': round(max_holding_hours, 4),
+                    'avg_hours': round(avg_holding_hours, 4),
                 },
             }
