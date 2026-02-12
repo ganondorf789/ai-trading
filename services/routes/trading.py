@@ -323,3 +323,72 @@ def get_ledger_updates(address: str):
     except Exception as e:
         logger.error(f"获取账本记录失败 [{address}]: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== Spot Holdings ====================
+
+@trading_bp.route('/api/trading/<address>/spot', methods=['GET'])
+@login_required
+def get_spot_holdings(address: str):
+    """获取指定地址的现货持仓
+    ---
+    tags:
+      - Trading
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 钱包地址
+    responses:
+      200:
+        description: 现货持仓数据
+      500:
+        description: 服务器错误
+    """
+    try:
+        info = _get_info()
+        spot_state = info.spot_user_state(address)
+
+        if not spot_state:
+            return jsonify({'success': True, 'data': [], 'count': 0})
+
+        balances = spot_state.get('balances', [])
+
+        # 获取所有中间价
+        all_mids = info.all_mids()
+
+        # 为每个 balance 添加 price 和 value
+        result = []
+        for b in balances:
+            coin = b.get('coin', '')
+            total = float(b.get('total', 0))
+            hold = float(b.get('hold', 0))
+
+            # USDC 价格固定为 1
+            if coin == 'USDC':
+                price = 1.0
+            else:
+                price = float(all_mids.get(coin, 0))
+
+            value = total * price
+
+            result.append({
+                **b,
+                'price': price,
+                'value': value,
+            })
+
+        # 计算总价值用于前端计算占比
+        total_value = sum(item['value'] for item in result)
+
+        return jsonify({
+            'success': True,
+            'data': result,
+            'total_value': total_value,
+            'count': len(result)
+        })
+
+    except Exception as e:
+        logger.error(f"获取现货持仓失败 [{address}]: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

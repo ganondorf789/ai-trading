@@ -85,7 +85,7 @@ interface CompletedTradesProps {
 
 export function CompletedTrades({ trades }: CompletedTradesProps) {
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
-    column: 'open_time',
+    column: 'close_time',
     direction: 'descending',
   });
 

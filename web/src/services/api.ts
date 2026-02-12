@@ -1180,6 +1180,10 @@ export const tradingApi = {
   // 获取账本记录（出入金等）
   getLedgerUpdates: (address: string, params?: { delta_type?: string }) =>
     api.get<any, ApiResponse<any>>(`/trading/${address}/ledger`, { params }),
+
+  // 获取现货持仓
+  getSpotHoldings: (address: string) =>
+    api.get<any, ApiResponse<any>>(`/trading/${address}/spot`),
 };
 
 export default api;

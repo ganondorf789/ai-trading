@@ -13,6 +13,8 @@ import { CompletedTrades } from './components/CompletedTrades';
 import { HistoricalOrders } from './components/HistoricalOrders';
 import { FundingHistory } from './components/FundingHistory';
 import { DepositsWithdrawals } from './components/DepositsWithdrawals';
+import { PerformanceByAsset } from './components/PerformanceByAsset';
+import { SpotHoldings } from './components/SpotHoldings';
 import type { PerpPosition } from './components/PerpPositions';
 import type { OpenOrderItem } from './components/OpenOrders';
 import type { TwapSliceFill } from './components/TwapSliceFills';
@@ -23,7 +25,7 @@ import type { LedgerItem } from './components/DepositsWithdrawals';
 
 // ==================== Tab 定义 ====================
 
-type TabKey = 'positions' | 'orders' | 'twap' | 'fills' | 'trades' | 'history' | 'funding' | 'ledger';
+type TabKey = 'positions' | 'orders' | 'twap' | 'fills' | 'trades' | 'history' | 'funding' | 'ledger' | 'performance' | 'spot';
 
 // ==================== 组件 ====================
 
@@ -142,6 +144,14 @@ export default function TraderDetailPage() {
     }
   }, [address]);
 
+  const loadSpotHoldings = useCallback(() => {
+    // SpotHoldings 组件自行管理数据加载
+  }, []);
+
+  const loadPerformanceByAsset = useCallback(() => {
+    // PerformanceByAsset 组件自行管理数据加载
+  }, []);
+
   // 切换 tab 时加载对应数据
   useEffect(() => {
     const loaders: Record<TabKey, () => void> = {
@@ -153,6 +163,8 @@ export default function TraderDetailPage() {
       history: loadHistoricalOrders,
       funding: loadFundingHistory,
       ledger: loadLedgerUpdates,
+      performance: loadPerformanceByAsset,
+      spot: loadSpotHoldings,
     };
     loaders[selectedTab]?.();
   }, [selectedTab, address]);
@@ -182,6 +194,8 @@ export default function TraderDetailPage() {
         <Tab key="history" title="Historical Orders" />
         <Tab key="funding" title="Funding History" />
         <Tab key="ledger" title="Deposits & Withdrawals" />
+        <Tab key="performance" title="Performance by Asset" />
+        <Tab key="spot" title="Spot Holdings" />
       </Tabs>
 
       {/* 内容区域 */}
@@ -199,6 +213,8 @@ export default function TraderDetailPage() {
           {selectedTab === 'history' && <HistoricalOrders orders={historicalOrders} />}
           {selectedTab === 'funding' && <FundingHistory records={fundingRecords} />}
           {selectedTab === 'ledger' && <DepositsWithdrawals records={ledgerRecords} />}
+          {selectedTab === 'performance' && address && <PerformanceByAsset address={address} />}
+          {selectedTab === 'spot' && address && <SpotHoldings address={address} />}
         </>
       )}
     </div>
