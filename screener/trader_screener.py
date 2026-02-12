@@ -30,7 +30,7 @@ from .api_client import SyncAPIClient, AsyncAPIClient, create_api_client
 from .metrics_calculator import MetricsCalculator, calculate_metrics
 from .scorer import TraderScorer, calculate_scores, get_rating_description
 from .incremental_fetcher import fetch_all_history_fills
-from .account_history_fetcher import fetch_all_funding_history, fetch_all_ledger_updates
+from .account_history_fetcher import fetch_all_funding_history, fetch_all_ledger_updates, fetch_all_historical_orders
 from .utils import (
     SHANGHAI_TZ,
     now_shanghai,
@@ -322,6 +322,20 @@ class TraderScreener:
                         logger.debug(f"已保存 {ledger_saved} 条出入金记录: {short_address(address)}")
                 except Exception as e:
                     logger.warning(f"获取/保存出入金记录失败 {short_address(address)}: {e}")
+
+            # 获取并保存历史委托记录
+            if self._db:
+                try:
+                    orders = fetch_all_historical_orders(
+                        self._api_client, address,
+                        max_retries=3,
+                        delay=self.config.api.api_call_delay
+                    )
+                    if orders:
+                        orders_saved = self._db.save_historical_orders(address, orders)
+                        logger.debug(f"已保存 {orders_saved} 条历史委托记录: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"获取/保存历史委托记录失败 {short_address(address)}: {e}")
 
             # 缓存结果
             self._analyzed_traders[address] = metrics
