@@ -11,6 +11,8 @@ import {
   Divider,
   Autocomplete,
   AutocompleteItem,
+  Select,
+  SelectItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { ImmediateCopyConfigRule, ImmediateCopyConfig, hyperliquidApi } from "@/services/api";
@@ -32,6 +34,7 @@ const defaultConfigData: Partial<ImmediateCopyConfig> = {
   default_leverage: 3,
   slippage: 0.001,
   copy_leverage: false,
+  margin_mode: 'cross',
   // 跟单行为
   copy_only_once: false,
   // 跟单条件
@@ -288,6 +291,18 @@ export default function ConfigRuleModal({
                 onValueChange={(v) => setConfigData({ ...configData, default_leverage: parseInt(v) || 3 })}
                 endContent={<span className="text-default-400 text-sm">x</span>}
               />
+              <Select
+                label="保证金模式"
+                selectedKeys={[configData.margin_mode || "cross"]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  if (value) setConfigData({ ...configData, margin_mode: value as 'cross' | 'isolated' });
+                }}
+                description="全仓共享保证金，逐仓独立保证金"
+              >
+                <SelectItem key="cross">全仓 (Cross)</SelectItem>
+                <SelectItem key="isolated">逐仓 (Isolated)</SelectItem>
+              </Select>
             </div>
           </div>
 

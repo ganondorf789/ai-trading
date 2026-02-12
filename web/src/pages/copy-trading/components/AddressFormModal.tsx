@@ -10,6 +10,8 @@ import {
   Switch,
   Chip,
   Divider,
+  Select,
+  SelectItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { CopyTradingAddress } from "@/services/api";
@@ -246,6 +248,18 @@ export default function AddressFormModal({
                   onValueChange={(v) => setFormData({ ...formData, max_leverage: parseInt(v) || 10 })}
                   endContent="x"
                 />
+                <Select
+                  label="保证金模式"
+                  selectedKeys={[formData.margin_mode || "cross"]}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0] as string;
+                    if (value) setFormData({ ...formData, margin_mode: value as 'cross' | 'isolated' });
+                  }}
+                  description="全仓共享保证金，逐仓独立保证金"
+                >
+                  <SelectItem key="cross">全仓 (Cross)</SelectItem>
+                  <SelectItem key="isolated">逐仓 (Isolated)</SelectItem>
+                </Select>
               </div>
             </div>
 

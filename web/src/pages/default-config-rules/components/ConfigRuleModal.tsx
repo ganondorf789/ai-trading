@@ -10,6 +10,8 @@ import {
   Switch,
   Chip,
   Divider,
+  Select,
+  SelectItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { DefaultCopyConfigRule, DefaultCopyTradingConfig, hyperliquidApi } from "@/services/api";
@@ -30,6 +32,7 @@ const defaultConfigData: Partial<DefaultCopyTradingConfig> = {
   default_leverage: 3,
   slippage: 0.001,
   copy_leverage: false,
+  margin_mode: 'cross',
   symbols_whitelist: [],
   symbols_blacklist: [],
   auto_replenish: false,
@@ -347,6 +350,18 @@ export default function ConfigRuleModal({
                 onValueChange={(v) => setConfigData({ ...configData, default_leverage: parseInt(v) || 3 })}
                 endContent={<span className="text-default-400 text-sm">x</span>}
               />
+              <Select
+                label="保证金模式"
+                selectedKeys={[configData.margin_mode || "cross"]}
+                onSelectionChange={(keys) => {
+                  const value = Array.from(keys)[0] as string;
+                  if (value) setConfigData({ ...configData, margin_mode: value as 'cross' | 'isolated' });
+                }}
+                description="全仓共享保证金，逐仓独立保证金"
+              >
+                <SelectItem key="cross">全仓 (Cross)</SelectItem>
+                <SelectItem key="isolated">逐仓 (Isolated)</SelectItem>
+              </Select>
             </div>
           </div>
 

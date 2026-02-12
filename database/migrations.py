@@ -256,6 +256,9 @@ class DatabaseMigrations:
                     
                     -- 只跟一次
                     copy_once BOOLEAN DEFAULT FALSE,
+                    
+                    -- 保证金模式: cross(全仓) / isolated(逐仓)
+                    margin_mode TEXT DEFAULT 'cross',
 
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1077,6 +1080,11 @@ class DatabaseMigrations:
         # 为 detected_new_positions 表添加 is_whale 字段
         self._migrate_add_column_if_not_exists(
             cursor, 'detected_new_positions', 'is_whale', 'BOOLEAN DEFAULT FALSE'
+        )
+
+        # 为 copy_trading_addresses 表添加 margin_mode 字段（全仓/逐仓）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'margin_mode', "TEXT DEFAULT 'cross'"
         )
 
     def _migrate_remove_groups(self, cursor):

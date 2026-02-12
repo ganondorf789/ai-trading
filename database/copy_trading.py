@@ -197,8 +197,9 @@ class CopyTradingOps:
                     check_interval, dry_run,
                     copy_once,
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
+                    margin_mode,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -220,6 +221,7 @@ class CopyTradingOps:
                     replenish_ratio = EXCLUDED.replenish_ratio,
                     replenish_min_value_usd = EXCLUDED.replenish_min_value_usd,
                     replenish_max_value_usd = EXCLUDED.replenish_max_value_usd,
+                    margin_mode = EXCLUDED.margin_mode,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
@@ -246,6 +248,7 @@ class CopyTradingOps:
                 data.get('replenish_ratio', 0.5),
                 data.get('replenish_min_value_usd', 10.0),
                 data.get('replenish_max_value_usd', 100.0),
+                data.get('margin_mode', 'cross'),
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
@@ -433,6 +436,7 @@ class CopyTradingOps:
             'replenish_ratio': 0.5,
             'replenish_min_value_usd': 10.0,
             'replenish_max_value_usd': 100.0,
+            'margin_mode': 'cross',
         }
         
         try:
@@ -509,6 +513,8 @@ class CopyTradingOps:
             'symbols_blacklist': [],
             'min_position_value_usd': 0,  # 目标仓位最小价值
             'max_position_value_usd': 0,  # 0表示不限制
+            # 保证金模式
+            'margin_mode': 'cross',  # cross(全仓) / isolated(逐仓)
         }
         
         try:

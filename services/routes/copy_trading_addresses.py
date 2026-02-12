@@ -315,6 +315,7 @@ def quick_add_copy_trading_address():
             'replenish_min_value_usd': default_config.get('replenish_min_value_usd', 10),
             'replenish_max_value_usd': default_config.get('replenish_max_value_usd', 100),
             'dry_run': default_config.get('dry_run', False),
+            'margin_mode': default_config.get('margin_mode', 'cross'),
         }
         
         record_id = db.save_copy_trading_address(user_id, new_address_data)
