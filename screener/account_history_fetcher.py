@@ -19,8 +19,9 @@ from .utils import SHANGHAI_TZ, now_shanghai
 if TYPE_CHECKING:
     from .api_client import SyncAPIClient
 
-# 每次 API 返回的上限（资金费 / 账本更新）
-PAGE_LIMIT = 2000
+# 每次 API 返回的上限
+PAGE_LIMIT_FUNDING = 2000   # userFunding / userNonFundingLedgerUpdates
+PAGE_LIMIT_ORDERS = 2000   # historicalOrders
 
 
 # ============================================================
@@ -35,11 +36,12 @@ def _fetch_paged_for_period(
     auto_split: bool = True,
     delay: float = 0.0,
     label: str = "数据",
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """
     获取指定时间段的分页数据（通用框架）
 
-    如果单次请求达到 PAGE_LIMIT 上限，会自动分割时间段：
+    如果单次请求达到 page_limit 上限，会自动分割时间段：
     月 → 周 → 天 → 小时
 
     Args:
@@ -50,6 +52,7 @@ def _fetch_paged_for_period(
         auto_split: 如果达到上限，是否自动细分
         delay: API 调用延迟（秒）
         label: 日志标签
+        page_limit: API 单次返回上限
 
     Returns:
         记录列表
@@ -67,17 +70,17 @@ def _fetch_paged_for_period(
         return []
 
     # 如果达到上限且允许自动细分
-    if auto_split and len(records) >= PAGE_LIMIT:
+    if auto_split and len(records) >= page_limit:
         duration_days = (end_dt - start_dt).days
         if duration_days > 7:
-            logger.debug(f"  {label}达到 {PAGE_LIMIT} 条上限，按周细分...")
-            return _fetch_paged_by_weeks(api_func, address, start_dt, end_dt, delay, label)
+            logger.debug(f"  {label}达到 {page_limit} 条上限，按周细分...")
+            return _fetch_paged_by_weeks(api_func, address, start_dt, end_dt, delay, label, page_limit)
         elif duration_days > 1:
-            logger.debug(f"  {label}达到 {PAGE_LIMIT} 条上限，按天细分...")
-            return _fetch_paged_by_days(api_func, address, start_dt, end_dt, delay, label)
+            logger.debug(f"  {label}达到 {page_limit} 条上限，按天细分...")
+            return _fetch_paged_by_days(api_func, address, start_dt, end_dt, delay, label, page_limit)
         else:
-            logger.debug(f"  {label}达到 {PAGE_LIMIT} 条上限，按小时细分...")
-            return _fetch_paged_by_hours(api_func, address, start_dt, end_dt, delay, label)
+            logger.debug(f"  {label}达到 {page_limit} 条上限，按小时细分...")
+            return _fetch_paged_by_hours(api_func, address, start_dt, end_dt, delay, label, page_limit)
 
     return records
 
@@ -89,6 +92,7 @@ def _fetch_paged_by_weeks(
     end_dt: pendulum.DateTime,
     delay: float = 0.0,
     label: str = "数据",
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """按周获取分页数据"""
     all_records = []
@@ -109,9 +113,9 @@ def _fetch_paged_by_weeks(
             continue
 
         if week_records:
-            if len(week_records) >= PAGE_LIMIT:
-                logger.debug(f"    周 [{current.format('MM-DD')}] 达到 {PAGE_LIMIT} 条，按天细分...")
-                day_records = _fetch_paged_by_days(api_func, address, current, next_week, delay, label)
+            if len(week_records) >= page_limit:
+                logger.debug(f"    周 [{current.format('MM-DD')}] 达到 {page_limit} 条，按天细分...")
+                day_records = _fetch_paged_by_days(api_func, address, current, next_week, delay, label, page_limit)
                 all_records.extend(day_records)
             else:
                 all_records.extend(week_records)
@@ -130,6 +134,7 @@ def _fetch_paged_by_days(
     end_dt: pendulum.DateTime,
     delay: float = 0.0,
     label: str = "数据",
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """按天获取分页数据"""
     all_records = []
@@ -150,9 +155,9 @@ def _fetch_paged_by_days(
             continue
 
         if day_records:
-            if len(day_records) >= PAGE_LIMIT:
-                logger.debug(f"      天 [{current.format('MM-DD')}] 达到 {PAGE_LIMIT} 条，按小时细分...")
-                hour_records = _fetch_paged_by_hours(api_func, address, current, next_day, delay, label)
+            if len(day_records) >= page_limit:
+                logger.debug(f"      天 [{current.format('MM-DD')}] 达到 {page_limit} 条，按小时细分...")
+                hour_records = _fetch_paged_by_hours(api_func, address, current, next_day, delay, label, page_limit)
                 all_records.extend(hour_records)
             else:
                 all_records.extend(day_records)
@@ -171,6 +176,7 @@ def _fetch_paged_by_hours(
     end_dt: pendulum.DateTime,
     delay: float = 0.0,
     label: str = "数据",
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """按小时获取分页数据"""
     all_records = []
@@ -194,11 +200,11 @@ def _fetch_paged_by_hours(
             continue
 
         if hour_records:
-            if len(hour_records) >= PAGE_LIMIT:
+            if len(hour_records) >= page_limit:
                 # 小时级别还达到上限，用游标分页
-                logger.debug(f"        小时 [{current.format('HH:00')}] 达到 {PAGE_LIMIT} 条，使用游标分页...")
+                logger.debug(f"        小时 [{current.format('HH:00')}] 达到 {page_limit} 条，使用游标分页...")
                 cursor_records = _fetch_paged_by_cursor(
-                    api_func, address, current, next_hour, delay, label
+                    api_func, address, current, next_hour, delay, label, page_limit
                 )
                 all_records.extend(cursor_records)
             else:
@@ -224,6 +230,7 @@ def _fetch_paged_by_cursor(
     end_dt: pendulum.DateTime,
     delay: float = 0.0,
     label: str = "数据",
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """
     使用游标分页获取数据（当时间细分仍达到上限时的兜底策略）
@@ -248,8 +255,8 @@ def _fetch_paged_by_cursor(
 
         all_records.extend(records)
 
-        # 如果返回数量 < PAGE_LIMIT，说明已经获取完毕
-        if len(records) < PAGE_LIMIT:
+        # 如果返回数量 < page_limit，说明已经获取完毕
+        if len(records) < page_limit:
             break
 
         # 使用最后一条记录的时间戳作为下一次查询的起始时间
@@ -279,14 +286,15 @@ def _probe_records(
     address: str,
     start_dt: pendulum.DateTime,
     end_dt: pendulum.DateTime,
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> Tuple[List[Dict], bool]:
     """
     快速探测是否有记录
 
     用一次 API 调用查询全量时间范围：
     - 0 条记录：无历史
-    - 1-499 条：已获取全部
-    - 500 条：记录可能不完整，需要进一步获取
+    - < page_limit 条：已获取全部
+    - >= page_limit 条：记录可能不完整，需要进一步获取
 
     Returns:
         (records, is_complete)
@@ -299,7 +307,7 @@ def _probe_records(
     if not records:
         return [], True
 
-    is_complete = len(records) < PAGE_LIMIT
+    is_complete = len(records) < page_limit
     return records, is_complete
 
 
@@ -398,6 +406,7 @@ def fetch_all_funding_history(
         delay=delay,
         label=label,
         dedup_key_func=lambda r: (r.get('hash', ''), r.get('time', 0)),
+        page_limit=PAGE_LIMIT_FUNDING,
     )
 
 
@@ -444,6 +453,7 @@ def fetch_all_ledger_updates(
         delay=delay,
         label=label,
         dedup_key_func=lambda r: (r.get('hash', ''), r.get('time', 0)),
+        page_limit=PAGE_LIMIT_FUNDING,
     )
 
 
@@ -509,6 +519,7 @@ def _fetch_all_history_generic(
     delay: float,
     label: str,
     dedup_key_func: Callable,
+    page_limit: int = PAGE_LIMIT_FUNDING,
 ) -> List[Dict]:
     """
     通用的从前往后获取历史数据框架（优化版）
@@ -517,8 +528,8 @@ def _fetch_all_history_generic(
     1. 如果有 start_dt（增量更新），从该时间开始按月获取
     2. 如果无 start_dt（首次获取），先探测全量范围：
        - 0 条 → 直接返回空
-       - < PAGE_LIMIT 条 → 已获取全部
-       - = PAGE_LIMIT 条 → 半年分块定位，按月获取
+       - < page_limit 条 → 已获取全部
+       - = page_limit 条 → 半年分块定位，按月获取
 
     Args:
         api_func: API 调用函数 (address, start_ms, end_ms) -> List[Dict]
@@ -530,6 +541,7 @@ def _fetch_all_history_generic(
         delay: API 调用延迟
         label: 日志标签
         dedup_key_func: 去重键提取函数
+        page_limit: API 单次返回上限
 
     Returns:
         记录列表（已去重）
@@ -557,7 +569,7 @@ def _fetch_all_history_generic(
         for retry in range(max_retries):
             try:
                 probe_records, is_complete = _probe_records(
-                    api_func, address, default_start, end
+                    api_func, address, default_start, end, page_limit
                 )
                 break
             except Exception as e:
@@ -575,13 +587,13 @@ def _fetch_all_history_generic(
             logger.debug(f"  无{label}记录，跳过")
             return []
 
-        # 情况2：< PAGE_LIMIT 条，已获取全部
+        # 情况2：< page_limit 条，已获取全部
         if is_complete:
-            logger.debug(f"  {label}获取完成: 共 {len(probe_records)} 条（< {PAGE_LIMIT}，已全部获取）")
+            logger.debug(f"  {label}获取完成: 共 {len(probe_records)} 条（< {page_limit}，已全部获取）")
             return probe_records
 
-        # 情况3：= PAGE_LIMIT 条，需要进一步获取
-        logger.debug(f"  {label}探测返回 {PAGE_LIMIT} 条，使用半年分块定位起始时间...")
+        # 情况3：= page_limit 条，需要进一步获取
+        logger.debug(f"  {label}探测返回 {page_limit} 条，使用半年分块定位起始时间...")
         if delay > 0:
             time.sleep(delay)
 
@@ -624,7 +636,8 @@ def _fetch_all_history_generic(
             try:
                 month_records = _fetch_paged_for_period(
                     api_func, address, actual_start, actual_end,
-                    auto_split=True, delay=delay, label=label
+                    auto_split=True, delay=delay, label=label,
+                    page_limit=page_limit
                 )
                 success = True
                 break

@@ -154,7 +154,6 @@ class MetricsCalculator:
             # 采样降级
             if self._large_data_config.sampling_enabled:
                 target_count = int(original_fills_count * self._large_data_config.sampling_ratio)
-                target_count = max(target_count, 10000)  # 至少保留 10000 条
                 fills = self._sample_fills(fills, target_count)
                 logger.info(f"采样降级: {original_fills_count} -> {len(fills)} 条 fills")
         elif original_fills_count > self._large_data_config.warning_threshold:
