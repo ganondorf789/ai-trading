@@ -80,7 +80,7 @@ class PositionHistoryOps:
             """, (
                 address,
                 last_processed_fill_time,
-                json.dumps(open_positions_snapshot),
+                json.dumps(open_positions_snapshot, default=str),
                 total_fills_processed,
                 total_positions_generated,
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
@@ -101,19 +101,18 @@ class PositionHistoryOps:
         self,
         address: str,
         coin: str = None
-    ) -> Tuple[List[Dict[str, Any]], int, Dict]:
+    ) -> Tuple[List[Dict[str, Any]], int]:
         """
         增量计算仓位历史
-
+        
         只处理上次计算后新增的 fills，大幅减少计算量。
-        注意：不再自动保存计算状态，由调用方决定何时保存。
-
+        
         Args:
             address: 交易者地址
             coin: 可选，只计算特定币种
-
+        
         Returns:
-            (新产生的已平仓位列表, 处理的 fills 数量, 待保存的计算状态)
+            (新产生的已平仓位列表, 处理的 fills 数量)
         """
         # 获取上次计算状态
         calc_state = self.get_position_calc_state(address)
@@ -275,41 +274,32 @@ class PositionHistoryOps:
                     total_positions_generated += 1
                     del positions_by_coin[fill_coin]
 
-        # 返回计算状态，由调用方在确认保存成功后再持久化
-        calc_state_to_save = {
-            'last_processed_fill_time': new_last_processed_time,
-            'open_positions_snapshot': positions_by_coin,
-            'total_fills_processed': total_fills_processed,
-            'total_positions_generated': total_positions_generated
-        }
+        # 保存计算状态
+        self.save_position_calc_state(
+            address=address,
+            last_processed_fill_time=new_last_processed_time,
+            open_positions_snapshot=positions_by_coin,
+            total_fills_processed=total_fills_processed,
+            total_positions_generated=total_positions_generated
+        )
 
-        return new_closed_positions, len(fills), calc_state_to_save
+        return new_closed_positions, len(fills)
 
     def rebuild_position_history_incremental(self, address: str) -> int:
         """
         增量重建交易员的仓位历史
-
+        
         只处理新增的 fills，大幅提升性能。
-        计算状态仅在成功保存仓位后才持久化，避免状态与数据不一致。
-
+        
         Args:
             address: 交易者地址
-
+        
         Returns:
             新保存的记录数
         """
-        new_positions, fills_processed, calc_state = self.calculate_position_history_incremental(address)
-
+        new_positions, fills_processed = self.calculate_position_history_incremental(address)
+        
         if not new_positions:
-            # 即使没有新的已平仓位，也保存计算状态（记录未平仓快照和处理进度）
-            if fills_processed > 0:
-                self.save_position_calc_state(
-                    address=address,
-                    last_processed_fill_time=calc_state['last_processed_fill_time'],
-                    open_positions_snapshot=calc_state['open_positions_snapshot'],
-                    total_fills_processed=calc_state['total_fills_processed'],
-                    total_positions_generated=calc_state['total_positions_generated']
-                )
             logger.debug(f"增量计算: {address} 无新仓位记录, 处理 {fills_processed} 条 fills")
             return 0
 
@@ -347,15 +337,6 @@ class PositionHistoryOps:
                     saved_count += 1
                 except Exception as e:
                     logger.debug(f"保存仓位历史失败: {e}")
-
-        # 仅在成功保存仓位后才持久化计算状态
-        self.save_position_calc_state(
-            address=address,
-            last_processed_fill_time=calc_state['last_processed_fill_time'],
-            open_positions_snapshot=calc_state['open_positions_snapshot'],
-            total_fills_processed=calc_state['total_fills_processed'],
-            total_positions_generated=calc_state['total_positions_generated']
-        )
 
         logger.info(f"增量重建仓位历史: {address}, 处理 {fills_processed} 条 fills, 新增 {saved_count} 条仓位记录")
         return saved_count
@@ -575,13 +556,6 @@ class PositionHistoryOps:
         """
         # 默认使用增量计算
         if not force_full:
-            # 安全检查：如果 calc_state 存在但 position_history 为空，
-            # 说明上次计算状态保存成功但仓位数据未写入，需要清除状态重新计算
-            calc_state = self.get_position_calc_state(address)
-            if calc_state and calc_state.get('total_positions_generated', 0) > 0:
-                if not self.has_position_history(address):
-                    logger.warning(f"检测到状态不一致: {address} 有计算状态但无仓位历史，清除状态重新计算")
-                    self.delete_position_calc_state(address)
             return self.rebuild_position_history_incremental(address)
         
         # 全量重建：先删除计算状态
