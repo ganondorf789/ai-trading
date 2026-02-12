@@ -114,8 +114,7 @@ def analyze_single_trader_sync(
         logger.debug(f"[{short_addr}] 开始分析...")
         
         # 创建独立的 screener 和数据库连接，传入 worker_index 以分配固定代理
-        # skip_position_history=True: 批量分析时跳过耗时的历史仓位重建
-        screener = TraderScreener(config, cache_fills=False, worker_index=worker_index, skip_position_history=True)
+        screener = TraderScreener(config, cache_fills=False, worker_index=worker_index)
         db = TraderDatabase()
         
         logger.debug(f"[{short_addr}] 初始化完成，耗时 {time.time() - start_time:.1f}s")

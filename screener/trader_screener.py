@@ -30,6 +30,7 @@ from .api_client import SyncAPIClient, AsyncAPIClient, create_api_client
 from .metrics_calculator import MetricsCalculator, calculate_metrics
 from .scorer import TraderScorer, calculate_scores, get_rating_description
 from .incremental_fetcher import fetch_all_history_fills
+from .account_history_fetcher import fetch_all_funding_history, fetch_all_ledger_updates
 from .utils import (
     SHANGHAI_TZ,
     now_shanghai,
@@ -83,19 +84,16 @@ class TraderScreener:
         self,
         config: Optional[ScreenerConfig] = None,
         cache_fills: bool = True,
-        worker_index: Optional[int] = None,
-        skip_position_history: bool = False
+        worker_index: Optional[int] = None
     ):
         """
         初始化筛选器
-        
+
         Args:
             config: 筛选器配置
             cache_fills: 是否缓存 fills 数据（批量处理时建议设为 False 以节省内存）
             worker_index: worker 索引，用于分配固定代理（None 则随机选择）
-            skip_position_history: 是否跳过重建历史仓位（批量处理时建议设为 True 以提高性能）
         """
-        self._skip_position_history = skip_position_history
         self.config = config or ScreenerConfig()
         
         # 初始化组件
@@ -276,15 +274,55 @@ class TraderScreener:
                 except Exception as e:
                     logger.warning(f"保存持仓到数据库失败 {short_address(address)}: {e}")
             
-            # 重建历史仓位记录（批量处理时可跳过以提高性能）
+            # 重建历史仓位记录
             # 使用增量计算而不是全量重建
-            if self._db and not self._skip_position_history:
+            if self._db:
                 try:
                     history_count = self._db.rebuild_position_history(address)
                     logger.debug(f"已重建 {history_count} 条历史仓位记录: {short_address(address)}")
                 except Exception as e:
                     logger.warning(f"重建历史仓位记录失败 {short_address(address)}: {e}")
-            
+
+            # 获取并保存资金费历史
+            if self._db:
+                try:
+                    latest_funding = self._db.get_latest_funding_record(address)
+                    funding_start_dt = None
+                    if latest_funding:
+                        funding_start_dt = timestamp_to_pendulum(latest_funding['time'])
+
+                    funding_records = fetch_all_funding_history(
+                        self._api_client, address,
+                        start_dt=funding_start_dt,
+                        max_retries=3,
+                        delay=self.config.api.api_call_delay
+                    )
+                    if funding_records:
+                        funding_saved = self._db.save_funding_records(address, funding_records)
+                        logger.debug(f"已保存 {funding_saved} 条资金费记录: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"获取/保存资金费历史失败 {short_address(address)}: {e}")
+
+            # 获取并保存出入金（账本更新）记录
+            if self._db:
+                try:
+                    latest_ledger = self._db.get_latest_ledger_record(address)
+                    ledger_start_dt = None
+                    if latest_ledger:
+                        ledger_start_dt = timestamp_to_pendulum(latest_ledger['time'])
+
+                    ledger_records = fetch_all_ledger_updates(
+                        self._api_client, address,
+                        start_dt=ledger_start_dt,
+                        max_retries=3,
+                        delay=self.config.api.api_call_delay
+                    )
+                    if ledger_records:
+                        ledger_saved = self._db.save_ledger_records(address, ledger_records)
+                        logger.debug(f"已保存 {ledger_saved} 条出入金记录: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"获取/保存出入金记录失败 {short_address(address)}: {e}")
+
             # 缓存结果
             self._analyzed_traders[address] = metrics
             
