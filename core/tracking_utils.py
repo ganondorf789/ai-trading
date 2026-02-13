@@ -73,6 +73,11 @@ def build_tracking_data(
         'status': status,
         # 仓位模式
         'position_mode': config.get('position_mode', 'cross'),
+        # 止盈止损
+        'take_profit_enabled': config.get('take_profit_enabled', False),
+        'take_profit_percent': config.get('take_profit_percent', 50),
+        'stop_loss_enabled': config.get('stop_loss_enabled', False),
+        'stop_loss_percent': config.get('stop_loss_percent', 20),
     }
     
     # 如果提供了目标仓位信息，添加快照
@@ -126,6 +131,10 @@ def build_tracking_data_from_dataclass(
         'replenish_min_value_usd': getattr(config_obj, 'replenish_min_value_usd', 10.0),
         'replenish_max_value_usd': getattr(config_obj, 'replenish_max_value_usd', 100.0),
         'position_mode': getattr(config_obj, 'position_mode', 'cross'),
+        'take_profit_enabled': getattr(config_obj, 'take_profit_enabled', False),
+        'take_profit_percent': getattr(config_obj, 'take_profit_percent', 50),
+        'stop_loss_enabled': getattr(config_obj, 'stop_loss_enabled', False),
+        'stop_loss_percent': getattr(config_obj, 'stop_loss_percent', 20),
     }
     
     target_name = getattr(config_obj, 'name', '') or target_address[:10] + '...'

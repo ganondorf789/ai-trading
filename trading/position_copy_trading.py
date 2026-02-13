@@ -100,6 +100,12 @@ class TrackingState:
     # 仓位模式
     position_mode: str = 'cross'  # 仓位模式: cross(全仓) / isolated(逐仓)
 
+    # 止盈止损
+    take_profit_enabled: bool = False  # 是否启用止盈
+    take_profit_percent: float = 50.0  # 止盈百分比
+    stop_loss_enabled: bool = False    # 是否启用止损
+    stop_loss_percent: float = 20.0    # 止损百分比
+
 
 @dataclass
 class AddressTrackingConfig:
@@ -1089,6 +1095,10 @@ class PositionCopyTradingBot:
             target_score=data.get('target_score'),
             target_rating=data.get('target_rating'),
             position_mode=data.get('position_mode', 'cross'),
+            take_profit_enabled=data.get('take_profit_enabled', False),
+            take_profit_percent=data.get('take_profit_percent', 50.0),
+            stop_loss_enabled=data.get('stop_loss_enabled', False),
+            stop_loss_percent=data.get('stop_loss_percent', 20.0),
         )
 
     def reload_configs(self):
@@ -2202,7 +2212,23 @@ class PositionCopyTradingBot:
                 state.status = 'closed'
                 self.db.update_tracking_status(state.tracking_id, 'closed', '本地仓位已不存在')
                 return
-            
+
+            # 止盈止损检查（基于 PnL 百分比）
+            if state.take_profit_enabled or state.stop_loss_enabled:
+                pnl_pct = my_pos.pnl_percent * 100  # 转换为百分比
+                if state.take_profit_enabled and pnl_pct >= state.take_profit_percent:
+                    logger.info(
+                        f"[{state.tracking_id}] 触发止盈: {symbol} PnL {pnl_pct:.2f}% >= {state.take_profit_percent}%"
+                    )
+                    await self._close_position(state, f"止盈平仓 (PnL {pnl_pct:.2f}%)")
+                    return
+                if state.stop_loss_enabled and pnl_pct <= -state.stop_loss_percent:
+                    logger.info(
+                        f"[{state.tracking_id}] 触发止损: {symbol} PnL {pnl_pct:.2f}% <= -{state.stop_loss_percent}%"
+                    )
+                    await self._close_position(state, f"止损平仓 (PnL {pnl_pct:.2f}%)")
+                    return
+
             if target_pos is None:
                 # 目标已平仓，我们也平仓
                 logger.info(f"[{state.tracking_id}] 目标已平仓 {symbol}，执行平仓")

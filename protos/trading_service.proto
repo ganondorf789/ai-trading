@@ -130,6 +130,12 @@ message SavePositionTrackingRequest {
 
     // 仓位模式
     optional string position_mode = 36;  // 仓位模式: cross(全仓) / isolated(逐仓)
+
+    // 止盈止损
+    optional bool take_profit_enabled = 37;    // 是否启用止盈
+    optional double take_profit_percent = 38;  // 止盈百分比
+    optional bool stop_loss_enabled = 39;      // 是否启用止损
+    optional double stop_loss_percent = 40;    // 止损百分比
 }
 
 message PositionTrackingResponse {
@@ -199,6 +205,12 @@ message PositionTracking {
 
     // 仓位模式
     string position_mode = 40;  // 仓位模式: cross(全仓) / isolated(逐仓)
+
+    // 止盈止损
+    bool take_profit_enabled = 41;     // 是否启用止盈
+    double take_profit_percent = 42;   // 止盈百分比
+    bool stop_loss_enabled = 43;       // 是否启用止损
+    double stop_loss_percent = 44;     // 止损百分比
 }
 
 message SavePositionTrackingResponse {

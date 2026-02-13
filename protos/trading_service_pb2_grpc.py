@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from protos import trading_service_pb2 as protos_dot_trading__service__pb2
+import trading_service_pb2 as trading__service__pb2
 
 GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in protos/trading_service_pb2_grpc.py depends on'
+        + ' but the generated code in trading_service_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -40,8 +40,8 @@ class AuthServiceStub(object):
         """
         self.VerifyApiKey = channel.unary_unary(
                 '/trading.AuthService/VerifyApiKey',
-                request_serializer=protos_dot_trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.VerifyApiKeyResponse.FromString,
+                request_serializer=trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.VerifyApiKeyResponse.FromString,
                 _registered_method=True)
 
 
@@ -64,8 +64,8 @@ def add_AuthServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'VerifyApiKey': grpc.unary_unary_rpc_method_handler(
                     servicer.VerifyApiKey,
-                    request_deserializer=protos_dot_trading__service__pb2.VerifyApiKeyRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.VerifyApiKeyResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.VerifyApiKeyRequest.FromString,
+                    response_serializer=trading__service__pb2.VerifyApiKeyResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -97,8 +97,8 @@ class AuthService(object):
             request,
             target,
             '/trading.AuthService/VerifyApiKey',
-            protos_dot_trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
-            protos_dot_trading__service__pb2.VerifyApiKeyResponse.FromString,
+            trading__service__pb2.VerifyApiKeyRequest.SerializeToString,
+            trading__service__pb2.VerifyApiKeyResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -125,53 +125,53 @@ class DatabaseServiceStub(object):
         """
         self.GetPositionTracking = channel.unary_unary(
                 '/trading.DatabaseService/GetPositionTracking',
-                request_serializer=protos_dot_trading__service__pb2.GetPositionTrackingRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.PositionTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.GetPositionTrackingRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.PositionTrackingResponse.FromString,
                 _registered_method=True)
         self.GetActivePositionTrackings = channel.unary_unary(
                 '/trading.DatabaseService/GetActivePositionTrackings',
-                request_serializer=protos_dot_trading__service__pb2.GetActivePositionTrackingsRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.PositionTrackingListResponse.FromString,
+                request_serializer=trading__service__pb2.GetActivePositionTrackingsRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.PositionTrackingListResponse.FromString,
                 _registered_method=True)
         self.SavePositionTracking = channel.unary_unary(
                 '/trading.DatabaseService/SavePositionTracking',
-                request_serializer=protos_dot_trading__service__pb2.SavePositionTrackingRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.SavePositionTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.SavePositionTrackingRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.SavePositionTrackingResponse.FromString,
                 _registered_method=True)
         self.UpdateTrackingStatus = channel.unary_unary(
                 '/trading.DatabaseService/UpdateTrackingStatus',
-                request_serializer=protos_dot_trading__service__pb2.UpdateTrackingStatusRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.UpdateTrackingStatusRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
                 _registered_method=True)
         self.UpdateTrackingPosition = channel.unary_unary(
                 '/trading.DatabaseService/UpdateTrackingPosition',
-                request_serializer=protos_dot_trading__service__pb2.UpdateTrackingPositionRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.UpdateTrackingPositionRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
                 _registered_method=True)
         self.GetEnabledCopyAddresses = channel.unary_unary(
                 '/trading.DatabaseService/GetEnabledCopyAddresses',
-                request_serializer=protos_dot_trading__service__pb2.GetEnabledCopyAddressesRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.CopyAddressListResponse.FromString,
+                request_serializer=trading__service__pb2.GetEnabledCopyAddressesRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.CopyAddressListResponse.FromString,
                 _registered_method=True)
         self.CheckPositionTrackingExists = channel.unary_unary(
                 '/trading.DatabaseService/CheckPositionTrackingExists',
-                request_serializer=protos_dot_trading__service__pb2.CheckPositionTrackingExistsRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.CheckPositionTrackingExistsResponse.FromString,
+                request_serializer=trading__service__pb2.CheckPositionTrackingExistsRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.CheckPositionTrackingExistsResponse.FromString,
                 _registered_method=True)
         self.ToggleCopyTradingAddress = channel.unary_unary(
                 '/trading.DatabaseService/ToggleCopyTradingAddress',
-                request_serializer=protos_dot_trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
                 _registered_method=True)
         self.GetEnabledAddressTrackings = channel.unary_unary(
                 '/trading.DatabaseService/GetEnabledAddressTrackings',
-                request_serializer=protos_dot_trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.AddressTrackingListResponse.FromString,
+                request_serializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.AddressTrackingListResponse.FromString,
                 _registered_method=True)
         self.ToggleConfigRule = channel.unary_unary(
                 '/trading.DatabaseService/ToggleConfigRule',
-                request_serializer=protos_dot_trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+                request_serializer=trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.UpdateTrackingResponse.FromString,
                 _registered_method=True)
 
 
@@ -257,53 +257,53 @@ def add_DatabaseServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetPositionTracking': grpc.unary_unary_rpc_method_handler(
                     servicer.GetPositionTracking,
-                    request_deserializer=protos_dot_trading__service__pb2.GetPositionTrackingRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.PositionTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.GetPositionTrackingRequest.FromString,
+                    response_serializer=trading__service__pb2.PositionTrackingResponse.SerializeToString,
             ),
             'GetActivePositionTrackings': grpc.unary_unary_rpc_method_handler(
                     servicer.GetActivePositionTrackings,
-                    request_deserializer=protos_dot_trading__service__pb2.GetActivePositionTrackingsRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.PositionTrackingListResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.GetActivePositionTrackingsRequest.FromString,
+                    response_serializer=trading__service__pb2.PositionTrackingListResponse.SerializeToString,
             ),
             'SavePositionTracking': grpc.unary_unary_rpc_method_handler(
                     servicer.SavePositionTracking,
-                    request_deserializer=protos_dot_trading__service__pb2.SavePositionTrackingRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.SavePositionTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.SavePositionTrackingRequest.FromString,
+                    response_serializer=trading__service__pb2.SavePositionTrackingResponse.SerializeToString,
             ),
             'UpdateTrackingStatus': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateTrackingStatus,
-                    request_deserializer=protos_dot_trading__service__pb2.UpdateTrackingStatusRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.UpdateTrackingStatusRequest.FromString,
+                    response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
             ),
             'UpdateTrackingPosition': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateTrackingPosition,
-                    request_deserializer=protos_dot_trading__service__pb2.UpdateTrackingPositionRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.UpdateTrackingPositionRequest.FromString,
+                    response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
             ),
             'GetEnabledCopyAddresses': grpc.unary_unary_rpc_method_handler(
                     servicer.GetEnabledCopyAddresses,
-                    request_deserializer=protos_dot_trading__service__pb2.GetEnabledCopyAddressesRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.CopyAddressListResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.GetEnabledCopyAddressesRequest.FromString,
+                    response_serializer=trading__service__pb2.CopyAddressListResponse.SerializeToString,
             ),
             'CheckPositionTrackingExists': grpc.unary_unary_rpc_method_handler(
                     servicer.CheckPositionTrackingExists,
-                    request_deserializer=protos_dot_trading__service__pb2.CheckPositionTrackingExistsRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.CheckPositionTrackingExistsResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.CheckPositionTrackingExistsRequest.FromString,
+                    response_serializer=trading__service__pb2.CheckPositionTrackingExistsResponse.SerializeToString,
             ),
             'ToggleCopyTradingAddress': grpc.unary_unary_rpc_method_handler(
                     servicer.ToggleCopyTradingAddress,
-                    request_deserializer=protos_dot_trading__service__pb2.ToggleCopyTradingAddressRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.ToggleCopyTradingAddressRequest.FromString,
+                    response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
             ),
             'GetEnabledAddressTrackings': grpc.unary_unary_rpc_method_handler(
                     servicer.GetEnabledAddressTrackings,
-                    request_deserializer=protos_dot_trading__service__pb2.GetEnabledAddressTrackingsRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.AddressTrackingListResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.GetEnabledAddressTrackingsRequest.FromString,
+                    response_serializer=trading__service__pb2.AddressTrackingListResponse.SerializeToString,
             ),
             'ToggleConfigRule': grpc.unary_unary_rpc_method_handler(
                     servicer.ToggleConfigRule,
-                    request_deserializer=protos_dot_trading__service__pb2.ToggleConfigRuleRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.UpdateTrackingResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.ToggleConfigRuleRequest.FromString,
+                    response_serializer=trading__service__pb2.UpdateTrackingResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -335,8 +335,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/GetPositionTracking',
-            protos_dot_trading__service__pb2.GetPositionTrackingRequest.SerializeToString,
-            protos_dot_trading__service__pb2.PositionTrackingResponse.FromString,
+            trading__service__pb2.GetPositionTrackingRequest.SerializeToString,
+            trading__service__pb2.PositionTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -362,8 +362,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/GetActivePositionTrackings',
-            protos_dot_trading__service__pb2.GetActivePositionTrackingsRequest.SerializeToString,
-            protos_dot_trading__service__pb2.PositionTrackingListResponse.FromString,
+            trading__service__pb2.GetActivePositionTrackingsRequest.SerializeToString,
+            trading__service__pb2.PositionTrackingListResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -389,8 +389,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/SavePositionTracking',
-            protos_dot_trading__service__pb2.SavePositionTrackingRequest.SerializeToString,
-            protos_dot_trading__service__pb2.SavePositionTrackingResponse.FromString,
+            trading__service__pb2.SavePositionTrackingRequest.SerializeToString,
+            trading__service__pb2.SavePositionTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -416,8 +416,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/UpdateTrackingStatus',
-            protos_dot_trading__service__pb2.UpdateTrackingStatusRequest.SerializeToString,
-            protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+            trading__service__pb2.UpdateTrackingStatusRequest.SerializeToString,
+            trading__service__pb2.UpdateTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -443,8 +443,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/UpdateTrackingPosition',
-            protos_dot_trading__service__pb2.UpdateTrackingPositionRequest.SerializeToString,
-            protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+            trading__service__pb2.UpdateTrackingPositionRequest.SerializeToString,
+            trading__service__pb2.UpdateTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -470,8 +470,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/GetEnabledCopyAddresses',
-            protos_dot_trading__service__pb2.GetEnabledCopyAddressesRequest.SerializeToString,
-            protos_dot_trading__service__pb2.CopyAddressListResponse.FromString,
+            trading__service__pb2.GetEnabledCopyAddressesRequest.SerializeToString,
+            trading__service__pb2.CopyAddressListResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -497,8 +497,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/CheckPositionTrackingExists',
-            protos_dot_trading__service__pb2.CheckPositionTrackingExistsRequest.SerializeToString,
-            protos_dot_trading__service__pb2.CheckPositionTrackingExistsResponse.FromString,
+            trading__service__pb2.CheckPositionTrackingExistsRequest.SerializeToString,
+            trading__service__pb2.CheckPositionTrackingExistsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -524,8 +524,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/ToggleCopyTradingAddress',
-            protos_dot_trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
-            protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+            trading__service__pb2.ToggleCopyTradingAddressRequest.SerializeToString,
+            trading__service__pb2.UpdateTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -551,8 +551,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/GetEnabledAddressTrackings',
-            protos_dot_trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
-            protos_dot_trading__service__pb2.AddressTrackingListResponse.FromString,
+            trading__service__pb2.GetEnabledAddressTrackingsRequest.SerializeToString,
+            trading__service__pb2.AddressTrackingListResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -578,8 +578,8 @@ class DatabaseService(object):
             request,
             target,
             '/trading.DatabaseService/ToggleConfigRule',
-            protos_dot_trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
-            protos_dot_trading__service__pb2.UpdateTrackingResponse.FromString,
+            trading__service__pb2.ToggleConfigRuleRequest.SerializeToString,
+            trading__service__pb2.UpdateTrackingResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -606,23 +606,23 @@ class RedisServiceStub(object):
         """
         self.Publish = channel.unary_unary(
                 '/trading.RedisService/Publish',
-                request_serializer=protos_dot_trading__service__pb2.PublishRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.PublishResponse.FromString,
+                request_serializer=trading__service__pb2.PublishRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.PublishResponse.FromString,
                 _registered_method=True)
         self.Subscribe = channel.unary_stream(
                 '/trading.RedisService/Subscribe',
-                request_serializer=protos_dot_trading__service__pb2.SubscribeRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.SubscribeMessage.FromString,
+                request_serializer=trading__service__pb2.SubscribeRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.SubscribeMessage.FromString,
                 _registered_method=True)
         self.SetEx = channel.unary_unary(
                 '/trading.RedisService/SetEx',
-                request_serializer=protos_dot_trading__service__pb2.SetExRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.SetExResponse.FromString,
+                request_serializer=trading__service__pb2.SetExRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.SetExResponse.FromString,
                 _registered_method=True)
         self.Get = channel.unary_unary(
                 '/trading.RedisService/Get',
-                request_serializer=protos_dot_trading__service__pb2.GetRequest.SerializeToString,
-                response_deserializer=protos_dot_trading__service__pb2.GetResponse.FromString,
+                request_serializer=trading__service__pb2.GetRequest.SerializeToString,
+                response_deserializer=trading__service__pb2.GetResponse.FromString,
                 _registered_method=True)
 
 
@@ -666,23 +666,23 @@ def add_RedisServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Publish': grpc.unary_unary_rpc_method_handler(
                     servicer.Publish,
-                    request_deserializer=protos_dot_trading__service__pb2.PublishRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.PublishResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.PublishRequest.FromString,
+                    response_serializer=trading__service__pb2.PublishResponse.SerializeToString,
             ),
             'Subscribe': grpc.unary_stream_rpc_method_handler(
                     servicer.Subscribe,
-                    request_deserializer=protos_dot_trading__service__pb2.SubscribeRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.SubscribeMessage.SerializeToString,
+                    request_deserializer=trading__service__pb2.SubscribeRequest.FromString,
+                    response_serializer=trading__service__pb2.SubscribeMessage.SerializeToString,
             ),
             'SetEx': grpc.unary_unary_rpc_method_handler(
                     servicer.SetEx,
-                    request_deserializer=protos_dot_trading__service__pb2.SetExRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.SetExResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.SetExRequest.FromString,
+                    response_serializer=trading__service__pb2.SetExResponse.SerializeToString,
             ),
             'Get': grpc.unary_unary_rpc_method_handler(
                     servicer.Get,
-                    request_deserializer=protos_dot_trading__service__pb2.GetRequest.FromString,
-                    response_serializer=protos_dot_trading__service__pb2.GetResponse.SerializeToString,
+                    request_deserializer=trading__service__pb2.GetRequest.FromString,
+                    response_serializer=trading__service__pb2.GetResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -714,8 +714,8 @@ class RedisService(object):
             request,
             target,
             '/trading.RedisService/Publish',
-            protos_dot_trading__service__pb2.PublishRequest.SerializeToString,
-            protos_dot_trading__service__pb2.PublishResponse.FromString,
+            trading__service__pb2.PublishRequest.SerializeToString,
+            trading__service__pb2.PublishResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -741,8 +741,8 @@ class RedisService(object):
             request,
             target,
             '/trading.RedisService/Subscribe',
-            protos_dot_trading__service__pb2.SubscribeRequest.SerializeToString,
-            protos_dot_trading__service__pb2.SubscribeMessage.FromString,
+            trading__service__pb2.SubscribeRequest.SerializeToString,
+            trading__service__pb2.SubscribeMessage.FromString,
             options,
             channel_credentials,
             insecure,
@@ -768,8 +768,8 @@ class RedisService(object):
             request,
             target,
             '/trading.RedisService/SetEx',
-            protos_dot_trading__service__pb2.SetExRequest.SerializeToString,
-            protos_dot_trading__service__pb2.SetExResponse.FromString,
+            trading__service__pb2.SetExRequest.SerializeToString,
+            trading__service__pb2.SetExResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -795,8 +795,8 @@ class RedisService(object):
             request,
             target,
             '/trading.RedisService/Get',
-            protos_dot_trading__service__pb2.GetRequest.SerializeToString,
-            protos_dot_trading__service__pb2.GetResponse.FromString,
+            trading__service__pb2.GetRequest.SerializeToString,
+            trading__service__pb2.GetResponse.FromString,
             options,
             channel_credentials,
             insecure,

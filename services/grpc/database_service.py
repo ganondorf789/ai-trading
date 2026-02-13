@@ -228,6 +228,16 @@ class DatabaseServiceServicer(pb2_grpc.DatabaseServiceServicer):
             if request.HasField('position_mode'):
                 data['position_mode'] = request.position_mode
 
+            # 止盈止损
+            if request.HasField('take_profit_enabled'):
+                data['take_profit_enabled'] = request.take_profit_enabled
+            if request.HasField('take_profit_percent'):
+                data['take_profit_percent'] = request.take_profit_percent
+            if request.HasField('stop_loss_enabled'):
+                data['stop_loss_enabled'] = request.stop_loss_enabled
+            if request.HasField('stop_loss_percent'):
+                data['stop_loss_percent'] = request.stop_loss_percent
+
             tracking_id = self._db.save_position_tracking(data)
             
             return pb2.SavePositionTrackingResponse(

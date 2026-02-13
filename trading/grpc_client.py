@@ -110,6 +110,11 @@ class GRPCDatabaseClient:
             'target_rating': tracking.target_rating if tracking.target_rating else None,
             # 仓位模式
             'position_mode': tracking.position_mode or 'cross',
+            # 止盈止损
+            'take_profit_enabled': tracking.take_profit_enabled,
+            'take_profit_percent': tracking.take_profit_percent if tracking.take_profit_percent else 50,
+            'stop_loss_enabled': tracking.stop_loss_enabled,
+            'stop_loss_percent': tracking.stop_loss_percent if tracking.stop_loss_percent else 20,
         }
     
     def _address_to_dict(self, address: pb2.CopyAddress) -> Dict:
@@ -255,6 +260,16 @@ class GRPCDatabaseClient:
             # 仓位模式
             if 'position_mode' in data and data['position_mode']:
                 request.position_mode = data['position_mode']
+
+            # 止盈止损
+            if 'take_profit_enabled' in data:
+                request.take_profit_enabled = data['take_profit_enabled']
+            if 'take_profit_percent' in data and data['take_profit_percent'] is not None:
+                request.take_profit_percent = float(data['take_profit_percent'])
+            if 'stop_loss_enabled' in data:
+                request.stop_loss_enabled = data['stop_loss_enabled']
+            if 'stop_loss_percent' in data and data['stop_loss_percent'] is not None:
+                request.stop_loss_percent = float(data['stop_loss_percent'])
 
             response = self._stub.SavePositionTracking(request, metadata=self._get_metadata())
             if response.success:
