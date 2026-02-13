@@ -965,7 +965,10 @@ def refresh_trader(address: str):
         calculator = MetricsCalculator()
         user_state = {
             'assetPositions': metrics.asset_positions,
-            'marginSummary': {'accountValue': metrics.current_equity}
+            'marginSummary': {
+                'accountValue': metrics.current_equity,
+                'totalMarginUsed': metrics.position.used_margin,
+            }
         }
         recalculated_metrics = calculator.calculate(address, all_fills, user_state, store_fills=False)
 
