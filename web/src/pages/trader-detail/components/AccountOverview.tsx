@@ -7,6 +7,7 @@ import { Divider } from '@heroui/divider';
 import { addToast } from '@heroui/react';
 import { Icon } from '@iconify/react';
 import { traderApi } from '@/services/api';
+import { TradingStatisticsModal } from './TradingStatisticsModal';
 
 // ==================== 类型 ====================
 
@@ -112,6 +113,7 @@ function copyToClipboard(text: string) {
 export function AccountOverview({ address, onAccountValueLoaded }: AccountOverviewProps) {
   const [data, setData] = useState<AccountOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
 
   const fmt = (n: number, d = 2) =>
     n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -218,7 +220,7 @@ export function AccountOverview({ address, onAccountValueLoaded }: AccountOvervi
               size="sm"
               variant="flat"
               startContent={<Icon icon="solar:chart-2-bold" width={16} />}
-              isDisabled
+              onPress={() => setStatsModalOpen(true)}
             >
               Trading Statistics
             </Button>
@@ -309,6 +311,12 @@ export function AccountOverview({ address, onAccountValueLoaded }: AccountOvervi
           </div>
         </div>
       </CardBody>
+
+      <TradingStatisticsModal
+        isOpen={statsModalOpen}
+        onClose={() => setStatsModalOpen(false)}
+        address={address}
+      />
     </Card>
   );
 }

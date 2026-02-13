@@ -12,6 +12,21 @@ from screener.utils import now_shanghai, timestamp_to_pendulum
 from .db import db
 from .middleware import login_required, get_current_user_id
 
+
+def _format_holding_time(hours: float) -> str:
+    """将小时数格式化为 'Xh Ym' 格式"""
+    if hours <= 0:
+        return '0m'
+    total_minutes = round(hours * 60)
+    h = total_minutes // 60
+    m = total_minutes % 60
+    if h > 0 and m > 0:
+        return f'{h}h {m}m'
+    elif h > 0:
+        return f'{h}h'
+    else:
+        return f'{m}m'
+
 logger = logging.getLogger(__name__)
 
 # 标签英文key到中文显示label的映射（标签已用英文存储在DB中）
@@ -770,6 +785,160 @@ def get_trader_closed_performance(address: str):
 
     except Exception as e:
         logger.error(f"获取交易者平仓表现失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders/<address>/closed-positions-summary', methods=['GET'])
+@login_required
+def get_trader_closed_positions_summary(address: str):
+    """获取交易者平仓汇总统计（胜率、平仓数、净盈亏、持仓时间）
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: start_date
+        in: query
+        type: string
+        format: date
+        description: 开始日期 (YYYY-MM-DD)
+      - name: end_date
+        in: query
+        type: string
+        format: date
+        description: 结束日期 (YYYY-MM-DD)
+    responses:
+      200:
+        description: 平仓汇总统计
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                win_rate:
+                  type: object
+                  properties:
+                    rate:
+                      type: number
+                      description: 胜率百分比
+                    closing_pnl:
+                      type: number
+                      description: 平仓盈亏（扣费前）
+                    fees_deducted:
+                      type: number
+                      description: 已扣手续费
+                closed_positions:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                      description: 总平仓数
+                    profit:
+                      type: integer
+                      description: 盈利笔数
+                    loss:
+                      type: integer
+                      description: 亏损笔数
+                net_pnl:
+                  type: object
+                  properties:
+                    total:
+                      type: number
+                      description: 净盈亏
+                    long:
+                      type: number
+                      description: 多头盈亏
+                    short:
+                      type: number
+                      description: 空头盈亏
+                holding_time:
+                  type: object
+                  properties:
+                    total:
+                      type: string
+                      description: "总持仓时间（格式: Xh Ym）"
+                    range_min:
+                      type: string
+                      description: "最短持仓时间"
+                    range_max:
+                      type: string
+                      description: "最长持仓时间"
+                    average:
+                      type: string
+                      description: "平均持仓时间"
+                    total_hours:
+                      type: number
+                    min_hours:
+                      type: number
+                    max_hours:
+                      type: number
+                    avg_hours:
+                      type: number
+      404:
+        description: 无平仓数据
+      500:
+        description: 服务器错误
+    """
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        perf = db.get_trader_closed_performance(address, start_date, end_date)
+
+        if not perf:
+            return jsonify({
+                'success': False,
+                'error': 'No closed positions found'
+            }), 404
+
+        overview = perf['overview']
+        closed_stats = perf['closed_stats']
+        pnl_summary = perf['pnl_summary']
+        holding = perf['holding_time']
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'win_rate': {
+                    'rate': overview['win_rate'],
+                    'closing_pnl': overview['realized_pnl'],
+                    'fees_deducted': overview['total_fee'],
+                },
+                'closed_positions': {
+                    'total': closed_stats['closed_count'],
+                    'profit': closed_stats['winning_count'],
+                    'loss': closed_stats['losing_count'],
+                },
+                'net_pnl': {
+                    'total': pnl_summary['net_pnl'],
+                    'long': pnl_summary['long_pnl'],
+                    'short': pnl_summary['short_pnl'],
+                },
+                'holding_time': {
+                    'total': _format_holding_time(holding['total_hours']),
+                    'range_min': _format_holding_time(holding['min_hours']),
+                    'range_max': _format_holding_time(holding['max_hours']),
+                    'average': _format_holding_time(holding['avg_hours']),
+                    'total_hours': holding['total_hours'],
+                    'min_hours': holding['min_hours'],
+                    'max_hours': holding['max_hours'],
+                    'avg_hours': holding['avg_hours'],
+                },
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取平仓汇总统计失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

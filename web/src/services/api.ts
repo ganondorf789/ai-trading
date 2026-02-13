@@ -431,6 +431,14 @@ export const traderApi = {
   // 获取盈亏曲线
   getPnlCurve: (address: string, params?: { start_date?: string; end_date?: string }) =>
     api.get<any, ApiResponse<any> & { count?: number }>(`/traders/${address}/pnl-curve`, { params }),
+
+  // 获取平仓汇总统计
+  getClosedPositionsSummary: (address: string, params?: { start_date?: string; end_date?: string }) =>
+    api.get<any, ApiResponse<any>>(`/traders/${address}/closed-positions-summary`, { params }),
+
+  // 获取最佳交易 Top N
+  getBestTrades: (address: string, params?: { start_date?: string; end_date?: string; limit?: number }) =>
+    api.get<any, ApiResponse<any[]> & { count?: number }>(`/traders/${address}/best-trades`, { params }),
 };
 
 // ==================== 全局仓位历史 API ====================
