@@ -213,102 +213,85 @@ export function FilterSection({
         <div className="flex flex-wrap gap-3">
           <Select
             className="w-[140px]"
-            label="资金规模"
+            label="账户总价值"
             labelPlacement="outside"
             placeholder="全部"
             size="sm"
-            selectedKeys={filters.tagCapitalScale ? [filters.tagCapitalScale] : []}
+            selectedKeys={filters.tagAccountValue ? [filters.tagAccountValue] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagCapitalScale: selected || undefined });
+              onFiltersChange({ ...filters, tagAccountValue: selected || undefined });
             }}
           >
-            {TAG_OPTIONS.capitalScale.map((tag) => (
+            {TAG_OPTIONS.accountValue.map((tag) => (
               <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
             className="w-[140px]"
-            label="交易方向"
+            label="交易节奏"
             labelPlacement="outside"
             placeholder="全部"
             size="sm"
-            selectedKeys={filters.tagTradingDirection ? [filters.tagTradingDirection] : []}
+            selectedKeys={filters.tagTradingRhythm ? [filters.tagTradingRhythm] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagTradingDirection: selected || undefined });
+              onFiltersChange({ ...filters, tagTradingRhythm: selected || undefined });
             }}
           >
-            {TAG_OPTIONS.tradingDirection.map((tag) => (
+            {TAG_OPTIONS.tradingRhythm.map((tag) => (
               <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
             className="w-[140px]"
-            label="交易周期"
+            label="盈利状态"
             labelPlacement="outside"
             placeholder="全部"
             size="sm"
-            selectedKeys={filters.tagTradingCycle ? [filters.tagTradingCycle] : []}
+            selectedKeys={filters.tagProfitStatus ? [filters.tagProfitStatus] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagTradingCycle: selected || undefined });
+              onFiltersChange({ ...filters, tagProfitStatus: selected || undefined });
             }}
           >
-            {TAG_OPTIONS.tradingCycle.map((tag) => (
+            {TAG_OPTIONS.profitStatus.map((tag) => (
               <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
             className="w-[140px]"
-            label="频率风格"
+            label="方向偏好"
             labelPlacement="outside"
             placeholder="全部"
             size="sm"
-            selectedKeys={filters.tagFrequencyStyle ? [filters.tagFrequencyStyle] : []}
+            selectedKeys={filters.tagDirectionPreference ? [filters.tagDirectionPreference] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagFrequencyStyle: selected || undefined });
+              onFiltersChange({ ...filters, tagDirectionPreference: selected || undefined });
             }}
           >
-            {TAG_OPTIONS.frequencyStyle.map((tag) => (
+            {TAG_OPTIONS.directionPreference.map((tag) => (
               <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>
 
           <Select
             className="w-[160px]"
-            label="收益风险"
+            label="交易风格"
             labelPlacement="outside"
             placeholder="全部"
             size="sm"
-            selectedKeys={filters.tagReturnRisk ? [filters.tagReturnRisk] : []}
+            selectedKeys={filters.tagTradingStyle ? [filters.tagTradingStyle] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagReturnRisk: selected || undefined });
+              onFiltersChange({ ...filters, tagTradingStyle: selected || undefined });
             }}
           >
-            {TAG_OPTIONS.returnRisk.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[140px]"
-            label="策略能力"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagStrategyCapability ? [filters.tagStrategyCapability] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagStrategyCapability: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.strategyCapability.map((tag) => (
+            {TAG_OPTIONS.tradingStyle.map((tag) => (
               <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
             ))}
           </Select>

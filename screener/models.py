@@ -91,7 +91,10 @@ class PnLMetrics:
     avg_win_amount: float = 0.0  # 盈利仓位平均收益
     avg_loss_amount: float = 0.0  # 亏损仓位平均损失
     avg_profit_per_trade: float = 0.0  # 平均每仓收益（基于已平仓位数）
-    
+
+    # 时间窗口统计
+    recent_30d_pnl: float = 0.0  # 最近30天PnL
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -156,7 +159,11 @@ class TradeMetrics:
     unique_symbols: int = 0  # 交易品种数量
     favorite_symbol: str = ""  # 最常交易的品种
     long_short_ratio: float = 0.0  # 多空比例（多单占比）
-    
+
+    # 时间窗口统计
+    total_trades_90d: int = 0  # 最近90天交易数
+    recent_30d_trades: int = 0  # 最近30天交易数
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -165,9 +172,10 @@ class TradeMetrics:
 class ActivityMetrics:
     """活跃度指标"""
     active_days: int = 0  # 活跃天数
+    active_days_90d: int = 0  # 最近90天活跃天数
     trade_frequency_per_day: float = 0.0  # 日均交易频率
     avg_holding_time_hours: float = 0.0  # 平均持仓时间（小时）
-    
+
     # 时间范围
     first_trade_time: Optional[pendulum.DateTime] = None  # 首次交易时间
     last_trade_time: Optional[pendulum.DateTime] = None  # 最后交易时间
@@ -225,45 +233,45 @@ class ScoreMetrics:
 class TagMetrics:
     """
     交易者标签指标
-    
-    基于交易数据自动分类的标签系统
+
+    基于交易数据自动分类的标签系统（英文值存储）
     """
-    # 资金规模: 小资金 / 中等资金 / 大资金
-    capital_scale: Optional[str] = None
-    
-    # 交易方向: 偏空头 / 中性 / 偏多头
-    trading_direction: Optional[str] = None
-    
-    # 交易周期: 长线 / 波段 / 短线 / 超短线
-    trading_cycle: Optional[str] = None
-    
-    # 频率与风格: 高频激进 / 低频稳健 / 低频激进
-    frequency_style: Optional[str] = None
-    
-    # 收益与风险: 稳定盈利 / 持续盈利 / 波动盈利 / 盈亏平衡 / 高风险高回报 / 低回撤
-    return_risk: Optional[str] = None
-    
-    # 策略能力: 波动策略 / 非对称高手
-    strategy_capability: Optional[str] = None
-    
+    # 账户总价值: small_capital / medium_capital / whale
+    account_value: Optional[str] = None
+
+    # 交易节奏: long_term / swing / short_term / ultra_short
+    trading_rhythm: Optional[str] = None
+
+    # 盈利状态: consistent_profit / volatile_profit / break_even
+    profit_status: Optional[str] = None
+
+    # 方向偏好: bearish / neutral / bullish
+    direction_preference: Optional[str] = None
+
+    # 交易风格（多标签）
+    trading_style: List[str] = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-    
+        return {
+            'account_value': self.account_value,
+            'trading_rhythm': self.trading_rhythm,
+            'profit_status': self.profit_status,
+            'direction_preference': self.direction_preference,
+            'trading_style': self.trading_style,
+        }
+
     def to_list(self) -> List[str]:
         """返回所有非空标签的列表"""
         tags = []
-        if self.capital_scale:
-            tags.append(self.capital_scale)
-        if self.trading_direction:
-            tags.append(self.trading_direction)
-        if self.trading_cycle:
-            tags.append(self.trading_cycle)
-        if self.frequency_style:
-            tags.append(self.frequency_style)
-        if self.return_risk:
-            tags.append(self.return_risk)
-        if self.strategy_capability:
-            tags.append(self.strategy_capability)
+        if self.account_value:
+            tags.append(self.account_value)
+        if self.trading_rhythm:
+            tags.append(self.trading_rhythm)
+        if self.profit_status:
+            tags.append(self.profit_status)
+        if self.direction_preference:
+            tags.append(self.direction_preference)
+        tags.extend(self.trading_style)
         return tags
 
 
@@ -494,29 +502,26 @@ class TraderMetrics:
     
     # ===== 标签便捷属性 =====
     @property
-    def tag_capital_scale(self) -> Optional[str]:
-        return self.tags.capital_scale
-    
+    def tag_account_value(self) -> Optional[str]:
+        return self.tags.account_value
+
     @property
-    def tag_trading_direction(self) -> Optional[str]:
-        return self.tags.trading_direction
-    
+    def tag_trading_rhythm(self) -> Optional[str]:
+        return self.tags.trading_rhythm
+
     @property
-    def tag_trading_cycle(self) -> Optional[str]:
-        return self.tags.trading_cycle
-    
+    def tag_profit_status(self) -> Optional[str]:
+        return self.tags.profit_status
+
     @property
-    def tag_frequency_style(self) -> Optional[str]:
-        return self.tags.frequency_style
-    
+    def tag_direction_preference(self) -> Optional[str]:
+        return self.tags.direction_preference
+
     @property
-    def tag_return_risk(self) -> Optional[str]:
-        return self.tags.return_risk
-    
-    @property
-    def tag_strategy_capability(self) -> Optional[str]:
-        return self.tags.strategy_capability
-    
+    def tag_trading_style(self) -> str:
+        """返回逗号分隔的交易风格字符串（用于DB存储）"""
+        return ','.join(self.tags.trading_style) if self.tags.trading_style else ''
+
     @property
     def tag_list(self) -> List[str]:
         """获取所有标签列表"""
@@ -652,12 +657,11 @@ class TraderMetrics:
             'rating': self.score.rating.value,
             
             # Tags
-            'tag_capital_scale': self.tags.capital_scale,
-            'tag_trading_direction': self.tags.trading_direction,
-            'tag_trading_cycle': self.tags.trading_cycle,
-            'tag_frequency_style': self.tags.frequency_style,
-            'tag_return_risk': self.tags.return_risk,
-            'tag_strategy_capability': self.tags.strategy_capability,
+            'tag_account_value': self.tags.account_value,
+            'tag_trading_rhythm': self.tags.trading_rhythm,
+            'tag_profit_status': self.tags.profit_status,
+            'tag_direction_preference': self.tags.direction_preference,
+            'tag_trading_style': ','.join(self.tags.trading_style) if self.tags.trading_style else '',
         }
         
         if include_fills:

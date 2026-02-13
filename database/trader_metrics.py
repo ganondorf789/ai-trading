@@ -117,13 +117,12 @@ class TraderMetricsOps:
             sanitize_value(metrics.daily_volume),
             sanitize_value(metrics.weekly_volume),
             sanitize_value(metrics.monthly_volume),
-            # Tags
-            metrics.tag_capital_scale,
-            metrics.tag_trading_direction,
-            metrics.tag_trading_cycle,
-            metrics.tag_frequency_style,
-            metrics.tag_return_risk,
-            metrics.tag_strategy_capability,
+            # Tags (new 5-category system)
+            metrics.tag_account_value,
+            metrics.tag_trading_rhythm,
+            metrics.tag_profit_status,
+            metrics.tag_direction_preference,
+            metrics.tag_trading_style or None,
         )
 
     def save_trader(self, metrics: TraderMetrics) -> int:
@@ -161,9 +160,9 @@ class TraderMetricsOps:
                     daily_pnl, weekly_pnl, monthly_pnl,
                     daily_roi, weekly_roi, monthly_roi,
                     daily_volume, weekly_volume, monthly_volume,
-                    tag_capital_scale, tag_trading_direction, tag_trading_cycle,
-                    tag_frequency_style, tag_return_risk, tag_strategy_capability
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    tag_account_value, tag_trading_rhythm, tag_profit_status,
+                    tag_direction_preference, tag_trading_style
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(address) DO UPDATE SET
                     display_name = EXCLUDED.display_name,
                     analyzed_at = EXCLUDED.analyzed_at,
@@ -223,12 +222,11 @@ class TraderMetricsOps:
                     daily_volume = EXCLUDED.daily_volume,
                     weekly_volume = EXCLUDED.weekly_volume,
                     monthly_volume = EXCLUDED.monthly_volume,
-                    tag_capital_scale = EXCLUDED.tag_capital_scale,
-                    tag_trading_direction = EXCLUDED.tag_trading_direction,
-                    tag_trading_cycle = EXCLUDED.tag_trading_cycle,
-                    tag_frequency_style = EXCLUDED.tag_frequency_style,
-                    tag_return_risk = EXCLUDED.tag_return_risk,
-                    tag_strategy_capability = EXCLUDED.tag_strategy_capability
+                    tag_account_value = EXCLUDED.tag_account_value,
+                    tag_trading_rhythm = EXCLUDED.tag_trading_rhythm,
+                    tag_profit_status = EXCLUDED.tag_profit_status,
+                    tag_direction_preference = EXCLUDED.tag_direction_preference,
+                    tag_trading_style = EXCLUDED.tag_trading_style
                 RETURNING id
             """, self._prepare_metrics_values(metrics))
 

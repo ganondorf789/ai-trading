@@ -1,10 +1,10 @@
 """
 交易者标签计算模块
 
-基于交易指标自动为交易者分配标签
+基于交易指标自动为交易者分配标签（英文值存储）
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 from loguru import logger
 
 from .models import TraderMetrics, TagMetrics
@@ -14,271 +14,228 @@ from .models import TraderMetrics, TagMetrics
 class TagThresholds:
     """
     标签分类阈值配置
-    
-    可以根据需要调整这些阈值来优化分类
     """
-    # 资金规模阈值 (USD)
-    capital_small_max: float = 10000.0
-    capital_medium_max: float = 100000.0
-    
-    # 交易方向阈值 (long_short_ratio)
-    direction_bearish_max: float = 0.4
-    direction_neutral_max: float = 0.6
-    
-    # 交易周期阈值 (小时)
-    cycle_ultra_short_max: float = 4.0
-    cycle_short_max: float = 24.0
-    cycle_swing_max: float = 168.0  # 7天
-    
-    # 频率与风格阈值
-    frequency_high_threshold: float = 5.0  # 日均交易频率
-    aggressive_drawdown_threshold: float = 0.2  # 回撤阈值
-    
-    # 收益与风险阈值
-    stable_sharpe_min: float = 1.5
-    stable_win_rate_min: float = 0.55
-    stable_drawdown_max: float = 0.15
-    continuous_profit_factor_min: float = 1.5
-    continuous_win_rate_min: float = 0.5
-    volatile_sharpe_max: float = 0.5
-    high_risk_drawdown_min: float = 0.3
-    low_drawdown_max: float = 0.1
-    break_even_roi_range: float = 0.05
-    
-    # 策略能力阈值
-    volatility_sortino_min: float = 2.0
-    volatility_calmar_min: float = 1.0
-    asymmetric_ratio_min: float = 2.0
+    # 账户总价值阈值 (USD)
+    account_small_max: float = 100_000.0
+    account_medium_max: float = 500_000.0
+
+    # 交易节奏阈值（小时）
+    rhythm_ultra_short_max: float = 1.0
+    rhythm_short_max: float = 24.0
+    rhythm_swing_max: float = 168.0  # 7天
+
+    # 方向偏好阈值 (long_short_ratio)
+    direction_bearish_max: float = 0.3
+    direction_bullish_min: float = 0.7
+
+    # 盈利状态阈值
+    profit_active_days_min: int = 30
+    profit_trades_min: int = 30
+    profit_roi_min: float = 0.05
+    profit_pf_min: float = 1.3
+    break_even_range: float = 0.05
 
 
 class TraderTagCalculator:
     """
     交易者标签计算器
-    
+
     根据交易指标自动为交易者分配各类标签
     """
-    
+
     def __init__(self, thresholds: Optional[TagThresholds] = None):
-        """
-        初始化标签计算器
-        
-        Args:
-            thresholds: 分类阈值配置
-        """
         self.thresholds = thresholds or TagThresholds()
-    
+
     def calculate_tags(self, metrics: TraderMetrics) -> TagMetrics:
         """
         计算交易者的所有标签
-        
+
         Args:
             metrics: 交易者指标
-        
+
         Returns:
             TagMetrics 对象
         """
         tags = TagMetrics()
-        
-        # 计算各类标签
-        tags.capital_scale = self._calculate_capital_scale(metrics)
-        tags.trading_direction = self._calculate_trading_direction(metrics)
-        tags.trading_cycle = self._calculate_trading_cycle(metrics)
-        tags.frequency_style = self._calculate_frequency_style(metrics)
-        tags.return_risk = self._calculate_return_risk(metrics)
-        tags.strategy_capability = self._calculate_strategy_capability(metrics)
-        
+
+        tags.account_value = self._calculate_account_value(metrics)
+        tags.trading_rhythm = self._calculate_trading_rhythm(metrics)
+        tags.profit_status = self._calculate_profit_status(metrics)
+        tags.direction_preference = self._calculate_direction_preference(metrics)
+        tags.trading_style = self._calculate_trading_style(metrics)
+
         return tags
-    
-    def _calculate_capital_scale(self, metrics: TraderMetrics) -> Optional[str]:
+
+    def _calculate_account_value(self, metrics: TraderMetrics) -> Optional[str]:
         """
-        计算资金规模标签
-        
-        基于 current_equity 判断:
-        - 小资金: < $10,000
-        - 中等资金: $10,000 - $100,000
-        - 大资金: >= $100,000
+        计算账户总价值标签
+
+        基于 current_equity:
+        - small_capital: < 100K
+        - medium_capital: 100K - 500K
+        - whale: >= 500K
         """
         equity = metrics.position.current_equity
-        
         if equity <= 0:
             return None
-        
+
         t = self.thresholds
-        
-        if equity < t.capital_small_max:
-            return "小资金"
-        elif equity < t.capital_medium_max:
-            return "中等资金"
+        if equity < t.account_small_max:
+            return "small_capital"
+        elif equity < t.account_medium_max:
+            return "medium_capital"
         else:
-            return "大资金"
-    
-    def _calculate_trading_direction(self, metrics: TraderMetrics) -> Optional[str]:
+            return "whale"
+
+    def _calculate_trading_rhythm(self, metrics: TraderMetrics) -> Optional[str]:
         """
-        计算交易方向标签
-        
-        基于 long_short_ratio 判断:
-        - 偏空头: ratio < 0.4
-        - 中性: 0.4 <= ratio <= 0.6
-        - 偏多头: ratio > 0.6
-        """
-        ratio = metrics.trade.long_short_ratio
-        
-        # 如果没有交易数据，无法判断
-        if metrics.trade.total_trades == 0:
-            return None
-        
-        t = self.thresholds
-        
-        if ratio < t.direction_bearish_max:
-            return "偏空头"
-        elif ratio <= t.direction_neutral_max:
-            return "中性"
-        else:
-            return "偏多头"
-    
-    def _calculate_trading_cycle(self, metrics: TraderMetrics) -> Optional[str]:
-        """
-        计算交易周期标签
-        
-        基于 avg_holding_time_hours 判断:
-        - 超短线: < 4 小时
-        - 短线: 4-24 小时
-        - 波段: 24-168 小时 (1-7天)
-        - 长线: > 168 小时
+        计算交易节奏标签
+
+        基于 avg_holding_time_hours:
+        - ultra_short: < 1h
+        - short_term: 1-24h
+        - swing: 24-168h
+        - long_term: > 168h
         """
         holding_hours = metrics.activity.avg_holding_time_hours
-        
-        # 如果没有持仓时间数据，无法判断
         if holding_hours <= 0:
             return None
-        
+
         t = self.thresholds
-        
-        if holding_hours < t.cycle_ultra_short_max:
-            return "超短线"
-        elif holding_hours < t.cycle_short_max:
-            return "短线"
-        elif holding_hours < t.cycle_swing_max:
-            return "波段"
+        if holding_hours < t.rhythm_ultra_short_max:
+            return "ultra_short"
+        elif holding_hours < t.rhythm_short_max:
+            return "short_term"
+        elif holding_hours < t.rhythm_swing_max:
+            return "swing"
         else:
-            return "长线"
-    
-    def _calculate_frequency_style(self, metrics: TraderMetrics) -> Optional[str]:
+            return "long_term"
+
+    def _calculate_profit_status(self, metrics: TraderMetrics) -> Optional[str]:
         """
-        计算频率与风格标签
-        
-        结合交易频率和最大回撤判断:
-        - 高频激进: 日均交易频率 > 5 且 回撤 > 20%
-        - 低频激进: 日均交易频率 <= 5 且 回撤 > 20%
-        - 低频稳健: 日均交易频率 <= 5 且 回撤 <= 20%
+        计算盈利状态标签
+
+        - consistent_profit: 90d活跃天>=30 AND 90d交易>=30 AND ROI>=5% AND PF>=1.3
+                             AND expectancy>0 AND 30d_pnl>0
+        - break_even: |ROI| < 5%
+        - volatile_profit: total_pnl > 0 (但不满足 consistent_profit)
         """
-        freq = metrics.activity.trade_frequency_per_day
-        drawdown = metrics.risk.max_drawdown
-        
-        # 如果没有交易数据，无法判断
         if metrics.trade.total_trades == 0:
             return None
-        
+
         t = self.thresholds
-        
-        is_high_freq = freq > t.frequency_high_threshold
-        is_aggressive = drawdown > t.aggressive_drawdown_threshold
-        
-        if is_high_freq and is_aggressive:
-            return "高频激进"
-        elif not is_high_freq and is_aggressive:
-            return "低频激进"
-        elif not is_high_freq and not is_aggressive:
-            return "低频稳健"
-        else:
-            # 高频但不激进，暂时归类为低频稳健（可以根据需要添加新类别）
-            return "低频稳健"
-    
-    def _calculate_return_risk(self, metrics: TraderMetrics) -> Optional[str]:
-        """
-        计算收益与风险标签
-        
-        基于多个指标综合判断（按优先级）:
-        - 稳定盈利: sharpe > 1.5 且 win_rate > 55% 且 drawdown < 15%
-        - 低回撤: drawdown < 10% 且 total_pnl > 0
-        - 持续盈利: profit_factor > 1.5 且 win_rate > 50%
-        - 高风险高回报: total_pnl > 0 且 drawdown > 30%
-        - 波动盈利: total_pnl > 0 且 sharpe < 0.5
-        - 盈亏平衡: -5% < roi < 5%
-        """
-        # 如果没有交易数据，无法判断
-        if metrics.trade.total_trades == 0:
-            return None
-        
-        t = self.thresholds
-        
-        sharpe = metrics.risk.sharpe_ratio
-        win_rate = metrics.trade.win_rate
-        drawdown = metrics.risk.max_drawdown
-        profit_factor = metrics.trade.profit_factor
-        total_pnl = metrics.pnl.total_pnl
+        active_days_90d = metrics.activity.active_days_90d
+        trades_90d = metrics.trade.total_trades_90d
         roi = metrics.roi.roi
-        
-        # 按优先级判断（越稳定的标签优先级越高）
-        
-        # 稳定盈利：最高标准
-        if (sharpe > t.stable_sharpe_min and 
-            win_rate > t.stable_win_rate_min and 
-            drawdown < t.stable_drawdown_max):
-            return "稳定盈利"
-        
-        # 低回撤：风险控制良好
-        if drawdown < t.low_drawdown_max and total_pnl > 0:
-            return "低回撤"
-        
-        # 持续盈利：有持续的盈利能力
-        if (profit_factor > t.continuous_profit_factor_min and 
-            win_rate > t.continuous_win_rate_min and
-            profit_factor != float('inf')):
-            return "持续盈利"
-        
-        # 高风险高回报：敢于冒险且有收益
-        if total_pnl > 0 and drawdown > t.high_risk_drawdown_min:
-            return "高风险高回报"
-        
-        # 波动盈利：有盈利但不稳定
-        if total_pnl > 0 and sharpe < t.volatile_sharpe_max:
-            return "波动盈利"
-        
-        # 盈亏平衡：基本没赚没亏
-        if -t.break_even_roi_range < roi < t.break_even_roi_range:
-            return "盈亏平衡"
-        
-        return None
-    
-    def _calculate_strategy_capability(self, metrics: TraderMetrics) -> Optional[str]:
-        """
-        计算策略能力标签
-        
-        - 波动策略: sortino_ratio > 2 或 calmar_ratio > 1（善于利用波动）
-        - 非对称高手: avg_win_amount / avg_loss_amount > 2（盈亏不对称优势）
-        """
-        # 如果没有交易数据，无法判断
-        if metrics.trade.total_trades == 0:
-            return None
-        
-        t = self.thresholds
-        
-        sortino = metrics.risk.sortino_ratio
-        calmar = metrics.risk.calmar_ratio
+        pf = metrics.trade.profit_factor
+        win_rate = metrics.trade.win_rate
         avg_win = metrics.pnl.avg_win_amount
         avg_loss = metrics.pnl.avg_loss_amount
-        
-        # 检查非对称高手：平均盈利远大于平均亏损
-        if avg_loss > 0 and avg_win / avg_loss > t.asymmetric_ratio_min:
-            return "非对称高手"
-        
-        # 检查波动策略：善于在波动中获利
-        if (sortino > t.volatility_sortino_min or 
-            (calmar > t.volatility_calmar_min and calmar != float('inf'))):
-            return "波动策略"
-        
+        pnl_30d = metrics.pnl.recent_30d_pnl
+
+        # 计算 expectancy
+        expectancy = win_rate * avg_win - (1 - win_rate) * avg_loss
+
+        # consistent_profit: 严格标准
+        if (active_days_90d >= t.profit_active_days_min and
+                trades_90d >= t.profit_trades_min and
+                roi >= t.profit_roi_min and
+                pf >= t.profit_pf_min and pf != float('inf') and
+                expectancy > 0 and
+                pnl_30d > 0):
+            return "consistent_profit"
+
+        # break_even
+        if -t.break_even_range < roi < t.break_even_range:
+            return "break_even"
+
+        # volatile_profit
+        if metrics.pnl.total_pnl > 0:
+            return "volatile_profit"
+
         return None
+
+    def _calculate_direction_preference(self, metrics: TraderMetrics) -> Optional[str]:
+        """
+        计算方向偏好标签
+
+        基于 long_short_ratio:
+        - bearish: < 0.3
+        - neutral: 0.3 - 0.7
+        - bullish: > 0.7
+        """
+        if metrics.trade.total_trades == 0:
+            return None
+
+        ratio = metrics.trade.long_short_ratio
+        t = self.thresholds
+
+        if ratio < t.direction_bearish_max:
+            return "bearish"
+        elif ratio >= t.direction_bullish_min:
+            return "bullish"
+        else:
+            return "neutral"
+
+    def _calculate_trading_style(self, metrics: TraderMetrics) -> List[str]:
+        """
+        计算交易风格标签（多标签，每个独立判断）
+
+        - high_freq_stable: 持仓≤24h AND 胜率>0.6 AND 盈亏比≥1.2 AND PF≥1.2 AND 30d交易≥20
+        - high_freq_aggressive: 持仓≤24h AND 胜率<0.5 AND 盈亏比≥5 AND PF≥1.5 AND 30d交易≥20
+        - low_freq_stable: 持仓>168h AND 胜率>0.6 AND 盈亏比≥1.2 AND PF≥1.2 AND 30d交易≤10
+        - stable_profit: 胜率≥0.6 AND 盈亏比≥1.5 AND 回撤≤0.25 AND PF≥1.5 AND Sharpe≥1.0
+        - high_risk_high_return: 盈亏比≥3 AND 平均每笔盈利≥10000 AND 回撤≥0.3
+        - asymmetric_master: 胜率<0.5 AND 盈亏比≥5 AND PF≥1.5 AND 30d交易≤20
+        """
+        styles = []
+
+        if metrics.trade.total_trades == 0:
+            return styles
+
+        holding = metrics.activity.avg_holding_time_hours
+        win_rate = metrics.trade.win_rate
+        avg_win = metrics.pnl.avg_win_amount
+        avg_loss = metrics.pnl.avg_loss_amount
+        pf = metrics.trade.profit_factor
+        drawdown = metrics.risk.max_drawdown
+        sharpe = metrics.risk.sharpe_ratio
+        avg_profit = metrics.pnl.avg_profit_per_trade
+        trades_30d = metrics.trade.recent_30d_trades
+
+        # risk_reward = avg_win / avg_loss
+        risk_reward = avg_win / avg_loss if avg_loss > 0 else 0.0
+
+        # high_freq_stable
+        if (holding <= 24 and win_rate > 0.6 and risk_reward >= 1.2
+                and pf >= 1.2 and pf != float('inf') and trades_30d >= 20):
+            styles.append("high_freq_stable")
+
+        # high_freq_aggressive
+        if (holding <= 24 and win_rate < 0.5 and risk_reward >= 5
+                and pf >= 1.5 and pf != float('inf') and trades_30d >= 20):
+            styles.append("high_freq_aggressive")
+
+        # low_freq_stable
+        if (holding > 168 and win_rate > 0.6 and risk_reward >= 1.2
+                and pf >= 1.2 and pf != float('inf') and trades_30d <= 10):
+            styles.append("low_freq_stable")
+
+        # stable_profit
+        if (win_rate >= 0.6 and risk_reward >= 1.5 and drawdown <= 0.25
+                and pf >= 1.5 and pf != float('inf') and sharpe >= 1.0):
+            styles.append("stable_profit")
+
+        # high_risk_high_return
+        if risk_reward >= 3 and avg_profit >= 10000 and drawdown >= 0.3:
+            styles.append("high_risk_high_return")
+
+        # asymmetric_master
+        if (win_rate < 0.5 and risk_reward >= 5
+                and pf >= 1.5 and pf != float('inf') and trades_30d <= 20):
+            styles.append("asymmetric_master")
+
+        return styles
 
 
 def calculate_tags(
@@ -287,11 +244,11 @@ def calculate_tags(
 ) -> TraderMetrics:
     """
     计算交易者标签（便捷函数）
-    
+
     Args:
         metrics: 交易者指标
         thresholds: 分类阈值配置
-    
+
     Returns:
         更新后的 TraderMetrics
     """

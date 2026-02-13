@@ -12,39 +12,35 @@ from .middleware import login_required, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
-# 标签英文key到中文label的映射
-TAG_KEY_TO_LABEL = {
-    'capital_scale': {
-        'small': '小资金',
-        'medium': '中等资金',
-        'large': '大资金',
+# 标签英文key到中文显示label的映射（标签已用英文存储在DB中）
+TAG_DISPLAY_LABELS = {
+    'account_value': {
+        'small_capital': '小资金',
+        'medium_capital': '中等资金',
+        'whale': '巨鲸',
     },
-    'trading_direction': {
-        'bearish': '偏空头',
-        'neutral': '中性',
-        'bullish': '偏多头',
-    },
-    'trading_cycle': {
+    'trading_rhythm': {
         'long_term': '长线',
         'swing': '波段',
         'short_term': '短线',
         'ultra_short': '超短线',
     },
-    'frequency_style': {
-        'high_freq_aggressive': '高频激进',
-        'low_freq_stable': '低频稳健',
-        'low_freq_aggressive': '低频激进',
-    },
-    'return_risk': {
-        'stable_profit': '稳定盈利',
-        'continuous_profit': '持续盈利',
+    'profit_status': {
+        'consistent_profit': '持续盈利',
         'volatile_profit': '波动盈利',
         'break_even': '盈亏平衡',
-        'high_risk_high_return': '高风险高回报',
-        'low_drawdown': '低回撤',
     },
-    'strategy_capability': {
-        'volatility_strategy': '波动策略',
+    'direction_preference': {
+        'bearish': '偏空头',
+        'neutral': '中性',
+        'bullish': '偏多头',
+    },
+    'trading_style': {
+        'high_freq_stable': '高频稳健',
+        'high_freq_aggressive': '高频激进',
+        'low_freq_stable': '低频稳健',
+        'stable_profit': '稳定盈利',
+        'high_risk_high_return': '高风险高回报',
         'asymmetric_master': '非对称高手',
     },
 }
@@ -213,20 +209,12 @@ def get_traders():
         max_active_days = request.args.get('max_active_days', type=int)
         has_recent_trade = request.args.get('has_recent_trade', type=int)
         
-        # 标签筛选 - 将英文key转换为中文label
-        tag_capital_scale_key = request.args.get('tag_capital_scale')
-        tag_trading_direction_key = request.args.get('tag_trading_direction')
-        tag_trading_cycle_key = request.args.get('tag_trading_cycle')
-        tag_frequency_style_key = request.args.get('tag_frequency_style')
-        tag_return_risk_key = request.args.get('tag_return_risk')
-        
-        tag_capital_scale = TAG_KEY_TO_LABEL['capital_scale'].get(tag_capital_scale_key) if tag_capital_scale_key else None
-        tag_trading_direction = TAG_KEY_TO_LABEL['trading_direction'].get(tag_trading_direction_key) if tag_trading_direction_key else None
-        tag_trading_cycle = TAG_KEY_TO_LABEL['trading_cycle'].get(tag_trading_cycle_key) if tag_trading_cycle_key else None
-        tag_frequency_style = TAG_KEY_TO_LABEL['frequency_style'].get(tag_frequency_style_key) if tag_frequency_style_key else None
-        tag_return_risk = TAG_KEY_TO_LABEL['return_risk'].get(tag_return_risk_key) if tag_return_risk_key else None
-        tag_strategy_capability_key = request.args.get('tag_strategy_capability')
-        tag_strategy_capability = TAG_KEY_TO_LABEL['strategy_capability'].get(tag_strategy_capability_key) if tag_strategy_capability_key else None
+        # 标签筛选（DB中已存储英文值，直接匹配）
+        tag_account_value = request.args.get('tag_account_value')
+        tag_trading_rhythm = request.args.get('tag_trading_rhythm')
+        tag_profit_status = request.args.get('tag_profit_status')
+        tag_direction_preference = request.args.get('tag_direction_preference')
+        tag_trading_style = request.args.get('tag_trading_style')
 
         # 胜率区间
         if min_win_rate is not None:
@@ -289,18 +277,16 @@ def get_traders():
             all_traders = [t for t in all_traders if is_recent(t)]
         
         # 标签筛选
-        if tag_capital_scale:
-            all_traders = [t for t in all_traders if t.get('tag_capital_scale') == tag_capital_scale]
-        if tag_trading_direction:
-            all_traders = [t for t in all_traders if t.get('tag_trading_direction') == tag_trading_direction]
-        if tag_trading_cycle:
-            all_traders = [t for t in all_traders if t.get('tag_trading_cycle') == tag_trading_cycle]
-        if tag_frequency_style:
-            all_traders = [t for t in all_traders if t.get('tag_frequency_style') == tag_frequency_style]
-        if tag_return_risk:
-            all_traders = [t for t in all_traders if t.get('tag_return_risk') == tag_return_risk]
-        if tag_strategy_capability:
-            all_traders = [t for t in all_traders if t.get('tag_strategy_capability') == tag_strategy_capability]
+        if tag_account_value:
+            all_traders = [t for t in all_traders if t.get('tag_account_value') == tag_account_value]
+        if tag_trading_rhythm:
+            all_traders = [t for t in all_traders if t.get('tag_trading_rhythm') == tag_trading_rhythm]
+        if tag_profit_status:
+            all_traders = [t for t in all_traders if t.get('tag_profit_status') == tag_profit_status]
+        if tag_direction_preference:
+            all_traders = [t for t in all_traders if t.get('tag_direction_preference') == tag_direction_preference]
+        if tag_trading_style:
+            all_traders = [t for t in all_traders if tag_trading_style in (t.get('tag_trading_style') or '')]
 
         # 应用排序
         valid_sort_fields = {
@@ -397,12 +383,11 @@ def get_traders():
                 # 用户收藏状态（用户维度）
                 'is_starred': trader.get('address') in user_starred_addresses,
                 # 标签
-                'tag_capital_scale': trader.get('tag_capital_scale'),
-                'tag_trading_direction': trader.get('tag_trading_direction'),
-                'tag_trading_cycle': trader.get('tag_trading_cycle'),
-                'tag_frequency_style': trader.get('tag_frequency_style'),
-                'tag_return_risk': trader.get('tag_return_risk'),
-                'tag_strategy_capability': trader.get('tag_strategy_capability'),
+                'tag_account_value': trader.get('tag_account_value'),
+                'tag_trading_rhythm': trader.get('tag_trading_rhythm'),
+                'tag_profit_status': trader.get('tag_profit_status'),
+                'tag_direction_preference': trader.get('tag_direction_preference'),
+                'tag_trading_style': trader.get('tag_trading_style'),
             })
 
         return jsonify({
@@ -1093,6 +1078,209 @@ def get_trader_fills(address: str):
 
     except Exception as e:
         logger.error(f"获取交易记录失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_core_bp.route('/api/traders/<address>/account-overview', methods=['GET'])
+@login_required
+def get_trader_account_overview(address: str):
+    """获取交易者账户概览（实时数据）
+    ---
+    tags:
+      - Traders
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+    responses:
+      200:
+        description: 账户概览数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+      404:
+        description: 无法获取用户状态
+      500:
+        description: 服务器错误
+    """
+    try:
+        from hyperliquid.info import Info
+        from hyperliquid.utils import constants
+        import pendulum
+
+        info = Info(constants.MAINNET_API_URL, skip_ws=True)
+
+        # 1. 获取合约账户状态
+        user_state = info.user_state(address)
+        if not user_state:
+            return jsonify({
+                'success': False,
+                'error': '无法获取用户状态'
+            }), 404
+
+        margin_summary = user_state.get('marginSummary', {})
+        perp_account_value = float(margin_summary.get('accountValue', 0))
+        total_margin_used = float(margin_summary.get('totalMarginUsed', 0))
+        total_ntl_pos = float(margin_summary.get('totalNtlPos', 0))
+        withdrawable = float(user_state.get('withdrawable', 0))
+
+        # 2. 获取现货账户状态
+        spot_account_value = 0.0
+        try:
+            spot_state = info.spot_user_state(address)
+            if spot_state:
+                balances = spot_state.get('balances', [])
+                all_mids = info.all_mids()
+                for b in balances:
+                    coin = b.get('coin', '')
+                    total = float(b.get('total', 0))
+                    if coin == 'USDC':
+                        spot_account_value += total
+                    else:
+                        price = float(all_mids.get(coin, 0))
+                        spot_account_value += total * price
+        except Exception as e:
+            logger.warning(f"获取现货账户失败: {e}")
+
+        account_total_value = perp_account_value + spot_account_value
+
+        # 3. 解析持仓数据
+        asset_positions = user_state.get('assetPositions', [])
+        total_position_value = 0.0
+        long_value = 0.0
+        short_value = 0.0
+        total_upnl = 0.0
+        margin_used_list = []
+
+        for ap in asset_positions:
+            pos = ap.get('position', {})
+            szi = float(pos.get('szi', 0))
+            if szi == 0:
+                continue
+
+            pos_value = abs(float(pos.get('positionValue', 0)))
+            upnl = float(pos.get('unrealizedPnl', 0))
+            margin_used = float(pos.get('marginUsed', 0))
+
+            total_position_value += pos_value
+            total_upnl += upnl
+
+            if margin_used > 0:
+                margin_used_list.append(margin_used)
+
+            if szi > 0:
+                long_value += pos_value
+            else:
+                short_value += pos_value
+
+        # 杠杆率
+        leverage_ratio = round(total_position_value / perp_account_value, 2) if perp_account_value > 0 else 0.0
+
+        # 可提现比例
+        withdrawable_pct = round(withdrawable / perp_account_value * 100, 2) if perp_account_value > 0 else 0.0
+
+        # 方向偏好
+        total_exposure = long_value + short_value
+        long_exposure_pct = round(long_value / total_exposure * 100, 2) if total_exposure > 0 else 0.0
+        short_exposure_pct = round(short_value / total_exposure * 100, 2) if total_exposure > 0 else 0.0
+
+        if long_exposure_pct > 60:
+            direction_bias = 'Long'
+        elif short_exposure_pct > 60:
+            direction_bias = 'Short'
+        else:
+            direction_bias = 'Neutral'
+
+        # 平均保证金使用率
+        total_margin_for_positions = sum(margin_used_list)
+        avg_margin_used_ratio = round(total_margin_for_positions / perp_account_value * 100, 2) if perp_account_value > 0 else 0.0
+
+        # ROE
+        roe = round(total_upnl / perp_account_value * 100, 2) if perp_account_value > 0 else 0.0
+
+        # 4. 从数据库获取最近一周的交易表现
+        now = pendulum.now('Asia/Shanghai')
+        one_week_ago = now.subtract(weeks=1)
+        start_date = one_week_ago.format('YYYY-MM-DD')
+        end_date = now.format('YYYY-MM-DD')
+
+        # 交易次数（fills）
+        start_ms = int(one_week_ago.timestamp() * 1000)
+        end_ms = int(now.timestamp() * 1000)
+
+        trades_count = 0
+        win_rate_1w = 0.0
+        closed_positions_1w = 0
+        max_drawdown_1w = 0.0
+
+        try:
+            closed_perf = db.get_trader_closed_performance(address, start_date, end_date)
+            if closed_perf:
+                win_rate_1w = closed_perf['overview']['win_rate']
+                closed_positions_1w = closed_perf['closed_stats']['closed_count']
+        except Exception as e:
+            logger.warning(f"获取平仓表现失败: {e}")
+
+        try:
+            # 获取交易者基础数据用于 max_drawdown
+            trader = db.get_trader_by_address(address)
+            if trader:
+                max_drawdown_1w = float(trader.get('max_drawdown', 0)) * 100
+                trades_count = int(trader.get('total_trades', 0))
+        except Exception as e:
+            logger.warning(f"获取交易者数据失败: {e}")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'account_total': {
+                    'total_value': round(account_total_value, 2),
+                    'perpetual_value': round(perp_account_value, 2),
+                    'spot_value': round(spot_account_value, 2),
+                },
+                'margin': {
+                    'free_margin': round(withdrawable, 2),
+                    'withdrawable_pct': withdrawable_pct,
+                },
+                'positions': {
+                    'total_position_value': round(total_position_value, 2),
+                    'leverage_ratio': leverage_ratio,
+                    'perp_total_value': round(total_position_value, 2),
+                    'avg_margin_used_ratio': avg_margin_used_ratio,
+                },
+                'direction_bias': {
+                    'bias': direction_bias,
+                    'long_exposure_pct': long_exposure_pct,
+                    'short_exposure_pct': short_exposure_pct,
+                },
+                'position_distribution': {
+                    'long_value': round(long_value, 2),
+                    'short_value': round(short_value, 2),
+                },
+                'profit_loss': {
+                    'roe': roe,
+                    'unrealized_pnl': round(total_upnl, 2),
+                },
+                'trading_performance_1w': {
+                    'win_rate': win_rate_1w,
+                    'max_drawdown': round(max_drawdown_1w, 2),
+                    'trades': trades_count,
+                    'closed_positions': closed_positions_1w,
+                },
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取账户概览失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

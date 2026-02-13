@@ -1004,7 +1004,7 @@ class DatabaseMigrations:
             cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
         )
 
-        # 添加交易者标签字段到 trader_metrics 表
+        # 添加交易者标签字段到 trader_metrics 表（旧6列保留兼容）
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'tag_capital_scale', 'TEXT'
         )
@@ -1022,6 +1022,23 @@ class DatabaseMigrations:
         )
         self._migrate_add_column_if_not_exists(
             cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
+        )
+
+        # 新标签系统（5列，英文值存储）
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_account_value', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_rhythm', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_profit_status', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_direction_preference', 'TEXT'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'trader_metrics', 'tag_trading_style', 'TEXT'
         )
 
         # 添加 display_name 字段到 trader_metrics 表（排行榜显示名称）

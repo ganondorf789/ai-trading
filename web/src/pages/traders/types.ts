@@ -34,10 +34,9 @@ export interface FilterConfig {
   maxActiveDays?: number;
   hasRecentTrade?: number;
   // 标签筛选
-  tagCapitalScale?: string;
-  tagTradingDirection?: string;
-  tagTradingCycle?: string;
-  tagFrequencyStyle?: string;
-  tagReturnRisk?: string;
-  tagStrategyCapability?: string;
+  tagAccountValue?: string;
+  tagTradingRhythm?: string;
+  tagProfitStatus?: string;
+  tagDirectionPreference?: string;
+  tagTradingStyle?: string;
 }

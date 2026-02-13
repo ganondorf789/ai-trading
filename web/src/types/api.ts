@@ -72,12 +72,11 @@ export interface Trader {
   // 用户标记
   is_starred?: boolean;
   // 标签
-  tag_capital_scale?: string;
-  tag_trading_direction?: string;
-  tag_trading_cycle?: string;
-  tag_frequency_style?: string;
-  tag_return_risk?: string;
-  tag_strategy_capability?: string;
+  tag_account_value?: string;
+  tag_trading_rhythm?: string;
+  tag_profit_status?: string;
+  tag_direction_preference?: string;
+  tag_trading_style?: string;  // comma-separated
 }
 
 export interface TraderFill {

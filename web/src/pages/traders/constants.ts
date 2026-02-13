@@ -49,37 +49,33 @@ export const RATING_OPTIONS = ['S', 'A', 'B', 'C', 'D', 'F'] as const;
 
 // 标签选项 - key用于API传参，label用于显示
 export const TAG_OPTIONS = {
-  capitalScale: [
-    { key: 'small', label: '小资金' },
-    { key: 'medium', label: '中等资金' },
-    { key: 'large', label: '大资金' },
+  accountValue: [
+    { key: 'small_capital', label: '小资金' },
+    { key: 'medium_capital', label: '中等资金' },
+    { key: 'whale', label: '巨鲸' },
   ],
-  tradingDirection: [
-    { key: 'bearish', label: '偏空头' },
-    { key: 'neutral', label: '中性' },
-    { key: 'bullish', label: '偏多头' },
-  ],
-  tradingCycle: [
+  tradingRhythm: [
     { key: 'long_term', label: '长线' },
     { key: 'swing', label: '波段' },
     { key: 'short_term', label: '短线' },
     { key: 'ultra_short', label: '超短线' },
   ],
-  frequencyStyle: [
-    { key: 'high_freq_aggressive', label: '高频激进' },
-    { key: 'low_freq_stable', label: '低频稳健' },
-    { key: 'low_freq_aggressive', label: '低频激进' },
-  ],
-  returnRisk: [
-    { key: 'stable_profit', label: '稳定盈利' },
-    { key: 'continuous_profit', label: '持续盈利' },
+  profitStatus: [
+    { key: 'consistent_profit', label: '持续盈利' },
     { key: 'volatile_profit', label: '波动盈利' },
     { key: 'break_even', label: '盈亏平衡' },
-    { key: 'high_risk_high_return', label: '高风险高回报' },
-    { key: 'low_drawdown', label: '低回撤' },
   ],
-  strategyCapability: [
-    { key: 'volatility_strategy', label: '波动策略' },
+  directionPreference: [
+    { key: 'bearish', label: '偏空头' },
+    { key: 'neutral', label: '中性' },
+    { key: 'bullish', label: '偏多头' },
+  ],
+  tradingStyle: [
+    { key: 'high_freq_stable', label: '高频稳健' },
+    { key: 'high_freq_aggressive', label: '高频激进' },
+    { key: 'low_freq_stable', label: '低频稳健' },
+    { key: 'stable_profit', label: '稳定盈利' },
+    { key: 'high_risk_high_return', label: '高风险高回报' },
     { key: 'asymmetric_master', label: '非对称高手' },
   ],
 } as const;

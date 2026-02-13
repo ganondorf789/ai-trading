@@ -435,6 +435,9 @@ class MetricsCalculator:
         
         # 7天盈亏：基于7天内平仓的仓位
         pnl.recent_7d_pnl = calculate_position_pnl_by_time(positions, days=7)
+
+        # 30天盈亏：基于30天内平仓的仓位
+        pnl.recent_30d_pnl = calculate_position_pnl_by_time(positions, days=30)
         
         # 平均每笔盈亏（基于已平仓位数）
         total_closed = position_metrics.get('total_closed_positions', 0)
@@ -547,14 +550,34 @@ class MetricsCalculator:
             trade.long_short_ratio = long_count / total_sides
         
         # 最近 7 天胜率（基于仓位历史）
+        now = now_shanghai()
+        recent_7d_cutoff = now.subtract(days=7).timestamp() * 1000
         recent_7d_positions = [
-            p for p in positions 
-            if p.get('status') == 'closed' and 
-               (p.get('close_time', 0) or 0) >= (now_shanghai().subtract(days=7).timestamp() * 1000)
+            p for p in positions
+            if p.get('status') == 'closed' and
+               (p.get('close_time', 0) or 0) >= recent_7d_cutoff
         ]
         if recent_7d_positions:
             recent_7d_wins = sum(1 for p in recent_7d_positions if (p.get('realized_pnl', 0) or 0) > 0)
             trade.recent_7d_win_rate = recent_7d_wins / len(recent_7d_positions)
+
+        # 最近 90 天交易数（基于仓位历史）
+        recent_90d_cutoff = now.subtract(days=90).timestamp() * 1000
+        recent_90d_positions = [
+            p for p in positions
+            if p.get('status') == 'closed' and
+               (p.get('close_time', 0) or 0) >= recent_90d_cutoff
+        ]
+        trade.total_trades_90d = len(recent_90d_positions)
+
+        # 最近 30 天交易数（基于仓位历史）
+        recent_30d_cutoff = now.subtract(days=30).timestamp() * 1000
+        recent_30d_positions = [
+            p for p in positions
+            if p.get('status') == 'closed' and
+               (p.get('close_time', 0) or 0) >= recent_30d_cutoff
+        ]
+        trade.recent_30d_trades = len(recent_30d_positions)
     
     def _calculate_risk_metrics(
         self,
@@ -657,6 +680,10 @@ class MetricsCalculator:
         # 活跃天数（使用单次遍历结果中的 daily_pnl）
         daily_pnl = fills_stats.get('daily_pnl', {})
         activity.active_days = len(daily_pnl)
+
+        # 最近90天活跃天数
+        cutoff_90d = now_shanghai().subtract(days=90).format('YYYY-MM-DD')
+        activity.active_days_90d = len([k for k in daily_pnl if k >= cutoff_90d])
         
         # 交易频率（基于仓位数）
         if activity.first_trade_time and activity.last_trade_time:
