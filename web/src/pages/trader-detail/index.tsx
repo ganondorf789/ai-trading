@@ -5,7 +5,7 @@ import { Spinner } from '@heroui/spinner';
 import { Button } from '@heroui/button';
 import { addToast } from '@heroui/react';
 import { tradingApi, traderApi } from '@/services/api';
-import { AccountOverview } from './components/AccountOverview';
+import { AccountOverview, type AccountOverviewData } from './components/AccountOverview';
 import { PnlCurveChart } from './components/PnlCurveChart';
 import { PerpPositions } from './components/PerpPositions';
 import { OpenOrders } from './components/OpenOrders';
@@ -38,6 +38,7 @@ export default function TraderDetailPage() {
   const [selectedTab, setSelectedTab] = useState<TabKey>('positions');
   const [loading, setLoading] = useState(false);
   const [accountValue, setAccountValue] = useState<number | undefined>(undefined);
+  const [accountData, setAccountData] = useState<AccountOverviewData | null>(null);
 
   // 各 tab 数据
   const [positions, setPositions] = useState<PerpPosition[]>([]);
@@ -183,8 +184,8 @@ export default function TraderDetailPage() {
       {/* Account Overview + PnL Curve */}
       {address && (
         <div className="flex flex-col gap-4">
-          <AccountOverview address={address} onAccountValueLoaded={setAccountValue} />
-          <PnlCurveChart address={address} accountValue={accountValue} />
+          <AccountOverview address={address} onAccountValueLoaded={setAccountValue} onDataLoaded={setAccountData} />
+          <PnlCurveChart address={address} accountValue={accountValue} accountData={accountData} />
         </div>
       )}
 

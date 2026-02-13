@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardBody } from '@heroui/card';
-import { Button } from '@heroui/button';
+import { Chip } from '@heroui/chip';
 import { Spinner } from '@heroui/spinner';
-import { ButtonGroup } from '@heroui/button';
+import { Select, SelectItem } from '@heroui/select';
+import { Divider } from '@heroui/divider';
 import {
   AreaChart,
   Area,
@@ -13,6 +14,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { traderApi } from '@/services/api';
+import type { AccountOverviewData } from './AccountOverview';
 
 // ==================== 类型 ====================
 
@@ -44,6 +46,7 @@ type MetricType = 'pnl' | 'account_value';
 interface PnlCurveChartProps {
   address: string;
   accountValue?: number;
+  accountData?: AccountOverviewData | null;
 }
 
 // ==================== 常量 ====================
@@ -98,32 +101,150 @@ function formatDollar(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
-// ==================== 组件 ====================
+function formatPnl(n: number): string {
+  const prefix = n >= 0 ? '+' : '';
+  return `${prefix}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-export function PnlCurveChart({ address, accountValue }: PnlCurveChartProps) {
+// ==================== Progress Bar 子组件 ====================
+
+function ProgressBar({ value, color }: { value: number; color: string }) {
+  return (
+    <div className="w-full h-2 bg-default-200 rounded-full overflow-hidden">
+      <div
+        className="h-full rounded-full transition-all"
+        style={{ width: `${Math.min(value, 100)}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+}
+
+// ==================== Position Panel 子组件 ====================
+
+function PositionPanel({ data }: { data: AccountOverviewData }) {
+  const fmt = (n: number) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const longPct = data.direction_bias.long_exposure_pct;
+  const shortPct = data.direction_bias.short_exposure_pct;
+  const totalDist = data.position_distribution.long_value + data.position_distribution.short_value;
+  const longDistPct = totalDist > 0 ? (data.position_distribution.long_value / totalDist) * 100 : 0;
+
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      {/* Perp Total Value */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-default-400">Perp Total Value</span>
+          <Chip size="sm" variant="bordered" className="text-[10px]">Current Positions</Chip>
+        </div>
+        <p className="text-2xl font-bold">$ {fmt(data.positions.perp_total_value)}</p>
+      </div>
+
+      {/* Average Margin Used Ratio */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-default-400">Average Margin Used Ratio</span>
+          <span className="text-xs font-semibold">{data.positions.avg_margin_used_ratio} %</span>
+        </div>
+        <ProgressBar value={data.positions.avg_margin_used_ratio} color="#22d3ee" />
+      </div>
+
+      <Divider className="my-0.5" />
+
+      {/* Direction Bias */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-default-400">Direction Bias</span>
+          <span className="text-xs font-bold">{data.direction_bias.bias}</span>
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-default-400">Long Exposure</span>
+              <span className="text-xs font-semibold text-success">{longPct} %</span>
+            </div>
+            <ProgressBar value={longPct} color="#17c964" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-default-400">Short Exposure</span>
+              <span className="text-xs font-semibold text-danger">{shortPct} %</span>
+            </div>
+            <ProgressBar value={shortPct} color="#f31260" />
+          </div>
+        </div>
+      </div>
+
+      <Divider className="my-0.5" />
+
+      {/* Position Distribution */}
+      <div>
+        <p className="text-xs text-default-400 mb-2">Position Distribution</p>
+        <div className="flex justify-between mb-1">
+          <div>
+            <p className="text-[10px] text-default-400">Long Value</p>
+            <p className="text-sm font-bold text-success">$ {fmt(data.position_distribution.long_value)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-default-400">Short Value</p>
+            <p className="text-sm font-bold text-danger">$ {fmt(data.position_distribution.short_value)}</p>
+          </div>
+        </div>
+        {/* Stacked bar */}
+        <div className="w-full h-2 rounded-full overflow-hidden flex">
+          <div
+            className="h-full rounded-l-full"
+            style={{ width: `${longDistPct}%`, backgroundColor: '#17c964' }}
+          />
+          <div
+            className="h-full rounded-r-full flex-1"
+            style={{ backgroundColor: '#f31260' }}
+          />
+        </div>
+      </div>
+
+      <Divider className="my-0.5" />
+
+      {/* ROE & uPnL */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">ROE</span>
+          <span className={`text-sm font-bold ${data.profit_loss.roe >= 0 ? 'text-success' : 'text-danger'}`}>
+            {data.profit_loss.roe >= 0 ? '+' : ''}{data.profit_loss.roe} %
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">uPnL</span>
+          <span className={`text-sm font-bold ${data.profit_loss.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}`}>
+            $ {formatPnl(data.profit_loss.unrealized_pnl)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== 主组件 ====================
+
+export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1w');
   const [metric, setMetric] = useState<MetricType>('pnl');
   const [curveData, setCurveData] = useState<PnlCurveData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadCurve = useCallback(async () => {
+  const loadData = useCallback(async () => {
+    const params = getDateRange(timeRange);
     setLoading(true);
-    try {
-      const params = getDateRange(timeRange);
-      const res = await traderApi.getPnlCurve(address, params);
-      if (res.success && res.data) {
-        setCurveData(res.data);
-      }
-    } catch {
-      // 静默
-    } finally {
-      setLoading(false);
-    }
+    traderApi.getPnlCurve(address, params).then((res) => {
+      if (res.success && res.data) setCurveData(res.data);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [address, timeRange]);
 
   useEffect(() => {
-    loadCurve();
-  }, [loadCurve]);
+    loadData();
+  }, [loadData]);
 
   // 构建图表数据
   const chartData = useMemo(() => {
@@ -166,112 +287,141 @@ export function PnlCurveChart({ address, accountValue }: PnlCurveChartProps) {
   const gradientId = `pnl-gradient-${metric}`;
 
   return (
-    <Card>
-      <CardBody className="py-4">
-        {/* 头部：指标切换 + 汇总 + 时间范围 */}
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div className="flex items-center gap-4">
-            {/* 指标切换 */}
-            <ButtonGroup size="sm" variant="flat">
-              {METRICS.map((m) => (
-                <Button
-                  key={m.key}
-                  color={metric === m.key ? 'primary' : 'default'}
-                  variant={metric === m.key ? 'solid' : 'flat'}
-                  onPress={() => setMetric(m.key)}
-                >
-                  {m.label}
-                </Button>
-              ))}
-            </ButtonGroup>
-
-            {/* 汇总数值 */}
-            {summary && !loading && (
-              <div className="flex items-baseline gap-2">
-                <span className="text-xl font-bold">{formatDollar(summary.current)}</span>
-                <span className={`text-sm font-semibold ${summary.change >= 0 ? 'text-success' : 'text-danger'}`}>
-                  {summary.change >= 0 ? '+' : ''}
-                  {formatDollar(summary.change)} ({summary.pct >= 0 ? '+' : ''}{summary.pct.toFixed(2)}%)
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* 时间范围 */}
-          <ButtonGroup size="sm" variant="flat">
-            {TIME_RANGES.map((r) => (
-              <Button
-                key={r.key}
-                color={timeRange === r.key ? 'primary' : 'default'}
-                variant={timeRange === r.key ? 'solid' : 'flat'}
-                onPress={() => setTimeRange(r.key)}
-              >
-                {r.label}
-              </Button>
-            ))}
-          </ButtonGroup>
-        </div>
-
-        {/* 图表 */}
-        {loading ? (
-          <div className="flex justify-center items-center h-[300px]">
-            <Spinner size="lg" />
-          </div>
-        ) : chartData.length === 0 ? (
-          <div className="flex justify-center items-center h-[300px] text-default-400">
-            No data available for this time range
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={lineColor} stopOpacity={0.15} />
-                  <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.15} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                minTickGap={40}
-              />
-              <YAxis
-                tickFormatter={(v) => formatDollar(v)}
-                tick={{ fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                width={70}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(0,0,0,0.85)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '12px',
-                }}
-                formatter={(value: any) => [
-                  `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                  metric === 'pnl' ? 'Total PnL' : 'Account Value',
-                ]}
-                labelFormatter={(label) => label}
-              />
-              <Area
-                type="monotone"
-                dataKey={metric}
-                stroke={lineColor}
-                strokeWidth={2}
-                fill={`url(#${gradientId})`}
-                dot={false}
-                activeDot={{ r: 4, fill: lineColor }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+    <>
+      <div className="flex gap-4">
+        {/* 左侧 Position Panel */}
+        {accountData && (
+          <Card className="w-[280px] flex-shrink-0 hidden lg:block">
+            <CardBody className="p-4">
+              <PositionPanel data={accountData} />
+            </CardBody>
+          </Card>
         )}
-      </CardBody>
-    </Card>
+
+        {/* 右侧 Chart */}
+        <Card className="flex-1 min-w-0">
+          <CardBody className="py-4">
+            {/* 头部：汇总 + 右侧下拉 */}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              {/* 汇总数值 */}
+              {summary && !loading ? (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xl font-bold">{formatDollar(summary.current)}</span>
+                  <span className={`text-sm font-semibold ${summary.change >= 0 ? 'text-success' : 'text-danger'}`}>
+                    {summary.change >= 0 ? '+' : ''}
+                    {formatDollar(summary.change)} ({summary.pct >= 0 ? '+' : ''}{summary.pct.toFixed(2)}%)
+                  </span>
+                </div>
+              ) : (
+                <div />
+              )}
+
+              {/* 右侧：指标 + 时间范围 Select */}
+              <div className="flex items-center gap-2">
+                <Select
+                  size="sm"
+                  variant="bordered"
+                  selectedKeys={new Set([metric])}
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0] as MetricType;
+                    if (key) setMetric(key);
+                  }}
+                  className="w-[140px]"
+                  aria-label="Metric"
+                >
+                  {METRICS.map((m) => (
+                    <SelectItem key={m.key}>{m.label}</SelectItem>
+                  ))}
+                </Select>
+                <Select
+                  size="sm"
+                  variant="bordered"
+                  selectedKeys={new Set([timeRange])}
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0] as TimeRange;
+                    if (key) setTimeRange(key);
+                  }}
+                  className="w-[120px]"
+                  aria-label="Time range"
+                >
+                  {TIME_RANGES.map((r) => (
+                    <SelectItem key={r.key}>{r.label}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            {/* Chart */}
+            {loading ? (
+              <div className="flex justify-center items-center h-[380px]">
+                <Spinner size="lg" />
+              </div>
+            ) : chartData.length === 0 ? (
+              <div className="flex justify-center items-center h-[380px] text-default-400">
+                No data available for this time range
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={380}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={lineColor} stopOpacity={0.15} />
+                      <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.15} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={40}
+                  />
+                  <YAxis
+                    tickFormatter={(v) => formatDollar(v)}
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={70}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(0,0,0,0.85)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontSize: '12px',
+                    }}
+                    formatter={(value: any) => [
+                      `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      metric === 'pnl' ? 'Total PnL' : 'Account Value',
+                    ]}
+                    labelFormatter={(label) => label}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey={metric}
+                    stroke={lineColor}
+                    strokeWidth={2}
+                    fill={`url(#${gradientId})`}
+                    dot={false}
+                    activeDot={{ r: 4, fill: lineColor }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardBody>
+        </Card>
+      </div>
+
+      {/* 小屏幕下 Position Panel 显示在图表下方 */}
+      {accountData && (
+        <Card className="block lg:hidden">
+          <CardBody className="p-4">
+            <PositionPanel data={accountData} />
+          </CardBody>
+        </Card>
+      )}
+    </>
   );
 }
