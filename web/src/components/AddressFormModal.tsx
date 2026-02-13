@@ -28,6 +28,8 @@ interface AddressFormModalProps {
   onSyncCoins: () => void;
 }
 
+export type { AddressFormModalProps };
+
 export default function AddressFormModal({
   isOpen,
   onClose,

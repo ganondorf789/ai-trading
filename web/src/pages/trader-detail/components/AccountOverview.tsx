@@ -6,8 +6,11 @@ import { Button } from '@heroui/button';
 import { addToast } from '@heroui/react';
 import { Icon } from '@iconify/react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { traderApi } from '@/services/api';
+import { traderApi, addressTrackingApi, copyTradingApi, hyperliquidApi } from '@/services/api';
+import type { CopyTradingAddress, AddressTracking } from '@/services/api';
 import { TradingStatisticsModal } from './TradingStatisticsModal';
+import TrackingFormModal from '@/components/TrackingFormModal';
+import AddressFormModal from '@/components/AddressFormModal';
 
 // ==================== 类型 ====================
 
@@ -141,6 +144,36 @@ export function AccountOverview({ address, onAccountValueLoaded, onDataLoaded }:
   const [loading, setLoading] = useState(true);
   const [statsModalOpen, setStatsModalOpen] = useState(false);
 
+  // One-click Monitor (TrackingFormModal)
+  const [trackingModalOpen, setTrackingModalOpen] = useState(false);
+
+  // Copy Trading (AddressFormModal)
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyFormData, setCopyFormData] = useState<Partial<CopyTradingAddress>>({
+    address: '',
+    is_enabled: true,
+    copy_ratio: 0.1,
+    max_position_size_usd: 500,
+    min_position_size_usd: 20,
+    max_leverage: 10,
+    slippage: 0.001,
+    copy_leverage: true,
+    copy_once: false,
+    margin_mode: 'cross',
+    symbols_whitelist: [],
+    symbols_blacklist: [],
+    auto_replenish: false,
+    replenish_ratio: 0.5,
+    replenish_min_value_usd: 10,
+    replenish_max_value_usd: 100,
+    take_profit_enabled: false,
+    take_profit_percent: 50,
+    stop_loss_enabled: false,
+    stop_loss_percent: 20,
+  });
+  const [availableCoins, setAvailableCoins] = useState<string[]>([]);
+  const [coinsLoading, setCoinsLoading] = useState(false);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -160,6 +193,61 @@ export function AccountOverview({ address, onAccountValueLoaded, onDataLoaded }:
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // One-click Monitor handlers
+  const handleOpenTracking = useCallback(() => {
+    setTrackingModalOpen(true);
+  }, []);
+
+  const handleSaveTracking = useCallback(async (formData: Partial<AddressTracking>) => {
+    try {
+      const res = await addressTrackingApi.createTracking({
+        tracking_address: formData.tracking_address || '',
+        address_remark: formData.address_remark,
+        is_enabled: formData.is_enabled,
+        enable_notification: formData.enable_notification,
+        monitor_events: formData.monitor_events,
+      });
+      if (res.success) {
+        addToast({ title: '监控添加成功', color: 'success' });
+        setTrackingModalOpen(false);
+      }
+    } catch (err: any) {
+      addToast({ title: '添加失败', description: err.message, color: 'danger' });
+    }
+  }, []);
+
+  // Copy Trading handlers
+  const handleOpenCopyTrading = useCallback(() => {
+    setCopyFormData((prev) => ({ ...prev, address }));
+    setCopyModalOpen(true);
+  }, [address]);
+
+  const handleSaveCopyTrading = useCallback(async () => {
+    try {
+      const res = await copyTradingApi.createAddress(copyFormData);
+      if (res.success) {
+        addToast({ title: '跟单添加成功', color: 'success' });
+        setCopyModalOpen(false);
+      }
+    } catch (err: any) {
+      addToast({ title: '添加失败', description: err.message, color: 'danger' });
+    }
+  }, [copyFormData]);
+
+  const handleSyncCoins = useCallback(async () => {
+    setCoinsLoading(true);
+    try {
+      const res = await hyperliquidApi.getCoinNames();
+      if (res.success && res.data) {
+        setAvailableCoins(res.data);
+      }
+    } catch {
+      // silent
+    } finally {
+      setCoinsLoading(false);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -242,10 +330,10 @@ export function AccountOverview({ address, onAccountValueLoaded, onDataLoaded }:
               <Button size="sm" variant="flat" startContent={<Icon icon="solar:chart-2-bold" width={16} />} onPress={() => setStatsModalOpen(true)}>
                 Trading Statistics
               </Button>
-              <Button size="sm" variant="flat" startContent={<Icon icon="solar:eye-bold" width={16} />} isDisabled>
+              <Button size="sm" variant="flat" startContent={<Icon icon="solar:eye-bold" width={16} />} onPress={handleOpenTracking}>
                 One-click Monitor
               </Button>
-              <Button size="sm" variant="flat" startContent={<Icon icon="solar:copy-bold" width={16} />} isDisabled>
+              <Button size="sm" variant="flat" startContent={<Icon icon="solar:copy-bold" width={16} />} onPress={handleOpenCopyTrading}>
                 Copy Trading
               </Button>
             </div>
@@ -367,6 +455,26 @@ export function AccountOverview({ address, onAccountValueLoaded, onDataLoaded }:
         isOpen={statsModalOpen}
         onClose={() => setStatsModalOpen(false)}
         address={address}
+      />
+
+      <TrackingFormModal
+        isOpen={trackingModalOpen}
+        onClose={() => setTrackingModalOpen(false)}
+        tracking={null}
+        onSave={handleSaveTracking}
+        initialAddress={address}
+      />
+
+      <AddressFormModal
+        isOpen={copyModalOpen}
+        onClose={() => setCopyModalOpen(false)}
+        editingAddress={null}
+        formData={copyFormData}
+        setFormData={setCopyFormData}
+        onSave={handleSaveCopyTrading}
+        availableCoins={availableCoins}
+        coinsLoading={coinsLoading}
+        onSyncCoins={handleSyncCoins}
       />
     </>
   );

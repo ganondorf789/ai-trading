@@ -18,6 +18,7 @@ interface TrackingFormModalProps {
   onClose: () => void;
   tracking: AddressTracking | null;
   onSave: (data: Partial<AddressTracking>) => void;
+  initialAddress?: string;
 }
 
 const MONITOR_EVENTS = [
@@ -32,6 +33,7 @@ export default function TrackingFormModal({
   onClose,
   tracking,
   onSave,
+  initialAddress,
 }: TrackingFormModalProps) {
   const [formData, setFormData] = useState<Partial<AddressTracking>>({
     tracking_address: "",
@@ -53,14 +55,14 @@ export default function TrackingFormModal({
       });
     } else {
       setFormData({
-        tracking_address: "",
+        tracking_address: initialAddress || "",
         address_remark: "",
         is_enabled: true,
         enable_notification: true,
         monitor_events: ["open", "close", "add", "reduce"],
       });
     }
-  }, [tracking, isOpen]);
+  }, [tracking, isOpen, initialAddress]);
 
   const handleSave = () => {
     onSave(formData);
@@ -78,8 +80,8 @@ export default function TrackingFormModal({
               placeholder="0x..."
               value={formData.tracking_address || ""}
               onValueChange={(v) => setFormData({ ...formData, tracking_address: v })}
-              isDisabled={!!tracking}
-              description={tracking ? "地址不可修改" : "输入要跟踪的以太坊地址"}
+              isDisabled={!!tracking || !!initialAddress}
+              description={tracking ? "地址不可修改" : initialAddress ? "地址已自动填充" : "输入要跟踪的以太坊地址"}
             />
 
             {/* 地址备注 */}

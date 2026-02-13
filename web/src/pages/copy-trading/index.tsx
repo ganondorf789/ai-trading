@@ -21,7 +21,7 @@ import { Icon } from "@iconify/react";
 import DefaultLayout from "@/layouts/default";
 import { copyTradingApi, hyperliquidApi, CopyTradingAddress, PaginationInfo } from "@/services/api";
 import { TablePagination } from "@/components/TablePagination";
-import AddressFormModal from "./components/AddressFormModal";
+import AddressFormModal from "@/components/AddressFormModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 
 export default function CopyTradingPage() {
