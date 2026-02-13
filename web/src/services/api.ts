@@ -423,6 +423,14 @@ export const traderApi = {
   // 获取按币种汇总的仓位历史
   getPositionHistoryByCoin: (address: string) =>
     api.get<any, ApiResponse<PositionHistoryByCoin[]>>(`/traders/${address}/position-history/by-coin`),
+
+  // 获取账户概览（实时数据）
+  getAccountOverview: (address: string) =>
+    api.get<any, ApiResponse<any>>(`/traders/${address}/account-overview`),
+
+  // 获取盈亏曲线
+  getPnlCurve: (address: string, params?: { start_date?: string; end_date?: string }) =>
+    api.get<any, ApiResponse<any> & { count?: number }>(`/traders/${address}/pnl-curve`, { params }),
 };
 
 // ==================== 全局仓位历史 API ====================

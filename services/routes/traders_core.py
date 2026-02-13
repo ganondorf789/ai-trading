@@ -1303,8 +1303,9 @@ def get_trader_account_overview(address: str):
         except Exception as e:
             logger.warning(f"获取平仓表现失败: {e}")
 
+        # 获取交易者基础数据
+        trader = None
         try:
-            # 获取交易者基础数据用于 max_drawdown
             trader = db.get_trader_by_address(address)
             if trader:
                 max_drawdown_1w = float(trader.get('max_drawdown', 0)) * 100
@@ -1312,9 +1313,37 @@ def get_trader_account_overview(address: str):
         except Exception as e:
             logger.warning(f"获取交易者数据失败: {e}")
 
+        # 构建标签列表（中文显示）
+        tags = []
+        if trader:
+            tag_fields = [
+                ('account_value', trader.get('tag_account_value')),
+                ('direction_preference', trader.get('tag_direction_preference')),
+                ('profit_status', trader.get('tag_profit_status')),
+                ('trading_rhythm', trader.get('tag_trading_rhythm')),
+            ]
+            for category, value in tag_fields:
+                if value:
+                    label = TAG_DISPLAY_LABELS.get(category, {}).get(value, value)
+                    tags.append({'key': value, 'label': label, 'category': category})
+
+            # trading_style 是逗号分隔的多值
+            style_str = trader.get('tag_trading_style', '')
+            if style_str:
+                for s in style_str.split(','):
+                    s = s.strip()
+                    if s:
+                        label = TAG_DISPLAY_LABELS.get('trading_style', {}).get(s, s)
+                        tags.append({'key': s, 'label': label, 'category': 'trading_style'})
+
         return jsonify({
             'success': True,
             'data': {
+                'trader_info': {
+                    'address': address,
+                    'display_name': trader.get('display_name', '') if trader else '',
+                    'tags': tags,
+                },
                 'account_total': {
                     'total_value': round(account_total_value, 2),
                     'perpetual_value': round(perp_account_value, 2),
