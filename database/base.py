@@ -102,29 +102,3 @@ class DatabaseBase:
             finally:
                 cursor.close()
 
-    def _column_exists(self, cursor, table: str, column: str) -> bool:
-        """检查列是否存在"""
-        cursor.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = %s AND column_name = %s
-            )
-        """, (table, column))
-        return cursor.fetchone()[0]
-
-    def _migrate_add_column_if_not_exists(self, cursor, table: str, column: str, column_def: str):
-        """安全地添加列（如果不存在）"""
-        if not self._column_exists(cursor, table, column):
-            # 转换 SQLite 类型到 PostgreSQL 类型
-            pg_column_def = self._convert_column_def(column_def)
-            cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {pg_column_def}')
-            logger.info(f"数据库迁移: 添加列 {table}.{column}")
-
-    def _convert_column_def(self, sqlite_def: str) -> str:
-        """将 SQLite 列定义转换为 PostgreSQL 格式"""
-        # 移除 DEFAULT 值中的双引号
-        result = sqlite_def.replace('"', "'")
-        # BOOLEAN DEFAULT FALSE/TRUE
-        result = result.replace('BOOLEAN DEFAULT FALSE', 'BOOLEAN DEFAULT FALSE')
-        result = result.replace('BOOLEAN DEFAULT TRUE', 'BOOLEAN DEFAULT TRUE')
-        return result

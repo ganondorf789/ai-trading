@@ -102,13 +102,20 @@ class DatabaseMigrations:
                     -- 用户标记
                     is_starred BOOLEAN DEFAULT FALSE,
 
-                    -- 交易者标签
+                    -- 交易者标签（旧6列）
                     tag_capital_scale TEXT,
                     tag_trading_direction TEXT,
                     tag_trading_cycle TEXT,
                     tag_frequency_style TEXT,
                     tag_return_risk TEXT,
-                    tag_strategy_capability TEXT
+                    tag_strategy_capability TEXT,
+
+                    -- 交易者标签（新5列，英文值存储）
+                    tag_account_value TEXT,
+                    tag_trading_rhythm TEXT,
+                    tag_profit_status TEXT,
+                    tag_direction_preference TEXT,
+                    tag_trading_style TEXT
                 )
             """)
 
@@ -188,6 +195,7 @@ class DatabaseMigrations:
                     max_leverage INTEGER DEFAULT 1,
                     leverage_type TEXT,
                     leverage_value INTEGER DEFAULT 1,
+                    open_time TIMESTAMP,
 
                     -- 唯一约束
                     UNIQUE(address, coin)
@@ -247,23 +255,29 @@ class DatabaseMigrations:
                     check_interval REAL DEFAULT 10.0,
                     dry_run BOOLEAN DEFAULT TRUE,
                     sync_position BOOLEAN DEFAULT TRUE,
-                    
+
                     -- 自动补仓
                     auto_replenish BOOLEAN DEFAULT FALSE,
                     replenish_ratio REAL DEFAULT 0.5,
                     replenish_min_value_usd REAL DEFAULT 10.0,
                     replenish_max_value_usd REAL DEFAULT 100.0,
-                    
+
                     -- 只跟一次
                     copy_once BOOLEAN DEFAULT FALSE,
-                    
+
                     -- 保证金模式: cross(全仓) / isolated(逐仓)
                     margin_mode TEXT DEFAULT 'cross',
+
+                    -- 止盈止损
+                    take_profit_enabled BOOLEAN DEFAULT FALSE,
+                    take_profit_percent FLOAT DEFAULT 50,
+                    stop_loss_enabled BOOLEAN DEFAULT FALSE,
+                    stop_loss_percent FLOAT DEFAULT 20,
 
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
+
                     -- 唯一约束：每个用户对同一地址只能有一条记录
                     UNIQUE(user_id, address)
                 )
@@ -277,6 +291,10 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_copy_enabled
                 ON copy_trading_addresses(is_enabled)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
+                ON copy_trading_addresses(user_id)
             """)
 
             # 创建 Hyperliquid 币种表
@@ -325,7 +343,7 @@ class DatabaseMigrations:
                     target_address TEXT NOT NULL,         -- 目标交易员地址
                     target_name TEXT DEFAULT '',          -- 交易员名称
                     symbol TEXT NOT NULL,                 -- 跟单币种
-                    
+
                     -- 跟单配置
                     is_enabled BOOLEAN DEFAULT TRUE,
                     copy_ratio REAL DEFAULT 0.1,
@@ -335,36 +353,45 @@ class DatabaseMigrations:
                     max_leverage INTEGER DEFAULT 10,
                     default_leverage INTEGER DEFAULT 5,
                     slippage REAL DEFAULT 0.01,
-                    
+
                     -- 自动补仓
                     auto_replenish BOOLEAN DEFAULT FALSE,
                     replenish_ratio REAL DEFAULT 0.5,
                     replenish_min_value_usd REAL DEFAULT 10.0,
                     replenish_max_value_usd REAL DEFAULT 100.0,
-                    
+
                     -- 目标仓位快照（开始跟单时的状态）
                     target_initial_size REAL,
                     target_initial_side TEXT,
                     target_initial_entry_price REAL,
                     target_initial_leverage REAL,
-                    
+
                     -- 我方跟单状态
                     my_size REAL DEFAULT 0.0,
                     my_side TEXT,
                     my_entry_price REAL,
-                    
+
                     -- 状态: pending/active/closed/stopped
                     status TEXT DEFAULT 'pending',
                     closed_pnl REAL,
                     close_reason TEXT,
-                    
+
                     -- 交易员标记
                     target_is_starred BOOLEAN DEFAULT FALSE,
-                    
+
                     -- 交易员评分信息
                     target_score REAL,
                     target_rating TEXT,
-                    
+
+                    -- 保证金模式: cross(全仓) / isolated(逐仓)
+                    position_mode TEXT DEFAULT 'cross',
+
+                    -- 止盈止损
+                    take_profit_enabled BOOLEAN DEFAULT FALSE,
+                    take_profit_percent FLOAT DEFAULT 50,
+                    stop_loss_enabled BOOLEAN DEFAULT FALSE,
+                    stop_loss_percent FLOAT DEFAULT 20,
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     started_at TIMESTAMP,
@@ -472,17 +499,17 @@ class DatabaseMigrations:
                 CREATE TABLE IF NOT EXISTS position_calc_state (
                     id SERIAL PRIMARY KEY,
                     address TEXT NOT NULL UNIQUE,
-                    
+
                     -- 最后处理的 fill 时间戳
                     last_processed_fill_time BIGINT DEFAULT 0,
-                    
+
                     -- 当前未平仓仓位的 JSON 快照
                     open_positions_snapshot JSONB DEFAULT '{}',
-                    
+
                     -- 计算统计
                     total_fills_processed INTEGER DEFAULT 0,
                     total_positions_generated INTEGER DEFAULT 0,
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -498,23 +525,23 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS positions_ai_analysis (
                     id SERIAL PRIMARY KEY,
-                    
+
                     -- 分析类型和标识
                     analysis_type TEXT NOT NULL,        -- 'overall' | 'coin' | 'single'
                     analysis_key TEXT NOT NULL UNIQUE,  -- 唯一标识符：overall_hash / coin_{coin}_hash / single_{address}_{coin}_hash
-                    
+
                     -- 分析目标信息
                     coin TEXT,                          -- 币种（coin/single类型时有值）
                     address TEXT,                       -- 地址（single类型时有值）
                     position_count INTEGER DEFAULT 0,   -- 分析的持仓数量
-                    
+
                     -- 分析结果
                     analysis_text TEXT,                 -- 完整分析文本
                     sections JSONB,                     -- 分段解析后的JSON
-                    
+
                     -- 分析时的统计数据快照
                     stats_snapshot JSONB,               -- 统计数据快照
-                    
+
                     -- 元数据
                     ai_provider TEXT DEFAULT 'default',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -539,13 +566,13 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS detected_new_positions (
                     id SERIAL PRIMARY KEY,
-                    
+
                     -- 交易员信息
                     trader_address TEXT NOT NULL,
                     trader_name TEXT DEFAULT '',
                     trader_rating TEXT,
                     trader_score REAL,
-                    
+
                     -- 仓位信息
                     coin TEXT NOT NULL,
                     direction TEXT NOT NULL,          -- 'long' 或 'short'
@@ -553,17 +580,18 @@ class DatabaseMigrations:
                     entry_px REAL DEFAULT 0.0,        -- 开仓价格
                     position_value REAL DEFAULT 0.0,  -- 仓位价值（USD）
                     leverage INTEGER DEFAULT 1,       -- 杠杆倍数
-                    
+
                     -- 检测信息
                     detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     notified BOOLEAN DEFAULT FALSE,   -- 是否已发送通知
-                    
+
                     -- 可选：跟单相关
                     copy_tracking_id INTEGER,         -- 关联的跟单记录ID
-                    
+
                     -- 交易员标记
                     target_is_starred BOOLEAN DEFAULT FALSE,  -- 目标交易员是否被标记
-                    
+                    is_whale BOOLEAN DEFAULT FALSE,
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -594,25 +622,25 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS notifications (
                     id SERIAL PRIMARY KEY,
-                    
+
                     -- 通知类型和内容
                     type TEXT NOT NULL,                    -- 'open' | 'close' | 'adjust' | 'error'
                     title TEXT NOT NULL,                   -- 通知标题
                     content TEXT NOT NULL,                 -- Markdown 格式内容
-                    
+
                     -- 关联信息
                     target_address TEXT,                   -- 目标交易员地址
                     symbol TEXT,                           -- 交易对
                     side TEXT,                             -- 'long' | 'short'
                     size REAL,                             -- 仓位大小
                     pnl REAL,                              -- 盈亏（平仓时）
-                    
+
                     -- 用户关联
                     user_id TEXT,                              -- 用户ID (ULID)
-                    
+
                     -- 状态
                     is_read BOOLEAN DEFAULT FALSE,         -- 是否已读
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -634,6 +662,25 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_notifications_target_address
                 ON notifications(target_address)
             """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notifications_user_id
+                ON notifications(user_id)
+            """)
+
+            # 创建通知已读标记表（基于水位线的每用户已读追踪）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notification_read_marks (
+                    user_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    read_before_id INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, category)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_notification_read_marks_user
+                ON notification_read_marks(user_id)
+            """)
 
             # 创建秘钥表（用于注册验证）
             cursor.execute("""
@@ -641,16 +688,16 @@ class DatabaseMigrations:
                     id SERIAL PRIMARY KEY,
                     key_value TEXT NOT NULL UNIQUE,              -- 秘钥值（唯一）
                     key_name TEXT DEFAULT '',                    -- 秘钥名称/备注
-                    
+
                     -- 秘钥配置
                     user_role TEXT DEFAULT 'user',               -- 使用此秘钥注册的用户身份: user/member/admin
                     expires_days INTEGER DEFAULT 30,             -- 注册用户的有效天数（0表示永不过期）
                     is_used BOOLEAN DEFAULT FALSE,               -- 是否已使用
                     used_by_user_id TEXT,                        -- 使用此秘钥的用户ID (ULID)
-                    
+
                     -- 状态
                     is_active BOOLEAN DEFAULT TRUE,              -- 是否启用
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at TIMESTAMP,                        -- 秘钥过期时间（NULL表示永不过期）
@@ -674,28 +721,28 @@ class DatabaseMigrations:
                     account TEXT NOT NULL UNIQUE,                -- 账号（唯一）
                     password_hash TEXT NOT NULL,                 -- 密码哈希
                     secret_key_id INTEGER,                       -- 关联的秘钥ID
-                    
+
                     -- 用户身份: user(普通用户) / member(会员) / admin(超级管理员)
                     role TEXT DEFAULT 'user',
-                    
+
                     -- Hyperliquid API 设置
                     api_wallet TEXT DEFAULT '',                  -- API 钱包地址
                     wallet_address TEXT DEFAULT '',              -- 钱包地址
                     api_key TEXT,                                -- Trading 服务认证用
-                    
+
                     -- 访问控制
                     allowed_ip TEXT DEFAULT '',                  -- 允许的IP
                     allowed_port TEXT DEFAULT '',                -- 允许的端口
-                    
+
                     -- 账户状态
                     expires_at TIMESTAMP,                        -- 过期时间（NULL表示永不过期）
                     is_active BOOLEAN DEFAULT TRUE,              -- 账户是否激活
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login_at TIMESTAMP,                     -- 最后登录时间
-                    
+
                     FOREIGN KEY (secret_key_id) REFERENCES secret_keys(id) ON DELETE SET NULL
                 )
             """)
@@ -716,6 +763,11 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_users_role
                 ON users(role)
             """)
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key
+                ON users(api_key)
+                WHERE api_key IS NOT NULL
+            """)
 
             # 创建用户收藏表（用户维度的交易者收藏）
             cursor.execute("""
@@ -724,7 +776,7 @@ class DatabaseMigrations:
                     user_id TEXT NOT NULL,                 -- 用户 ID (ULID)
                     trader_address TEXT NOT NULL,          -- 交易者地址
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
+
                     -- 唯一约束：每个用户对每个交易者只能收藏一次
                     UNIQUE(user_id, trader_address)
                 )
@@ -748,15 +800,15 @@ class DatabaseMigrations:
                     description TEXT DEFAULT '',                 -- 版本描述
                     release_notes TEXT DEFAULT '',               -- 更新日志
                     download_url TEXT DEFAULT '',                -- 下载链接
-                    
+
                     -- 更新配置
                     is_force_update BOOLEAN DEFAULT FALSE,       -- 是否强制更新
                     is_visible BOOLEAN DEFAULT TRUE,             -- 是否对用户可见（管理员可控制）
                     min_supported_version TEXT DEFAULT '',       -- 最低支持版本
-                    
+
                     -- 平台
                     platform TEXT DEFAULT 'all',                 -- 平台: all/android/ios/web
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -788,16 +840,16 @@ class DatabaseMigrations:
                     user_id TEXT NOT NULL,                       -- 用户ID (ULID)
                     tracking_address TEXT NOT NULL,              -- 跟踪地址
                     address_remark TEXT DEFAULT '',              -- 地址备注
-                    
+
                     -- 跟踪配置
                     is_enabled BOOLEAN DEFAULT TRUE,             -- 是否启用跟踪
                     enable_notification BOOLEAN DEFAULT TRUE,    -- 是否开启通知
                     monitor_events TEXT DEFAULT '["open","close","add","reduce"]',  -- 监控事件（JSON数组）
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
+
                     -- 唯一约束：每个用户对同一地址只能有一个跟踪记录
                     UNIQUE(user_id, tracking_address)
                 )
@@ -821,25 +873,25 @@ class DatabaseMigrations:
                 CREATE TABLE IF NOT EXISTS copy_config_rules (
                     id TEXT PRIMARY KEY,                -- ULID
                     user_id TEXT,                       -- 用户ID (ULID)
-                    
+
                     -- 规则类型和名称
                     config_type TEXT NOT NULL,          -- 'default' 或 'immediate'
                     name TEXT NOT NULL,                 -- 规则名称
                     description TEXT DEFAULT '',        -- 规则描述
                     symbol TEXT,                        -- 币种（立即跟单时指定）
-                    
+
                     -- 杠杆区间（左开右闭: leverage_min < leverage <= leverage_max）
                     leverage_min REAL DEFAULT 0,        -- 杠杆下限（不包含），0表示从最小开始
                     leverage_max REAL DEFAULT 100,      -- 杠杆上限（包含），100表示无上限
-                    
+
                     -- 配置数据（JSON格式）
                     config_data JSONB NOT NULL,
-                    
+
                     -- 优先级和状态
                     priority INTEGER DEFAULT 0,         -- 优先级，数字越小优先级越高
                     is_enabled BOOLEAN DEFAULT TRUE,    -- 是否启用
                     is_default BOOLEAN DEFAULT FALSE,   -- 是否为默认配置（兜底规则）
-                    
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -857,6 +909,15 @@ class DatabaseMigrations:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_copy_config_rules_priority
                 ON copy_config_rules(config_type, priority)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_copy_config_rules_user_id
+                ON copy_config_rules(user_id)
+            """)
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_user_immediate_symbol
+                ON copy_config_rules(user_id, config_type, symbol)
+                WHERE config_type = 'immediate' AND symbol IS NOT NULL AND user_id IS NOT NULL
             """)
 
             # 创建资金费历史表
@@ -984,218 +1045,32 @@ class DatabaseMigrations:
                 ON trader_ledger_updates(delta_type)
             """)
 
-            # 运行增量迁移
-            self._run_migrations(cursor)
+            # 创建巨鲸锚点表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS whale_anchor (
+                    id SERIAL PRIMARY KEY,
+                    coin TEXT NOT NULL UNIQUE,
+                    mark_price REAL NOT NULL DEFAULT 0,
+                    price_change_24h_pct REAL NOT NULL DEFAULT 0,
+                    day_volume_usd REAL NOT NULL DEFAULT 0,
+                    open_interest_usd REAL NOT NULL DEFAULT 0,
+                    depth_1pct_usd REAL NOT NULL DEFAULT 0,
+                    volume_component REAL NOT NULL DEFAULT 0,
+                    oi_component REAL NOT NULL DEFAULT 0,
+                    depth_component REAL NOT NULL DEFAULT 0,
+                    whale_threshold REAL NOT NULL DEFAULT 0,
+                    dominant_factor TEXT NOT NULL DEFAULT 'none',
+                    max_leverage INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_whale_anchor_coin
+                ON whale_anchor(coin)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_whale_anchor_threshold
+                ON whale_anchor(whale_threshold DESC)
+            """)
 
             logger.info("PostgreSQL 数据库表结构初始化完成")
-
-    def _run_migrations(self, cursor):
-        """运行增量迁移"""
-        # 删除分组功能相关的表和列
-        self._migrate_remove_groups(cursor)
-        
-        # 添加 is_starred 字段到 trader_metrics 表
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'is_starred', 'BOOLEAN DEFAULT FALSE'
-        )
-
-        # 添加 open_time 字段到 asset_positions 表（用于记录仓位开仓时间）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'asset_positions', 'open_time', 'TIMESTAMP'
-        )
-
-        # 添加交易者标签字段到 trader_metrics 表（旧6列保留兼容）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_capital_scale', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_trading_direction', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_trading_cycle', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_frequency_style', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_return_risk', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_strategy_capability', 'TEXT'
-        )
-
-        # 新标签系统（5列，英文值存储）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_account_value', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_trading_rhythm', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_profit_status', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_direction_preference', 'TEXT'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'tag_trading_style', 'TEXT'
-        )
-
-        # 添加 display_name 字段到 trader_metrics 表（排行榜显示名称）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'trader_metrics', 'display_name', "TEXT DEFAULT ''"
-        )
-
-        # users 表相关索引
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key
-            ON users(api_key)
-            WHERE api_key IS NOT NULL
-        """)
-
-        # copy_trading_addresses 表相关索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
-            ON copy_trading_addresses(user_id)
-        """)
-
-        # copy_config_rules 表相关索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_copy_config_rules_user_id
-            ON copy_config_rules(user_id)
-        """)
-        cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_copy_config_rules_user_immediate_symbol
-            ON copy_config_rules(user_id, config_type, symbol)
-            WHERE config_type = 'immediate' AND symbol IS NOT NULL AND user_id IS NOT NULL
-        """)
-
-        # notifications 表相关索引
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_notifications_user_id
-            ON notifications(user_id)
-        """)
-
-        # 创建通知已读标记表（基于水位线的每用户已读追踪）
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS notification_read_marks (
-                user_id TEXT NOT NULL,
-                category TEXT NOT NULL,
-                read_before_id INTEGER NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, category)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_notification_read_marks_user
-            ON notification_read_marks(user_id)
-        """)
-
-        # 创建巨鲸锚点表
-        self._migrate_create_whale_anchor_table(cursor)
-
-        # 为 detected_new_positions 表添加 is_whale 字段
-        self._migrate_add_column_if_not_exists(
-            cursor, 'detected_new_positions', 'is_whale', 'BOOLEAN DEFAULT FALSE'
-        )
-
-        # 为 copy_trading_addresses 表添加 margin_mode 字段（全仓/逐仓）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'margin_mode', "TEXT DEFAULT 'cross'"
-        )
-
-        # 为 copy_position_tracking 表添加 position_mode 字段（全仓/逐仓）
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'position_mode', "TEXT DEFAULT 'cross'"
-        )
-
-        # 为 copy_trading_addresses 表添加止盈止损字段
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'take_profit_enabled', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'take_profit_percent', 'FLOAT DEFAULT 50'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'stop_loss_enabled', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_trading_addresses', 'stop_loss_percent', 'FLOAT DEFAULT 20'
-        )
-
-        # 为 copy_position_tracking 表添加止盈止损字段
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'take_profit_enabled', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'take_profit_percent', 'FLOAT DEFAULT 50'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'stop_loss_enabled', 'BOOLEAN DEFAULT FALSE'
-        )
-        self._migrate_add_column_if_not_exists(
-            cursor, 'copy_position_tracking', 'stop_loss_percent', 'FLOAT DEFAULT 20'
-        )
-
-    def _migrate_remove_groups(self, cursor):
-        """
-        移除分组功能相关的表和列
-        
-        这是一个破坏性迁移，会删除：
-        - copy_trading_groups 表
-        - copy_trading_addresses.group_id 列
-        - idx_copy_group 索引
-        """
-        # 检查 group_id 列是否存在
-        if self._column_exists(cursor, 'copy_trading_addresses', 'group_id'):
-            # 删除索引
-            cursor.execute("DROP INDEX IF EXISTS idx_copy_group")
-            logger.info("数据库迁移: 删除索引 idx_copy_group")
-            
-            # 删除外键约束（如果存在）
-            cursor.execute("""
-                ALTER TABLE copy_trading_addresses 
-                DROP CONSTRAINT IF EXISTS copy_trading_addresses_group_id_fkey
-            """)
-            
-            # 删除列
-            cursor.execute("ALTER TABLE copy_trading_addresses DROP COLUMN group_id")
-            logger.info("数据库迁移: 删除列 copy_trading_addresses.group_id")
-        
-        # 删除分组表
-        cursor.execute("DROP TABLE IF EXISTS copy_trading_groups")
-        logger.info("数据库迁移: 删除表 copy_trading_groups")
-
-    def _migrate_create_whale_anchor_table(self, cursor):
-        """
-        创建巨鲸锚点表
-
-        存储每个币种的巨鲸仓位阈值及相关市场数据。
-        管理员手动刷新时全量更新。
-        """
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS whale_anchor (
-                id SERIAL PRIMARY KEY,
-                coin TEXT NOT NULL UNIQUE,
-                mark_price REAL NOT NULL DEFAULT 0,
-                price_change_24h_pct REAL NOT NULL DEFAULT 0,
-                day_volume_usd REAL NOT NULL DEFAULT 0,
-                open_interest_usd REAL NOT NULL DEFAULT 0,
-                depth_1pct_usd REAL NOT NULL DEFAULT 0,
-                volume_component REAL NOT NULL DEFAULT 0,
-                oi_component REAL NOT NULL DEFAULT 0,
-                depth_component REAL NOT NULL DEFAULT 0,
-                whale_threshold REAL NOT NULL DEFAULT 0,
-                dominant_factor TEXT NOT NULL DEFAULT 'none',
-                max_leverage INTEGER NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_whale_anchor_coin
-            ON whale_anchor(coin)
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_whale_anchor_threshold
-            ON whale_anchor(whale_threshold DESC)
-        """)
