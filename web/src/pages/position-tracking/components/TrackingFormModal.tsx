@@ -248,49 +248,50 @@ export default function TrackingFormModal({
             <Divider />
 
             {/* 止盈止损配置 */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">止盈</p>
-                <p className="text-sm text-default-500">仓位盈利达到目标百分比时自动平仓</p>
+            <div className="grid grid-cols-2 gap-4">
+              {/* 止盈 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    size="sm"
+                    isSelected={formData.take_profit_enabled}
+                    onValueChange={(value) => setFormData({ ...formData, take_profit_enabled: value })}
+                  />
+                  <span className="text-sm">启用止盈</span>
+                </div>
+                {formData.take_profit_enabled && (
+                  <Input
+                    type="number"
+                    label="止盈百分比"
+                    size="sm"
+                    value={String(formData.take_profit_percent)}
+                    onValueChange={(value) => setFormData({ ...formData, take_profit_percent: parseFloat(value) || 50 })}
+                    endContent={<span className="text-default-400 text-sm">%</span>}
+                  />
+                )}
               </div>
-              <Switch
-                isSelected={formData.take_profit_enabled}
-                onValueChange={(value) => setFormData({ ...formData, take_profit_enabled: value })}
-              />
-            </div>
-
-            {formData.take_profit_enabled && (
-              <Input
-                type="number"
-                label="止盈百分比"
-                description="盈利达到此百分比时自动平仓"
-                value={String(formData.take_profit_percent)}
-                onValueChange={(value) => setFormData({ ...formData, take_profit_percent: parseFloat(value) || 50 })}
-                endContent={<span className="text-default-400">%</span>}
-              />
-            )}
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">止损</p>
-                <p className="text-sm text-default-500">仓位亏损达到目标百分比时自动平仓</p>
+              {/* 止损 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    size="sm"
+                    isSelected={formData.stop_loss_enabled}
+                    onValueChange={(value) => setFormData({ ...formData, stop_loss_enabled: value })}
+                  />
+                  <span className="text-sm">启用止损</span>
+                </div>
+                {formData.stop_loss_enabled && (
+                  <Input
+                    type="number"
+                    label="止损百分比"
+                    size="sm"
+                    value={String(formData.stop_loss_percent)}
+                    onValueChange={(value) => setFormData({ ...formData, stop_loss_percent: parseFloat(value) || 20 })}
+                    endContent={<span className="text-default-400 text-sm">%</span>}
+                  />
+                )}
               </div>
-              <Switch
-                isSelected={formData.stop_loss_enabled}
-                onValueChange={(value) => setFormData({ ...formData, stop_loss_enabled: value })}
-              />
             </div>
-
-            {formData.stop_loss_enabled && (
-              <Input
-                type="number"
-                label="止损百分比"
-                description="亏损达到此百分比时自动平仓"
-                value={String(formData.stop_loss_percent)}
-                onValueChange={(value) => setFormData({ ...formData, stop_loss_percent: parseFloat(value) || 20 })}
-                endContent={<span className="text-default-400">%</span>}
-              />
-            )}
           </div>
         </ModalBody>
         <ModalFooter>
