@@ -34,7 +34,7 @@ export default function TradersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [filters, setFilters] = useState<FilterConfig>({});
-  const [visibleColumns, setVisibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
+  const [visibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
     column: 'overall_score',
     direction: 'descending',
@@ -77,6 +77,12 @@ export default function TradersPage() {
       setLoading(true);
       setError(null);
 
+      // 周期 → has_recent_trade
+      const periodDays = filters.period === '1d' ? 1
+        : filters.period === '7d' ? 7
+        : filters.period === '30d' ? 30
+        : undefined;
+
       const params = {
         page,
         limit: ROWS_PER_PAGE,
@@ -84,25 +90,11 @@ export default function TradersPage() {
         rating: selectedRating || undefined,
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
-        min_win_rate: filters.minWinRate !== undefined ? filters.minWinRate / 100 : undefined,
-        max_win_rate: filters.maxWinRate !== undefined ? filters.maxWinRate / 100 : undefined,
-        min_profit_factor: filters.minProfitFactor,
-        max_profit_factor: filters.maxProfitFactor,
-        min_pnl: filters.minPnl,
-        max_pnl: filters.maxPnl,
-        min_drawdown: filters.minDrawdown !== undefined ? filters.minDrawdown / 100 : undefined,
-        max_drawdown: filters.maxDrawdown !== undefined ? filters.maxDrawdown / 100 : undefined,
-        min_sharpe: filters.minSharpe,
-        max_sharpe: filters.maxSharpe,
-        min_sortino: filters.minSortino,
-        max_sortino: filters.maxSortino,
-        min_calmar: filters.minCalmar,
-        max_calmar: filters.maxCalmar,
-        min_trades: filters.minTrades,
-        max_trades: filters.maxTrades,
-        min_active_days: filters.minActiveDays,
-        max_active_days: filters.maxActiveDays,
-        has_recent_trade: filters.hasRecentTrade,
+        has_recent_trade: periodDays,
+        // 高级筛选 → JSON
+        filters: filters.advancedFilters?.length
+          ? JSON.stringify(filters.advancedFilters)
+          : undefined,
         // 标签筛选
         tag_account_value: filters.tagAccountValue,
         tag_trading_rhythm: filters.tagTradingRhythm,
@@ -183,14 +175,13 @@ export default function TradersPage() {
                   onRowAction={(key) => handleRowClick(key.toString())}
                   topContent={
                     <FilterSection
+                      totalCount={totalCount}
                       searchAddress={searchAddress}
                       onSearchChange={onSearchChange}
                       selectedRating={selectedRating}
                       onRatingChange={setSelectedRating}
                       sortDescriptor={sortDescriptor}
                       onSortChange={setSortDescriptor}
-                      visibleColumns={visibleColumns}
-                      onVisibleColumnsChange={setVisibleColumns}
                       filters={filters}
                       onFiltersChange={setFilters}
                       onSearch={loadTraders}

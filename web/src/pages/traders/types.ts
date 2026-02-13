@@ -13,26 +13,19 @@ export interface Column {
   group?: string;
 }
 
+export type PeriodKey = '1d' | '7d' | '30d' | 'all';
+
+export interface AdvancedFilterCondition {
+  field: string;
+  op: string;
+  value?: number;
+}
+
 export interface FilterConfig {
-  minWinRate?: number;
-  maxWinRate?: number;
-  minProfitFactor?: number;
-  maxProfitFactor?: number;
-  minPnl?: number;
-  maxPnl?: number;
-  minDrawdown?: number;
-  maxDrawdown?: number;
-  minSharpe?: number;
-  maxSharpe?: number;
-  minSortino?: number;
-  maxSortino?: number;
-  minCalmar?: number;
-  maxCalmar?: number;
-  minTrades?: number;
-  maxTrades?: number;
-  minActiveDays?: number;
-  maxActiveDays?: number;
-  hasRecentTrade?: number;
+  // 周期筛选
+  period?: PeriodKey;
+  // 高级筛选条件（字段+运算符+值）
+  advancedFilters?: AdvancedFilterCondition[];
   // 标签筛选
   tagAccountValue?: string;
   tagTradingRhythm?: string;

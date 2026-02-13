@@ -1,23 +1,30 @@
-import type { Selection, SortDescriptor } from '@heroui/react';
+import { useState } from 'react';
+import type { SortDescriptor } from '@heroui/react';
+import { useDisclosure } from '@heroui/react';
 import { Input } from '@heroui/input';
 import { Button } from '@heroui/button';
 import { Select, SelectItem } from '@heroui/select';
-import { Form } from '@heroui/form';
+import { Chip } from '@heroui/chip';
 import { SearchIcon } from '@heroui/shared-icons';
 import { Icon } from '@iconify/react';
-import { RangeFilter } from './RangeFilter';
-import { columns, RATING_OPTIONS, TAG_OPTIONS } from '../constants';
-import type { FilterConfig } from '../types';
+import { AdvancedFilterDrawer } from './AdvancedFilterDrawer';
+import {
+  columns,
+  RATING_OPTIONS,
+  PERIOD_OPTIONS,
+  TAG_GROUPS,
+  FIELD_LABELS,
+} from '../constants';
+import type { FilterConfig, AdvancedFilterCondition } from '../types';
 
 interface FilterSectionProps {
+  totalCount: number;
   searchAddress: string;
   onSearchChange: (value?: string) => void;
   selectedRating: string;
   onRatingChange: (rating: string) => void;
   sortDescriptor: SortDescriptor;
   onSortChange: (descriptor: SortDescriptor) => void;
-  visibleColumns: Selection;
-  onVisibleColumnsChange: (columns: Selection) => void;
   filters: FilterConfig;
   onFiltersChange: (filters: FilterConfig) => void;
   onSearch: () => void;
@@ -26,305 +33,325 @@ interface FilterSectionProps {
 }
 
 export function FilterSection({
+  totalCount,
   searchAddress,
   onSearchChange,
   selectedRating,
   onRatingChange,
   sortDescriptor,
   onSortChange,
-  visibleColumns,
-  onVisibleColumnsChange,
   filters,
   onFiltersChange,
   onSearch,
   onReset,
   onAddTrader,
 }: FilterSectionProps) {
+  const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const [draftConditions, setDraftConditions] = useState<AdvancedFilterCondition[]>([]);
+
+  // === Drawer ===
+  const handleOpenDrawer = () => {
+    setDraftConditions(
+      filters.advancedFilters?.length
+        ? filters.advancedFilters.map(c => ({ ...c }))
+        : [{ field: '', op: '>', value: undefined }]
+    );
+    onOpen();
+  };
+
+  const handleApplyDrawerFilters = (conditions: AdvancedFilterCondition[]) => {
+    const valid = conditions.filter(
+      c => c.field && c.op && (c.op === 'exist' || c.value !== undefined)
+    );
+    onFiltersChange({ ...filters, advancedFilters: valid.length ? valid : undefined });
+  };
+
+  const handleRemoveCondition = (index: number) => {
+    const next = [...(filters.advancedFilters || [])];
+    next.splice(index, 1);
+    onFiltersChange({ ...filters, advancedFilters: next.length ? next : undefined });
+  };
+
+  // === Period ===
+  const handlePeriodChange = (key: string) => {
+    const next = filters.period === key ? undefined : (key as FilterConfig['period']);
+    onFiltersChange({ ...filters, period: next });
+  };
+
+  // === Tags ===
+  const handleTagToggle = (filterKey: string, tagKey: string) => {
+    const current = (filters as Record<string, unknown>)[filterKey];
+    onFiltersChange({
+      ...filters,
+      [filterKey]: current === tagKey ? undefined : tagKey,
+    });
+  };
+
+  // === Helpers ===
+  const advancedCount = filters.advancedFilters?.length ?? 0;
+  const hasActiveFilters = advancedCount > 0;
+  const hasActiveTags =
+    filters.tagAccountValue ||
+    filters.tagTradingRhythm ||
+    filters.tagProfitStatus ||
+    filters.tagDirectionPreference ||
+    filters.tagTradingStyle;
+  const showChipsBar = hasActiveFilters || !!hasActiveTags || !!selectedRating;
+
   return (
-    <div className="flex flex-col gap-4">
-      <Form className="flex flex-col gap-4">
-        {/* 第一行：地址搜索 + 评级 + 排序 + 列选择 */}
-        <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-col gap-3">
+      {/* ====== Row 1: Top bar ====== */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        {/* Left: count + search */}
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-default-500 whitespace-nowrap">
+            已收录{' '}
+            <span className="text-primary font-semibold">{totalCount.toLocaleString()}</span>{' '}
+            个地址
+          </span>
           <Input
-            className="w-[260px]"
-            endContent={<SearchIcon className="text-default-400" width={16} />}
-            label="搜索"
-            labelPlacement="outside"
-            placeholder="搜索昵称或地址..."
+            className="w-[200px]"
+            placeholder="搜索地址或昵称..."
             size="sm"
+            startContent={<SearchIcon className="text-default-400" width={14} />}
             value={searchAddress}
             onValueChange={onSearchChange}
             isClearable
             onClear={() => onSearchChange('')}
           />
+        </div>
 
+        {/* Right: controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Sort field */}
           <Select
             className="w-[120px]"
-            label="评级"
-            labelPlacement="outside"
-            placeholder="全部"
+            aria-label="排序"
+            placeholder="排序"
             size="sm"
+            variant="flat"
+            startContent={<Icon icon="solar:sort-linear" width={14} className="text-default-400" />}
+            selectedKeys={sortDescriptor.column ? [sortDescriptor.column as string] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              if (selected) {
+                onSortChange({ column: selected, direction: sortDescriptor.direction });
+              }
+            }}
+          >
+            {columns.filter(c => c.sortable).map(col => (
+              <SelectItem key={col.uid} textValue={col.name}>{col.name}</SelectItem>
+            ))}
+          </Select>
+
+          {/* Asc / Desc */}
+          <Button
+            size="sm"
+            variant="flat"
+            className="min-w-0 px-2"
+            onPress={() =>
+              onSortChange({
+                column: sortDescriptor.column,
+                direction:
+                  sortDescriptor.direction === 'descending' ? 'ascending' : 'descending',
+              })
+            }
+          >
+            <Icon
+              icon={
+                sortDescriptor.direction === 'descending'
+                  ? 'solar:sort-from-top-to-bottom-linear'
+                  : 'solar:sort-from-bottom-to-top-linear'
+              }
+              width={16}
+            />
+            <span className="text-xs ml-1">
+              {sortDescriptor.direction === 'descending' ? '降序' : '升序'}
+            </span>
+          </Button>
+
+          {/* Period */}
+          <div className="flex items-center bg-default-100 rounded-lg p-0.5">
+            <Icon icon="solar:clock-circle-linear" width={14} className="text-default-400 ml-1.5 mr-0.5" />
+            {PERIOD_OPTIONS.map(p => (
+              <Button
+                key={p.key}
+                size="sm"
+                variant={filters.period === p.key ? 'solid' : 'light'}
+                color={filters.period === p.key ? 'primary' : 'default'}
+                className="min-w-0 px-2.5 h-7 text-xs"
+                onPress={() => handlePeriodChange(p.key)}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Rating */}
+          <Select
+            className="w-[90px]"
+            aria-label="评级"
+            placeholder="评级"
+            size="sm"
+            variant="flat"
             selectedKeys={selectedRating ? [selectedRating] : []}
             onSelectionChange={(keys) => {
               const selected = Array.from(keys)[0] as string;
               onRatingChange(selected || '');
             }}
           >
-            {RATING_OPTIONS.map((rating) => (
-              <SelectItem key={rating} textValue={rating}>{rating}</SelectItem>
+            {RATING_OPTIONS.map(r => (
+              <SelectItem key={r} textValue={r}>{r}</SelectItem>
             ))}
           </Select>
 
-          <Select
-            className="w-[140px]"
-            label="排序"
-            labelPlacement="outside"
-            placeholder="选择排序"
-            size="sm"
-            selectedKeys={sortDescriptor.column ? [sortDescriptor.column as string] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              if (selected) {
-                onSortChange({
-                  column: selected,
-                  direction: sortDescriptor.column === selected && sortDescriptor.direction === 'descending'
-                    ? 'ascending'
-                    : 'descending',
-                });
-              }
-            }}
-          >
-            {columns.filter((c) => c.sortable).map((col) => (
-              <SelectItem key={col.uid} textValue={col.name}>{col.name}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[160px]"
-            label="显示列"
-            labelPlacement="outside"
-            placeholder="选择列"
-            size="sm"
-            selectionMode="multiple"
-            selectedKeys={visibleColumns}
-            onSelectionChange={onVisibleColumnsChange}
-          >
-            {columns.map((col) => (
-              <SelectItem key={col.uid} textValue={col.name}>{col.name}</SelectItem>
-            ))}
-          </Select>
-        </div>
-
-        {/* 第二行：数值筛选条件（区间查询） */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <RangeFilter
-            label="胜率"
-            minValue={filters.minWinRate}
-            maxValue={filters.maxWinRate}
-            onMinChange={(v) => onFiltersChange({ ...filters, minWinRate: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxWinRate: v })}
-            endContent={<span className="text-xs text-default-400">%</span>}
-          />
-
-          <RangeFilter
-            label="盈亏比"
-            minValue={filters.minProfitFactor}
-            maxValue={filters.maxProfitFactor}
-            onMinChange={(v) => onFiltersChange({ ...filters, minProfitFactor: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxProfitFactor: v })}
-          />
-
-          <RangeFilter
-            label="总盈亏 ($)"
-            minValue={filters.minPnl}
-            maxValue={filters.maxPnl}
-            onMinChange={(v) => onFiltersChange({ ...filters, minPnl: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxPnl: v })}
-          />
-
-          <RangeFilter
-            label="回撤"
-            minValue={filters.minDrawdown}
-            maxValue={filters.maxDrawdown}
-            onMinChange={(v) => onFiltersChange({ ...filters, minDrawdown: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxDrawdown: v })}
-            endContent={<span className="text-xs text-default-400">%</span>}
-          />
-
-          <RangeFilter
-            label="Sharpe"
-            minValue={filters.minSharpe}
-            maxValue={filters.maxSharpe}
-            onMinChange={(v) => onFiltersChange({ ...filters, minSharpe: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxSharpe: v })}
-          />
-
-          <RangeFilter
-            label="Sortino"
-            minValue={filters.minSortino}
-            maxValue={filters.maxSortino}
-            onMinChange={(v) => onFiltersChange({ ...filters, minSortino: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxSortino: v })}
-          />
-
-          <RangeFilter
-            label="Calmar"
-            minValue={filters.minCalmar}
-            maxValue={filters.maxCalmar}
-            onMinChange={(v) => onFiltersChange({ ...filters, minCalmar: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxCalmar: v })}
-          />
-
-          <RangeFilter
-            label="交易数"
-            minValue={filters.minTrades}
-            maxValue={filters.maxTrades}
-            onMinChange={(v) => onFiltersChange({ ...filters, minTrades: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxTrades: v })}
-            isInteger
-          />
-
-          <RangeFilter
-            label="活跃天数"
-            minValue={filters.minActiveDays}
-            maxValue={filters.maxActiveDays}
-            onMinChange={(v) => onFiltersChange({ ...filters, minActiveDays: v })}
-            onMaxChange={(v) => onFiltersChange({ ...filters, maxActiveDays: v })}
-            isInteger
-          />
-
-          {/* 最近活跃 */}
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-default-600">最近活跃</span>
-            <div className="flex items-center gap-1">
-              <Input
-                type="number"
-                size="sm"
-                placeholder="N天内"
-                value={filters.hasRecentTrade?.toString() || ''}
-                onValueChange={(v) => onFiltersChange({ ...filters, hasRecentTrade: v ? parseInt(v) : undefined })}
-                endContent={<span className="text-xs text-default-400">天</span>}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 第三行：标签筛选 */}
-        <div className="flex flex-wrap gap-3">
-          <Select
-            className="w-[140px]"
-            label="账户总价值"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagAccountValue ? [filters.tagAccountValue] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagAccountValue: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.accountValue.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[140px]"
-            label="交易节奏"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagTradingRhythm ? [filters.tagTradingRhythm] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagTradingRhythm: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.tradingRhythm.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[140px]"
-            label="盈利状态"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagProfitStatus ? [filters.tagProfitStatus] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagProfitStatus: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.profitStatus.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[140px]"
-            label="方向偏好"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagDirectionPreference ? [filters.tagDirectionPreference] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagDirectionPreference: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.directionPreference.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-
-          <Select
-            className="w-[160px]"
-            label="交易风格"
-            labelPlacement="outside"
-            placeholder="全部"
-            size="sm"
-            selectedKeys={filters.tagTradingStyle ? [filters.tagTradingStyle] : []}
-            onSelectionChange={(keys) => {
-              const selected = Array.from(keys)[0] as string;
-              onFiltersChange({ ...filters, tagTradingStyle: selected || undefined });
-            }}
-          >
-            {TAG_OPTIONS.tradingStyle.map((tag) => (
-              <SelectItem key={tag.key} textValue={tag.label}>{tag.label}</SelectItem>
-            ))}
-          </Select>
-        </div>
-
-        {/* 第四行：搜索、重置、新增按钮 */}
-        <div className="flex gap-2">
+          {/* Advanced filter */}
           <Button
+            size="sm"
+            variant={hasActiveFilters ? 'flat' : 'light'}
+            color={hasActiveFilters ? 'primary' : 'default'}
+            startContent={<Icon icon="solar:filter-linear" width={16} />}
+            onPress={handleOpenDrawer}
+          >
+            高级筛选{hasActiveFilters ? ` (${advancedCount})` : ''}
+          </Button>
+
+          {/* Add trader */}
+          <Button
+            size="sm"
             color="primary"
-            size="sm"
-            startContent={<SearchIcon width={16} />}
-            onPress={onSearch}
-          >
-            搜索
-          </Button>
-          <Button
-            variant="flat"
-            size="sm"
-            startContent={<Icon icon="solar:restart-linear" width={16} />}
-            onPress={onReset}
-          >
-            重置
-          </Button>
-          <Button
-            color="success"
-            size="sm"
             startContent={<Icon icon="solar:add-circle-linear" width={16} />}
             onPress={onAddTrader}
           >
             新增
           </Button>
         </div>
-      </Form>
+      </div>
+
+      {/* ====== Row 2: Tag filters ====== */}
+      <div className="flex flex-col gap-1.5 px-1">
+        {TAG_GROUPS.map(group => {
+          const currentValue = (filters as Record<string, unknown>)[group.filterKey] as
+            | string
+            | undefined;
+          return (
+            <div key={group.key} className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-default-400 w-[72px] shrink-0 text-right">
+                {group.label}
+              </span>
+              {group.options.map(tag => (
+                <Button
+                  key={tag.key}
+                  size="sm"
+                  variant={currentValue === tag.key ? 'flat' : 'light'}
+                  color={currentValue === tag.key ? 'primary' : 'default'}
+                  className="min-w-0 px-2 h-6 text-xs"
+                  onPress={() => handleTagToggle(group.filterKey, tag.key)}
+                >
+                  {tag.label}
+                </Button>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ====== Row 3: Active filter chips ====== */}
+      {showChipsBar && (
+        <div className="flex items-center gap-2 flex-wrap px-1">
+          {/* Rating chip */}
+          {selectedRating && (
+            <Chip
+              size="sm"
+              variant="flat"
+              color="secondary"
+              onClose={() => onRatingChange('')}
+            >
+              评级 = {selectedRating}
+            </Chip>
+          )}
+
+          {/* Period chip */}
+          {filters.period && (
+            <Chip
+              size="sm"
+              variant="flat"
+              color="warning"
+              onClose={() => onFiltersChange({ ...filters, period: undefined })}
+            >
+              周期: {PERIOD_OPTIONS.find(p => p.key === filters.period)?.label}
+            </Chip>
+          )}
+
+          {/* Tag chips */}
+          {TAG_GROUPS.map(group => {
+            const val = (filters as Record<string, unknown>)[group.filterKey] as
+              | string
+              | undefined;
+            if (!val) return null;
+            const label = group.options.find(o => o.key === val)?.label ?? val;
+            return (
+              <Chip
+                key={group.key}
+                size="sm"
+                variant="flat"
+                color="default"
+                onClose={() => onFiltersChange({ ...filters, [group.filterKey]: undefined })}
+              >
+                {group.label}: {label}
+              </Chip>
+            );
+          })}
+
+          {/* Advanced filter chips */}
+          {filters.advancedFilters?.map((condition, index) => (
+            <Chip
+              key={`adv-${index}`}
+              size="sm"
+              variant="flat"
+              color="primary"
+              onClose={() => handleRemoveCondition(index)}
+            >
+              {FIELD_LABELS[condition.field] || condition.field}{' '}
+              {condition.op === 'exist' ? '存在' : `${condition.op} ${condition.value}`}
+            </Chip>
+          ))}
+
+          {/* Spacer + actions */}
+          <div className="flex-1" />
+
+          <Button
+            size="sm"
+            variant="light"
+            color="danger"
+            className="text-xs"
+            startContent={<Icon icon="solar:trash-bin-trash-linear" width={14} />}
+            onPress={onReset}
+          >
+            清除
+          </Button>
+
+          <Button
+            size="sm"
+            variant="flat"
+            color="primary"
+            className="text-xs"
+            startContent={<Icon icon="solar:filter-bold" width={14} />}
+            onPress={onSearch}
+          >
+            筛选
+          </Button>
+        </div>
+      )}
+
+      {/* ====== Advanced Filter Drawer ====== */}
+      <AdvancedFilterDrawer
+        isOpen={isOpen}
+        onOpenChange={onOpenChange}
+        conditions={draftConditions}
+        onConditionsChange={setDraftConditions}
+        onApply={handleApplyDrawerFilters}
+      />
     </div>
   );
 }
