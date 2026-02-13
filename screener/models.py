@@ -160,6 +160,14 @@ class TradeMetrics:
     favorite_symbol: str = ""  # 最常交易的品种
     long_short_ratio: float = 0.0  # 多空比例（多单占比）
 
+    # 多空分项
+    long_trades: int = 0  # 多仓数
+    long_realized_pnl: float = 0.0  # 多仓已实现盈亏
+    long_win_rate: float = 0.0  # 多仓胜率
+    short_trades: int = 0  # 空仓数
+    short_realized_pnl: float = 0.0  # 空仓已实现盈亏
+    short_win_rate: float = 0.0  # 空仓胜率
+
     # 时间窗口统计
     total_trades_90d: int = 0  # 最近90天交易数
     recent_30d_trades: int = 0  # 最近30天交易数
@@ -196,7 +204,15 @@ class PositionMetrics:
     current_equity: float = 0.0  # 当前权益
     avg_leverage: float = 1.0  # 平均杠杆
     max_leverage: float = 1.0  # 最大杠杆
-    
+    account_value: float = 0.0  # 账户总价值
+    used_margin: float = 0.0  # 已用保证金
+    perp_total_value: float = 0.0  # 永续合约总价值
+    position_value: float = 0.0  # 持仓价值
+    long_position_value: float = 0.0  # 多仓仓位价值
+    short_position_value: float = 0.0  # 空仓仓位价值
+    margin_usage_rate: float = 0.0  # 保证金使用率
+    long_position_ratio: float = 0.0  # 多仓持仓比例
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -468,6 +484,64 @@ class TraderMetrics:
     def long_short_ratio(self) -> float:
         return self.trade.long_short_ratio
     
+    # ===== 新增持仓便捷属性 =====
+    @property
+    def account_value(self) -> float:
+        return self.position.account_value
+
+    @property
+    def used_margin(self) -> float:
+        return self.position.used_margin
+
+    @property
+    def perp_total_value(self) -> float:
+        return self.position.perp_total_value
+
+    @property
+    def position_value(self) -> float:
+        return self.position.position_value
+
+    @property
+    def long_position_value(self) -> float:
+        return self.position.long_position_value
+
+    @property
+    def short_position_value(self) -> float:
+        return self.position.short_position_value
+
+    @property
+    def margin_usage_rate(self) -> float:
+        return self.position.margin_usage_rate
+
+    @property
+    def long_position_ratio(self) -> float:
+        return self.position.long_position_ratio
+
+    # ===== 新增多空分项便捷属性 =====
+    @property
+    def long_trades(self) -> int:
+        return self.trade.long_trades
+
+    @property
+    def long_realized_pnl(self) -> float:
+        return self.trade.long_realized_pnl
+
+    @property
+    def long_win_rate(self) -> float:
+        return self.trade.long_win_rate
+
+    @property
+    def short_trades(self) -> int:
+        return self.trade.short_trades
+
+    @property
+    def short_realized_pnl(self) -> float:
+        return self.trade.short_realized_pnl
+
+    @property
+    def short_win_rate(self) -> float:
+        return self.trade.short_win_rate
+
     @property
     def avg_trade_price(self) -> float:
         return self.trade.avg_trade_price
@@ -623,7 +697,13 @@ class TraderMetrics:
             'unique_symbols': self.trade.unique_symbols,
             'favorite_symbol': self.trade.favorite_symbol,
             'long_short_ratio': self.trade.long_short_ratio,
-            
+            'long_trades': self.trade.long_trades,
+            'long_realized_pnl': self.trade.long_realized_pnl,
+            'long_win_rate': self.trade.long_win_rate,
+            'short_trades': self.trade.short_trades,
+            'short_realized_pnl': self.trade.short_realized_pnl,
+            'short_win_rate': self.trade.short_win_rate,
+
             # Activity
             'active_days': self.activity.active_days,
             'trade_frequency_per_day': self.activity.trade_frequency_per_day,
@@ -641,7 +721,15 @@ class TraderMetrics:
             'current_positions': self.position.current_positions,
             'current_equity': self.position.current_equity,
             'avg_leverage': self.position.avg_leverage,
-            
+            'account_value': self.position.account_value,
+            'used_margin': self.position.used_margin,
+            'perp_total_value': self.position.perp_total_value,
+            'position_value': self.position.position_value,
+            'long_position_value': self.position.long_position_value,
+            'short_position_value': self.position.short_position_value,
+            'margin_usage_rate': self.position.margin_usage_rate,
+            'long_position_ratio': self.position.long_position_ratio,
+
             # ROI
             'roi': self.roi.roi,
             'daily_roi': self.roi.daily_roi,

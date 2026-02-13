@@ -578,7 +578,28 @@ class MetricsCalculator:
                (p.get('close_time', 0) or 0) >= recent_30d_cutoff
         ]
         trade.recent_30d_trades = len(recent_30d_positions)
-    
+
+        # 多空分项统计（基于仓位历史）
+        long_positions = [p for p in positions if p.get('direction') == 'long']
+        short_positions = [p for p in positions if p.get('direction') == 'short']
+
+        trade.long_trades = len(long_positions)
+        trade.short_trades = len(short_positions)
+
+        # 多仓已实现盈亏和胜率
+        closed_long = [p for p in long_positions if p.get('status') == 'closed']
+        if closed_long:
+            trade.long_realized_pnl = sum(p.get('realized_pnl', 0) or 0 for p in closed_long)
+            long_wins = sum(1 for p in closed_long if (p.get('realized_pnl', 0) or 0) > 0)
+            trade.long_win_rate = long_wins / len(closed_long)
+
+        # 空仓已实现盈亏和胜率
+        closed_short = [p for p in short_positions if p.get('status') == 'closed']
+        if closed_short:
+            trade.short_realized_pnl = sum(p.get('realized_pnl', 0) or 0 for p in closed_short)
+            short_wins = sum(1 for p in closed_short if (p.get('realized_pnl', 0) or 0) > 0)
+            trade.short_win_rate = short_wins / len(closed_short)
+
     def _calculate_risk_metrics(
         self,
         metrics: TraderMetrics,
@@ -713,30 +734,57 @@ class MetricsCalculator:
             user_state: 用户状态
         """
         position = metrics.position
-        
+
         margin = user_state.get('marginSummary', {})
         position.current_equity = float(margin.get('accountValue', 0))
-        
-        positions = user_state.get('assetPositions', [])
+        position.used_margin = float(margin.get('totalMarginUsed', 0))
+        position.account_value = position.current_equity
+
+        asset_positions = user_state.get('assetPositions', [])
         max_leverage = 1.0
-        
-        for pos_data in positions:
+        long_value = 0.0
+        short_value = 0.0
+        perp_total_value = 0.0
+
+        for pos_data in asset_positions:
             pos = pos_data.get('position', {})
             szi = float(pos.get('szi', 0))
-            
+
             if szi != 0:
                 position.current_positions += 1
-                
+
                 # 未实现盈亏
                 metrics.pnl.unrealized_pnl += float(pos.get('unrealizedPnl', 0))
-                
+
+                # 仓位价值
+                pos_value = abs(float(pos.get('positionValue', 0)))
+                perp_total_value += pos_value
+
+                if szi > 0:
+                    long_value += pos_value
+                else:
+                    short_value += pos_value
+
                 # 杠杆
                 leverage = pos.get('leverage', {}).get('value', 1)
                 if leverage:
                     max_leverage = max(max_leverage, int(leverage))
-        
+
         position.avg_leverage = max_leverage
         position.max_leverage = max_leverage
+        position.perp_total_value = perp_total_value
+        position.position_value = perp_total_value
+        position.long_position_value = long_value
+        position.short_position_value = short_value
+
+        # 保证金使用率
+        if position.current_equity > 0:
+            position.margin_usage_rate = position.used_margin / position.current_equity
+
+        # 多仓持仓比例
+        total_value = long_value + short_value
+        if total_value > 0:
+            position.long_position_ratio = long_value / total_value
     
     def _calculate_roi_metrics(
         self,

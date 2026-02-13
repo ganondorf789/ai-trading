@@ -2,6 +2,8 @@
 交易者基础管理相关路由
 包括：交易者列表、添加、详情、刷新、交易记录
 """
+import json
+import operator
 from flask import Blueprint, jsonify, request
 import logging
 
@@ -44,6 +46,105 @@ TAG_DISPLAY_LABELS = {
         'asymmetric_master': '非对称高手',
     },
 }
+
+# ===== 高级筛选引擎 =====
+
+FILTER_OPS = {
+    '<': operator.lt,
+    '>': operator.gt,
+    '=': operator.eq,
+    '>=': operator.ge,
+    '<=': operator.le,
+    '!=': operator.ne,
+    '<>': operator.ne,
+    'exist': lambda val, _: val is not None and val != 0,
+}
+
+FILTERABLE_FIELDS = {
+    'sharpe_ratio', 'max_drawdown', 'current_positions', 'current_equity',
+    'perp_total_value', 'position_value', 'long_position_value', 'short_position_value',
+    'margin_usage_rate', 'used_margin', 'winning_trades', 'win_rate',
+    'total_pnl', 'long_trades', 'long_realized_pnl', 'long_win_rate',
+    'short_trades', 'short_realized_pnl', 'short_win_rate',
+    'unrealized_pnl', 'avg_leverage', 'account_value', 'long_position_ratio',
+    'overall_score', 'total_trades', 'profit_factor', 'sortino_ratio',
+    'calmar_ratio', 'active_days', 'roi', 'recent_7d_pnl', 'recent_7d_win_rate',
+    'max_drawdown_abs', 'losing_trades', 'total_volume',
+    'max_single_win', 'max_single_loss', 'max_consecutive_wins', 'max_consecutive_losses',
+    'avg_win_amount', 'avg_loss_amount', 'unique_symbols',
+    'long_short_ratio',
+}
+
+SORTABLE_FIELDS = {
+    'win_rate', 'current_equity', 'last_trade_time', 'current_positions',
+    'used_margin', 'perp_total_value', 'avg_leverage',
+    'long_realized_pnl', 'short_realized_pnl', 'total_pnl', 'long_position_ratio',
+    'overall_score', 'rating', 'total_trades', 'roi', 'profit_factor',
+    'max_drawdown', 'sharpe_ratio', 'sortino_ratio', 'calmar_ratio',
+    'active_days', 'recent_7d_pnl', 'recent_7d_win_rate', 'unique_symbols',
+    'max_consecutive_wins', 'max_consecutive_losses', 'long_short_ratio',
+    'account_value', 'margin_usage_rate', 'position_value',
+    'long_position_value', 'short_position_value',
+    'long_trades', 'short_trades', 'long_win_rate', 'short_win_rate',
+}
+
+# 旧版 min_/max_ 参数到字段名的映射
+LEGACY_FILTER_MAP = {
+    'min_win_rate': ('win_rate', '>='),
+    'max_win_rate': ('win_rate', '<='),
+    'min_profit_factor': ('profit_factor', '>='),
+    'max_profit_factor': ('profit_factor', '<='),
+    'min_pnl': ('total_pnl', '>='),
+    'max_pnl': ('total_pnl', '<='),
+    'min_drawdown': ('max_drawdown', '>='),
+    'max_drawdown': ('max_drawdown', '<='),
+    'min_sharpe': ('sharpe_ratio', '>='),
+    'max_sharpe': ('sharpe_ratio', '<='),
+    'min_sortino': ('sortino_ratio', '>='),
+    'max_sortino': ('sortino_ratio', '<='),
+    'min_calmar': ('calmar_ratio', '>='),
+    'max_calmar': ('calmar_ratio', '<='),
+    'min_trades': ('total_trades', '>='),
+    'max_trades': ('total_trades', '<='),
+    'min_active_days': ('active_days', '>='),
+    'max_active_days': ('active_days', '<='),
+}
+
+
+def apply_advanced_filters(traders, filter_conditions):
+    """
+    应用高级筛选条件
+
+    Args:
+        traders: 交易者列表
+        filter_conditions: 筛选条件列表，每个条件为 {'field': str, 'op': str, 'value': number}
+
+    Returns:
+        筛选后的交易者列表
+    """
+    for condition in filter_conditions:
+        field = condition.get('field')
+        op_str = condition.get('op')
+        value = condition.get('value', 0)
+
+        if field not in FILTERABLE_FIELDS:
+            continue
+
+        op_func = FILTER_OPS.get(op_str)
+        if not op_func:
+            continue
+
+        if op_str == 'exist':
+            traders = [t for t in traders if op_func(t.get(field), None)]
+        else:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            traders = [t for t in traders if op_func(t.get(field, 0) or 0, value)]
+
+    return traders
+
 
 traders_core_bp = Blueprint('traders_core', __name__)
 
@@ -138,6 +239,10 @@ def get_traders():
         in: query
         type: integer
         description: 最近N天内有交易
+      - name: filters
+        in: query
+        type: string
+        description: 'JSON数组格式的高级筛选条件，例: [{"field":"win_rate","op":">","value":0.5}]。支持的操作符: <, >, =, >=, <=, !=, <>, exist'
     responses:
       200:
         description: 交易者列表
@@ -188,80 +293,31 @@ def get_traders():
                 or search_lower in (t.get('display_name') or '').lower()
             ]
 
-        # 应用高级筛选（区间查询）
-        min_win_rate = request.args.get('min_win_rate', type=float)
-        max_win_rate = request.args.get('max_win_rate', type=float)
-        min_profit_factor = request.args.get('min_profit_factor', type=float)
-        max_profit_factor = request.args.get('max_profit_factor', type=float)
-        min_pnl = request.args.get('min_pnl', type=float)
-        max_pnl = request.args.get('max_pnl', type=float)
-        min_drawdown = request.args.get('min_drawdown', type=float)
-        max_drawdown = request.args.get('max_drawdown', type=float)
-        min_sharpe = request.args.get('min_sharpe', type=float)
-        max_sharpe = request.args.get('max_sharpe', type=float)
-        min_sortino = request.args.get('min_sortino', type=float)
-        max_sortino = request.args.get('max_sortino', type=float)
-        min_calmar = request.args.get('min_calmar', type=float)
-        max_calmar = request.args.get('max_calmar', type=float)
-        min_trades = request.args.get('min_trades', type=int)
-        max_trades = request.args.get('max_trades', type=int)
-        min_active_days = request.args.get('min_active_days', type=int)
-        max_active_days = request.args.get('max_active_days', type=int)
-        has_recent_trade = request.args.get('has_recent_trade', type=int)
-        
-        # 标签筛选（DB中已存储英文值，直接匹配）
-        tag_account_value = request.args.get('tag_account_value')
-        tag_trading_rhythm = request.args.get('tag_trading_rhythm')
-        tag_profit_status = request.args.get('tag_profit_status')
-        tag_direction_preference = request.args.get('tag_direction_preference')
-        tag_trading_style = request.args.get('tag_trading_style')
+        # ===== 构建筛选条件 =====
+        filter_conditions = []
 
-        # 胜率区间
-        if min_win_rate is not None:
-            all_traders = [t for t in all_traders if t.get('win_rate', 0) >= min_win_rate]
-        if max_win_rate is not None:
-            all_traders = [t for t in all_traders if t.get('win_rate', 0) <= max_win_rate]
-        # 盈亏比区间
-        if min_profit_factor is not None:
-            all_traders = [t for t in all_traders if t.get('profit_factor', 0) >= min_profit_factor]
-        if max_profit_factor is not None:
-            all_traders = [t for t in all_traders if t.get('profit_factor', 0) <= max_profit_factor]
-        # PnL区间
-        if min_pnl is not None:
-            all_traders = [t for t in all_traders if t.get('total_pnl', 0) >= min_pnl]
-        if max_pnl is not None:
-            all_traders = [t for t in all_traders if t.get('total_pnl', 0) <= max_pnl]
-        # 回撤区间
-        if min_drawdown is not None:
-            all_traders = [t for t in all_traders if t.get('max_drawdown', 0) >= min_drawdown]
-        if max_drawdown is not None:
-            all_traders = [t for t in all_traders if t.get('max_drawdown', 1) <= max_drawdown]
-        # Sharpe区间
-        if min_sharpe is not None:
-            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) >= min_sharpe]
-        if max_sharpe is not None:
-            all_traders = [t for t in all_traders if t.get('sharpe_ratio', 0) <= max_sharpe]
-        # Sortino区间
-        if min_sortino is not None:
-            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) >= min_sortino]
-        if max_sortino is not None:
-            all_traders = [t for t in all_traders if t.get('sortino_ratio', 0) <= max_sortino]
-        # Calmar区间
-        if min_calmar is not None:
-            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) >= min_calmar]
-        if max_calmar is not None:
-            all_traders = [t for t in all_traders if t.get('calmar_ratio', 0) <= max_calmar]
-        # 交易数区间
-        if min_trades is not None:
-            all_traders = [t for t in all_traders if t.get('total_trades', 0) >= min_trades]
-        if max_trades is not None:
-            all_traders = [t for t in all_traders if t.get('total_trades', 0) <= max_trades]
-        # 活跃天区间
-        if min_active_days is not None:
-            all_traders = [t for t in all_traders if t.get('active_days', 0) >= min_active_days]
-        if max_active_days is not None:
-            all_traders = [t for t in all_traders if t.get('active_days', 0) <= max_active_days]
-        # 最近活跃
+        # 1. 解析新的 filters JSON 参数
+        filters_raw = request.args.get('filters')
+        if filters_raw:
+            try:
+                parsed_filters = json.loads(filters_raw)
+                if isinstance(parsed_filters, list):
+                    filter_conditions.extend(parsed_filters)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # 2. 向后兼容：将旧版 min_*/max_* 参数转换为筛选条件
+        for param_name, (field, op) in LEGACY_FILTER_MAP.items():
+            param_value = request.args.get(param_name, type=float)
+            if param_value is not None:
+                filter_conditions.append({'field': field, 'op': op, 'value': param_value})
+
+        # 3. 应用高级筛选
+        if filter_conditions:
+            all_traders = apply_advanced_filters(all_traders, filter_conditions)
+
+        # 4. 最近活跃筛选（特殊逻辑，不适合通用筛选引擎）
+        has_recent_trade = request.args.get('has_recent_trade', type=int)
         if has_recent_trade is not None:
             cutoff = now_shanghai().subtract(days=has_recent_trade)
             def is_recent(t):
@@ -272,11 +328,17 @@ def get_traders():
                     import pendulum
                     trade_time = pendulum.parse(last_trade)
                     return trade_time >= cutoff
-                except:
+                except Exception:
                     return False
             all_traders = [t for t in all_traders if is_recent(t)]
-        
-        # 标签筛选
+
+        # 5. 标签筛选（DB中已存储英文值，直接匹配）
+        tag_account_value = request.args.get('tag_account_value')
+        tag_trading_rhythm = request.args.get('tag_trading_rhythm')
+        tag_profit_status = request.args.get('tag_profit_status')
+        tag_direction_preference = request.args.get('tag_direction_preference')
+        tag_trading_style = request.args.get('tag_trading_style')
+
         if tag_account_value:
             all_traders = [t for t in all_traders if t.get('tag_account_value') == tag_account_value]
         if tag_trading_rhythm:
@@ -288,16 +350,8 @@ def get_traders():
         if tag_trading_style:
             all_traders = [t for t in all_traders if tag_trading_style in (t.get('tag_trading_style') or '')]
 
-        # 应用排序
-        valid_sort_fields = {
-            'overall_score', 'rating', 'total_trades', 'win_rate',
-            'total_pnl', 'roi', 'profit_factor', 'max_drawdown',
-            'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'current_equity', 'active_days',
-            'last_trade_time', 'avg_leverage', 'current_positions',
-            'recent_7d_pnl', 'recent_7d_win_rate', 'unique_symbols',
-            'max_consecutive_wins', 'max_consecutive_losses', 'long_short_ratio'
-        }
-        if sort_by in valid_sort_fields:
+        # ===== 应用排序 =====
+        if sort_by in SORTABLE_FIELDS:
             reverse = sort_order.lower() != 'asc'
             # 处理 rating 特殊排序（S > A > B > C > D > F）
             if sort_by == 'rating':
@@ -380,6 +434,22 @@ def get_traders():
                 'recent_7d_pnl': trader.get('recent_7d_pnl', 0),
                 'recent_7d_win_rate': trader.get('recent_7d_win_rate', 0),
                 'long_short_ratio': trader.get('long_short_ratio', 0),
+                # 账户和保证金
+                'account_value': trader.get('account_value', 0),
+                'used_margin': trader.get('used_margin', 0),
+                'perp_total_value': trader.get('perp_total_value', 0),
+                'position_value': trader.get('position_value', 0),
+                'long_position_value': trader.get('long_position_value', 0),
+                'short_position_value': trader.get('short_position_value', 0),
+                'margin_usage_rate': trader.get('margin_usage_rate', 0),
+                # 多空分项
+                'long_trades': trader.get('long_trades', 0),
+                'long_realized_pnl': trader.get('long_realized_pnl', 0),
+                'long_win_rate': trader.get('long_win_rate', 0),
+                'short_trades': trader.get('short_trades', 0),
+                'short_realized_pnl': trader.get('short_realized_pnl', 0),
+                'short_win_rate': trader.get('short_win_rate', 0),
+                'long_position_ratio': trader.get('long_position_ratio', 0),
                 # 用户收藏状态（用户维度）
                 'is_starred': trader.get('address') in user_starred_addresses,
                 # 标签

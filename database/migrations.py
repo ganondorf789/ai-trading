@@ -99,6 +99,24 @@ class DatabaseMigrations:
                     weekly_volume REAL DEFAULT 0.0,
                     monthly_volume REAL DEFAULT 0.0,
 
+                    -- 账户和保证金
+                    account_value REAL DEFAULT 0.0,
+                    used_margin REAL DEFAULT 0.0,
+                    perp_total_value REAL DEFAULT 0.0,
+                    position_value REAL DEFAULT 0.0,
+                    long_position_value REAL DEFAULT 0.0,
+                    short_position_value REAL DEFAULT 0.0,
+                    margin_usage_rate REAL DEFAULT 0.0,
+
+                    -- 多空分项
+                    long_trades INTEGER DEFAULT 0,
+                    long_realized_pnl REAL DEFAULT 0.0,
+                    long_win_rate REAL DEFAULT 0.0,
+                    short_trades INTEGER DEFAULT 0,
+                    short_realized_pnl REAL DEFAULT 0.0,
+                    short_win_rate REAL DEFAULT 0.0,
+                    long_position_ratio REAL DEFAULT 0.0,
+
                     -- 用户标记
                     is_starred BOOLEAN DEFAULT FALSE,
 
@@ -140,6 +158,29 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_trader_starred
                 ON trader_metrics(is_starred)
             """)
+
+            # 迁移：为已有数据库添加新列
+            new_columns = [
+                ("account_value", "REAL DEFAULT 0.0"),
+                ("used_margin", "REAL DEFAULT 0.0"),
+                ("perp_total_value", "REAL DEFAULT 0.0"),
+                ("position_value", "REAL DEFAULT 0.0"),
+                ("long_position_value", "REAL DEFAULT 0.0"),
+                ("short_position_value", "REAL DEFAULT 0.0"),
+                ("margin_usage_rate", "REAL DEFAULT 0.0"),
+                ("long_trades", "INTEGER DEFAULT 0"),
+                ("long_realized_pnl", "REAL DEFAULT 0.0"),
+                ("long_win_rate", "REAL DEFAULT 0.0"),
+                ("short_trades", "INTEGER DEFAULT 0"),
+                ("short_realized_pnl", "REAL DEFAULT 0.0"),
+                ("short_win_rate", "REAL DEFAULT 0.0"),
+                ("long_position_ratio", "REAL DEFAULT 0.0"),
+            ]
+            for col_name, col_def in new_columns:
+                cursor.execute(f"""
+                    ALTER TABLE trader_metrics
+                    ADD COLUMN IF NOT EXISTS {col_name} {col_def}
+                """)
 
             # 创建交易记录表
             cursor.execute("""

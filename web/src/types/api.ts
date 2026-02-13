@@ -59,6 +59,22 @@ export interface Trader {
   recent_7d_pnl?: number;
   recent_7d_win_rate?: number;
   long_short_ratio?: number;
+  // 账户和保证金
+  account_value?: number;
+  used_margin?: number;
+  perp_total_value?: number;
+  position_value?: number;
+  long_position_value?: number;
+  short_position_value?: number;
+  margin_usage_rate?: number;
+  // 多空分项
+  long_trades?: number;
+  long_realized_pnl?: number;
+  long_win_rate?: number;
+  short_trades?: number;
+  short_realized_pnl?: number;
+  short_win_rate?: number;
+  long_position_ratio?: number;
   // 时间周期统计
   daily_pnl?: number;
   weekly_pnl?: number;

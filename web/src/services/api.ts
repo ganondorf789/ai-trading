@@ -292,6 +292,8 @@ export const traderApi = {
     tag_profit_status?: string;
     tag_direction_preference?: string;
     tag_trading_style?: string;
+    // 高级筛选（JSON数组格式）
+    filters?: string;
   }) =>
     api.get<any, ApiResponse<Trader[]>>('/traders', { params }),
 
