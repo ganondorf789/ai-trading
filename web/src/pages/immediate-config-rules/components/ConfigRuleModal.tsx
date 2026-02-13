@@ -50,6 +50,10 @@ const defaultConfigData: Partial<ImmediateCopyConfig> = {
   replenish_ratio: 0.5,
   replenish_min_value_usd: 10,
   replenish_max_value_usd: 100,
+  take_profit_enabled: false,
+  take_profit_percent: 50,
+  stop_loss_enabled: false,
+  stop_loss_percent: 20,
 };
 
 export default function ConfigRuleModal({
@@ -349,6 +353,54 @@ export default function ConfigRuleModal({
                   startContent={<span className="text-default-400 text-sm">$</span>}
                 />
               </div>
+            )}
+          </div>
+
+          <Divider />
+
+          {/* 止盈止损配置 */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
+              <Icon icon="lucide:shield-check" width={16} />
+              止盈止损
+            </h4>
+            {/* 止盈 */}
+            <div className="flex items-center gap-2">
+              <Switch
+                size="sm"
+                isSelected={configData.take_profit_enabled || false}
+                onValueChange={(v) => setConfigData({ ...configData, take_profit_enabled: v })}
+              />
+              <span className="text-sm">启用止盈（仓位盈利达到目标百分比时自动平仓）</span>
+            </div>
+            {configData.take_profit_enabled && (
+              <Input
+                type="number"
+                label="止盈百分比"
+                description="盈利达到此百分比时自动平仓"
+                value={String(configData.take_profit_percent ?? 50)}
+                onValueChange={(v) => setConfigData({ ...configData, take_profit_percent: parseFloat(v) || 50 })}
+                endContent={<span className="text-default-400 text-sm">%</span>}
+              />
+            )}
+            {/* 止损 */}
+            <div className="flex items-center gap-2">
+              <Switch
+                size="sm"
+                isSelected={configData.stop_loss_enabled || false}
+                onValueChange={(v) => setConfigData({ ...configData, stop_loss_enabled: v })}
+              />
+              <span className="text-sm">启用止损（仓位亏损达到目标百分比时自动平仓）</span>
+            </div>
+            {configData.stop_loss_enabled && (
+              <Input
+                type="number"
+                label="止损百分比"
+                description="亏损达到此百分比时自动平仓"
+                value={String(configData.stop_loss_percent ?? 20)}
+                onValueChange={(v) => setConfigData({ ...configData, stop_loss_percent: parseFloat(v) || 20 })}
+                endContent={<span className="text-default-400 text-sm">%</span>}
+              />
             )}
           </div>
 

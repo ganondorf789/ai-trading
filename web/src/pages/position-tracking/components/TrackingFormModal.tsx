@@ -38,6 +38,10 @@ export default function TrackingFormModal({
     replenish_ratio_percent: 50, // 显示用：50 表示 50%
     replenish_min_value_usd: 10,
     replenish_max_value_usd: 100,
+    take_profit_enabled: false,
+    take_profit_percent: 50,
+    stop_loss_enabled: false,
+    stop_loss_percent: 20,
   });
   const [saving, setSaving] = useState(false);
 
@@ -56,6 +60,10 @@ export default function TrackingFormModal({
         replenish_ratio_percent: (tracking.replenish_ratio || 0.5) * 100,
         replenish_min_value_usd: tracking.replenish_min_value_usd || 10,
         replenish_max_value_usd: tracking.replenish_max_value_usd || 100,
+        take_profit_enabled: tracking.take_profit_enabled || false,
+        take_profit_percent: tracking.take_profit_percent ?? 50,
+        stop_loss_enabled: tracking.stop_loss_enabled || false,
+        stop_loss_percent: tracking.stop_loss_percent ?? 20,
       });
     }
   }, [tracking]);
@@ -76,6 +84,10 @@ export default function TrackingFormModal({
         replenish_ratio: formData.replenish_ratio_percent / 100,
         replenish_min_value_usd: formData.replenish_min_value_usd,
         replenish_max_value_usd: formData.replenish_max_value_usd,
+        take_profit_enabled: formData.take_profit_enabled,
+        take_profit_percent: formData.take_profit_percent,
+        stop_loss_enabled: formData.stop_loss_enabled,
+        stop_loss_percent: formData.stop_loss_percent,
       });
     } finally {
       setSaving(false);
@@ -231,6 +243,53 @@ export default function TrackingFormModal({
                   />
                 </div>
               </div>
+            )}
+
+            <Divider />
+
+            {/* 止盈止损配置 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">止盈</p>
+                <p className="text-sm text-default-500">仓位盈利达到目标百分比时自动平仓</p>
+              </div>
+              <Switch
+                isSelected={formData.take_profit_enabled}
+                onValueChange={(value) => setFormData({ ...formData, take_profit_enabled: value })}
+              />
+            </div>
+
+            {formData.take_profit_enabled && (
+              <Input
+                type="number"
+                label="止盈百分比"
+                description="盈利达到此百分比时自动平仓"
+                value={String(formData.take_profit_percent)}
+                onValueChange={(value) => setFormData({ ...formData, take_profit_percent: parseFloat(value) || 50 })}
+                endContent={<span className="text-default-400">%</span>}
+              />
+            )}
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">止损</p>
+                <p className="text-sm text-default-500">仓位亏损达到目标百分比时自动平仓</p>
+              </div>
+              <Switch
+                isSelected={formData.stop_loss_enabled}
+                onValueChange={(value) => setFormData({ ...formData, stop_loss_enabled: value })}
+              />
+            </div>
+
+            {formData.stop_loss_enabled && (
+              <Input
+                type="number"
+                label="止损百分比"
+                description="亏损达到此百分比时自动平仓"
+                value={String(formData.stop_loss_percent)}
+                onValueChange={(value) => setFormData({ ...formData, stop_loss_percent: parseFloat(value) || 20 })}
+                endContent={<span className="text-default-400">%</span>}
+              />
             )}
           </div>
         </ModalBody>

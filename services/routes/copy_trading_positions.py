@@ -473,10 +473,15 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'replenish_ratio': (float, 0.01, 10.0),
             'replenish_min_value_usd': (float, 1, 100000),
             'replenish_max_value_usd': (float, 1, 1000000),
+            # 止盈止损配置
+            'take_profit_enabled': (bool, None, None),
+            'take_profit_percent': (float, 1, 1000),
+            'stop_loss_enabled': (bool, None, None),
+            'stop_loss_percent': (float, 1, 1000),
         }
-        
+
         validated_config = _validate_config_fields(config_data, valid_fields)
-        
+
         # 处理数组字段
         if 'symbols_whitelist' in config_data:
             validated_config['symbols_whitelist'] = config_data['symbols_whitelist'] if isinstance(config_data['symbols_whitelist'], list) else []
@@ -522,10 +527,15 @@ def _validate_config_rule_data(data: dict, config_type: str) -> tuple[dict, str]
             'replenish_ratio': (float, 0.01, 10.0),
             'replenish_min_value_usd': (float, 1, 100000),
             'replenish_max_value_usd': (float, 1, 1000000),
+            # 止盈止损配置
+            'take_profit_enabled': (bool, None, None),
+            'take_profit_percent': (float, 1, 1000),
+            'stop_loss_enabled': (bool, None, None),
+            'stop_loss_percent': (float, 1, 1000),
         }
-        
+
         validated_config = _validate_config_fields(config_data, valid_fields)
-        
+
         result = {
             'name': data.get('name', '').strip(),
             'description': data.get('description', '').strip(),

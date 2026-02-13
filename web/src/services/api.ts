@@ -604,6 +604,11 @@ export interface PositionTracking {
   replenish_ratio: number;
   replenish_min_value_usd: number;
   replenish_max_value_usd: number;
+  // 止盈止损配置
+  take_profit_enabled: boolean;
+  take_profit_percent: number;
+  stop_loss_enabled: boolean;
+  stop_loss_percent: number;
   // 目标仓位快照
   target_initial_size: number | null;
   target_initial_side: string | null;

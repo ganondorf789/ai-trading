@@ -365,6 +365,10 @@ def create_position_tracking():
             'replenish_min_value_usd': data.get('replenish_min_value_usd', 10.0),
             'replenish_max_value_usd': data.get('replenish_max_value_usd', 100.0),
             'position_mode': data.get('position_mode', 'cross'),
+            'take_profit_enabled': data.get('take_profit_enabled', False),
+            'take_profit_percent': data.get('take_profit_percent', 50),
+            'stop_loss_enabled': data.get('stop_loss_enabled', False),
+            'stop_loss_percent': data.get('stop_loss_percent', 20),
             'status': 'pending',
         }
 
@@ -462,6 +466,10 @@ def update_position_tracking(tracking_id: int):
             'started_at': existing.get('started_at'),
             'closed_at': existing.get('closed_at'),
             'position_mode': data.get('position_mode', existing.get('position_mode', 'cross')),
+            'take_profit_enabled': data.get('take_profit_enabled', existing.get('take_profit_enabled', False)),
+            'take_profit_percent': data.get('take_profit_percent', existing.get('take_profit_percent', 50)),
+            'stop_loss_enabled': data.get('stop_loss_enabled', existing.get('stop_loss_enabled', False)),
+            'stop_loss_percent': data.get('stop_loss_percent', existing.get('stop_loss_percent', 20)),
         }
 
         db.save_position_tracking(update_data)

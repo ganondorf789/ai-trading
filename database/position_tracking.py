@@ -211,6 +211,10 @@ class PositionTrackingOps:
                         target_score = %s,
                         target_rating = %s,
                         position_mode = %s,
+                        take_profit_enabled = %s,
+                        take_profit_percent = %s,
+                        stop_loss_enabled = %s,
+                        stop_loss_percent = %s,
                         updated_at = %s
                     WHERE id = %s
                     RETURNING id
@@ -244,6 +248,10 @@ class PositionTrackingOps:
                     data.get('target_score'),
                     data.get('target_rating'),
                     data.get('position_mode', 'cross'),
+                    data.get('take_profit_enabled', False),
+                    data.get('take_profit_percent', 50),
+                    data.get('stop_loss_enabled', False),
+                    data.get('stop_loss_percent', 20),
                     now,
                     data['id']
                 ))
@@ -265,6 +273,7 @@ class PositionTrackingOps:
                         status, closed_pnl, close_reason,
                         target_is_starred, target_score, target_rating,
                         position_mode,
+                        take_profit_enabled, take_profit_percent, stop_loss_enabled, stop_loss_percent,
                         created_at, started_at, closed_at, updated_at
                     ) VALUES (
                         %s,
@@ -277,6 +286,7 @@ class PositionTrackingOps:
                         %s, %s, %s,
                         %s, %s, %s,
                         %s,
+                        %s, %s, %s, %s,
                         %s, %s, %s, %s
                     )
                     RETURNING id
@@ -311,6 +321,10 @@ class PositionTrackingOps:
                     data.get('target_score'),
                     data.get('target_rating'),
                     data.get('position_mode', 'cross'),
+                    data.get('take_profit_enabled', False),
+                    data.get('take_profit_percent', 50),
+                    data.get('stop_loss_enabled', False),
+                    data.get('stop_loss_percent', 20),
                     now,
                     data.get('started_at'),
                     data.get('closed_at'),

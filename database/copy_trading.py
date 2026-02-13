@@ -198,8 +198,9 @@ class CopyTradingOps:
                     copy_once,
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
                     margin_mode,
+                    take_profit_enabled, take_profit_percent, stop_loss_enabled, stop_loss_percent,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -222,6 +223,10 @@ class CopyTradingOps:
                     replenish_min_value_usd = EXCLUDED.replenish_min_value_usd,
                     replenish_max_value_usd = EXCLUDED.replenish_max_value_usd,
                     margin_mode = EXCLUDED.margin_mode,
+                    take_profit_enabled = EXCLUDED.take_profit_enabled,
+                    take_profit_percent = EXCLUDED.take_profit_percent,
+                    stop_loss_enabled = EXCLUDED.stop_loss_enabled,
+                    stop_loss_percent = EXCLUDED.stop_loss_percent,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
@@ -249,6 +254,10 @@ class CopyTradingOps:
                 data.get('replenish_min_value_usd', 10.0),
                 data.get('replenish_max_value_usd', 100.0),
                 data.get('margin_mode', 'cross'),
+                data.get('take_profit_enabled', False),
+                data.get('take_profit_percent', 50),
+                data.get('stop_loss_enabled', False),
+                data.get('stop_loss_percent', 20),
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 

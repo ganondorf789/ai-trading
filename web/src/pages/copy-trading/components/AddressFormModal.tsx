@@ -493,6 +493,56 @@ export default function AddressFormModal({
                 </div>
               )}
             </div>
+
+            <Divider />
+
+            {/* 止盈止损配置 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Icon icon="lucide:shield-check" width={16} className="text-primary" />
+                <h4 className="text-sm font-medium text-default-700">止盈止损</h4>
+              </div>
+              {/* 止盈 */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={formData.take_profit_enabled || false}
+                  onValueChange={(v) => setFormData({ ...formData, take_profit_enabled: v })}
+                />
+                <span className="text-sm">启用止盈（仓位盈利达到目标百分比时自动平仓）</span>
+              </div>
+              {formData.take_profit_enabled && (
+                <Input
+                  type="number"
+                  label="止盈百分比"
+                  description="盈利达到此百分比时自动平仓"
+                  size="sm"
+                  value={String(formData.take_profit_percent ?? 50)}
+                  onValueChange={(v) => setFormData({ ...formData, take_profit_percent: parseFloat(v) || 50 })}
+                  endContent={<span className="text-default-400 text-sm">%</span>}
+                />
+              )}
+              {/* 止损 */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  size="sm"
+                  isSelected={formData.stop_loss_enabled || false}
+                  onValueChange={(v) => setFormData({ ...formData, stop_loss_enabled: v })}
+                />
+                <span className="text-sm">启用止损（仓位亏损达到目标百分比时自动平仓）</span>
+              </div>
+              {formData.stop_loss_enabled && (
+                <Input
+                  type="number"
+                  label="止损百分比"
+                  description="亏损达到此百分比时自动平仓"
+                  size="sm"
+                  value={String(formData.stop_loss_percent ?? 20)}
+                  onValueChange={(v) => setFormData({ ...formData, stop_loss_percent: parseFloat(v) || 20 })}
+                  endContent={<span className="text-default-400 text-sm">%</span>}
+                />
+              )}
+            </div>
           </div>
         </ModalBody>
         <ModalFooter>

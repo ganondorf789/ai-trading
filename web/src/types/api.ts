@@ -311,6 +311,11 @@ export interface CopyTradingAddress {
   replenish_ratio: number;
   replenish_min_value_usd: number;
   replenish_max_value_usd: number;
+  // 止盈止损配置
+  take_profit_enabled: boolean;
+  take_profit_percent: number;
+  stop_loss_enabled: boolean;
+  stop_loss_percent: number;
   // 时间戳
   created_at: string;
   updated_at: string;
@@ -449,6 +454,11 @@ export interface DefaultCopyTradingConfig {
   replenish_ratio: number;
   replenish_min_value_usd: number;
   replenish_max_value_usd: number;
+  // 止盈止损配置
+  take_profit_enabled: boolean;
+  take_profit_percent: number;
+  stop_loss_enabled: boolean;
+  stop_loss_percent: number;
 }
 
 // ==================== 立即跟单配置类型 ====================
@@ -482,6 +492,11 @@ export interface ImmediateCopyConfig {
   replenish_ratio: number;
   replenish_min_value_usd: number;
   replenish_max_value_usd: number;
+  // 止盈止损配置
+  take_profit_enabled: boolean;
+  take_profit_percent: number;
+  stop_loss_enabled: boolean;
+  stop_loss_percent: number;
 }
 
 // ==================== 跟单配置规则类型（多配置支持） ====================

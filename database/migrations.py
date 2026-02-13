@@ -1092,6 +1092,34 @@ class DatabaseMigrations:
             cursor, 'copy_position_tracking', 'position_mode', "TEXT DEFAULT 'cross'"
         )
 
+        # 为 copy_trading_addresses 表添加止盈止损字段
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'take_profit_enabled', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'take_profit_percent', 'FLOAT DEFAULT 50'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'stop_loss_enabled', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_trading_addresses', 'stop_loss_percent', 'FLOAT DEFAULT 20'
+        )
+
+        # 为 copy_position_tracking 表添加止盈止损字段
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'take_profit_enabled', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'take_profit_percent', 'FLOAT DEFAULT 50'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'stop_loss_enabled', 'BOOLEAN DEFAULT FALSE'
+        )
+        self._migrate_add_column_if_not_exists(
+            cursor, 'copy_position_tracking', 'stop_loss_percent', 'FLOAT DEFAULT 20'
+        )
+
     def _migrate_remove_groups(self, cursor):
         """
         移除分组功能相关的表和列
