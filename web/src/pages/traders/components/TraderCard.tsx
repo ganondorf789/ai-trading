@@ -1,32 +1,42 @@
-import { useMemo } from 'react';
+import { useMemo, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
-import { Button, Tooltip } from '@heroui/react';
+import { Tooltip } from '@heroui/react';
 import { Icon } from '@iconify/react';
-import { AreaChart, Area, YAxis } from 'recharts';
+import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
 import type { Trader } from '@/services/api';
-import { getRatingColor, formatNumber, formatPercent } from '@/utils';
-import { TAG_OPTIONS } from '../constants';
+import { formatNumber } from '@/utils';
 
 const GREEN = '#17c964';
 const RED = '#f31260';
 
-// Build a lookup map from tag key → label
-const TAG_LABEL_MAP: Record<string, string> = {};
-for (const group of Object.values(TAG_OPTIONS)) {
-  for (const opt of group) {
-    TAG_LABEL_MAP[opt.key] = opt.label;
-  }
-}
-
-// Tag category → chip color
-const TAG_CATEGORY_COLORS: Record<string, 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'danger'> = {
-  tag_account_value: 'warning',
-  tag_direction_preference: 'primary',
-  tag_profit_status: 'success',
-  tag_trading_rhythm: 'secondary',
-  tag_trading_style: 'default',
+// English display labels for tags
+const TAG_EN_LABELS: Record<string, string> = {
+  // account_value
+  small_capital: 'Small Cap',
+  medium_capital: 'Mid Cap',
+  whale: 'Whale',
+  // trading_rhythm
+  long_term: 'Long-term',
+  swing: 'Swing',
+  short_term: 'Short-term',
+  ultra_short: 'Ultra Short',
+  // profit_status
+  consistent_profit: 'Sustained Profit',
+  volatile_profit: 'Mid Gain',
+  break_even: 'Break Even',
+  // direction_preference
+  bearish: 'Bearish',
+  neutral: 'Neutral',
+  bullish: 'Bullish',
+  // trading_style
+  high_freq_stable: 'Cons. Hi-Freq',
+  high_freq_aggressive: 'Volatile Strategy',
+  low_freq_stable: 'Low-Freq Stable',
+  stable_profit: 'Stable Profit',
+  high_risk_high_return: 'High Risk',
+  asymmetric_master: 'Asymmetric',
 };
 
 interface TraderCardProps {
@@ -36,6 +46,7 @@ interface TraderCardProps {
 }
 
 function MiniSparkline({ data }: { data: [number, number][] }) {
+  const uid = useId().replace(/:/g, '');
   const chartData = useMemo(() => data.map(([t, pnl]) => ({ t, pnl })), [data]);
 
   const yDomain = useMemo<[number, number]>(() => {
@@ -57,72 +68,80 @@ function MiniSparkline({ data }: { data: [number, number][] }) {
 
   if (chartData.length < 2) return null;
 
+  const strokeId = `sparkStroke-${uid}`;
+  const fillId = `sparkFill-${uid}`;
+
   return (
-    <AreaChart width={120} height={48} data={chartData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-      <defs>
-        <linearGradient id="sparkStroke" x1="0" y1="0" x2="0" y2="1">
-          <stop offset={0} stopColor={GREEN} />
-          <stop offset={gradientOffset} stopColor={GREEN} />
-          <stop offset={gradientOffset} stopColor={RED} />
-          <stop offset={1} stopColor={RED} />
-        </linearGradient>
-        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset={0} stopColor={GREEN} stopOpacity={0.3} />
-          <stop offset={gradientOffset} stopColor={GREEN} stopOpacity={0.02} />
-          <stop offset={gradientOffset} stopColor={RED} stopOpacity={0.02} />
-          <stop offset={1} stopColor={RED} stopOpacity={0.3} />
-        </linearGradient>
-      </defs>
-      <YAxis domain={yDomain} hide />
-      <Area
-        type="monotone"
-        dataKey="pnl"
-        stroke="url(#sparkStroke)"
-        strokeWidth={1.5}
-        fill="url(#sparkFill)"
-        baseValue={0}
-        dot={false}
-        isAnimationActive={false}
-      />
-    </AreaChart>
+    <ResponsiveContainer width="100%" height={56}>
+      <AreaChart data={chartData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+        <defs>
+          <linearGradient id={strokeId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset={0} stopColor={GREEN} />
+            <stop offset={gradientOffset} stopColor={GREEN} />
+            <stop offset={gradientOffset} stopColor={RED} />
+            <stop offset={1} stopColor={RED} />
+          </linearGradient>
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset={0} stopColor={GREEN} stopOpacity={0.3} />
+            <stop offset={gradientOffset} stopColor={GREEN} stopOpacity={0.02} />
+            <stop offset={gradientOffset} stopColor={RED} stopOpacity={0.02} />
+            <stop offset={1} stopColor={RED} stopOpacity={0.3} />
+          </linearGradient>
+        </defs>
+        <YAxis domain={yDomain} hide />
+        <Area
+          type="monotone"
+          dataKey="pnl"
+          stroke={`url(#${strokeId})`}
+          strokeWidth={1.5}
+          fill={`url(#${fillId})`}
+          baseValue={0}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
-function formatCompact(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${formatNumber(value, 0)}`;
+/** Format dollar amount with commas: $ 4,787,309.85 */
+function formatDollar(value: number): string {
+  return `$ ${formatNumber(Math.abs(value))}`;
 }
 
-function formatPnl(value: number): string {
-  const prefix = value >= 0 ? '+' : '';
-  return `${prefix}${formatCompact(value)}`;
+/** Format PnL with sign: $ +2,119,507.62 or $ -500.00 */
+function formatPnlDollar(value: number): string {
+  const sign = value >= 0 ? '+' : '-';
+  return `$ ${sign}${formatNumber(Math.abs(value))}`;
+}
+
+/** Format percent with space: 66.67 % */
+function fmtPct(value: number): string {
+  return `${(value * 100).toFixed(2)} %`;
 }
 
 export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardProps) {
   const navigate = useNavigate();
-  const shortAddr = `${trader.address.slice(0, 6)}...${trader.address.slice(-4)}`;
 
   // Collect tags
   const tags = useMemo(() => {
-    const result: { key: string; label: string; category: string }[] = [];
-    const tagFields: [string, string | undefined][] = [
-      ['tag_account_value', trader.tag_account_value],
-      ['tag_direction_preference', trader.tag_direction_preference],
-      ['tag_profit_status', trader.tag_profit_status],
-      ['tag_trading_rhythm', trader.tag_trading_rhythm],
+    const result: { key: string; label: string }[] = [];
+    const tagFields: (string | undefined)[] = [
+      trader.tag_direction_preference,
+      trader.tag_profit_status,
+      trader.tag_trading_rhythm,
+      trader.tag_account_value,
     ];
-    for (const [category, value] of tagFields) {
+    for (const value of tagFields) {
       if (value) {
-        result.push({ key: value, label: TAG_LABEL_MAP[value] || value, category });
+        result.push({ key: value, label: TAG_EN_LABELS[value] || value });
       }
     }
     if (trader.tag_trading_style) {
       for (const s of trader.tag_trading_style.split(',')) {
         const trimmed = s.trim();
         if (trimmed) {
-          result.push({ key: trimmed, label: TAG_LABEL_MAP[trimmed] || trimmed, category: 'tag_trading_style' });
+          result.push({ key: trimmed, label: TAG_EN_LABELS[trimmed] || trimmed });
         }
       }
     }
@@ -134,142 +153,188 @@ export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardPr
   const shortPnl = trader.short_realized_pnl || 0;
   const accountValue = trader.account_value || trader.current_equity || 0;
   const perpValue = trader.perp_total_value || 0;
+  const spotValue = Math.max(0, accountValue - perpValue);
 
   return (
     <Card
       isPressable
       onPress={() => navigate(`/traders/${trader.address}`)}
-      className="w-full dark:bg-content1 hover:bg-content2 transition-colors"
+      className="w-full bg-content1 border border-default-200 dark:border-default-100"
     >
       <CardBody className="p-0">
-        {/* Header row: rating + address + actions */}
-        <div className="flex items-center justify-between px-4 pt-3 pb-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className={`font-bold text-lg ${getRatingColor(trader.rating)}`}>
-              {trader.rating}
-            </span>
-            <Tooltip content={trader.address} placement="top" delay={300}>
-              <span className="font-mono text-sm text-default-500 truncate">
-                {trader.display_name ? (
-                  <>
-                    <span className="font-medium text-foreground">{trader.display_name}</span>
-                    {' '}
-                    <span className="text-xs text-default-400">({shortAddr})</span>
-                  </>
-                ) : shortAddr}
-              </span>
-            </Tooltip>
-            <span className="text-xs text-default-400">
-              Score: {formatNumber(trader.overall_score)}
+        {/* Header: green dot + full address + action icons */}
+        <div className="flex items-center justify-between px-5 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-5 h-5 rounded-full bg-emerald-500 shrink-0" />
+            <span className="font-mono text-sm text-foreground truncate">
+              {trader.display_name || trader.address}
             </span>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="light"
-              color={trader.is_starred ? 'warning' : 'default'}
-              isLoading={isStarLoading}
-              onPress={() => onToggleStar(trader.address, !trader.is_starred)}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Icon
-                icon={trader.is_starred ? 'solar:star-bold' : 'solar:star-line-duotone'}
-                width={18}
-                className={trader.is_starred ? 'text-warning' : 'text-default-400'}
-              />
-            </Button>
-            <Button
-              isIconOnly
-              size="sm"
-              variant="light"
-              onPress={() => navigator.clipboard.writeText(trader.address)}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Icon icon="solar:copy-line-duotone" width={16} className="text-default-400" />
-            </Button>
+          <div className="flex items-center gap-0.5 shrink-0">
+            {/* Star */}
+            <Tooltip content={trader.is_starred ? '取消收藏' : '收藏'} delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!isStarLoading) onToggleStar(trader.address, !trader.is_starred);
+                }}
+              >
+                <Icon
+                  icon={trader.is_starred ? 'solar:star-bold' : 'solar:star-line-duotone'}
+                  width={20}
+                  className={trader.is_starred ? 'text-warning' : 'text-default-400'}
+                />
+              </button>
+            </Tooltip>
+            {/* Dashboard */}
+            <Tooltip content="Dashboard" delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/traders/${trader.address}`);
+                }}
+              >
+                <Icon icon="solar:chart-square-line-duotone" width={20} className="text-default-400" />
+              </button>
+            </Tooltip>
+            {/* Copy address */}
+            <Tooltip content="Copy address" delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(trader.address);
+                }}
+              >
+                <Icon icon="solar:clipboard-line-duotone" width={20} className="text-default-400" />
+              </button>
+            </Tooltip>
+            {/* Copy trading */}
+            <Tooltip content="Copy Trading" delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/copy-trading?address=${trader.address}`);
+                }}
+              >
+                <Icon icon="solar:users-group-two-rounded-line-duotone" width={20} className="text-default-400" />
+              </button>
+            </Tooltip>
           </div>
         </div>
 
         {/* 5-section grid */}
-        <div className="grid grid-cols-5 gap-0 divide-x divide-divider px-2 pb-3">
+        <div className="grid grid-cols-5 gap-0 divide-x divide-default-200 dark:divide-default-100 mx-4 mb-4 border border-default-200 dark:border-default-100 rounded-lg overflow-hidden">
           {/* Section 1: Tags + Metrics */}
-          <div className="px-2 flex flex-col gap-1.5">
+          <div className="p-3 flex flex-col gap-2">
             <div className="flex flex-wrap gap-1">
-              {tags.slice(0, 4).map((tag) => (
+              {tags.map((tag) => (
                 <Chip
                   key={tag.key}
                   size="sm"
-                  variant="flat"
-                  color={TAG_CATEGORY_COLORS[tag.category] || 'default'}
-                  classNames={{ base: 'h-5', content: 'text-[10px] px-1' }}
+                  variant="bordered"
+                  classNames={{
+                    base: 'h-6 border-cyan-600/60',
+                    content: 'text-[11px] text-cyan-400 px-1.5',
+                  }}
                 >
                   {tag.label}
                 </Chip>
               ))}
-              {tags.length > 4 && (
-                <Chip size="sm" variant="flat" classNames={{ base: 'h-5', content: 'text-[10px] px-1' }}>
-                  +{tags.length - 4}
-                </Chip>
-              )}
             </div>
-            <div className="text-[11px] text-default-500 space-y-0.5">
-              <div>Sharpe: {formatNumber(trader.sharpe_ratio)}</div>
-              <div>MaxDD: {formatPercent(trader.max_drawdown)}</div>
-              <div>Pos: {trader.current_positions || 0}</div>
+            <div className="text-xs text-default-500 space-y-1 mt-auto">
+              <div className="flex justify-between">
+                <span>Sharpe Ratio</span>
+                <span className="text-foreground">{formatNumber(trader.sharpe_ratio)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Max Drawdown</span>
+                <span className="text-foreground">{fmtPct(trader.max_drawdown)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Positions</span>
+                <span className="text-foreground">{trader.current_positions || 0}</span>
+              </div>
             </div>
           </div>
 
           {/* Section 2: Win Rate */}
-          <div className="px-3 flex flex-col justify-center gap-1">
-            <div className="text-[10px] text-default-400 uppercase tracking-wide">Win Rate</div>
-            <div className="text-xl font-bold">{formatPercent(trader.win_rate)}</div>
-            <div className="text-[11px] text-default-500 space-y-0.5">
-              <div>
-                <span className="text-green-500">L</span> {formatPercent(trader.long_win_rate || 0)}
+          <div className="p-3 flex flex-col gap-2">
+            <div className="text-xs text-default-400">Win Rate</div>
+            <div className="text-2xl font-bold tracking-tight">{fmtPct(trader.win_rate)}</div>
+            <div className="text-xs text-default-500 space-y-1 mt-auto">
+              <div className="flex justify-between">
+                <span>Long</span>
+                <span className="text-foreground">{fmtPct(trader.long_win_rate || 0)}</span>
               </div>
-              <div>
-                <span className="text-red-500">S</span> {formatPercent(trader.short_win_rate || 0)}
+              <div className="flex justify-between">
+                <span>Short</span>
+                <span className="text-foreground">{fmtPct(trader.short_win_rate || 0)}</span>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Account Value */}
-          <div className="px-3 flex flex-col justify-center gap-1">
-            <div className="text-[10px] text-default-400 uppercase tracking-wide">Account</div>
-            <div className="text-sm font-semibold">{formatCompact(accountValue)}</div>
-            <div className="text-[11px] text-default-500 space-y-0.5">
-              <div>Perp {formatCompact(perpValue)}</div>
+          {/* Section 3: Account Total Value */}
+          <div className="p-3 flex flex-col gap-2">
+            <div className="text-xs text-default-400">Account Total Value</div>
+            <div className="text-lg font-bold tracking-tight">{formatDollar(accountValue)}</div>
+            <div className="text-xs text-default-500 space-y-1 mt-auto">
+              <div className="flex justify-between">
+                <span>Perpetual</span>
+                <span className="text-foreground">{formatDollar(perpValue)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Spot</span>
+                <span className="text-foreground">{formatDollar(spotValue)}</span>
+              </div>
             </div>
           </div>
 
           {/* Section 4: Net PnL */}
-          <div className="px-3 flex flex-col justify-center gap-1">
-            <div className="text-[10px] text-default-400 uppercase tracking-wide">Net PnL</div>
-            <div className={`text-sm font-semibold ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {formatPnl(totalPnl)}
+          <div className="p-3 flex flex-col gap-2">
+            <div className="text-xs text-default-400">Net PnL</div>
+            <div className={`text-lg font-bold tracking-tight ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {formatPnlDollar(totalPnl)}
             </div>
-            <div className="text-[11px] text-default-500 space-y-0.5">
-              <div>
-                <span className="text-green-500">L</span>{' '}
-                <span className={longPnl >= 0 ? 'text-green-500' : 'text-red-500'}>{formatPnl(longPnl)}</span>
+            <div className="text-xs space-y-1 mt-auto">
+              <div className="flex justify-between">
+                <span className="text-default-500">Long</span>
+                <span className={longPnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  {formatPnlDollar(longPnl)}
+                </span>
               </div>
-              <div>
-                <span className="text-red-500">S</span>{' '}
-                <span className={shortPnl >= 0 ? 'text-green-500' : 'text-red-500'}>{formatPnl(shortPnl)}</span>
+              <div className="flex justify-between">
+                <span className="text-default-500">Short</span>
+                <span className={shortPnl >= 0 ? 'text-green-500' : 'text-red-500'}>
+                  {formatPnlDollar(shortPnl)}
+                </span>
               </div>
             </div>
           </div>
 
           {/* Section 5: Total PnL + Sparkline */}
-          <div className="px-3 flex flex-col justify-center gap-1">
-            <div className="text-[10px] text-default-400 uppercase tracking-wide">Total PnL</div>
-            <div className={`text-sm font-semibold ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {formatPnl(totalPnl)}
+          <div className="p-3 flex flex-col gap-1">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-default-400">Total PnL</span>
+              <Tooltip content="Cumulative PnL from all-time history" delay={300}>
+                <span><Icon icon="solar:info-circle-line-duotone" width={14} className="text-default-400" /></span>
+              </Tooltip>
             </div>
-            {trader.pnl_sparkline && trader.pnl_sparkline.length > 1 && (
-              <MiniSparkline data={trader.pnl_sparkline} />
-            )}
+            <div className={`text-lg font-bold tracking-tight ${totalPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              {formatPnlDollar(totalPnl)}
+            </div>
+            <div className="flex-1 min-h-[56px]">
+              {trader.pnl_sparkline && trader.pnl_sparkline.length > 1 ? (
+                <MiniSparkline data={trader.pnl_sparkline} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-default-300">
+                  No data
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </CardBody>
