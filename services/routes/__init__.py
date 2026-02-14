@@ -18,12 +18,10 @@ def register_routes(app):
     # 交易者管理路由（拆分后）
     from .traders_core import traders_core_bp
     from .traders_positions import traders_positions_bp
-    from .traders_analysis import traders_analysis_bp
     from .traders_stats import traders_stats_bp
-    
+
     app.register_blueprint(traders_core_bp)
     app.register_blueprint(traders_positions_bp)
-    app.register_blueprint(traders_analysis_bp)
     app.register_blueprint(traders_stats_bp)
     
     # 跟单交易路由（拆分后）
