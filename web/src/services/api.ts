@@ -505,12 +505,6 @@ export const copyTradingApi = {
   toggleAddress: (address: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/addresses/${address}/toggle`, { is_enabled: isEnabled }),
 
-  // 批量操作
-  batchAction: (action: 'enable' | 'disable' | 'delete', addresses: string[]) =>
-    api.post<any, ApiResponse<void> & { affected_count?: number; message?: string }>('/copy-trading/addresses/batch', {
-      action,
-      addresses,
-    }),
 };
 
 // ==================== Hyperliquid 币种 API ====================
@@ -643,18 +637,6 @@ export interface PositionTracking {
   updated_at: string;
 }
 
-export interface PositionTrackingStats {
-  total_count: number;
-  pending_count: number;
-  active_count: number;
-  closed_count: number;
-  stopped_count: number;
-  enabled_count: number;
-  unique_traders: number;
-  unique_symbols: number;
-  total_closed_pnl: number;
-}
-
 export const positionTrackingApi = {
   // 获取仓位跟单列表
   getTrackings: (params?: {
@@ -666,10 +648,6 @@ export const positionTrackingApi = {
     symbol?: string;
   }) =>
     api.get<any, ApiResponse<PositionTracking[]>>('/copy-trading/position-tracking', { params }),
-
-  // 获取统计信息
-  getStats: () =>
-    api.get<any, ApiResponse<PositionTrackingStats>>('/copy-trading/position-tracking/stats'),
 
   // 获取单个跟单详情
   getTracking: (trackingId: number) =>
@@ -706,9 +684,6 @@ export const positionTrackingApi = {
   toggleTracking: (trackingId: string, isEnabled: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/toggle`, { is_enabled: isEnabled }),
 
-  // 停止仓位跟单
-  stopTracking: (trackingId: string) =>
-    api.post<any, ApiResponse<void> & { message?: string }>(`/copy-trading/position-tracking/${trackingId}/stop`),
 };
 
 // ==================== 跟单配置 API ====================

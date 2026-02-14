@@ -152,22 +152,6 @@ export default function PositionTrackingPage() {
     }
   }, []);
 
-  // 处理停止跟单
-  const handleStop = useCallback(async (id: number) => {
-    try {
-      await positionTrackingApi.stopTracking(id);
-      addToast({ title: "已停止跟单", color: "success" });
-      loadTrackings();
-    } catch (error: any) {
-      console.error("Failed to stop tracking:", error);
-      addToast({
-        title: "停止失败",
-        description: error?.response?.data?.error || "操作失败",
-        color: "danger"
-      });
-    }
-  }, [loadTrackings]);
-
   // 格式化地址
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -321,19 +305,6 @@ export default function PositionTrackingPage() {
                   <Icon icon="lucide:edit" width={16} />
                 </Button>
               </Tooltip>
-              {(item.status === "pending" || item.status === "active") && (
-                <Tooltip content="停止跟单">
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="light"
-                    color="warning"
-                    onPress={() => handleStop(item.id)}
-                  >
-                    <Icon icon="lucide:stop-circle" width={16} />
-                  </Button>
-                </Tooltip>
-              )}
               <Tooltip content="删除">
                 <Button
                   isIconOnly
@@ -352,7 +323,7 @@ export default function PositionTrackingPage() {
           return null;
       }
     },
-    [handleToggle, handleOpenEditModal, handleStop, handleOpenDeleteModal]
+    [handleToggle, handleOpenEditModal, handleOpenDeleteModal]
   );
 
   return (

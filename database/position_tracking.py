@@ -451,43 +451,6 @@ class PositionTrackingOps:
             )
             return cursor.rowcount > 0
 
-    def get_position_tracking_stats(self) -> Dict:
-        """
-        获取仓位跟单统计信息
-
-        Returns:
-            统计数据
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-            cursor.execute("""
-                SELECT
-                    COUNT(*) as total_count,
-                    COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
-                    COUNT(*) FILTER (WHERE status = 'active') as active_count,
-                    COUNT(*) FILTER (WHERE status = 'closed') as closed_count,
-                    COUNT(*) FILTER (WHERE status = 'stopped') as stopped_count,
-                    COUNT(*) FILTER (WHERE is_enabled = TRUE AND status IN ('pending', 'active')) as enabled_count,
-                    COUNT(DISTINCT target_address) as unique_traders,
-                    COUNT(DISTINCT symbol) as unique_symbols,
-                    COALESCE(SUM(closed_pnl) FILTER (WHERE status = 'closed'), 0) as total_closed_pnl
-                FROM copy_position_tracking
-            """)
-
-            row = cursor.fetchone()
-            return dict(row) if row else {
-                'total_count': 0,
-                'pending_count': 0,
-                'active_count': 0,
-                'closed_count': 0,
-                'stopped_count': 0,
-                'enabled_count': 0,
-                'unique_traders': 0,
-                'unique_symbols': 0,
-                'total_closed_pnl': 0
-            }
-
     def check_position_tracking_exists(
         self,
         target_address: str,

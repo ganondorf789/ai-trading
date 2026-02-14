@@ -304,52 +304,6 @@ class CopyTradingOps:
             """, (is_enabled, pendulum.now(SHANGHAI_TZ).to_iso8601_string(), user_id, address))
             return cursor.rowcount > 0
 
-    def batch_update_copy_trading_addresses(
-        self,
-        user_id: str,
-        addresses: List[str],
-        action: str
-    ) -> int:
-        """
-        批量操作跟单地址
-
-        Args:
-            user_id: 用户ID
-            addresses: 地址列表
-            action: 操作类型 (enable/disable/delete)
-
-        Returns:
-            影响的记录数
-        """
-        if not addresses:
-            return 0
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            now = pendulum.now(SHANGHAI_TZ).to_iso8601_string()
-
-            if action == 'enable':
-                cursor.execute("""
-                    UPDATE copy_trading_addresses
-                    SET is_enabled = TRUE, updated_at = %s
-                    WHERE user_id = %s AND address = ANY(%s)
-                """, (now, user_id, addresses))
-            elif action == 'disable':
-                cursor.execute("""
-                    UPDATE copy_trading_addresses
-                    SET is_enabled = FALSE, updated_at = %s
-                    WHERE user_id = %s AND address = ANY(%s)
-                """, (now, user_id, addresses))
-            elif action == 'delete':
-                cursor.execute("""
-                    DELETE FROM copy_trading_addresses
-                    WHERE user_id = %s AND address = ANY(%s)
-                """, (user_id, addresses,))
-            else:
-                return 0
-
-            return cursor.rowcount
-
     def get_enabled_copy_addresses(self, user_id: str) -> List[Dict]:
         """
         获取所有启用的跟单地址及其完整配置

@@ -181,40 +181,6 @@ def get_position_trackings():
         }), 500
 
 
-@copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/stats', methods=['GET'])
-@login_required
-def get_position_tracking_stats():
-    """获取仓位跟单统计
-    ---
-    tags:
-      - Copy Trading - Tracking
-    responses:
-      200:
-        description: 跟单统计
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: object
-      500:
-        description: 服务器错误
-    """
-    try:
-        stats = db.get_position_tracking_stats()
-        return jsonify({
-            'success': True,
-            'data': stats
-        })
-    except Exception as e:
-        logger.error(f"获取仓位跟单统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>', methods=['GET'])
 @login_required
 def get_position_tracking(tracking_id: int):
@@ -609,73 +575,6 @@ def toggle_position_tracking(tracking_id: int):
             }), 404
     except Exception as e:
         logger.error(f"切换仓位跟单状态失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@copy_trading_tracking_bp.route('/api/copy-trading/position-tracking/<int:tracking_id>/stop', methods=['POST'])
-@login_required
-def stop_position_tracking(tracking_id: int):
-    """停止仓位跟单
-    ---
-    tags:
-      - Copy Trading - Tracking
-    parameters:
-      - name: tracking_id
-        in: path
-        type: integer
-        required: true
-        description: 跟单记录ID
-      - name: close_position
-        in: query
-        type: boolean
-        default: false
-        description: 是否同时平仓
-    responses:
-      200:
-        description: 停止成功
-      400:
-        description: 状态不正确
-      404:
-        description: 记录不存在
-      500:
-        description: 服务器错误
-    """
-    try:
-        # 检查记录是否存在
-        existing = db.get_position_tracking(tracking_id)
-        if not existing:
-            return jsonify({
-                'success': False,
-                'error': '跟单记录不存在'
-            }), 404
-
-        if existing.get('status') not in ('pending', 'active'):
-            return jsonify({
-                'success': False,
-                'error': f"状态为 {existing.get('status')}，无法停止"
-            }), 400
-
-        # 更新状态为 stopped
-        success = db.update_tracking_status(tracking_id, 'stopped', '手动停止')
-
-        if success:
-            # 通知引擎重载配置
-            _notify_config_changed(user_id=get_current_user_id())
-
-            return jsonify({
-                'success': True,
-                'message': '已停止跟单'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': '停止失败'
-            }), 500
-    except Exception as e:
-        logger.error(f"停止仓位跟单失败: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
