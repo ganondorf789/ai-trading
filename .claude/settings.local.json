@@ -38,7 +38,8 @@
       "Bash(python3:*)",
       "Bash(pnpm build:*)",
       "Bash(git checkout:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebSearch"
     ]
   }
 }

@@ -11,6 +11,16 @@ from utils import sanitize_float
 from .cache import cache
 
 
+PERIOD_INTERVALS = {
+    '5m': '5 minutes',
+    '30m': '30 minutes',
+    '1h': '1 hour',
+    '4h': '4 hours',
+    '12h': '12 hours',
+    '1d': '1 day',
+}
+
+
 class PositionsOps:
     """持仓管理相关操作"""
 
@@ -209,3 +219,76 @@ class PositionsOps:
                 cache.cache_positions(address, result)
 
             return result
+
+    def get_liquidation_stats(self, coin: str, period: str = '1d') -> Dict:
+        """
+        获取清算统计数据（多空人数、清算价值）
+
+        Args:
+            coin: 币种 (如 BTC, ETH)
+            period: 时间周期 (5m, 30m, 1h, 4h, 12h, 1d)
+
+        Returns:
+            清算统计数据
+        """
+        interval = PERIOD_INTERVALS.get(period, '1 day')
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute("""
+                SELECT
+                    CASE WHEN szi > 0 THEN 'long' ELSE 'short' END AS direction,
+                    COUNT(*) AS user_count,
+                    COALESCE(SUM(ABS(position_value)), 0) AS liquidation_value
+                FROM asset_positions
+                WHERE coin = %s
+                  AND COALESCE(open_time, updated_at) >= NOW() - %s::interval
+                GROUP BY CASE WHEN szi > 0 THEN 'long' ELSE 'short' END
+            """, (coin, interval))
+
+            rows = cursor.fetchall()
+
+        long_count = 0
+        short_count = 0
+        long_value = 0.0
+        short_value = 0.0
+
+        for row in rows:
+            if row['direction'] == 'long':
+                long_count = row['user_count']
+                long_value = float(row['liquidation_value'])
+            else:
+                short_count = row['user_count']
+                short_value = float(row['liquidation_value'])
+
+        total_count = long_count + short_count
+        total_value = long_value + short_value
+
+        return {
+            'symbol': coin,
+            'period': period,
+            'longShortUserCount': {
+                'long': {
+                    'count': long_count,
+                    'ratio': round(long_count / total_count * 100, 2) if total_count > 0 else 0
+                },
+                'short': {
+                    'count': short_count,
+                    'ratio': round(short_count / total_count * 100, 2) if total_count > 0 else 0
+                }
+            },
+            'liquidation': {
+                'totalValue': round(total_value, 2),
+                'currency': 'USD',
+                'long': {
+                    'value': round(long_value, 2),
+                    'ratio': round(long_value / total_value * 100, 2) if total_value > 0 else 0
+                },
+                'short': {
+                    'value': round(short_value, 2),
+                    'ratio': round(short_value / total_value * 100, 2) if total_value > 0 else 0
+                }
+            },
+            'timestamp': int(pendulum.now(SHANGHAI_TZ).timestamp())
+        }

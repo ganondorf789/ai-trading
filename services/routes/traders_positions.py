@@ -736,3 +736,75 @@ def get_new_positions():
         }), 500
 
 
+# ==================== 清算统计 API ====================
+
+@traders_positions_bp.route('/api/liquidation/stats', methods=['GET'])
+@login_required
+def get_liquidation_stats():
+    """获取清算统计数据（多空人数、清算价值）
+    ---
+    tags:
+      - Liquidation
+    parameters:
+      - name: coin
+        in: query
+        type: string
+        default: BTC
+        description: 币种（如 BTC, ETH）
+      - name: period
+        in: query
+        type: string
+        default: 1d
+        enum: [5m, 30m, 1h, 4h, 12h, 1d]
+        description: 时间周期
+    responses:
+      200:
+        description: 清算统计数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                symbol:
+                  type: string
+                period:
+                  type: string
+                longShortUserCount:
+                  type: object
+                liquidation:
+                  type: object
+                timestamp:
+                  type: integer
+      400:
+        description: 参数错误
+      500:
+        description: 服务器错误
+    """
+    try:
+        coin = request.args.get('coin', 'BTC')
+        period = request.args.get('period', '1d')
+
+        valid_periods = ['5m', '30m', '1h', '4h', '12h', '1d']
+        if period not in valid_periods:
+            return jsonify({
+                'success': False,
+                'error': f'无效的时间周期，支持: {", ".join(valid_periods)}'
+            }), 400
+
+        data = db.get_liquidation_stats(coin, period)
+
+        return jsonify({
+            'success': True,
+            'data': data
+        })
+
+    except Exception as e:
+        logger.error(f"获取清算统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
