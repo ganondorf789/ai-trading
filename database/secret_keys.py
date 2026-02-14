@@ -391,46 +391,6 @@ class SecretKeysOps:
             logger.error(f"删除秘钥失败: {e}")
             return False
 
-    def get_secret_key_stats(self) -> Dict:
-        """
-        获取秘钥统计信息
-
-        Returns:
-            统计数据
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-                
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) as total_count,
-                        COUNT(*) FILTER (WHERE is_active = TRUE) as active_count,
-                        COUNT(*) FILTER (WHERE is_active = FALSE) as inactive_count,
-                        COUNT(*) FILTER (WHERE is_used = TRUE) as used_count,
-                        COUNT(*) FILTER (WHERE is_used = FALSE AND is_active = TRUE) as available_count,
-                        COUNT(*) FILTER (WHERE user_role = 'user') as user_role_count,
-                        COUNT(*) FILTER (WHERE user_role = 'member') as member_role_count,
-                        COUNT(*) FILTER (WHERE user_role = 'admin') as admin_role_count
-                    FROM secret_keys
-                """)
-                
-                row = cursor.fetchone()
-                return dict(row) if row else {
-                    'total_count': 0,
-                    'active_count': 0,
-                    'inactive_count': 0,
-                    'used_count': 0,
-                    'available_count': 0,
-                    'user_role_count': 0,
-                    'member_role_count': 0,
-                    'admin_role_count': 0
-                }
-                
-        except Exception as e:
-            logger.error(f"获取秘钥统计失败: {e}")
-            return {}
-
     def batch_create_secret_keys(
         self,
         count: int,

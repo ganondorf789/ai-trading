@@ -803,27 +803,6 @@ export interface SecretKey {
   created_at: string;
 }
 
-export interface UserStats {
-  total_count: number;
-  active_count: number;
-  inactive_count: number;
-  user_count: number;
-  member_count: number;
-  admin_count: number;
-  expired_count: number;
-}
-
-export interface SecretKeyStats {
-  total_count: number;
-  active_count: number;
-  inactive_count: number;
-  used_count: number;
-  available_count: number;
-  user_role_count: number;
-  member_role_count: number;
-  admin_role_count: number;
-}
-
 export interface LoginResponse {
   id: string;
   account: string;
@@ -886,10 +865,6 @@ export const authApi = {
     tokenManager.clear();
   },
 
-  // 获取 Hyperliquid 设置（不再需要 user_id）
-  getHyperliquidSettings: () =>
-    api.get<any, ApiResponse<{ api_wallet: string; wallet_address: string }>>('/auth/hyperliquid-settings'),
-
   // 更新 Hyperliquid 设置（不再需要 user_id）
   updateHyperliquidSettings: (data: { api_wallet?: string; wallet_address?: string }) =>
     api.post<any, ApiResponse<{ api_wallet: string; wallet_address: string }> & { message?: string }>('/auth/hyperliquid-settings', data),
@@ -908,10 +883,6 @@ export const userManagementApi = {
   updateUserInfo: (targetUserId: string, data: { role?: string; expires_at?: string | null; allowed_ip?: string; allowed_port?: string }) =>
     api.put<any, ApiResponse<void> & { message?: string }>(`/auth/users/${targetUserId}/info`, data),
 
-  // 获取用户统计（管理员）
-  getUserStats: () =>
-    api.get<any, ApiResponse<UserStats>>('/auth/users/stats'),
-
   // 获取指定用户的 API Key（管理员）
   getUserApiKey: (targetUserId: string) =>
     api.get<any, ApiResponse<{ user_id: string; api_key: string | null }>>(`/auth/users/${targetUserId}/api-key`),
@@ -927,12 +898,8 @@ export const secretKeyApi = {
     api.get<any, ApiResponse<SecretKey[]>>('/auth/secret-keys', { params }),
 
   // 创建秘钥（管理员）
-  createSecretKey: (data: { key_name?: string; user_role?: string; expires_days?: number; key_value?: string }) =>
-    api.post<any, ApiResponse<SecretKey> & { message?: string }>('/auth/secret-keys', data),
-
-  // 批量创建秘钥（管理员）
-  batchCreateSecretKeys: (data: { count: number; key_name_prefix?: string; user_role?: string; expires_days?: number }) =>
-    api.post<any, ApiResponse<SecretKey[]> & { message?: string }>('/auth/secret-keys/batch', data),
+  createSecretKeys: (data: { count?: number; key_name_prefix?: string; user_role?: string; expires_days?: number }) =>
+    api.post<any, ApiResponse<SecretKey[]> & { message?: string }>('/auth/secret-keys', data),
 
   // 获取秘钥详情（管理员）
   getSecretKey: (keyId: number) =>
@@ -945,10 +912,6 @@ export const secretKeyApi = {
   // 删除秘钥（管理员）
   deleteSecretKey: (keyId: number) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/auth/secret-keys/${keyId}`),
-
-  // 获取秘钥统计（管理员）
-  getSecretKeyStats: () =>
-    api.get<any, ApiResponse<SecretKeyStats>>('/auth/secret-keys/stats'),
 };
 
 // ==================== 应用版本管理 API ====================

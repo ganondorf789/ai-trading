@@ -777,65 +777,6 @@ def change_password():
         }), 500
 
 
-@auth_bp.route('/api/auth/hyperliquid-settings', methods=['GET'])
-@login_required
-def get_hyperliquid_settings():
-    """获取 Hyperliquid API 设置
-    ---
-    tags:
-      - Auth
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: object
-              properties:
-                api_wallet:
-                  type: string
-                wallet_address:
-                  type: string
-      404:
-        description: 用户不存在
-      500:
-        description: 服务器错误
-    """
-    try:
-        # 从 token 获取当前用户 ID
-        user_id = get_current_user_id()
-        
-        # 获取设置
-        settings_data = db.get_hyperliquid_settings(user_id)
-        
-        if settings_data is None:
-            return jsonify({
-                'success': False,
-                'error': '用户不存在'
-            }), 404
-        
-        return jsonify({
-            'success': True,
-            'data': settings_data
-        })
-        
-    except Exception as e:
-        logger.error(f"获取 Hyperliquid 设置失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @auth_bp.route('/api/auth/hyperliquid-settings', methods=['POST'])
 @login_required
 def update_hyperliquid_settings():
@@ -1004,104 +945,6 @@ def get_current_user_info():
         # 从 token 获取当前用户 ID
         user_id = get_current_user_id()
         user = db.get_user_by_id(user_id)
-        
-        if not user:
-            return jsonify({
-                'success': False,
-                'error': '用户不存在'
-            }), 404
-        
-        # 格式化返回数据
-        response_data = {
-            'id': user['id'],
-            'account': user['account'],
-            'role': user.get('role', 'user'),
-            'api_wallet': user.get('api_wallet', ''),
-            'wallet_address': user.get('wallet_address', ''),
-            'allowed_ip': user.get('allowed_ip', ''),
-            'allowed_port': user.get('allowed_port', ''),
-            'expires_at': user['expires_at'].isoformat() if user.get('expires_at') else None,
-            'is_active': user.get('is_active', True),
-            'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
-            'last_login_at': user['last_login_at'].isoformat() if user.get('last_login_at') else None
-        }
-        
-        return jsonify({
-            'success': True,
-            'data': response_data
-        })
-        
-    except Exception as e:
-        logger.error(f"获取用户信息失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@auth_bp.route('/api/auth/userinfo', methods=['GET'])
-@login_required
-def get_userinfo():
-    """获取当前用户完整信息（包含 Hyperliquid 设置和 API Key 状态）
-    ---
-    tags:
-      - Auth
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: object
-              properties:
-                id:
-                  type: integer
-                account:
-                  type: string
-                role:
-                  type: string
-                api_wallet:
-                  type: string
-                wallet_address:
-                  type: string
-                allowed_ip:
-                  type: string
-                allowed_port:
-                  type: string
-                expires_at:
-                  type: string
-                  format: date-time
-                is_active:
-                  type: boolean
-                is_expired:
-                  type: boolean
-                created_at:
-                  type: string
-                  format: date-time
-                last_login_at:
-                  type: string
-                  format: date-time
-                has_hyperliquid_settings:
-                  type: boolean
-                has_api_key:
-                  type: boolean
-      404:
-        description: 用户不存在
-      500:
-        description: 服务器错误
-    """
-    try:
-        user_id = get_current_user_id()
-        user = db.get_user_by_id(user_id)
 
         if not user:
             return jsonify({
@@ -1120,6 +963,7 @@ def get_userinfo():
         # 检查是否有 API Key
         has_api_key = bool(user.get('api_key'))
 
+        # 格式化返回数据
         response_data = {
             'id': user['id'],
             'account': user['account'],
@@ -1546,7 +1390,7 @@ def get_secret_keys():
 @auth_bp.route('/api/auth/secret-keys', methods=['POST'])
 @login_required
 @admin_required
-def create_secret_key():
+def create_secret_keys():
     """创建秘钥（管理员权限）
     ---
     tags:
@@ -1563,112 +1407,9 @@ def create_secret_key():
         schema:
           type: object
           properties:
-            key_name:
-              type: string
-              description: 秘钥名称/备注
-            user_role:
-              type: string
-              enum: [user, member, admin]
-              default: user
-              description: 使用此秘钥注册的用户身份
-            expires_days:
-              type: integer
-              default: 30
-              description: 注册用户的有效天数（0表示永不过期）
-            key_value:
-              type: string
-              description: 指定秘钥值（可选，不指定则自动生成）
-    responses:
-      200:
-        description: 创建成功
-      403:
-        description: 无权限
-      500:
-        description: 服务器错误
-    """
-    try:
-        data = request.get_json()
-        
-        if not data:
-            data = {}
-        
-        # 从 token 获取当前用户 ID
-        user_id = get_current_user_id()
-        
-        key_name = data.get('key_name', '')
-        user_role = data.get('user_role', 'user')
-        expires_days = data.get('expires_days', 30)
-        key_value = data.get('key_value')
-        
-        # 验证用户身份
-        if user_role not in [ROLE_USER, ROLE_MEMBER, ROLE_ADMIN]:
-            return jsonify({
-                'success': False,
-                'error': '无效的用户身份'
-            }), 400
-        
-        key = db.create_secret_key(
-            key_name=key_name,
-            user_role=user_role,
-            expires_days=expires_days,
-            created_by=user_id,
-            key_value=key_value
-        )
-        
-        if not key:
-            return jsonify({
-                'success': False,
-                'error': '创建失败，秘钥可能已存在'
-            }), 400
-        
-        logger.info(f"秘钥创建成功: {key_name or key['key_value'][:8]}...")
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'id': key['id'],
-                'key_value': key['key_value'],
-                'key_name': key.get('key_name', ''),
-                'user_role': key['user_role'],
-                'expires_days': key['expires_days'],
-                'is_used': key.get('is_used', False),
-                'is_active': key['is_active']
-            },
-            'message': '秘钥创建成功'
-        })
-        
-    except Exception as e:
-        logger.error(f"创建秘钥失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@auth_bp.route('/api/auth/secret-keys/batch', methods=['POST'])
-@login_required
-@admin_required
-def batch_create_secret_keys():
-    """批量创建秘钥（管理员权限）
-    ---
-    tags:
-      - SecretKeys
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          required:
-            - count
-          properties:
             count:
               type: integer
+              default: 1
               description: 创建数量
             key_name_prefix:
               type: string
@@ -1682,7 +1423,7 @@ def batch_create_secret_keys():
               default: 30
     responses:
       200:
-        description: 批量创建成功
+        description: 创建成功
       403:
         description: 无权限
       500:
@@ -1690,18 +1431,15 @@ def batch_create_secret_keys():
     """
     try:
         data = request.get_json()
-        
+
         if not data:
-            return jsonify({
-                'success': False,
-                'error': '请求参数不能为空'
-            }), 400
-        
+            data = {}
+
         # 从 token 获取当前用户 ID
         user_id = get_current_user_id()
-        count = data.get('count')
-        
-        if not count or count < 1:
+        count = data.get('count', 1)
+
+        if count < 1:
             return jsonify({
                 'success': False,
                 'error': '创建数量必须大于0'
@@ -1946,43 +1684,6 @@ def delete_secret_key(key_id: int):
             'error': str(e)
         }), 500
 
-
-@auth_bp.route('/api/auth/secret-keys/stats', methods=['GET'])
-@login_required
-@admin_required
-def get_secret_key_stats():
-    """获取秘钥统计信息（管理员权限）
-    ---
-    tags:
-      - SecretKeys
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-      403:
-        description: 无权限
-      500:
-        description: 服务器错误
-    """
-    try:
-        stats = db.get_secret_key_stats()
-        
-        return jsonify({
-            'success': True,
-            'data': stats
-        })
-        
-    except Exception as e:
-        logger.error(f"获取秘钥统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
 
 # ==================== 用户管理 API（管理员） ====================
@@ -2579,39 +2280,3 @@ def admin_revoke_user_api_key(target_user_id: int):
         }), 500
 
 
-@auth_bp.route('/api/auth/users/stats', methods=['GET'])
-@login_required
-@admin_required
-def get_user_stats():
-    """获取用户统计信息（管理员权限）
-    ---
-    tags:
-      - UserManagement
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-      403:
-        description: 无权限
-      500:
-        description: 服务器错误
-    """
-    try:
-        stats = db.get_user_stats()
-        
-        return jsonify({
-            'success': True,
-            'data': stats
-        })
-        
-    except Exception as e:
-        logger.error(f"获取用户统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500

@@ -140,43 +140,22 @@ export default function SecretKeysPage() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      if (createForm.count > 1) {
-        // 批量创建
-        const response = await secretKeyApi.batchCreateSecretKeys({
-          count: createForm.count,
-          key_name_prefix: createForm.key_name,
-          user_role: createForm.user_role,
-          expires_days: createForm.expires_days,
-        });
+      const response = await secretKeyApi.createSecretKeys({
+        count: createForm.count,
+        key_name_prefix: createForm.key_name,
+        user_role: createForm.user_role,
+        expires_days: createForm.expires_days,
+      });
 
-        if (response.success) {
-          addToast({
-            title: "成功",
-            description: response.message || `成功创建 ${response.data?.length} 个秘钥`,
-            color: "success",
-          });
-          setCreateModalOpen(false);
-          setCreateForm({ key_name: "", user_role: "user", expires_days: 30, count: 1 });
-          fetchKeys();
-        }
-      } else {
-        // 单个创建
-        const response = await secretKeyApi.createSecretKey({
-          key_name: createForm.key_name,
-          user_role: createForm.user_role,
-          expires_days: createForm.expires_days,
+      if (response.success) {
+        addToast({
+          title: "成功",
+          description: response.message || `成功创建 ${response.data?.length} 个秘钥`,
+          color: "success",
         });
-
-        if (response.success) {
-          addToast({
-            title: "成功",
-            description: "秘钥创建成功",
-            color: "success",
-          });
-          setCreateModalOpen(false);
-          setCreateForm({ key_name: "", user_role: "user", expires_days: 30, count: 1 });
-          fetchKeys();
-        }
+        setCreateModalOpen(false);
+        setCreateForm({ key_name: "", user_role: "user", expires_days: 30, count: 1 });
+        fetchKeys();
       }
     } catch (error: any) {
       addToast({

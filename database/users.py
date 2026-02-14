@@ -378,39 +378,6 @@ class UsersOps:
             logger.error(f"更新 Hyperliquid 设置失败: {e}")
             return None
 
-    def get_hyperliquid_settings(self, user_id: int) -> Optional[Dict]:
-        """
-        获取用户的 Hyperliquid API 设置
-
-        Args:
-            user_id: 用户 ID
-
-        Returns:
-            Hyperliquid 设置信息（api_wallet 已解密）
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-                
-                cursor.execute("""
-                    SELECT api_wallet, wallet_address
-                    FROM users
-                    WHERE id = %s
-                """, (user_id,))
-                
-                result = cursor.fetchone()
-                if result:
-                    data = dict(result)
-                    # 解密 api_wallet 后返回
-                    if data.get('api_wallet'):
-                        data['api_wallet'] = self._decrypt_api_wallet(data['api_wallet'])
-                    return data
-                return None
-                
-        except Exception as e:
-            logger.error(f"获取 Hyperliquid 设置失败: {e}")
-            return None
-
     # ==================== 用户查询 ====================
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
