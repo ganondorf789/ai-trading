@@ -393,6 +393,15 @@ def get_traders():
         user_id = get_current_user_id()
         user_starred_addresses = db.get_user_starred_addresses(user_id) if user_id else set()
 
+        # 获取 PnL sparkline 数据
+        paginated_addresses = [t.get('address') for t in traders if t.get('address')]
+        sparkline_map = {}
+        if paginated_addresses:
+            try:
+                sparkline_map = db.get_pnl_sparklines(paginated_addresses, period='perpAllTime', max_points=50)
+            except Exception as e:
+                logger.warning(f"获取 PnL sparkline 失败: {e}")
+
         # 格式化数据（返回所有可用字段）
         result = []
         for trader in traders:
@@ -473,6 +482,8 @@ def get_traders():
                 'tag_profit_status': trader.get('tag_profit_status'),
                 'tag_direction_preference': trader.get('tag_direction_preference'),
                 'tag_trading_style': trader.get('tag_trading_style'),
+                # PnL sparkline
+                'pnl_sparkline': sparkline_map.get(trader.get('address'), []),
             })
 
         return jsonify({

@@ -2,7 +2,7 @@
 交易者 PnL 历史模块 (PostgreSQL)
 
 存储从 Hyperliquid portfolio API 获取的 perp PnL 时间序列数据
-周期: perpDay, perpWeek, perpAllTime
+周期: perpDay, perpWeek, perpAllTime, month
 """
 from typing import List, Dict, Any, Optional
 from psycopg2 import extras
@@ -24,7 +24,7 @@ class TraderPnlHistoryOps:
             保存的记录数
         """
         # 只保留 perp 相关周期
-        perp_periods = {'perpDay', 'perpWeek', 'perpAllTime'}
+        perp_periods = {'perpDay', 'perpWeek', 'perpAllTime', 'month'}
 
         rows = []
         for period, data in portfolio_data:
@@ -138,6 +138,63 @@ class TraderPnlHistoryOps:
                     'account_value': float(row['account_value']),
                     'vlm': float(row['vlm']),
                 })
+            return result
+
+    def get_pnl_sparklines(
+        self,
+        addresses: List[str],
+        period: str = 'perpAllTime',
+        max_points: int = 50,
+    ) -> Dict[str, List[List]]:
+        """
+        批量获取多个交易者的 PnL 迷你曲线数据（用于列表页 sparkline）
+
+        通过 NTILE 窗口函数对数据降采样，每个地址最多返回 max_points 个点。
+
+        Args:
+            addresses: 交易者地址列表
+            period: 周期
+            max_points: 每个地址最多返回的数据点数
+
+        Returns:
+            {address: [[time, pnl], ...]} 字典
+        """
+        if not addresses:
+            return {}
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute("""
+                WITH numbered AS (
+                    SELECT
+                        address, time, pnl,
+                        NTILE(%(max_points)s) OVER (PARTITION BY address ORDER BY time) AS bucket
+                    FROM trader_pnl_history
+                    WHERE address = ANY(%(addresses)s) AND period = %(period)s
+                ),
+                sampled AS (
+                    SELECT DISTINCT ON (address, bucket)
+                        address, time, pnl
+                    FROM numbered
+                    ORDER BY address, bucket, time DESC
+                )
+                SELECT address, time, pnl
+                FROM sampled
+                ORDER BY address, time ASC
+            """, {
+                'addresses': addresses,
+                'period': period,
+                'max_points': max_points,
+            })
+
+            result: Dict[str, List[List]] = {}
+            for row in cursor.fetchall():
+                addr = row['address']
+                if addr not in result:
+                    result[addr] = []
+                result[addr].append([row['time'], float(row['pnl'])])
+
             return result
 
     def delete_pnl_history(self, address: str, period: Optional[str] = None) -> int:

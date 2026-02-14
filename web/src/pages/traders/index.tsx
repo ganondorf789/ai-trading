@@ -1,30 +1,19 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { Selection, SortDescriptor } from '@heroui/react';
-import {
-  Table,
-  TableHeader,
-  TableColumn,
-  TableBody,
-  TableRow,
-  TableCell,
-} from '@heroui/table';
+import { useState, useEffect, useCallback } from 'react';
+import type { SortDescriptor } from '@heroui/react';
 import { addToast } from "@heroui/react";
 import { Spinner } from '@heroui/spinner';
-import { Card, CardBody } from '@heroui/card';
 import { useDisclosure } from '@heroui/modal';
 import { Icon } from "@iconify/react";
 import DefaultLayout from '@/layouts/default';
 import { traderApi, Trader } from '@/services/api';
 import { FilterSection } from './components/FilterSection';
-import { TraderTableCell } from './components/TraderTableCell';
+import { TraderCard } from './components/TraderCard';
 import { AddTraderModal } from './components/AddTraderModal';
-import { columns, INITIAL_VISIBLE_COLUMNS, ROWS_PER_PAGE } from './constants';
+import { ROWS_PER_PAGE } from './constants';
 import { TablePagination } from '@/components/TablePagination';
-import type { FilterConfig, ColumnKey } from './types';
+import type { FilterConfig } from './types';
 
 export default function TradersPage() {
-  const navigate = useNavigate();
   const [traders, setTraders] = useState<Trader[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +23,6 @@ export default function TradersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [filters, setFilters] = useState<FilterConfig>({});
-  const [visibleColumns] = useState<Selection>(new Set(INITIAL_VISIBLE_COLUMNS));
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
     column: 'overall_score',
     direction: 'descending',
@@ -48,8 +36,7 @@ export default function TradersPage() {
     try {
       const response = await traderApi.toggleStar(address, isStarred);
       if (response.success) {
-        // 更新本地状态
-        setTraders(prev => prev.map(t => 
+        setTraders(prev => prev.map(t =>
           t.address === address ? { ...t, is_starred: isStarred } : t
         ));
         addToast({
@@ -77,7 +64,6 @@ export default function TradersPage() {
       setLoading(true);
       setError(null);
 
-      // 周期 → has_recent_trade
       const periodDays = filters.period === '1d' ? 1
         : filters.period === '7d' ? 7
         : filters.period === '30d' ? 30
@@ -91,11 +77,9 @@ export default function TradersPage() {
         sort_by: sortDescriptor.column as string,
         sort_order: sortDescriptor.direction === 'ascending' ? 'asc' as const : 'desc' as const,
         has_recent_trade: periodDays,
-        // 高级筛选 → JSON
         filters: filters.advancedFilters?.length
           ? JSON.stringify(filters.advancedFilters)
           : undefined,
-        // 标签筛选
         tag_account_value: filters.tagAccountValue,
         tag_trading_rhythm: filters.tagTradingRhythm,
         tag_profit_status: filters.tagProfitStatus,
@@ -129,15 +113,6 @@ export default function TradersPage() {
     setPage(1);
   }, [searchAddress, selectedRating, sortDescriptor, filters]);
 
-  const handleRowClick = (address: string) => {
-    navigate(`/traders/${address}`);
-  };
-
-  const headerColumns = useMemo(() => {
-    if (visibleColumns === 'all') return columns;
-    return columns.filter((column) => Array.from(visibleColumns).includes(column.uid));
-  }, [visibleColumns]);
-
   const onSearchChange = useCallback((value?: string) => {
     setSearchAddress(value || '');
     setPage(1);
@@ -162,91 +137,54 @@ export default function TradersPage() {
           </h1>
         </div>
 
+        <FilterSection
+          totalCount={totalCount}
+          searchAddress={searchAddress}
+          onSearchChange={onSearchChange}
+          selectedRating={selectedRating}
+          onRatingChange={setSelectedRating}
+          sortDescriptor={sortDescriptor}
+          onSortChange={setSortDescriptor}
+          filters={filters}
+          onFiltersChange={setFilters}
+          onSearch={loadTraders}
+          onReset={handleReset}
+          onAddTrader={onOpen}
+        />
+
+        {/* Card list */}
         <div className="w-full">
-          <Card>
-            <CardBody>
-              {error ? (
-                <div className="text-center text-red-500 p-8">{error}</div>
-              ) : (
-                <Table
-                  isHeaderSticky
-                  aria-label="Traders table"
-                  selectionMode="single"
-                  onRowAction={(key) => handleRowClick(key.toString())}
-                  topContent={
-                    <FilterSection
-                      totalCount={totalCount}
-                      searchAddress={searchAddress}
-                      onSearchChange={onSearchChange}
-                      selectedRating={selectedRating}
-                      onRatingChange={setSelectedRating}
-                      sortDescriptor={sortDescriptor}
-                      onSortChange={setSortDescriptor}
-                      filters={filters}
-                      onFiltersChange={setFilters}
-                      onSearch={loadTraders}
-                      onReset={handleReset}
-                      onAddTrader={onOpen}
-                    />
-                  }
-                  topContentPlacement="outside"
-                  bottomContent={
-                    totalPages > 1 ? (
-                      <TablePagination
-                        page={page}
-                        totalPages={totalPages}
-                        totalCount={totalCount}
-                        rowsPerPage={ROWS_PER_PAGE}
-                        onPageChange={setPage}
-                      />
-                    ) : null
-                  }
-                  bottomContentPlacement="outside"
-                  sortDescriptor={sortDescriptor}
-                  onSortChange={setSortDescriptor}
-                  classNames={{
-                    wrapper: 'min-h-[400px] max-h-[600px]',
-                  }}
-                >
-                  <TableHeader columns={headerColumns}>
-                    {(column) => (
-                      <TableColumn
-                        key={column.uid}
-                        allowsSorting={column.sortable}
-                      >
-                        {column.name}
-                      </TableColumn>
-                    )}
-                  </TableHeader>
-                  <TableBody
-                    items={traders}
-                    isLoading={loading}
-                    loadingContent={<Spinner size="lg" />}
-                    emptyContent="暂无交易者数据"
-                  >
-                    {(item) => (
-                      <TableRow
-                        key={item.address}
-                        className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        {(columnKey) => (
-                          <TableCell>
-                            <TraderTableCell 
-                              trader={item} 
-                              columnKey={columnKey as ColumnKey}
-                              onToggleStar={handleToggleStar}
-                              isStarLoading={starLoadingAddresses.has(item.address)}
-                            />
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              )}
-            </CardBody>
-          </Card>
+          {error ? (
+            <div className="text-center text-red-500 p-8">{error}</div>
+          ) : loading ? (
+            <div className="flex justify-center items-center min-h-[400px]">
+              <Spinner size="lg" />
+            </div>
+          ) : traders.length === 0 ? (
+            <div className="text-center text-default-500 p-8">暂无交易者数据</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {traders.map((trader) => (
+                <TraderCard
+                  key={trader.address}
+                  trader={trader}
+                  onToggleStar={handleToggleStar}
+                  isStarLoading={starLoadingAddresses.has(trader.address)}
+                />
+              ))}
+            </div>
+          )}
         </div>
+
+        {totalPages > 1 && (
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            rowsPerPage={ROWS_PER_PAGE}
+            onPageChange={setPage}
+          />
+        )}
       </section>
 
       <AddTraderModal

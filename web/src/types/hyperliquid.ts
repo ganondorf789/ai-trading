@@ -39,7 +39,7 @@ export interface SpotAssetCtx {
 export type SpotMetaAndAssetCtxs = [SpotMeta, SpotAssetCtx[]];
 
 // Portfolio
-export type PortfolioPeriod = 'day' | 'week' | 'month' | 'allTime' | 'perpDay' | 'perpWeek' | 'perpAllTime';
+export type PortfolioPeriod = 'day' | 'week' | 'month' | 'allTime' | 'perpDay' | 'perpWeek' | 'perpMonth' | 'perpAllTime';
 
 export interface PortfolioPeriodData {
   accountValueHistory: [number, string][];

@@ -93,6 +93,8 @@ export interface Trader {
   tag_profit_status?: string;
   tag_direction_preference?: string;
   tag_trading_style?: string;  // comma-separated
+  // PnL sparkline
+  pnl_sparkline?: [number, number][];
 }
 
 export interface TraderFill {
