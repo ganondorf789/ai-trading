@@ -3,8 +3,6 @@ import type {
   Trader,
   TraderFill,
   AssetPosition,
-  TraderHistory,
-  TraderAIAnalysis,
   ApiResponse,
   CopyTradingAddress,
   HyperliquidCoin,
@@ -33,8 +31,6 @@ export type {
   Trader,
   TraderFill,
   AssetPosition,
-  TraderHistory,
-  TraderAIAnalysis,
   ApiResponse,
   CopyTradingAddress,
   HyperliquidCoin,
@@ -332,18 +328,6 @@ export const traderApi = {
   refreshTraderPositions: (address: string) =>
     api.post<any, ApiResponse<AssetPosition[]> & { message?: string }>(`/traders/${address}/positions/refresh`),
 
-  // 获取历史图表数据
-  getTraderHistory: (address: string, params?: { days?: number }) =>
-    api.get<any, ApiResponse<TraderHistory>>(`/traders/${address}/history`, { params }),
-
-  // 按评级筛选（支持分页）
-  getTradersByRating: (rating: string, params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-  }) =>
-    api.get<any, ApiResponse<Trader[]>>(`/traders/rating/${rating}`, { params }),
-
   // 获取统计信息
   getStatistics: () =>
     api.get<any, ApiResponse<{
@@ -371,18 +355,6 @@ export const traderApi = {
       null,
       { params, timeout: 120000 }  // 2分钟超时
     ),
-
-  // AI分析交易者（可能需要较长时间）
-  aiAnalyzeTrader: (address: string, params?: { provider?: string }) =>
-    api.post<any, ApiResponse<TraderAIAnalysis> & { message?: string }>(
-      `/traders/${address}/ai-analysis`,
-      null,
-      { params, timeout: 60000 }  // 60秒超时
-    ),
-
-  // 获取AI分析结果
-  getTraderAIAnalysis: (address: string) =>
-    api.get<any, ApiResponse<TraderAIAnalysis>>(`/traders/${address}/ai-analysis`),
 
   // 切换收藏状态
   toggleStar: (address: string, isStarred: boolean) =>
