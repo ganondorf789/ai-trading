@@ -14,8 +14,6 @@ interface DeleteConfirmModalProps {
   onClose: () => void;
   onConfirm: () => void;
   tracking: AddressTracking | null;
-  isBatch?: boolean;
-  batchCount?: number;
 }
 
 export default function DeleteConfirmModal({
@@ -23,8 +21,6 @@ export default function DeleteConfirmModal({
   onClose,
   onConfirm,
   tracking,
-  isBatch = false,
-  batchCount = 0,
 }: DeleteConfirmModalProps) {
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -38,17 +34,13 @@ export default function DeleteConfirmModal({
           确认删除
         </ModalHeader>
         <ModalBody>
-          {isBatch ? (
-            <p>
-              确定要删除选中的 <span className="font-semibold text-danger">{batchCount}</span> 条跟踪记录吗？
-            </p>
-          ) : tracking ? (
+          {tracking && (
             <p>
               确定要删除地址 <span className="font-mono font-semibold text-danger">
                 {tracking.address_remark || formatAddress(tracking.tracking_address)}
               </span> 的跟踪记录吗？
             </p>
-          ) : null}
+          )}
           <p className="text-sm text-default-500 mt-2">此操作无法撤销。</p>
         </ModalBody>
         <ModalFooter>

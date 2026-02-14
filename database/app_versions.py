@@ -392,46 +392,6 @@ class AppVersionsOps:
             logger.error(f"切换版本可见性失败: {e}")
             return False
 
-    def get_app_version_stats(self) -> Dict:
-        """
-        获取版本统计信息
-
-        Returns:
-            统计数据
-        """
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-                
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) as total_count,
-                        COUNT(*) FILTER (WHERE is_visible = TRUE) as visible_count,
-                        COUNT(*) FILTER (WHERE is_visible = FALSE) as hidden_count,
-                        COUNT(*) FILTER (WHERE is_force_update = TRUE) as force_update_count,
-                        COUNT(*) FILTER (WHERE platform = 'all') as all_platform_count,
-                        COUNT(*) FILTER (WHERE platform = 'android') as android_count,
-                        COUNT(*) FILTER (WHERE platform = 'ios') as ios_count,
-                        COUNT(*) FILTER (WHERE platform = 'web') as web_count
-                    FROM app_versions
-                """)
-                
-                row = cursor.fetchone()
-                return dict(row) if row else {
-                    'total_count': 0,
-                    'visible_count': 0,
-                    'hidden_count': 0,
-                    'force_update_count': 0,
-                    'all_platform_count': 0,
-                    'android_count': 0,
-                    'ios_count': 0,
-                    'web_count': 0
-                }
-                
-        except Exception as e:
-            logger.error(f"获取版本统计失败: {e}")
-            return {}
-
     def check_version_update(self, current_version: str, platform: str = 'all') -> Optional[Dict]:
         """
         检查版本更新

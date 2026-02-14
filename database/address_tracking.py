@@ -309,37 +309,6 @@ class AddressTrackingOps:
 
             return results
 
-    def get_address_tracking_stats(self, user_id: str) -> Dict:
-        """
-        获取地址跟踪统计信息
-
-        Args:
-            user_id: 用户ID
-
-        Returns:
-            统计数据
-        """
-        with self._get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
-
-            cursor.execute("""
-                SELECT
-                    COUNT(*) as total_count,
-                    COUNT(*) FILTER (WHERE is_enabled = TRUE) as enabled_count,
-                    COUNT(*) FILTER (WHERE is_enabled = FALSE) as disabled_count,
-                    COUNT(*) FILTER (WHERE enable_notification = TRUE) as notification_enabled_count
-                FROM address_tracking
-                WHERE user_id = %s
-            """, (user_id,))
-
-            row = cursor.fetchone()
-            return dict(row) if row else {
-                'total_count': 0,
-                'enabled_count': 0,
-                'disabled_count': 0,
-                'notification_enabled_count': 0
-            }
-
     def check_address_tracking_exists(self, user_id: str, tracking_address: str) -> bool:
         """
         检查是否已存在该地址的跟踪记录
@@ -360,24 +329,3 @@ class AddressTrackingOps:
             """, (user_id, tracking_address,))
             return cursor.fetchone() is not None
 
-    def batch_delete_address_trackings(self, user_id: str, tracking_ids: List[int]) -> int:
-        """
-        批量删除地址跟踪记录
-
-        Args:
-            user_id: 用户ID
-            tracking_ids: 跟踪记录ID列表
-
-        Returns:
-            删除的记录数
-        """
-        if not tracking_ids:
-            return 0
-
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                DELETE FROM address_tracking
-                WHERE user_id = %s AND id = ANY(%s)
-            """, (user_id, tracking_ids,))
-            return cursor.rowcount

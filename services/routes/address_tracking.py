@@ -119,41 +119,6 @@ def get_address_trackings():
         }), 500
 
 
-@address_tracking_bp.route('/api/address-tracking/stats', methods=['GET'])
-@login_required
-def get_address_tracking_stats():
-    """获取地址跟踪统计
-    ---
-    tags:
-      - Address Tracking
-    responses:
-      200:
-        description: 跟踪统计
-        schema:
-          type: object
-          properties:
-            success:
-              type: boolean
-            data:
-              type: object
-      500:
-        description: 服务器错误
-    """
-    try:
-        user_id = g.current_user['user_id']
-        stats = db.get_address_tracking_stats(user_id)
-        return jsonify({
-            'success': True,
-            'data': stats
-        })
-    except Exception as e:
-        logger.error(f"获取地址跟踪统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @address_tracking_bp.route('/api/address-tracking/<int:tracking_id>', methods=['GET'])
 @login_required
 def get_address_tracking(tracking_id: int):
@@ -570,65 +535,3 @@ def toggle_address_tracking_notification(tracking_id: int):
         }), 500
 
 
-@address_tracking_bp.route('/api/address-tracking/batch-delete', methods=['POST'])
-@login_required
-def batch_delete_address_trackings():
-    """批量删除地址跟踪记录
-    ---
-    tags:
-      - Address Tracking
-    parameters:
-      - name: body
-        in: body
-        required: true
-        schema:
-          type: object
-          required:
-            - tracking_ids
-          properties:
-            tracking_ids:
-              type: array
-              items:
-                type: integer
-              description: 跟踪记录ID列表
-    responses:
-      200:
-        description: 删除成功
-      400:
-        description: 参数错误
-      500:
-        description: 服务器错误
-    """
-    try:
-        user_id = g.current_user['user_id']
-        data = request.get_json()
-        if not data or 'tracking_ids' not in data:
-            return jsonify({
-                'success': False,
-                'error': '缺少 tracking_ids 参数'
-            }), 400
-
-        tracking_ids = data['tracking_ids']
-        if not isinstance(tracking_ids, list):
-            return jsonify({
-                'success': False,
-                'error': 'tracking_ids 必须是数组'
-            }), 400
-
-        deleted_count = db.batch_delete_address_trackings(user_id, tracking_ids)
-
-        if deleted_count > 0:
-            # 通知机器人重载配置
-            _notify_tracking_config_changed()
-
-        return jsonify({
-            'success': True,
-            'data': {'deleted_count': deleted_count},
-            'message': f'成功删除 {deleted_count} 条记录'
-        })
-    except Exception as e:
-        logger.error(f"批量删除地址跟踪失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500

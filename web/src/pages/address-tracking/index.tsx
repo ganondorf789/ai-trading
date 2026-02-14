@@ -14,7 +14,6 @@ import {
   Switch,
   Tooltip,
   Input,
-  Checkbox,
   addToast,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
@@ -51,15 +50,11 @@ export default function AddressTrackingPage() {
   const [enabledFilter, setEnabledFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // 选择状态（批量操作）
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
   // Modal 状态
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingTracking, setEditingTracking] = useState<AddressTracking | null>(null);
-  const [isBatchDelete, setIsBatchDelete] = useState(false);
 
   // 加载数据
   const loadTrackings = useCallback(async () => {
@@ -137,38 +132,18 @@ export default function AddressTrackingPage() {
   // 打开删除确认弹窗
   const handleOpenDeleteModal = useCallback((id: string) => {
     setDeletingId(id);
-    setIsBatchDelete(false);
     setIsDeleteModalOpen(true);
   }, []);
-
-  // 打开批量删除确认弹窗
-  const handleOpenBatchDeleteModal = useCallback(() => {
-    if (selectedIds.size === 0) {
-      addToast({ title: "请先选择要删除的记录", color: "warning" });
-      return;
-    }
-    setIsBatchDelete(true);
-    setIsDeleteModalOpen(true);
-  }, [selectedIds]);
 
   // 确认删除
   const handleConfirmDelete = async () => {
     try {
-      if (isBatchDelete) {
-        const response = await addressTrackingApi.batchDelete([...selectedIds]);
-        addToast({
-          title: "删除成功",
-          description: `已删除 ${response.data?.deleted_count || selectedIds.size} 条记录`,
-          color: "success"
-        });
-        setSelectedIds(new Set());
-      } else if (deletingId) {
+      if (deletingId) {
         await addressTrackingApi.deleteTracking(deletingId);
         addToast({ title: "删除成功", color: "success" });
       }
       setIsDeleteModalOpen(false);
       setDeletingId(null);
-      setIsBatchDelete(false);
       loadTrackings();
     } catch (error: any) {
       console.error("Failed to delete tracking:", error);
@@ -218,28 +193,6 @@ export default function AddressTrackingPage() {
     }
   }, []);
 
-  // 处理全选
-  const handleSelectAll = useCallback((checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(trackings.map((t) => t.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
-  }, [trackings]);
-
-  // 处理单选
-  const handleSelectOne = useCallback((id: string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      const newSet = new Set(prev);
-      if (checked) {
-        newSet.add(id);
-      } else {
-        newSet.delete(id);
-      }
-      return newSet;
-    });
-  }, []);
-
   // 格式化地址
   const formatAddress = (address: string) => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -258,7 +211,6 @@ export default function AddressTrackingPage() {
 
   // 表格列
   const columns = [
-    { key: "select", label: "" },
     { key: "enabled", label: "启用" },
     { key: "address", label: "跟踪地址" },
     { key: "remark", label: "备注" },
@@ -272,13 +224,6 @@ export default function AddressTrackingPage() {
   const renderCell = useCallback(
     (item: AddressTracking, columnKey: string) => {
       switch (columnKey) {
-        case "select":
-          return (
-            <Checkbox
-              isSelected={selectedIds.has(item.id)}
-              onValueChange={(checked) => handleSelectOne(item.id, checked)}
-            />
-          );
         case "enabled":
           return (
             <Switch
@@ -359,7 +304,7 @@ export default function AddressTrackingPage() {
           return null;
       }
     },
-    [selectedIds, handleSelectOne, handleToggle, handleToggleNotification, handleOpenEditModal, handleOpenDeleteModal]
+    [handleToggle, handleToggleNotification, handleOpenEditModal, handleOpenDeleteModal]
   );
 
   return (
@@ -420,23 +365,6 @@ export default function AddressTrackingPage() {
             </Select>
           </div>
 
-          {/* 批量操作 */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="text-sm text-default-500">
-                已选择 {selectedIds.size} 项
-              </span>
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                startContent={<Icon icon="lucide:trash-2" width={16} />}
-                onPress={handleOpenBatchDeleteModal}
-              >
-                批量删除
-              </Button>
-            </div>
-          )}
         </div>
 
         {/* 数据表格 */}
@@ -450,15 +378,7 @@ export default function AddressTrackingPage() {
               <TableHeader columns={columns}>
                 {(column) => (
                   <TableColumn key={column.key}>
-                    {column.key === "select" ? (
-                      <Checkbox
-                        isSelected={trackings.length > 0 && selectedIds.size === trackings.length}
-                        isIndeterminate={selectedIds.size > 0 && selectedIds.size < trackings.length}
-                        onValueChange={handleSelectAll}
-                      />
-                    ) : (
-                      column.label
-                    )}
+                    {column.label}
                   </TableColumn>
                 )}
               </TableHeader>
@@ -501,12 +421,9 @@ export default function AddressTrackingPage() {
           onClose={() => {
             setIsDeleteModalOpen(false);
             setDeletingId(null);
-            setIsBatchDelete(false);
           }}
           onConfirm={handleConfirmDelete}
           tracking={trackings.find((t) => t.id === deletingId) || null}
-          isBatch={isBatchDelete}
-          batchCount={selectedIds.size}
         />
       </div>
     </DefaultLayout>

@@ -559,43 +559,6 @@ def toggle_visibility(version_id: int):
         }), 500
 
 
-@app_versions_bp.route('/api/app-versions/stats', methods=['GET'])
-@login_required
-@admin_required
-def get_version_stats():
-    """获取版本统计信息（管理员权限）
-    ---
-    tags:
-      - AppVersions
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-      403:
-        description: 无权限
-      500:
-        description: 服务器错误
-    """
-    try:
-        stats = db.get_app_version_stats()
-        
-        return jsonify({
-            'success': True,
-            'data': stats
-        })
-        
-    except Exception as e:
-        logger.error(f"获取版本统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 
 # ==================== 辅助函数 ====================
 

@@ -424,50 +424,6 @@ def delete_announcement(announcement_id: int):
         }), 500
 
 
-@announcements_bp.route('/api/announcements/stats', methods=['GET'])
-@login_required
-@admin_required
-def get_announcement_stats():
-    """获取公告统计信息（管理员权限）
-    ---
-    tags:
-      - Announcements
-    parameters:
-      - name: Authorization
-        in: header
-        type: string
-        required: true
-        description: Bearer Token
-    responses:
-      200:
-        description: 获取成功
-      403:
-        description: 无权限
-      500:
-        description: 服务器错误
-    """
-    try:
-        # 获取公告总数
-        _, total_count = db.get_notifications(
-            notification_type='announcement',
-            limit=1,
-            offset=0
-        )
-        
-        return jsonify({
-            'success': True,
-            'data': {
-                'total_count': total_count
-            }
-        })
-        
-    except Exception as e:
-        logger.error(f"获取公告统计失败: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 
 # ==================== 辅助函数 ====================
 

@@ -969,17 +969,6 @@ export interface AppVersion {
   updated_at: string;
 }
 
-export interface AppVersionStats {
-  total_count: number;
-  visible_count: number;
-  hidden_count: number;
-  force_update_count: number;
-  all_platform_count: number;
-  android_count: number;
-  ios_count: number;
-  web_count: number;
-}
-
 export const appVersionApi = {
   // 获取最新版本（公开接口）
   getLatestVersion: (platform?: string) =>
@@ -1032,10 +1021,6 @@ export const appVersionApi = {
   // 切换版本可见性（管理员）
   toggleVisibility: (versionId: number, isVisible: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/app-versions/${versionId}/toggle`, { is_visible: isVisible }),
-
-  // 获取版本统计（管理员）
-  getVersionStats: () =>
-    api.get<any, ApiResponse<AppVersionStats>>('/app-versions/stats'),
 };
 
 // ==================== 公告管理 API ====================
@@ -1047,10 +1032,6 @@ export interface Announcement {
   content: string;
   is_read: boolean;
   created_at: string;
-}
-
-export interface AnnouncementStats {
-  total_count: number;
 }
 
 export const announcementApi = {
@@ -1073,10 +1054,6 @@ export const announcementApi = {
   // 删除公告（管理员）
   delete: (id: number) =>
     api.delete<any, ApiResponse<void> & { message?: string }>(`/announcements/${id}`),
-
-  // 获取公告统计（管理员）
-  getStats: () =>
-    api.get<any, ApiResponse<AnnouncementStats>>('/announcements/stats'),
 };
 
 // ==================== 地址跟踪 API ====================
@@ -1091,13 +1068,6 @@ export interface AddressTracking {
   monitor_events: ('open' | 'close' | 'add' | 'reduce')[];
   created_at: string;
   updated_at: string;
-}
-
-export interface AddressTrackingStats {
-  total_count: number;
-  enabled_count: number;
-  disabled_count: number;
-  notification_enabled_count: number;
 }
 
 // ==================== 巨鲸锚点 API ====================
@@ -1137,10 +1107,6 @@ export const addressTrackingApi = {
   }) =>
     api.get<any, ApiResponse<AddressTracking[]>>('/address-tracking', { params }),
 
-  // 获取统计信息
-  getStats: () =>
-    api.get<any, ApiResponse<AddressTrackingStats>>('/address-tracking/stats'),
-
   // 获取单个跟踪详情
   getTracking: (trackingId: string) =>
     api.get<any, ApiResponse<AddressTracking>>(`/address-tracking/${trackingId}`),
@@ -1171,9 +1137,6 @@ export const addressTrackingApi = {
   toggleNotification: (trackingId: string, enableNotification: boolean) =>
     api.post<any, ApiResponse<void> & { message?: string }>(`/address-tracking/${trackingId}/toggle-notification`, { enable_notification: enableNotification }),
 
-  // 批量删除地址跟踪
-  batchDelete: (trackingIds: string[]) =>
-    api.post<any, ApiResponse<{ deleted_count: number }> & { message?: string }>('/address-tracking/batch-delete', { tracking_ids: trackingIds }),
 };
 
 // ==================== 交易数据代理 API ====================
