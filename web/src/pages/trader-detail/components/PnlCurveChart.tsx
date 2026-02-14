@@ -283,6 +283,17 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
     return { change, pct, current: last[key] };
   }, [chartData, metric]);
 
+  // 计算 Y 轴范围：不从 0 开始，上下留 padding
+  const yDomain = useMemo(() => {
+    if (chartData.length === 0) return [0, 0];
+    const values = chartData.map((d) => d[metric]);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || Math.abs(max) * 0.1 || 1;
+    const padding = range * 0.1;
+    return [min - padding, max + padding];
+  }, [chartData, metric]);
+
   const lineColor = summary && summary.change >= 0 ? '#17c964' : '#f31260';
   const gradientId = `pnl-gradient-${metric}`;
 
@@ -378,6 +389,7 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
                     minTickGap={40}
                   />
                   <YAxis
+                    domain={yDomain}
                     tickFormatter={(v) => formatDollar(v)}
                     tick={{ fontSize: 11 }}
                     tickLine={false}
