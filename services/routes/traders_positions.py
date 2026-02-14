@@ -808,3 +808,127 @@ def get_liquidation_stats():
             'error': str(e)
         }), 500
 
+
+@traders_positions_bp.route('/api/liquidation/ratio-history', methods=['GET'])
+@login_required
+def get_liquidation_ratio_history():
+    """获取多空比历史曲线数据（Short Ratio）
+    ---
+    tags:
+      - Liquidation
+    parameters:
+      - name: coin
+        in: query
+        type: string
+        default: BTC
+        description: 币种（如 BTC, ETH）
+      - name: period
+        in: query
+        type: string
+        default: 1d
+        enum: [1h, 4h, 1d]
+        description: 时间粒度
+    responses:
+      200:
+        description: 多空比历史数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: object
+              properties:
+                symbol:
+                  type: string
+                period:
+                  type: string
+                currentRatio:
+                  type: number
+                  description: 当前 Short Ratio
+                currentValueDiff:
+                  type: number
+                  description: 当前多空价值差
+                avgRatio:
+                  type: number
+                  description: 平均 Short Ratio
+                avgValueDiff:
+                  type: number
+                  description: 平均多空价值差
+                series:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: integer
+                      longShortRatio:
+                        type: number
+                      positionValueDiff:
+                        type: number
+                      longCount:
+                        type: integer
+                      shortCount:
+                        type: integer
+                      longValue:
+                        type: number
+                      shortValue:
+                        type: number
+      400:
+        description: 参数错误
+      500:
+        description: 服务器错误
+    """
+    try:
+        coin = request.args.get('coin', 'BTC')
+        period = request.args.get('period', '1d')
+
+        valid_periods = ['1h', '4h', '1d']
+        if period not in valid_periods:
+            return jsonify({
+                'success': False,
+                'error': f'无效的时间周期，支持: {", ".join(valid_periods)}'
+            }), 400
+
+        data = db.get_position_ratio_history(coin, period)
+
+        return jsonify({
+            'success': True,
+            'data': data
+        })
+
+    except Exception as e:
+        logger.error(f"获取多空比历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_positions_bp.route('/api/liquidation/ratio-snapshot', methods=['POST'])
+@login_required
+def take_ratio_snapshot():
+    """手动触发多空比快照
+    ---
+    tags:
+      - Liquidation
+    responses:
+      200:
+        description: 快照成功
+      500:
+        description: 服务器错误
+    """
+    try:
+        count = db.save_position_ratio_snapshot()
+
+        return jsonify({
+            'success': True,
+            'message': f'已保存 {count} 个币种快照'
+        })
+
+    except Exception as e:
+        logger.error(f"保存多空比快照失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

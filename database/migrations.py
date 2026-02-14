@@ -1137,4 +1137,23 @@ class DatabaseMigrations:
                 ON trader_pnl_history(address, period)
             """)
 
+            # 创建持仓多空比快照表（用于 Short Ratio 曲线图）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS position_ratio_snapshots (
+                    id SERIAL PRIMARY KEY,
+                    coin TEXT NOT NULL,
+                    snapshot_time TIMESTAMP NOT NULL,
+                    long_count INTEGER NOT NULL DEFAULT 0,
+                    short_count INTEGER NOT NULL DEFAULT 0,
+                    long_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    short_value DOUBLE PRECISION NOT NULL DEFAULT 0,
+
+                    UNIQUE(coin, snapshot_time)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ratio_snapshots_coin_time
+                ON position_ratio_snapshots(coin, snapshot_time DESC)
+            """)
+
             logger.info("PostgreSQL 数据库表结构初始化完成")

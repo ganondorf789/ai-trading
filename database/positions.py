@@ -292,3 +292,141 @@ class PositionsOps:
             },
             'timestamp': int(pendulum.now(SHANGHAI_TZ).timestamp())
         }
+
+    def save_position_ratio_snapshot(self) -> int:
+        """
+        对所有币种拍摄多空比快照，写入 position_ratio_snapshots 表
+
+        Returns:
+            保存的快照记录数
+        """
+        now = pendulum.now(SHANGHAI_TZ)
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            # 按币种聚合当前持仓数据
+            cursor.execute("""
+                SELECT
+                    coin,
+                    COUNT(*) FILTER (WHERE szi > 0) AS long_count,
+                    COUNT(*) FILTER (WHERE szi < 0) AS short_count,
+                    COALESCE(SUM(ABS(position_value)) FILTER (WHERE szi > 0), 0) AS long_value,
+                    COALESCE(SUM(ABS(position_value)) FILTER (WHERE szi < 0), 0) AS short_value
+                FROM asset_positions
+                GROUP BY coin
+            """)
+            rows = cursor.fetchall()
+
+            if not rows:
+                return 0
+
+            # 批量写入快照
+            saved = 0
+            for row in rows:
+                cursor.execute("""
+                    INSERT INTO position_ratio_snapshots
+                        (coin, snapshot_time, long_count, short_count, long_value, short_value)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (coin, snapshot_time) DO UPDATE SET
+                        long_count = EXCLUDED.long_count,
+                        short_count = EXCLUDED.short_count,
+                        long_value = EXCLUDED.long_value,
+                        short_value = EXCLUDED.short_value
+                """, (
+                    row['coin'],
+                    now.to_iso8601_string(),
+                    row['long_count'],
+                    row['short_count'],
+                    float(row['long_value']),
+                    float(row['short_value'])
+                ))
+                saved += 1
+
+            logger.info(f"多空比快照已保存: {saved} 个币种")
+            return saved
+
+    def get_position_ratio_history(self, coin: str, period: str = '1d') -> Dict:
+        """
+        获取多空比历史数据（Short Ratio 曲线）
+
+        Args:
+            coin: 币种
+            period: 时间粒度 (1h, 4h, 1d)
+
+        Returns:
+            包含 series 数组的时序数据
+        """
+        # 粒度 → 时间截断精度 + 回看窗口
+        period_config = {
+            '1h': {'trunc': 'hour', 'lookback': '7 days'},
+            '4h': {'trunc': 'hour', 'lookback': '30 days'},
+            '1d': {'trunc': 'day', 'lookback': '90 days'},
+        }
+        cfg = period_config.get(period, period_config['1d'])
+
+        # 4h 需要特殊处理：按4小时分桶
+        if period == '4h':
+            time_bucket_expr = """
+                DATE_TRUNC('day', snapshot_time)
+                + INTERVAL '4 hours' * FLOOR(EXTRACT(HOUR FROM snapshot_time) / 4)
+            """
+        else:
+            time_bucket_expr = f"DATE_TRUNC('{cfg['trunc']}', snapshot_time)"
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
+
+            cursor.execute(f"""
+                SELECT
+                    {time_bucket_expr} AS bucket,
+                    AVG(long_count)  AS long_count,
+                    AVG(short_count) AS short_count,
+                    AVG(long_value)  AS long_value,
+                    AVG(short_value) AS short_value
+                FROM position_ratio_snapshots
+                WHERE coin = %s
+                  AND snapshot_time >= NOW() - %s::interval
+                GROUP BY bucket
+                ORDER BY bucket ASC
+            """, (coin, cfg['lookback']))
+
+            rows = cursor.fetchall()
+
+        series = []
+        for row in rows:
+            long_c = float(row['long_count'])
+            short_c = float(row['short_count'])
+            total_c = long_c + short_c
+            long_v = float(row['long_value'])
+            short_v = float(row['short_value'])
+
+            long_short_ratio = round(short_c / total_c, 4) if total_c > 0 else 0
+            value_diff = round(long_v - short_v, 2)
+
+            series.append({
+                'timestamp': int(row['bucket'].timestamp()),
+                'longShortRatio': long_short_ratio,
+                'positionValueDiff': value_diff,
+                'longCount': round(long_c),
+                'shortCount': round(short_c),
+                'longValue': round(long_v, 2),
+                'shortValue': round(short_v, 2),
+            })
+
+        # 计算均线值
+        avg_ratio = 0
+        avg_value_diff = 0
+        if series:
+            avg_ratio = round(sum(s['longShortRatio'] for s in series) / len(series), 4)
+            avg_value_diff = round(sum(s['positionValueDiff'] for s in series) / len(series), 2)
+
+        return {
+            'symbol': coin,
+            'period': period,
+            'currentRatio': series[-1]['longShortRatio'] if series else 0,
+            'currentValueDiff': series[-1]['positionValueDiff'] if series else 0,
+            'avgRatio': avg_ratio,
+            'avgValueDiff': avg_value_diff,
+            'series': series,
+        }
