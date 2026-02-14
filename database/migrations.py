@@ -1114,4 +1114,27 @@ class DatabaseMigrations:
                 ON whale_anchor(whale_threshold DESC)
             """)
 
+            # 创建交易者 PnL 历史表（portfolio perp 数据）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trader_pnl_history (
+                    id SERIAL PRIMARY KEY,
+                    address TEXT NOT NULL,
+                    period TEXT NOT NULL,
+                    time BIGINT NOT NULL,
+                    pnl DOUBLE PRECISION DEFAULT 0.0,
+                    account_value DOUBLE PRECISION DEFAULT 0.0,
+                    vlm DOUBLE PRECISION DEFAULT 0.0,
+
+                    UNIQUE(address, period, time)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pnl_history_address
+                ON trader_pnl_history(address)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pnl_history_address_period
+                ON trader_pnl_history(address, period)
+            """)
+
             logger.info("PostgreSQL 数据库表结构初始化完成")

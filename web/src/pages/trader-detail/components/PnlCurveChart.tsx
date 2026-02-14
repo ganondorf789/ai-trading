@@ -11,41 +11,20 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts';
-import { traderApi } from '@/services/api';
+import { hyperliquidApi } from '@/services/hyperliquid';
+import type { PortfolioPeriod, PortfolioPeriodData } from '@/types/hyperliquid';
 import type { AccountOverviewData } from './AccountOverview';
 
 // ==================== 类型 ====================
-
-interface PnlPoint {
-  time: number;
-  amount: number;
-  fee: number;
-  type: string;
-  coin: string;
-  cumulative_pnl: number;
-  cumulative_funding: number;
-  cumulative_deposit: number;
-  cumulative_total: number;
-}
-
-interface PnlCurveData {
-  base: {
-    pnl: number;
-    funding: number;
-    deposit: number;
-    total: number;
-  };
-  points: PnlPoint[];
-}
 
 type TimeRange = '1d' | '1w' | '1m' | 'all';
 type MetricType = 'pnl' | 'account_value';
 
 interface PnlCurveChartProps {
   address: string;
-  accountValue?: number;
   accountData?: AccountOverviewData | null;
 }
 
@@ -63,26 +42,12 @@ const METRICS: { key: MetricType; label: string }[] = [
   { key: 'account_value', label: 'Account Value' },
 ];
 
-// ==================== 辅助函数 ====================
-
-function getDateRange(range: TimeRange): { start_date?: string; end_date?: string } {
-  if (range === 'all') return {};
-  const now = new Date();
-  const start = new Date(now);
-  switch (range) {
-    case '1d':
-      start.setDate(start.getDate() - 1);
-      break;
-    case '1w':
-      start.setDate(start.getDate() - 7);
-      break;
-    case '1m':
-      start.setMonth(start.getMonth() - 1);
-      break;
-  }
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return { start_date: fmt(start), end_date: fmt(now) };
-}
+const TIME_RANGE_TO_PERIOD: Record<TimeRange, PortfolioPeriod> = {
+  '1d': 'day',
+  '1w': 'week',
+  '1m': 'month',
+  'all': 'allTime',
+};
 
 function formatTime(ts: number, range: TimeRange): string {
   const d = new Date(ts);
@@ -96,9 +61,48 @@ function formatTime(ts: number, range: TimeRange): string {
 }
 
 function formatDollar(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(v) >= 1_000) return `$${(v / 1_000).toFixed(1)}K`;
-  return `$${v.toFixed(2)}`;
+  if (Math.abs(v) >= 1_000_000) return `$ ${(v / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(v) >= 1_000) return `$ ${(v / 1_000).toFixed(1)}K`;
+  return `$ ${v.toFixed(2)}`;
+}
+
+function formatFullDollar(v: number): string {
+  return `$ ${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const GREEN = '#17c964';
+const RED = '#f31260';
+
+// ==================== PriceTag 子组件 ====================
+
+function PriceTag({ viewBox, value }: { viewBox?: { x: number; y: number; width: number }; value: number }) {
+  if (!viewBox) return null;
+  const color = value >= 0 ? GREEN : RED;
+  const text = formatFullDollar(value);
+  const x = viewBox.x + viewBox.width + 2;
+  const y = viewBox.y;
+  const paddingX = 8;
+  const boxH = 22;
+  // 用隐藏 text 测量宽度，估算：每字符约 6.6px (fontSize 11)
+  const estimatedTextW = text.length * 6.6;
+  const boxW = estimatedTextW + paddingX * 2;
+
+  return (
+    <g style={{ zIndex: 10 }}>
+      <rect x={x} y={y - boxH / 2} width={boxW} height={boxH} rx={3} fill={color} />
+      <text
+        x={x + paddingX}
+        y={y + 4}
+        fill="#fff"
+        fontSize={11}
+        fontWeight="bold"
+        dominantBaseline="middle"
+        dy={0}
+      >
+        {text}
+      </text>
+    </g>
+  );
 }
 
 function formatPnl(n: number): string {
@@ -228,19 +232,22 @@ function PositionPanel({ data }: { data: AccountOverviewData }) {
 
 // ==================== 主组件 ====================
 
-export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveChartProps) {
+export function PnlCurveChart({ address, accountData }: PnlCurveChartProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1w');
   const [metric, setMetric] = useState<MetricType>('pnl');
-  const [curveData, setCurveData] = useState<PnlCurveData | null>(null);
+  const [portfolioMap, setPortfolioMap] = useState<Map<PortfolioPeriod, PortfolioPeriodData> | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
-    const params = getDateRange(timeRange);
     setLoading(true);
-    traderApi.getPnlCurve(address, params).then((res) => {
-      if (res.success && res.data) setCurveData(res.data);
+    hyperliquidApi.getPortfolio(address).then((res) => {
+      const map = new Map<PortfolioPeriod, PortfolioPeriodData>();
+      for (const [period, data] of res) {
+        map.set(period, data);
+      }
+      setPortfolioMap(map);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [address, timeRange]);
+  }, [address]);
 
   useEffect(() => {
     loadData();
@@ -248,29 +255,33 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
 
   // 构建图表数据
   const chartData = useMemo(() => {
-    if (!curveData || curveData.points.length === 0) return [];
+    if (!portfolioMap) return [];
+    const periodKey = TIME_RANGE_TO_PERIOD[timeRange];
+    const periodData = portfolioMap.get(periodKey);
+    if (!periodData) return [];
 
-    const points = curveData.points;
-    const latestTotal = points[points.length - 1].cumulative_total;
+    const pnlHistory = periodData.pnlHistory;
+    const accountValueHistory = periodData.accountValueHistory;
+
+    // 以 accountValueHistory 的时间戳为基准构建数据点
+    const pnlMap = new Map(pnlHistory.map(([ts, val]) => [ts, parseFloat(val)]));
+
+    let points = accountValueHistory.map(([ts, val]) => ({
+      time: ts,
+      label: formatTime(ts, timeRange),
+      account_value: parseFloat(val),
+      pnl: pnlMap.get(ts) ?? 0,
+    }));
 
     // 降采样：点太多时只保留一部分，提高渲染性能
-    let sampled = points;
     const MAX_POINTS = 500;
     if (points.length > MAX_POINTS) {
       const step = Math.ceil(points.length / MAX_POINTS);
-      sampled = points.filter((_, i) => i % step === 0 || i === points.length - 1);
+      points = points.filter((_, i) => i % step === 0 || i === points.length - 1);
     }
 
-    return sampled.map((p) => ({
-      time: p.time,
-      label: formatTime(p.time, timeRange),
-      pnl: p.cumulative_total,
-      account_value:
-        accountValue != null
-          ? accountValue - (latestTotal - p.cumulative_total)
-          : p.cumulative_total,
-    }));
-  }, [curveData, timeRange, accountValue]);
+    return points;
+  }, [portfolioMap, timeRange]);
 
   // 计算变化额和变化率
   const summary = useMemo(() => {
@@ -283,19 +294,32 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
     return { change, pct, current: last[key] };
   }, [chartData, metric]);
 
-  // 计算 Y 轴范围：不从 0 开始，上下留 padding
+  // 计算 Y 轴范围
   const yDomain = useMemo(() => {
     if (chartData.length === 0) return [0, 0];
     const values = chartData.map((d) => d[metric]);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    let min = Math.min(...values);
+    let max = Math.max(...values);
+    // PnL 模式下确保 0 在可视范围内
+    if (metric === 'pnl') {
+      min = Math.min(min, 0);
+      max = Math.max(max, 0);
+    }
     const range = max - min || Math.abs(max) * 0.1 || 1;
     const padding = range * 0.1;
     return [min - padding, max + padding];
   }, [chartData, metric]);
 
-  const lineColor = summary && summary.change >= 0 ? '#17c964' : '#f31260';
-  const gradientId = `pnl-gradient-${metric}`;
+  // 0 轴在渐变中的位置 (0=顶部, 1=底部)
+  const gradientOffset = useMemo(() => {
+    const [min, max] = yDomain;
+    if (max <= 0) return 0;
+    if (min >= 0) return 1;
+    return max / (max - min);
+  }, [yDomain]);
+
+  const lastValue = chartData.length > 0 ? chartData[chartData.length - 1][metric] : 0;
+  const lastValueColor = lastValue >= 0 ? GREEN : RED;
 
   return (
     <>
@@ -373,28 +397,39 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={380}>
-                <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 125, left: 10, bottom: 5 }}>
                   <defs>
-                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={lineColor} stopOpacity={0.15} />
-                      <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
+                    {/* 折线渐变：0 以上绿色，0 以下红色 */}
+                    <linearGradient id="pnl-stroke-split" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset={0} stopColor={GREEN} />
+                      <stop offset={gradientOffset} stopColor={GREEN} />
+                      <stop offset={gradientOffset} stopColor={RED} />
+                      <stop offset={1} stopColor={RED} />
+                    </linearGradient>
+                    {/* 面积填充渐变：靠近曲线较深，向 0 轴透明 */}
+                    <linearGradient id="pnl-fill-split" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset={0} stopColor={GREEN} stopOpacity={0.3} />
+                      <stop offset={gradientOffset} stopColor={GREEN} stopOpacity={0.02} />
+                      <stop offset={gradientOffset} stopColor={RED} stopOpacity={0.02} />
+                      <stop offset={1} stopColor={RED} stopOpacity={0.3} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.15} />
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} vertical={false} />
                   <XAxis
                     dataKey="label"
                     tick={{ fontSize: 11 }}
                     tickLine={false}
-                    axisLine={false}
+                    axisLine={{ stroke: '#333' }}
                     minTickGap={40}
                   />
                   <YAxis
+                    orientation="right"
                     domain={yDomain}
-                    tickFormatter={(v) => formatDollar(v)}
+                    tickFormatter={formatDollar}
                     tick={{ fontSize: 11 }}
                     tickLine={false}
                     axisLine={false}
-                    width={70}
+                    width={120}
                   />
                   <Tooltip
                     contentStyle={{
@@ -404,20 +439,38 @@ export function PnlCurveChart({ address, accountValue, accountData }: PnlCurveCh
                       color: '#fff',
                       fontSize: '12px',
                     }}
-                    formatter={(value: any) => [
-                      `$${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                      metric === 'pnl' ? 'Total PnL' : 'Account Value',
-                    ]}
+                    formatter={(value: any) => {
+                      const v = Number(value);
+                      const color = v >= 0 ? GREEN : RED;
+                      return [
+                        <span style={{ color }}>{formatFullDollar(v)}</span>,
+                        metric === 'pnl' ? 'Total PnL' : 'Account Value',
+                      ];
+                    }}
                     labelFormatter={(label) => label}
                   />
                   <Area
                     type="monotone"
                     dataKey={metric}
-                    stroke={lineColor}
+                    stroke="url(#pnl-stroke-split)"
                     strokeWidth={2}
-                    fill={`url(#${gradientId})`}
+                    fill="url(#pnl-fill-split)"
+                    baseValue={0}
                     dot={false}
-                    activeDot={{ r: 4, fill: lineColor }}
+                    activeDot={({ cx, cy, payload }: any) => {
+                      const v = payload[metric];
+                      const color = v >= 0 ? GREEN : RED;
+                      return <circle cx={cx} cy={cy} r={4} fill="#fff" stroke={color} strokeWidth={2} />;
+                    }}
+                  />
+                  {/* 当前值虚线 + 价格标签（放在最后确保层级最高） */}
+                  <ReferenceLine
+                    y={lastValue}
+                    stroke={lastValueColor}
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.6}
+                    ifOverflow="extendDomain"
+                    label={<PriceTag value={lastValue} />}
                   />
                 </AreaChart>
               </ResponsiveContainer>

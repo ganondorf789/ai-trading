@@ -185,7 +185,7 @@ export default function TraderDetailPage() {
       {address && (
         <div className="flex flex-col gap-4">
           <AccountOverview address={address} onAccountValueLoaded={setAccountValue} onDataLoaded={setAccountData} />
-          <PnlCurveChart address={address} accountValue={accountValue} accountData={accountData} />
+          <PnlCurveChart address={address} accountData={accountData} />
         </div>
       )}
 

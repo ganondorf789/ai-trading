@@ -393,14 +393,44 @@ class SyncAPIClient(BaseAPIClient):
             logger.debug(f"获取用户状态失败 {address[:10]}...: {e}")
             return None
     
+    def get_portfolio(self, address: str) -> Optional[List]:
+        """
+        获取用户 portfolio 数据（含各周期 PnL 和账户价值历史）
+
+        Args:
+            address: 用户地址
+
+        Returns:
+            [[period, {accountValueHistory, pnlHistory, vlm}], ...] 或 None
+        """
+        data = {"type": "portfolio", "user": address}
+        try:
+            if self._use_proxy:
+                return self._post_with_proxy(data)
+            else:
+                # portfolio 不在 hyperliquid-python 库中，直接用 HTTP
+                import httpx as _httpx
+                response = _httpx.post(
+                    f"{self._api_url}/info", json=data,
+                    timeout=self.config.read_timeout
+                )
+                response.raise_for_status()
+                return response.json()
+        except APIError as e:
+            logger.debug(f"获取 portfolio 失败 {address[:10]}...: {e}")
+            return None
+        except Exception as e:
+            logger.debug(f"获取 portfolio 失败 {address[:10]}...: {e}")
+            return None
+
     def get_user_fills(self, address: str, limit: int = 0) -> List[Dict]:
         """
         获取用户成交记录
-        
+
         Args:
             address: 用户地址
             limit: 最大记录数 (0=不限制)
-        
+
         Returns:
             成交记录列表
         """

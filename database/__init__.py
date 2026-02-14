@@ -28,6 +28,7 @@ from .user_favorites import UserFavoritesOps
 from .address_tracking import AddressTrackingOps
 from .whale_anchor import WhaleAnchorOps
 from .trader_dashboard import TraderDashboardOps
+from .trader_pnl_history import TraderPnlHistoryOps
 
 
 class TraderDatabase(
@@ -53,7 +54,8 @@ class TraderDatabase(
     UserFavoritesOps,
     AddressTrackingOps,
     WhaleAnchorOps,
-    TraderDashboardOps
+    TraderDashboardOps,
+    TraderPnlHistoryOps
 ):
     """
     交易者数据库管理器 (PostgreSQL + Redis)

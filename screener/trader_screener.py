@@ -337,6 +337,17 @@ class TraderScreener:
                 except Exception as e:
                     logger.warning(f"获取/保存历史委托记录失败 {short_address(address)}: {e}")
 
+            # 获取并保存 portfolio PnL 历史（perp 周期）
+            if self._db:
+                try:
+                    portfolio = self._api_client.get_portfolio(address)
+                    self._api_client.delay()
+                    if portfolio:
+                        pnl_saved = self._db.save_pnl_history(address, portfolio)
+                        logger.debug(f"已保存 {pnl_saved} 条 PnL 历史记录: {short_address(address)}")
+                except Exception as e:
+                    logger.warning(f"获取/保存 PnL 历史失败 {short_address(address)}: {e}")
+
             # 缓存结果
             self._analyzed_traders[address] = metrics
             
