@@ -302,14 +302,6 @@ export const traderApi = {
   }) =>
     api.get<any, ApiResponse<TraderFill[]>>(`/traders/${address}/fills`, { params }),
 
-  // 获取币种列表
-  getCoins: (params?: {
-    address?: string;
-    exclude_user_perps?: boolean;
-    include_stats?: boolean;
-  }) =>
-    api.get<any, ApiResponse<string[] | Array<{ coin: string; count: number; total_pnl: number; is_user_perp: boolean }>>>('/coins', { params }),
-
   // 获取当前持仓（来自 assetPositions）
   getTraderPositions: (address: string) =>
     api.get<any, ApiResponse<AssetPosition[]>>(`/traders/${address}/positions`),
@@ -317,15 +309,6 @@ export const traderApi = {
   // 刷新当前持仓（从 Hyperliquid API 获取最新数据）
   refreshTraderPositions: (address: string) =>
     api.post<any, ApiResponse<AssetPosition[]> & { message?: string }>(`/traders/${address}/positions/refresh`),
-
-  // 获取统计信息
-  getStatistics: () =>
-    api.get<any, ApiResponse<{
-      total_records: number;
-      unique_addresses: number;
-      rating_distribution: Record<string, number>;
-      total_sessions: number;
-    }>>('/stats'),
 
   // 获取筛选会话
   getSessions: (params?: { limit?: number }) =>
@@ -418,10 +401,6 @@ export const hyperliquidApi = {
   // 获取币种列表
   getCoins: (activeOnly: boolean = true) =>
     api.get<any, ApiResponse<HyperliquidCoin[]>>('/hyperliquid/coins', { params: { active_only: activeOnly } }),
-
-  // 获取币种名称列表
-  getCoinNames: () =>
-    api.get<any, ApiResponse<string[]>>('/hyperliquid/coins/names'),
 
   // 同步币种（从 Hyperliquid API）
   syncCoins: () =>
