@@ -321,8 +321,8 @@ export interface CopyTradingAddress {
   dry_run: boolean;
   // 只跟一次
   copy_once: boolean;
-  // 保证金模式: cross(全仓) / isolated(逐仓)
-  margin_mode: 'cross' | 'isolated';
+  // 保证金模式: cross(全仓) / isolated(逐仓) / follow_target(跟随目标)
+  margin_mode: 'cross' | 'isolated' | 'follow_target';
   // 自动补仓配置
   auto_replenish: boolean;
   replenish_ratio: number;
@@ -463,9 +463,9 @@ export interface DefaultCopyTradingConfig {
   // 功能开关
   copy_leverage: boolean;
   
-  // 保证金模式: cross(全仓) / isolated(逐仓)
-  margin_mode: 'cross' | 'isolated';
-  
+  // 保证金模式: cross(全仓) / isolated(逐仓) / follow_target(跟随目标)
+  margin_mode: 'cross' | 'isolated' | 'follow_target';
+
   // 自动补仓配置
   auto_replenish: boolean;
   replenish_ratio: number;
@@ -492,9 +492,9 @@ export interface ImmediateCopyConfig {
   slippage: number;
   copy_leverage: boolean;
   
-  // 保证金模式: cross(全仓) / isolated(逐仓)
-  margin_mode: 'cross' | 'isolated';
-  
+  // 保证金模式: cross(全仓) / isolated(逐仓) / follow_target(跟随目标)
+  margin_mode: 'cross' | 'isolated' | 'follow_target';
+
   // 跟单条件
   min_trader_overall_score: number;  // 最低评分 0-100，0表示不限制
   min_trader_leverage: number;  // 目标交易员最小杠杆，>=此值才跟单

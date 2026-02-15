@@ -359,12 +359,13 @@ export default function ConfigRuleModal({
                 selectedKeys={[configData.margin_mode || "cross"]}
                 onSelectionChange={(keys) => {
                   const value = Array.from(keys)[0] as string;
-                  if (value) setConfigData({ ...configData, margin_mode: value as 'cross' | 'isolated' });
+                  if (value) setConfigData({ ...configData, margin_mode: value as 'cross' | 'isolated' | 'follow_target' });
                 }}
-                description="全仓共享保证金，逐仓独立保证金"
+                description="全仓共享保证金，逐仓独立保证金，跟随目标使用目标交易员的模式"
               >
                 <SelectItem key="cross">全仓 (Cross)</SelectItem>
                 <SelectItem key="isolated">逐仓 (Isolated)</SelectItem>
+                <SelectItem key="follow_target">跟随目标</SelectItem>
               </Select>
             </div>
           </div>
