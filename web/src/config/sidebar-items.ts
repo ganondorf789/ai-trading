@@ -63,12 +63,6 @@ export const sidebarItems: SidebarItem[] = [
         title: "Trader Positions",
       },
       {
-        key: "position-history",
-        href: "/position-history",
-        icon: "solar:history-line-duotone",
-        title: "Position History",
-      },
-      {
         key: "position-tracking",
         href: "/position-tracking",
         icon: "solar:target-line-duotone",

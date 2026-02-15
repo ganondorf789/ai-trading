@@ -13,11 +13,6 @@ import type {
   ChartDataPoint,
   DefaultCopyTradingConfig,
   ImmediateCopyConfig,
-  PositionHistoryRecord,
-  PositionHistoryStats,
-  PositionHistoryByCoin,
-  GlobalPositionHistoryRecord,
-  GlobalPositionHistoryStats,
   PositionsAIAnalysis,
   DefaultCopyConfigRule,
   ImmediateCopyConfigRule,
@@ -41,11 +36,6 @@ export type {
   ChartDataPoint,
   DefaultCopyTradingConfig,
   ImmediateCopyConfig,
-  PositionHistoryRecord,
-  PositionHistoryStats,
-  PositionHistoryByCoin,
-  GlobalPositionHistoryRecord,
-  GlobalPositionHistoryStats,
   PositionsAIAnalysis,
   DefaultCopyConfigRule,
   ImmediateCopyConfigRule,
@@ -363,39 +353,6 @@ export const traderApi = {
       { is_starred: isStarred }
     ),
 
-  // ==================== 仓位历史 ====================
-
-  // 获取仓位历史列表
-  getPositionHistory: (address: string, params?: {
-    coin?: string;
-    status?: 'open' | 'closed';
-    direction?: 'long' | 'short';
-    start_time?: string;
-    end_time?: string;
-    pnl_filter?: 'profit' | 'loss';
-    sort_by?: string;
-    sort_order?: 'asc' | 'desc';
-    page?: number;
-    limit?: number;
-  }) =>
-    api.get<any, ApiResponse<PositionHistoryRecord[]>>(`/traders/${address}/position-history`, { params }),
-
-  // 重建仓位历史（从 fills 重新计算）
-  rebuildPositionHistory: (address: string) =>
-    api.post<any, ApiResponse<{ count: number }> & { message?: string }>(
-      `/traders/${address}/position-history/rebuild`,
-      null,
-      { timeout: 60000 }  // 60秒超时
-    ),
-
-  // 获取仓位历史统计
-  getPositionHistoryStats: (address: string) =>
-    api.get<any, ApiResponse<PositionHistoryStats>>(`/traders/${address}/position-history/stats`),
-
-  // 获取按币种汇总的仓位历史
-  getPositionHistoryByCoin: (address: string) =>
-    api.get<any, ApiResponse<PositionHistoryByCoin[]>>(`/traders/${address}/position-history/by-coin`),
-
   // 获取账户概览（实时数据）
   getAccountOverview: (address: string) =>
     api.get<any, ApiResponse<any>>(`/traders/${address}/account-overview`),
@@ -411,30 +368,6 @@ export const traderApi = {
   // 获取最佳交易 Top N
   getBestTrades: (address: string, params?: { start_date?: string; end_date?: string; limit?: number }) =>
     api.get<any, ApiResponse<any[]> & { count?: number }>(`/traders/${address}/best-trades`, { params }),
-};
-
-// ==================== 全局仓位历史 API ====================
-
-export const positionHistoryApi = {
-  // 获取所有交易员的仓位历史
-  getAll: (params?: {
-    coin?: string;
-    status?: 'open' | 'closed';
-    direction?: 'long' | 'short';
-    min_pnl?: number;
-    max_pnl?: number;
-    page?: number;
-    limit?: number;
-  }) =>
-    api.get<any, ApiResponse<GlobalPositionHistoryRecord[]> & { stats?: GlobalPositionHistoryStats }>('/position-history', { params }),
-
-  // 获取全局仓位历史统计
-  getStats: () =>
-    api.get<any, ApiResponse<GlobalPositionHistoryStats>>('/position-history/stats'),
-
-  // 获取按币种汇总的全局仓位历史
-  getByCoin: () =>
-    api.get<any, ApiResponse<PositionHistoryByCoin[]>>('/position-history/by-coin'),
 };
 
 // ==================== 跟单地址管理 API ====================

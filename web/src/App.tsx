@@ -5,7 +5,6 @@ import TradersPage from "@/pages/traders";
 import TraderDetailPage from "@/pages/trader-detail";
 import CopyTradingPage from "@/pages/copy-trading";
 import TraderPositionsPage from "@/pages/trader-positions";
-import PositionHistoryPage from "@/pages/position-history";
 import PositionTrackingPage from "@/pages/position-tracking";
 import AddressTrackingPage from "@/pages/address-tracking";
 import WhaleAnchorPage from "@/pages/whale-anchor";
@@ -25,7 +24,6 @@ function App() {
       <Route element={<TraderDetailPage />} path="/traders/:address" />
       <Route element={<CopyTradingPage />} path="/copy-trading" />
       <Route element={<TraderPositionsPage />} path="/trader-positions" />
-      <Route element={<PositionHistoryPage />} path="/position-history" />
       <Route element={<PositionTrackingPage />} path="/position-tracking" />
       <Route element={<AddressTrackingPage />} path="/address-tracking" />
       <Route element={<WhaleAnchorPage />} path="/whale-anchor" />
