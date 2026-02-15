@@ -424,57 +424,6 @@ export const traderPositionsApi = {
       { params: { enabled_only: enabledOnly }, timeout: 120000 }  // 2分钟超时
     ),
 
-  // AI分析：整体持仓分析
-  aiAnalyzeAll: (data: {
-    positions?: TraderPosition[];
-    stats?: TraderPositionsStats;
-    provider?: string;
-    filters?: Record<string, any>;
-    force_refresh?: boolean;
-  }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
-      '/copy-trading/trader-positions/ai-analysis',
-      data,
-      { timeout: 90000 }  // 90秒超时
-    ),
-
-  // AI分析：单币种分析
-  aiAnalyzeCoin: (data: {
-    coin: string;
-    positions?: TraderPosition[];
-    provider?: string;
-    force_refresh?: boolean;
-  }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
-      '/copy-trading/trader-positions/ai-analysis/coin',
-      data,
-      { timeout: 90000 }
-    ),
-
-  // AI分析：单仓位分析
-  aiAnalyzeSingle: (data: {
-    position: TraderPosition;
-    provider?: string;
-    force_refresh?: boolean;
-  }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis> & { message?: string; cached?: boolean; analyzed_at?: string }>(
-      '/copy-trading/trader-positions/ai-analysis/single',
-      data,
-      { timeout: 60000 }
-    ),
-
-  // 检查是否已有 AI 分析结果
-  checkAIAnalysis: (data: {
-    analysis_type: 'overall' | 'coin' | 'single';
-    positions: TraderPosition[];
-    coin?: string;
-    address?: string;
-  }) =>
-    api.post<any, ApiResponse<PositionsAIAnalysis | null> & { exists: boolean; analyzed_at?: string }>(
-      '/copy-trading/trader-positions/ai-analysis/check',
-      data,
-      { timeout: 10000 }
-    ),
 };
 
 // ==================== 仓位级别跟单 API（第二种跟单模式） ====================
