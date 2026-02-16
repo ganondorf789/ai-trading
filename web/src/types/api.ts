@@ -333,6 +333,20 @@ export interface CopyTradingAddress {
   take_profit_percent: number;
   stop_loss_enabled: boolean;
   stop_loss_percent: number;
+  // 跟单模式: asset_ratio(资产等比) / position_ratio(仓位等比) / fixed_value(固定价值)
+  copy_mode: 'asset_ratio' | 'position_ratio' | 'fixed_value';
+  fixed_position_value_usd: number;
+  high_margin_protection_pct: number;
+  // 高级选项
+  follow_add_position: boolean;
+  follow_reduce_position: boolean;
+  slippage_protection: boolean;
+  add_position_order: boolean;
+  reverse_copy: boolean;
+  // 币种名单模式: whitelist / blacklist / none
+  symbol_list_mode: 'whitelist' | 'blacklist' | 'none';
+  // 备注
+  remark: string;
   // 时间戳
   created_at: string;
   updated_at: string;

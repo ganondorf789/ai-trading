@@ -48,11 +48,11 @@ export default function CopyTradingPage() {
     address: "",
     name: "",
     is_enabled: true,
-    copy_ratio: 0.1,
-    max_position_size_usd: 500,
-    min_position_size_usd: 20,
+    copy_ratio: 1,
+    max_position_size_usd: 0,
+    min_position_size_usd: 0,
     copy_leverage: true,
-    max_leverage: 10,
+    max_leverage: 1,
     default_leverage: 5,
     max_total_positions: 10,
     max_daily_trades: 50,
@@ -66,6 +66,16 @@ export default function CopyTradingPage() {
     replenish_ratio: 0.5,
     replenish_min_value_usd: 10,
     replenish_max_value_usd: 100,
+    copy_mode: 'asset_ratio',
+    fixed_position_value_usd: 100,
+    high_margin_protection_pct: 70,
+    follow_add_position: false,
+    follow_reduce_position: false,
+    slippage_protection: false,
+    add_position_order: false,
+    reverse_copy: false,
+    symbol_list_mode: 'none',
+    remark: '',
   });
 
 
@@ -171,6 +181,16 @@ export default function CopyTradingPage() {
         replenish_ratio: address.replenish_ratio ?? 0.5,
         replenish_min_value_usd: address.replenish_min_value_usd ?? 10,
         replenish_max_value_usd: address.replenish_max_value_usd ?? 100,
+        copy_mode: address.copy_mode ?? 'asset_ratio',
+        fixed_position_value_usd: address.fixed_position_value_usd ?? 100,
+        high_margin_protection_pct: address.high_margin_protection_pct ?? 70,
+        follow_add_position: address.follow_add_position ?? false,
+        follow_reduce_position: address.follow_reduce_position ?? false,
+        slippage_protection: address.slippage_protection ?? false,
+        add_position_order: address.add_position_order ?? false,
+        reverse_copy: address.reverse_copy ?? false,
+        symbol_list_mode: address.symbol_list_mode ?? 'none',
+        remark: address.remark ?? '',
       });
     } else {
       setEditingAddress(null);
@@ -182,7 +202,7 @@ export default function CopyTradingPage() {
         max_position_size_usd: 500,
         min_position_size_usd: 20,
         copy_leverage: true,
-        max_leverage: 10,
+        max_leverage: 1,
         default_leverage: 5,
         max_total_positions: 10,
         max_daily_trades: 50,
@@ -196,6 +216,16 @@ export default function CopyTradingPage() {
         replenish_ratio: 0.5,
         replenish_min_value_usd: 10,
         replenish_max_value_usd: 100,
+        copy_mode: 'asset_ratio',
+        fixed_position_value_usd: 100,
+        high_margin_protection_pct: 70,
+        follow_add_position: true,
+        follow_reduce_position: true,
+        slippage_protection: true,
+        add_position_order: false,
+        reverse_copy: false,
+        symbol_list_mode: 'none',
+        remark: '',
       });
     }
     setIsAddModalOpen(true);
@@ -267,7 +297,7 @@ export default function CopyTradingPage() {
   const columns = [
     { key: "status", label: "状态" },
     { key: "address", label: "地址" },
-    { key: "copy_ratio", label: "跟单比例" },
+    { key: "copy_mode", label: "跟单模式" },
     { key: "position_size", label: "仓位范围" },
     { key: "max_leverage", label: "最大杠杆" },
     { key: "auto_replenish", label: "自动补仓" },
@@ -317,8 +347,18 @@ export default function CopyTradingPage() {
             </div>
           );
         }
-        case "copy_ratio":
-          return `${(item.copy_ratio * 100).toFixed(0)}%`;
+        case "copy_mode": {
+          const modeLabels: Record<string, string> = { asset_ratio: '资产等比', position_ratio: '仓位等比', fixed_value: '固定价值' };
+          const modeLabel = modeLabels[item.copy_mode] || '资产等比';
+          const modeValue = item.copy_mode === 'fixed_value'
+            ? `$${item.fixed_position_value_usd ?? 100}`
+            : `${((item.copy_ratio || 0.1) * 100).toFixed(0)}%`;
+          return (
+            <span className="text-sm whitespace-nowrap">
+              {modeLabel} {modeValue}
+            </span>
+          );
+        }
         case "position_size":
           return (
             <span className="text-sm whitespace-nowrap">

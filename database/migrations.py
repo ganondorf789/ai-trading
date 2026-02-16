@@ -315,6 +315,24 @@ class DatabaseMigrations:
                     stop_loss_enabled BOOLEAN DEFAULT FALSE,
                     stop_loss_percent FLOAT DEFAULT 20,
 
+                    -- 跟单模式: asset_ratio(资产等比) / position_ratio(仓位等比) / fixed_value(固定价值)
+                    copy_mode TEXT DEFAULT 'asset_ratio',
+                    fixed_position_value_usd REAL DEFAULT 100.0,
+                    high_margin_protection_pct REAL DEFAULT 70.0,
+
+                    -- 高级选项
+                    follow_add_position BOOLEAN DEFAULT FALSE,
+                    follow_reduce_position BOOLEAN DEFAULT FALSE,
+                    slippage_protection BOOLEAN DEFAULT FALSE,
+                    add_position_order BOOLEAN DEFAULT FALSE,
+                    reverse_copy BOOLEAN DEFAULT FALSE,
+
+                    -- 币种名单模式: whitelist / blacklist / none
+                    symbol_list_mode TEXT DEFAULT 'none',
+
+                    -- 备注
+                    remark TEXT DEFAULT '',
+
                     -- 时间戳
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -337,6 +355,25 @@ class DatabaseMigrations:
                 CREATE INDEX IF NOT EXISTS idx_copy_trading_addresses_user_id
                 ON copy_trading_addresses(user_id)
             """)
+
+            # 为 copy_trading_addresses 添加新列（兼容已有数据库）
+            new_copy_columns = [
+                ("copy_mode", "TEXT DEFAULT 'asset_ratio'"),
+                ("fixed_position_value_usd", "REAL DEFAULT 100.0"),
+                ("high_margin_protection_pct", "REAL DEFAULT 70.0"),
+                ("follow_add_position", "BOOLEAN DEFAULT FALSE"),
+                ("follow_reduce_position", "BOOLEAN DEFAULT FALSE"),
+                ("slippage_protection", "BOOLEAN DEFAULT FALSE"),
+                ("add_position_order", "BOOLEAN DEFAULT FALSE"),
+                ("reverse_copy", "BOOLEAN DEFAULT FALSE"),
+                ("symbol_list_mode", "TEXT DEFAULT 'none'"),
+                ("remark", "TEXT DEFAULT ''"),
+            ]
+            for col_name, col_def in new_copy_columns:
+                cursor.execute(f"""
+                    ALTER TABLE copy_trading_addresses
+                    ADD COLUMN IF NOT EXISTS {col_name} {col_def}
+                """)
 
             # 创建 Hyperliquid 币种表
             cursor.execute("""

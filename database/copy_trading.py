@@ -199,8 +199,16 @@ class CopyTradingOps:
                     auto_replenish, replenish_ratio, replenish_min_value_usd, replenish_max_value_usd,
                     margin_mode,
                     take_profit_enabled, take_profit_percent, stop_loss_enabled, stop_loss_percent,
+                    copy_mode, fixed_position_value_usd, high_margin_protection_pct,
+                    follow_add_position, follow_reduce_position, slippage_protection,
+                    add_position_order, reverse_copy, symbol_list_mode, remark,
                     updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 ON CONFLICT(user_id, address) DO UPDATE SET
                     name = EXCLUDED.name,
                     is_enabled = EXCLUDED.is_enabled,
@@ -227,6 +235,16 @@ class CopyTradingOps:
                     take_profit_percent = EXCLUDED.take_profit_percent,
                     stop_loss_enabled = EXCLUDED.stop_loss_enabled,
                     stop_loss_percent = EXCLUDED.stop_loss_percent,
+                    copy_mode = EXCLUDED.copy_mode,
+                    fixed_position_value_usd = EXCLUDED.fixed_position_value_usd,
+                    high_margin_protection_pct = EXCLUDED.high_margin_protection_pct,
+                    follow_add_position = EXCLUDED.follow_add_position,
+                    follow_reduce_position = EXCLUDED.follow_reduce_position,
+                    slippage_protection = EXCLUDED.slippage_protection,
+                    add_position_order = EXCLUDED.add_position_order,
+                    reverse_copy = EXCLUDED.reverse_copy,
+                    symbol_list_mode = EXCLUDED.symbol_list_mode,
+                    remark = EXCLUDED.remark,
                     updated_at = EXCLUDED.updated_at
                 RETURNING id
             """, (
@@ -258,6 +276,16 @@ class CopyTradingOps:
                 data.get('take_profit_percent', 50),
                 data.get('stop_loss_enabled', False),
                 data.get('stop_loss_percent', 20),
+                data.get('copy_mode', 'asset_ratio'),
+                data.get('fixed_position_value_usd', 100.0),
+                data.get('high_margin_protection_pct', 70.0),
+                data.get('follow_add_position', False),
+                data.get('follow_reduce_position', False),
+                data.get('slippage_protection', False),
+                data.get('add_position_order', False),
+                data.get('reverse_copy', False),
+                data.get('symbol_list_mode', 'none'),
+                data.get('remark', ''),
                 pendulum.now(SHANGHAI_TZ).to_iso8601_string()
             ))
 
