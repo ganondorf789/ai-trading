@@ -275,7 +275,199 @@ def get_new_positions():
         }), 500
 
 
-# ==================== 清算统计 API ====================
+# ==================== 仓位历史 API ====================
+
+@traders_positions_bp.route('/api/traders/<address>/position-history', methods=['GET'])
+@login_required
+def get_trader_position_history(address: str):
+    """获取交易者仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: coin
+        in: query
+        type: string
+        description: 筛选特定币种
+      - name: status
+        in: query
+        type: string
+        enum: [open, closed]
+        description: 筛选状态
+      - name: direction
+        in: query
+        type: string
+        enum: [long, short]
+        description: 筛选方向
+      - name: start_time
+        in: query
+        type: string
+        format: date-time
+        description: 开始时间ISO格式
+      - name: end_time
+        in: query
+        type: string
+        format: date-time
+        description: 结束时间ISO格式
+      - name: pnl_filter
+        in: query
+        type: string
+        enum: [profit, loss]
+        description: 盈亏筛选
+      - name: sort_by
+        in: query
+        type: string
+        default: open_time
+        description: 排序字段
+      - name: sort_order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: 排序方向
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: 页码
+      - name: limit
+        in: query
+        type: integer
+        default: 50
+        description: 每页数量
+    responses:
+      200:
+        description: 仓位历史列表
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+            pagination:
+              type: object
+      500:
+        description: 服务器错误
+    """
+    try:
+        coin = request.args.get('coin')
+        status = request.args.get('status')
+        direction = request.args.get('direction')
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        pnl_filter = request.args.get('pnl_filter')
+        sort_by = request.args.get('sort_by', 'open_time')
+        sort_order = request.args.get('sort_order', 'desc')
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        offset = (page - 1) * limit
+
+        positions = db.get_position_history(
+            address,
+            coin=coin,
+            status=status,
+            direction=direction,
+            start_time=start_time,
+            end_time=end_time,
+            pnl_filter=pnl_filter,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset
+        )
+
+        total_count = db.get_position_history_count(
+            address,
+            coin=coin,
+            status=status,
+            direction=direction,
+            start_time=start_time,
+            end_time=end_time,
+            pnl_filter=pnl_filter
+        )
+
+        return jsonify({
+            'success': True,
+            'data': positions,
+            'pagination': {
+                'page': page,
+                'limit': limit,
+                'total_count': total_count,
+                'total_pages': (total_count + limit - 1) // limit
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取仓位历史失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@traders_positions_bp.route('/api/traders/<address>/position-history/by-coin', methods=['GET'])
+@login_required
+def get_trader_position_history_by_coin(address: str):
+    """获取按币种汇总的仓位历史
+    ---
+    tags:
+      - Traders - Positions
+    parameters:
+      - name: address
+        in: path
+        type: string
+        required: true
+        description: 交易者地址
+      - name: start_time
+        in: query
+        type: string
+        format: date-time
+        description: 开始时间ISO格式
+      - name: end_time
+        in: query
+        type: string
+        format: date-time
+        description: 结束时间ISO格式
+    responses:
+      200:
+        description: 按币种汇总的仓位数据
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            data:
+              type: array
+              items:
+                type: object
+      500:
+        description: 服务器错误
+    """
+    try:
+        start_time = request.args.get('start_time')
+        end_time = request.args.get('end_time')
+        by_coin = db.get_position_history_by_coin(address, start_time=start_time, end_time=end_time)
+
+        return jsonify({
+            'success': True,
+            'data': by_coin
+        })
+
+    except Exception as e:
+        logger.error(f"获取币种仓位统计失败: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 
 @traders_positions_bp.route('/api/liquidation/stats', methods=['GET'])
 @login_required

@@ -19,6 +19,7 @@ import type {
   CopyConfigRule,
   CopyConfigRuleCreateData,
   ConfigRuleMatchResult,
+  PositionHistoryByCoin,
 } from '@/types/api';
 
 // Re-export all types for backward compatibility
@@ -351,6 +352,28 @@ export const traderApi = {
   // 获取最佳交易 Top N
   getBestTrades: (address: string, params?: { start_date?: string; end_date?: string; limit?: number }) =>
     api.get<any, ApiResponse<any[]> & { count?: number }>(`/traders/${address}/best-trades`, { params }),
+
+  // 获取仓位历史
+  getPositionHistory: (address: string, params?: {
+    coin?: string;
+    status?: string;
+    direction?: string;
+    start_time?: string;
+    end_time?: string;
+    pnl_filter?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+  }) =>
+    api.get<any, ApiResponse<any[]> & { pagination?: any }>(`/traders/${address}/position-history`, { params }),
+
+  // 获取按币种汇总的仓位历史
+  getPositionHistoryByCoin: (address: string, params?: {
+    start_time?: string;
+    end_time?: string;
+  }) =>
+    api.get<any, ApiResponse<PositionHistoryByCoin[]>>(`/traders/${address}/position-history/by-coin`, { params }),
 };
 
 // ==================== 跟单地址管理 API ====================

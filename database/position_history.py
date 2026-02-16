@@ -944,12 +944,14 @@ class PositionHistoryOps:
             """, (address,))
             return cursor.fetchone()[0]
 
-    def get_position_history_by_coin(self, address: str) -> List[Dict[str, Any]]:
+    def get_position_history_by_coin(self, address: str, start_time: str = None, end_time: str = None) -> List[Dict[str, Any]]:
         """
         按币种汇总仓位历史
 
         Args:
             address: 交易者地址
+            start_time: 可选，开始时间（ISO格式）
+            end_time: 可选，结束时间（ISO格式）
 
         Returns:
             按币种汇总的列表
@@ -957,7 +959,20 @@ class PositionHistoryOps:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=extras.RealDictCursor)
 
-            cursor.execute("""
+            conditions = ["address = %s"]
+            params = [address]
+
+            if start_time:
+                conditions.append("open_time >= %s")
+                params.append(start_time)
+
+            if end_time:
+                conditions.append("open_time <= %s")
+                params.append(end_time)
+
+            where_clause = " AND ".join(conditions)
+
+            cursor.execute(f"""
                 SELECT
                     coin,
                     COUNT(*) as total_positions,
@@ -969,10 +984,10 @@ class PositionHistoryOps:
                     COALESCE(AVG(CASE WHEN status = 'closed' THEN holding_hours END), 0) as avg_holding_hours,
                     COALESCE(SUM(total_volume), 0) as total_volume
                 FROM position_history
-                WHERE address = %s
+                WHERE {where_clause}
                 GROUP BY coin
                 ORDER BY total_pnl DESC
-            """, (address,))
+            """, params)
 
             results = []
             for row in cursor.fetchall():
