@@ -84,7 +84,7 @@ export default function TradersPage() {
         tag_trading_rhythm: filters.tagTradingRhythm,
         tag_profit_status: filters.tagProfitStatus,
         tag_direction_preference: filters.tagDirectionPreference,
-        tag_trading_style: filters.tagTradingStyle,
+        tag_trading_style: filters.tagTradingStyle?.join(',') || undefined,
       };
 
       const response = await traderApi.getTraders(params);

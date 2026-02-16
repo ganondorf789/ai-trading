@@ -80,6 +80,15 @@ export function FilterSection({
 
   // === Tags ===
   const handleTagToggle = (filterKey: string, tagKey: string) => {
+    // 交易风格支持多选
+    if (filterKey === 'tagTradingStyle') {
+      const current = filters.tagTradingStyle || [];
+      const next = current.includes(tagKey)
+        ? current.filter(k => k !== tagKey)
+        : [...current, tagKey];
+      onFiltersChange({ ...filters, tagTradingStyle: next.length ? next : undefined });
+      return;
+    }
     const current = (filters as Record<string, unknown>)[filterKey];
     onFiltersChange({
       ...filters,
@@ -95,7 +104,7 @@ export function FilterSection({
     filters.tagTradingRhythm ||
     filters.tagProfitStatus ||
     filters.tagDirectionPreference ||
-    filters.tagTradingStyle;
+    (filters.tagTradingStyle && filters.tagTradingStyle.length > 0);
   const showChipsBar = hasActiveFilters || !!hasActiveTags || !!selectedRating;
 
   return (
@@ -237,9 +246,12 @@ export function FilterSection({
       {/* ====== Row 2: Tag filters ====== */}
       <div className="flex flex-col gap-1.5 px-1">
         {TAG_GROUPS.map(group => {
-          const currentValue = (filters as Record<string, unknown>)[group.filterKey] as
-            | string
-            | undefined;
+          const isMultiSelect = group.filterKey === 'tagTradingStyle';
+          const currentValue = (filters as Record<string, unknown>)[group.filterKey];
+          const isActive = (tagKey: string) =>
+            isMultiSelect
+              ? (currentValue as string[] | undefined)?.includes(tagKey) ?? false
+              : currentValue === tagKey;
           return (
             <div key={group.key} className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-default-400 w-[72px] shrink-0 text-right">
@@ -249,8 +261,8 @@ export function FilterSection({
                 <Button
                   key={tag.key}
                   size="sm"
-                  variant={currentValue === tag.key ? 'flat' : 'light'}
-                  color={currentValue === tag.key ? 'primary' : 'default'}
+                  variant={isActive(tag.key) ? 'flat' : 'light'}
+                  color={isActive(tag.key) ? 'primary' : 'default'}
                   className="min-w-0 px-2 h-6 text-xs"
                   onPress={() => handleTagToggle(group.filterKey, tag.key)}
                 >
@@ -291,6 +303,27 @@ export function FilterSection({
 
           {/* Tag chips */}
           {TAG_GROUPS.map(group => {
+            if (group.filterKey === 'tagTradingStyle') {
+              const vals = filters.tagTradingStyle;
+              if (!vals || vals.length === 0) return null;
+              return vals.map(v => {
+                const label = group.options.find(o => o.key === v)?.label ?? v;
+                return (
+                  <Chip
+                    key={`${group.key}-${v}`}
+                    size="sm"
+                    variant="flat"
+                    color="default"
+                    onClose={() => {
+                      const next = vals.filter(k => k !== v);
+                      onFiltersChange({ ...filters, tagTradingStyle: next.length ? next : undefined });
+                    }}
+                  >
+                    {group.label}: {label}
+                  </Chip>
+                );
+              });
+            }
             const val = (filters as Record<string, unknown>)[group.filterKey] as
               | string
               | undefined;

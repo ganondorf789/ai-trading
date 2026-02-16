@@ -52,91 +52,99 @@ export function AdvancedFilterDrawer({
         <DrawerHeader className="flex flex-col gap-1">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Icon icon="solar:filter-bold" width={20} />
-            高级筛选
+            Advanced Filter
           </h3>
-          <p className="text-xs text-default-400">添加条件筛选交易者</p>
+          <p className="text-xs text-default-400">Add conditions to filter traders</p>
         </DrawerHeader>
 
         <DrawerBody className="gap-4">
           {conditions.map((condition, index) => (
-            <div key={index} className="flex items-end gap-2">
-              <Select
-                className="flex-1"
-                label="字段"
-                size="sm"
-                placeholder="选择字段"
-                selectedKeys={condition.field ? [condition.field] : []}
-                onSelectionChange={(keys) => {
-                  const field = Array.from(keys)[0] as string;
-                  updateCondition(index, { field: field || '' });
-                }}
-              >
-                {ADVANCED_FILTER_FIELDS.map(f => (
-                  <SelectItem key={f.key} textValue={f.label}>{f.label}</SelectItem>
-                ))}
-              </Select>
-
-              <Select
-                className="w-[100px]"
-                label="运算符"
-                size="sm"
-                selectedKeys={condition.op ? [condition.op] : []}
-                onSelectionChange={(keys) => {
-                  const op = Array.from(keys)[0] as string;
-                  updateCondition(index, { op: op || '>' });
-                }}
-              >
-                {FILTER_OPERATORS.map(op => (
-                  <SelectItem key={op.key} textValue={op.label}>{op.label}</SelectItem>
-                ))}
-              </Select>
-
-              {condition.op !== 'exist' ? (
-                <Input
-                  className="w-[110px]"
-                  label="数值"
-                  type="number"
+            <div key={index} className="border border-default-200 rounded-xl p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-default-500 w-20 shrink-0">Field</span>
+                <Select
+                  className="flex-1"
                   size="sm"
-                  placeholder="输入值"
-                  value={condition.value?.toString() ?? ''}
-                  onValueChange={(v) =>
-                    updateCondition(index, { value: v ? parseFloat(v) : undefined })
-                  }
-                />
-              ) : (
-                <div className="w-[110px]" />
+                  placeholder="选择字段"
+                  selectedKeys={condition.field ? [condition.field] : []}
+                  onSelectionChange={(keys) => {
+                    const field = Array.from(keys)[0] as string;
+                    updateCondition(index, { field: field || '' });
+                  }}
+                >
+                  {ADVANCED_FILTER_FIELDS.map(f => (
+                    <SelectItem key={f.key} textValue={f.label}>{f.label}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-default-500 w-20 shrink-0">Operator</span>
+                <Select
+                  className="flex-1"
+                  size="sm"
+                  selectedKeys={condition.op ? [condition.op] : []}
+                  onSelectionChange={(keys) => {
+                    const op = Array.from(keys)[0] as string;
+                    updateCondition(index, { op: op || '>' });
+                  }}
+                >
+                  {FILTER_OPERATORS.map(op => (
+                    <SelectItem key={op.key} textValue={op.label}>{op.label}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+
+              {condition.op !== 'exist' && (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-default-500 w-20 shrink-0">Number Value</span>
+                  <Input
+                    className="flex-1"
+                    type="number"
+                    size="sm"
+                    placeholder="输入值"
+                    value={condition.value?.toString() ?? ''}
+                    onValueChange={(v) =>
+                      updateCondition(index, { value: v ? parseFloat(v) : undefined })
+                    }
+                  />
+                </div>
               )}
 
-              <Button
-                size="sm"
-                variant="light"
-                color="danger"
-                isIconOnly
-                className="shrink-0"
-                onPress={() => removeCondition(index)}
-              >
-                <Icon icon="solar:trash-bin-trash-linear" width={16} />
-              </Button>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="light"
+                  color="danger"
+                  startContent={<Icon icon="solar:trash-bin-trash-linear" width={16} />}
+                  onPress={() => removeCondition(index)}
+                >
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
         </DrawerBody>
 
-        <DrawerFooter className="flex justify-between">
+        <DrawerFooter className="flex items-center gap-3">
           <Button
             size="sm"
             variant="light"
+            className="shrink-0"
             startContent={<Icon icon="solar:add-circle-linear" width={16} />}
             onPress={addCondition}
           >
-            新增条件
+            Add Condition
           </Button>
           <Button
             size="sm"
             color="primary"
             variant="bordered"
+            radius="full"
+            className="flex-1"
             onPress={handleApply}
           >
-            应用筛选
+            Apply Filter
           </Button>
         </DrawerFooter>
       </DrawerContent>

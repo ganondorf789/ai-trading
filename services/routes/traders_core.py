@@ -363,7 +363,15 @@ def get_traders():
         if tag_direction_preference:
             all_traders = [t for t in all_traders if t.get('tag_direction_preference') == tag_direction_preference]
         if tag_trading_style:
-            all_traders = [t for t in all_traders if tag_trading_style in (t.get('tag_trading_style') or '')]
+            # 支持逗号分隔的多值筛选，匹配任一即可
+            style_filters = [s.strip() for s in tag_trading_style.split(',') if s.strip()]
+            if style_filters:
+                def _match_style(trader_style_str):
+                    if not trader_style_str:
+                        return False
+                    trader_styles = {s.strip() for s in trader_style_str.split(',')}
+                    return bool(trader_styles & set(style_filters))
+                all_traders = [t for t in all_traders if _match_style(t.get('tag_trading_style'))]
 
         # ===== 应用排序 =====
         if sort_by in SORTABLE_FIELDS:

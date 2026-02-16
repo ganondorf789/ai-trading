@@ -31,5 +31,5 @@ export interface FilterConfig {
   tagTradingRhythm?: string;
   tagProfitStatus?: string;
   tagDirectionPreference?: string;
-  tagTradingStyle?: string;
+  tagTradingStyle?: string[];
 }
