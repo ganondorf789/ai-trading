@@ -1,12 +1,16 @@
-import { useMemo, useId } from 'react';
+import { useMemo, useId, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody } from '@heroui/card';
 import { Chip } from '@heroui/chip';
-import { Tooltip } from '@heroui/react';
+import { Tooltip, addToast } from '@heroui/react';
 import { Icon } from '@iconify/react';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
-import type { Trader } from '@/services/api';
+import type { Trader, CopyTradingAddress, AddressTracking } from '@/services/api';
+import { addressTrackingApi, copyTradingApi, hyperliquidApi } from '@/services/api';
 import { formatNumber, getRatingColor } from '@/utils';
+import { TradingStatisticsModal } from '@/components/TradingStatisticsModal';
+import TrackingFormModal from '@/components/TrackingFormModal';
+import AddressFormModal from '@/components/AddressFormModal';
 
 const GREEN = '#17c964';
 const RED = '#f31260';
@@ -123,6 +127,88 @@ function fmtPct(value: number): string {
 export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardProps) {
   const navigate = useNavigate();
 
+  // Trading Statistics modal
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+
+  // One-click Monitor modal
+  const [trackingModalOpen, setTrackingModalOpen] = useState(false);
+
+  const handleSaveTracking = useCallback(async (formData: Partial<AddressTracking>) => {
+    try {
+      const res = await addressTrackingApi.createTracking({
+        tracking_address: formData.tracking_address || '',
+        address_remark: formData.address_remark,
+        is_enabled: formData.is_enabled,
+        enable_notification: formData.enable_notification,
+        monitor_events: formData.monitor_events,
+      });
+      if (res.success) {
+        addToast({ title: '监控添加成功', color: 'success' });
+        setTrackingModalOpen(false);
+      }
+    } catch (err: any) {
+      addToast({ title: '添加失败', description: err.message, color: 'danger' });
+    }
+  }, []);
+
+  // Copy Trading modal
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyFormData, setCopyFormData] = useState<Partial<CopyTradingAddress>>({
+    address: '',
+    is_enabled: true,
+    copy_ratio: 0.1,
+    max_position_size_usd: 500,
+    min_position_size_usd: 20,
+    max_leverage: 10,
+    slippage: 0.001,
+    copy_leverage: true,
+    copy_once: false,
+    margin_mode: 'cross',
+    symbols_whitelist: [],
+    symbols_blacklist: [],
+    auto_replenish: false,
+    replenish_ratio: 0.5,
+    replenish_min_value_usd: 10,
+    replenish_max_value_usd: 100,
+    take_profit_enabled: false,
+    take_profit_percent: 50,
+    stop_loss_enabled: false,
+    stop_loss_percent: 20,
+  });
+  const [availableCoins, setAvailableCoins] = useState<string[]>([]);
+  const [coinsLoading, setCoinsLoading] = useState(false);
+
+  const handleOpenCopyTrading = useCallback(() => {
+    setCopyFormData((prev) => ({ ...prev, address: trader.address }));
+    setCopyModalOpen(true);
+  }, [trader.address]);
+
+  const handleSaveCopyTrading = useCallback(async () => {
+    try {
+      const res = await copyTradingApi.createAddress(copyFormData);
+      if (res.success) {
+        addToast({ title: '跟单添加成功', color: 'success' });
+        setCopyModalOpen(false);
+      }
+    } catch (err: any) {
+      addToast({ title: '添加失败', description: err.message, color: 'danger' });
+    }
+  }, [copyFormData]);
+
+  const handleSyncCoins = useCallback(async () => {
+    setCoinsLoading(true);
+    try {
+      const res = await hyperliquidApi.getCoinNames();
+      if (res.success && res.data) {
+        setAvailableCoins(res.data);
+      }
+    } catch {
+      // silent
+    } finally {
+      setCoinsLoading(false);
+    }
+  }, []);
+
   // Collect tags
   const tags = useMemo(() => {
     const result: { key: string; label: string }[] = [];
@@ -189,16 +275,40 @@ export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardPr
                 />
               </button>
             </Tooltip>
-            {/* Dashboard */}
-            <Tooltip content="Dashboard" delay={300}>
+            {/* Trading Statistics */}
+            <Tooltip content="Trading Statistics" delay={300}>
               <button
                 className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate(`/traders/${trader.address}`);
+                  setStatsModalOpen(true);
                 }}
               >
-                <Icon icon="solar:chart-square-line-duotone" width={20} className="text-default-400" />
+                <Icon icon="solar:chart-2-bold" width={20} className="text-default-400" />
+              </button>
+            </Tooltip>
+            {/* One-click Monitor */}
+            <Tooltip content="One-click Monitor" delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTrackingModalOpen(true);
+                }}
+              >
+                <Icon icon="solar:eye-bold" width={20} className="text-default-400" />
+              </button>
+            </Tooltip>
+            {/* Copy Trading */}
+            <Tooltip content="Copy Trading" delay={300}>
+              <button
+                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenCopyTrading();
+                }}
+              >
+                <Icon icon="solar:copy-bold" width={20} className="text-default-400" />
               </button>
             </Tooltip>
             {/* Copy address */}
@@ -211,18 +321,6 @@ export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardPr
                 }}
               >
                 <Icon icon="solar:clipboard-line-duotone" width={20} className="text-default-400" />
-              </button>
-            </Tooltip>
-            {/* Copy trading */}
-            <Tooltip content="Copy Trading" delay={300}>
-              <button
-                className="p-1.5 rounded-lg hover:bg-default-100 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/copy-trading?address=${trader.address}`);
-                }}
-              >
-                <Icon icon="solar:users-group-two-rounded-line-duotone" width={20} className="text-default-400" />
               </button>
             </Tooltip>
           </div>
@@ -340,6 +438,32 @@ export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardPr
           </div>
         </div>
       </CardBody>
+
+      <TradingStatisticsModal
+        isOpen={statsModalOpen}
+        onClose={() => setStatsModalOpen(false)}
+        address={trader.address}
+      />
+
+      <TrackingFormModal
+        isOpen={trackingModalOpen}
+        onClose={() => setTrackingModalOpen(false)}
+        tracking={null}
+        onSave={handleSaveTracking}
+        initialAddress={trader.address}
+      />
+
+      <AddressFormModal
+        isOpen={copyModalOpen}
+        onClose={() => setCopyModalOpen(false)}
+        editingAddress={null}
+        formData={copyFormData}
+        setFormData={setCopyFormData}
+        onSave={handleSaveCopyTrading}
+        availableCoins={availableCoins}
+        coinsLoading={coinsLoading}
+        onSyncCoins={handleSyncCoins}
+      />
     </Card>
   );
 }

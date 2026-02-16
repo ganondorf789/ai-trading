@@ -8,7 +8,7 @@ import { Icon } from '@iconify/react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { traderApi, addressTrackingApi, copyTradingApi, hyperliquidApi } from '@/services/api';
 import type { CopyTradingAddress, AddressTracking } from '@/services/api';
-import { TradingStatisticsModal } from './TradingStatisticsModal';
+import { TradingStatisticsModal } from '@/components/TradingStatisticsModal';
 import TrackingFormModal from '@/components/TrackingFormModal';
 import AddressFormModal from '@/components/AddressFormModal';
 
