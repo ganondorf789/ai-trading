@@ -48,13 +48,14 @@ function fmt(n: number, d = 2) {
 
 // ==================== Left Panel: Positions ====================
 
-function PositionsPanel({ address }: { address: string }) {
+function PositionsPanel({ address, fetchTrigger }: { address: string; fetchTrigger: number }) {
   const [positions, setPositions] = useState<AssetPosition[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalValue, setTotalValue] = useState(0);
   const [totalUpnl, setTotalUpnl] = useState(0);
 
   useEffect(() => {
+    if (fetchTrigger === 0) return;
     if (!address || !address.startsWith('0x') || address.length !== 42) return;
     setLoading(true);
     traderApi.getTraderPositions(address)
@@ -69,13 +70,13 @@ function PositionsPanel({ address }: { address: string }) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [address]);
+  }, [fetchTrigger]);
 
-  if (!address || address.length !== 42) {
+  if (fetchTrigger === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-default-400 py-12">
         <Icon icon="solar:wallet-line-duotone" width={40} />
-        <p className="mt-2 text-sm">输入地址后查看持仓</p>
+        <p className="mt-2 text-sm">输入地址后点击搜索查看持仓</p>
       </div>
     );
   }
@@ -173,11 +174,15 @@ export default function AddressFormModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [coinInput, setCoinInput] = useState("");
   const [showCoinInput, setShowCoinInput] = useState(false);
+  const [fetchTrigger, setFetchTrigger] = useState(0);
 
-  // Load coins on mount if empty
+  // Load coins on mount if empty; auto-fetch positions if address exists
   useEffect(() => {
-    if (isOpen && availableCoins.length === 0) {
-      onSyncCoins();
+    if (isOpen) {
+      if (availableCoins.length === 0) onSyncCoins();
+      if (formData.address && formData.address.startsWith('0x') && formData.address.length === 42) {
+        setFetchTrigger(n => n + 1);
+      }
     }
   }, [isOpen]);
 
@@ -235,12 +240,20 @@ export default function AddressFormModal({
               <Input
                 placeholder="0x..."
                 size="sm"
-                startContent={<Icon icon="solar:magnifer-linear" width={14} className="text-default-400" />}
                 value={formData.address || ""}
                 onValueChange={(v) => setFormData({ ...formData, address: v })}
                 isDisabled={!!editingAddress}
+                endContent={
+                  <button
+                    className="text-default-400 hover:text-primary transition-colors"
+                    onClick={() => setFetchTrigger(n => n + 1)}
+                  >
+                    <Icon icon="solar:magnifer-linear" width={16} />
+                  </button>
+                }
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setFetchTrigger(n => n + 1); } }}
               />
-              <PositionsPanel address={formData.address || ''} />
+              <PositionsPanel address={formData.address || ''} fetchTrigger={fetchTrigger} />
             </div>
 
             {/* ====== Right Panel: Config ====== */}
@@ -317,11 +330,11 @@ export default function AddressFormModal({
                 <span className="text-sm font-medium">跟单模式</span>
                 <div className="flex gap-2">
                   {([
-                    { key: 'asset_ratio', label: '资产等比', tip: '按资产比例等比跟单' },
-                    { key: 'position_ratio', label: '仓位等比', tip: '按仓位比例等比跟单' },
+                    { key: 'asset_ratio', label: '资产等比', tip: '根据目标地址使用了多少本金比例，结合您的设置比例来下单（例如：目标用了他总资金的 10%，跟单也用你执行跟单钱包资金的 10%）' },
+                    { key: 'position_ratio', label: '仓位等比', tip: '忽略本金差异，直接跟随目标地址的仓位变化比例下单（适合严格复制目标仓位配比的场景）' },
                     { key: 'fixed_value', label: '固定价值', tip: '每笔跟单使用固定金额' },
                   ] as const).map(opt => (
-                    <Tooltip key={opt.key} content={opt.tip} delay={300}>
+                    <Tooltip key={opt.key} content={<span className="max-w-xs text-xs">{opt.tip}</span>} delay={300}>
                       <Button
                         size="sm"
                         variant={copyMode === opt.key ? 'solid' : 'bordered'}
@@ -340,32 +353,53 @@ export default function AddressFormModal({
               {/* 跟单参数（根据模式不同） */}
               <div className="grid grid-cols-2 gap-3">
                 {copyMode === 'fixed_value' ? (
-                  <Input
-                    type="number"
-                    label="固定开仓价值"
-                    size="sm"
-                    value={String(formData.fixed_position_value_usd ?? 100)}
-                    onValueChange={v => setFormData({ ...formData, fixed_position_value_usd: parseFloat(v) || 100 })}
-                    startContent={<span className="text-default-400 text-xs">$</span>}
-                  />
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-xs">固定开仓价值</span>
+                      <Tooltip content={<span className="max-w-xs text-xs">每笔跟单使用固定金额开仓，不受目标仓位大小影响</span>} delay={300}>
+                        <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      size="sm"
+                      value={String(formData.fixed_position_value_usd ?? 100)}
+                      onValueChange={v => setFormData({ ...formData, fixed_position_value_usd: parseFloat(v) || 100 })}
+                      startContent={<span className="text-default-400 text-xs">$</span>}
+                    />
+                  </div>
                 ) : (
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-xs">跟单比例</span>
+                      <Tooltip content={<span className="max-w-xs text-xs">若设置为 100%，代表与目标保持一致。若设置为 50%，代表仅跟随目标的一半力度（例如：默认100%，目标开仓$100，则跟单$100；如果设置50%，则跟单$50）</span>} delay={300}>
+                        <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      size="sm"
+                      value={String(((formData.copy_ratio ?? 1) * 100).toFixed(0))}
+                      onValueChange={v => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
+                      endContent={<span className="text-default-400 text-xs">%</span>}
+                    />
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-xs">高保证金使用率保护</span>
+                    <Tooltip content={<span className="max-w-xs text-xs">当您的保证金使用率超过设定值时，系统将自动停止跟单，防止爆仓风险</span>} delay={300}>
+                      <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                    </Tooltip>
+                  </div>
                   <Input
                     type="number"
-                    label="跟单比例"
                     size="sm"
-                    value={String(((formData.copy_ratio ?? 1) * 100).toFixed(0))}
-                    onValueChange={v => setFormData({ ...formData, copy_ratio: (parseFloat(v) || 10) / 100 })}
+                    value={String(formData.high_margin_protection_pct ?? 70)}
+                    onValueChange={v => setFormData({ ...formData, high_margin_protection_pct: parseFloat(v) || 70 })}
                     endContent={<span className="text-default-400 text-xs">%</span>}
                   />
-                )}
-                <Input
-                  type="number"
-                  label="高保证金使用率保护"
-                  size="sm"
-                  value={String(formData.high_margin_protection_pct ?? 70)}
-                  onValueChange={v => setFormData({ ...formData, high_margin_protection_pct: parseFloat(v) || 70 })}
-                  endContent={<span className="text-default-400 text-xs">%</span>}
-                />
+                </div>
               </div>
 
               {/* 高级选项 */}
@@ -384,97 +418,150 @@ export default function AddressFormModal({
                 {showAdvanced && (
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        type="number"
-                        label="最小开仓价值"
-                        placeholder="可选"
-                        size="sm"
-                        value={formData.min_position_size_usd ? String(formData.min_position_size_usd) : ''}
-                        onValueChange={v => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 0 })}
-                        startContent={<span className="text-default-400 text-xs">$</span>}
-                      />
-                      <Input
-                        type="number"
-                        label="最大开仓价值"
-                        placeholder="无上限 (可选)"
-                        size="sm"
-                        value={formData.max_position_size_usd ? String(formData.max_position_size_usd) : ''}
-                        onValueChange={v => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 0 })}
-                        startContent={<span className="text-default-400 text-xs">$</span>}
-                      />
+                      <div>
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="text-xs">最小开仓价值</span>
+                          <Tooltip content={<span className="max-w-xs text-xs">单笔跟单价值若低于最小值将不执行</span>} delay={300}>
+                            <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                          </Tooltip>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder="可选"
+                          size="sm"
+                          value={formData.min_position_size_usd ? String(formData.min_position_size_usd) : ''}
+                          onValueChange={v => setFormData({ ...formData, min_position_size_usd: parseFloat(v) || 0 })}
+                          startContent={<span className="text-default-400 text-xs">$</span>}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="text-xs">最大开仓价值</span>
+                          <Tooltip content={<span className="max-w-xs text-xs">单笔跟单价值若高于最大值将按最大值执行</span>} delay={300}>
+                            <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                          </Tooltip>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder="无上限 (可选)"
+                          size="sm"
+                          value={formData.max_position_size_usd ? String(formData.max_position_size_usd) : ''}
+                          onValueChange={v => setFormData({ ...formData, max_position_size_usd: parseFloat(v) || 0 })}
+                          startContent={<span className="text-default-400 text-xs">$</span>}
+                        />
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        type="number"
-                        label="止盈 %"
-                        placeholder="0-2000 (可选)"
-                        size="sm"
-                        value={formData.take_profit_percent ? String(formData.take_profit_percent) : ''}
-                        onValueChange={v => {
-                          const val = parseFloat(v);
-                          setFormData({
-                            ...formData,
-                            take_profit_enabled: !isNaN(val) && val > 0,
-                            take_profit_percent: val || 0,
-                          });
-                        }}
-                        endContent={<span className="text-default-400 text-xs">%</span>}
-                      />
-                      <Input
-                        type="number"
-                        label="止损 %"
-                        placeholder="0-100 (可选)"
-                        size="sm"
-                        value={formData.stop_loss_percent ? String(formData.stop_loss_percent) : ''}
-                        onValueChange={v => {
-                          const val = parseFloat(v);
-                          setFormData({
-                            ...formData,
-                            stop_loss_enabled: !isNaN(val) && val > 0,
-                            stop_loss_percent: val || 0,
-                          });
-                        }}
-                        endContent={<span className="text-default-400 text-xs">%</span>}
-                      />
+                      <div>
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="text-xs">止盈 %</span>
+                          <Tooltip content={<span className="max-w-xs text-xs">当持仓盈利达到设定百分比时自动平仓止盈</span>} delay={300}>
+                            <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                          </Tooltip>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder="0-2000 (可选)"
+                          size="sm"
+                          value={formData.take_profit_percent ? String(formData.take_profit_percent) : ''}
+                          onValueChange={v => {
+                            const val = parseFloat(v);
+                            setFormData({
+                              ...formData,
+                              take_profit_enabled: !isNaN(val) && val > 0,
+                              take_profit_percent: val || 0,
+                            });
+                          }}
+                          endContent={<span className="text-default-400 text-xs">%</span>}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="text-xs">止损 %</span>
+                          <Tooltip content={<span className="max-w-xs text-xs">当持仓亏损达到设定百分比时自动平仓止损</span>} delay={300}>
+                            <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                          </Tooltip>
+                        </div>
+                        <Input
+                          type="number"
+                          placeholder="0-100 (可选)"
+                          size="sm"
+                          value={formData.stop_loss_percent ? String(formData.stop_loss_percent) : ''}
+                          onValueChange={v => {
+                            const val = parseFloat(v);
+                            setFormData({
+                              ...formData,
+                              stop_loss_enabled: !isNaN(val) && val > 0,
+                              stop_loss_percent: val || 0,
+                            });
+                          }}
+                          endContent={<span className="text-default-400 text-xs">%</span>}
+                        />
+                      </div>
                     </div>
 
                     {/* Checkboxes */}
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
-                      <Checkbox
-                        size="sm"
-                        isSelected={formData.follow_add_position ?? false}
-                        onValueChange={v => setFormData({ ...formData, follow_add_position: v })}
-                      >
-                        <span className="text-xs">跟随加仓</span>
-                      </Checkbox>
-                      <Checkbox
-                        size="sm"
-                        isSelected={formData.follow_reduce_position ?? false}
-                        onValueChange={v => setFormData({ ...formData, follow_reduce_position: v })}
-                      >
-                        <span className="text-xs">跟随减仓</span>
-                      </Checkbox>
-                      <Checkbox
-                        size="sm"
-                        isSelected={formData.slippage_protection ?? false}
-                        onValueChange={v => setFormData({ ...formData, slippage_protection: v })}
-                      >
-                        <span className="text-xs">滑点保护</span>
-                      </Checkbox>
-                      <Checkbox
-                        size="sm"
-                        isSelected={formData.add_position_order ?? false}
-                        onValueChange={v => setFormData({ ...formData, add_position_order: v })}
-                      >
-                        <span className="text-xs">加仓开单</span>
-                      </Checkbox>
-                      <Checkbox
-                        size="sm"
-                        isSelected={formData.reverse_copy ?? false}
-                        onValueChange={v => setFormData({ ...formData, reverse_copy: v })}
-                      >
-                        <span className="text-xs">反向跟单</span>
-                      </Checkbox>
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          size="sm"
+                          isSelected={formData.follow_add_position ?? false}
+                          onValueChange={v => setFormData({ ...formData, follow_add_position: v })}
+                        >
+                          <span className="text-xs">跟随加仓</span>
+                        </Checkbox>
+                        <Tooltip content={<span className="max-w-xs text-xs">当目标地址对已有仓位进行加仓时，您也同步加仓。若取消勾选，目标加仓时您将不采取任何动作</span>} delay={300}>
+                          <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          size="sm"
+                          isSelected={formData.follow_reduce_position ?? false}
+                          onValueChange={v => setFormData({ ...formData, follow_reduce_position: v })}
+                        >
+                          <span className="text-xs">跟随减仓</span>
+                        </Checkbox>
+                        <Tooltip content={<span className="max-w-xs text-xs">当目标地址进行减仓或平仓时，您也同步卖出。建议开启，否则您需要手动平仓</span>} delay={300}>
+                          <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          size="sm"
+                          isSelected={formData.slippage_protection ?? false}
+                          onValueChange={v => setFormData({ ...formData, slippage_protection: v })}
+                        >
+                          <span className="text-xs">滑点保护</span>
+                        </Checkbox>
+                        <Tooltip content={<span className="max-w-xs text-xs">当市场剧烈波动，预计成交价与触发价偏差超过 3% 时，系统将自动放弃本次跟单，以保护您的资金</span>} delay={300}>
+                          <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          size="sm"
+                          isSelected={formData.add_position_order ?? false}
+                          onValueChange={v => setFormData({ ...formData, add_position_order: v })}
+                        >
+                          <span className="text-xs">加仓开单</span>
+                        </Checkbox>
+                        <Tooltip content={<span className="max-w-xs text-xs">当目标地址对某个币种进行加仓，而您尚未持有该币种时，系统将为您建立一个新的仓位</span>} delay={300}>
+                          <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                        </Tooltip>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Checkbox
+                          size="sm"
+                          isSelected={formData.reverse_copy ?? false}
+                          onValueChange={v => setFormData({ ...formData, reverse_copy: v })}
+                        >
+                          <span className="text-xs">反向跟单</span>
+                        </Checkbox>
+                        <Tooltip content={<span className="max-w-xs text-xs">与目标地址方向相反（目标做多，您自动做空；目标做空，您自动做多）</span>} delay={300}>
+                          <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                        </Tooltip>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -484,7 +571,12 @@ export default function AddressFormModal({
 
               {/* 币种黑白名单 */}
               <div className="space-y-2">
-                <span className="text-sm font-medium">币种黑白名单</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-medium">币种黑白名单</span>
+                  <Tooltip content={<span className="max-w-xs text-xs">白名单：只会跟单指定币种，忽略其他所有币种。黑名单：忽略指定币种，跟单其他所有币种</span>} delay={300}>
+                    <span className="text-default-400 cursor-help"><Icon icon="solar:question-circle-linear" width={14} /></span>
+                  </Tooltip>
+                </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {/* 模式选择 */}
                   <Select
