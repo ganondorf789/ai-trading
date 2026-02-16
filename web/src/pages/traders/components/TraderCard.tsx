@@ -6,7 +6,7 @@ import { Tooltip } from '@heroui/react';
 import { Icon } from '@iconify/react';
 import { AreaChart, Area, YAxis, ResponsiveContainer } from 'recharts';
 import type { Trader } from '@/services/api';
-import { formatNumber } from '@/utils';
+import { formatNumber, getRatingColor } from '@/utils';
 
 const GREEN = '#17c964';
 const RED = '#f31260';
@@ -165,7 +165,9 @@ export function TraderCard({ trader, onToggleStar, isStarLoading }: TraderCardPr
         {/* Header: green dot + full address + action icons */}
         <div className="flex items-center justify-between px-5 py-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-5 h-5 rounded-full bg-emerald-500 shrink-0" />
+            <span className={`shrink-0 text-sm font-bold ${getRatingColor(trader.rating)}`}>
+              {trader.rating || '?'}
+            </span>
             <span className="font-mono text-sm text-foreground truncate">
               {trader.display_name || trader.address}
             </span>

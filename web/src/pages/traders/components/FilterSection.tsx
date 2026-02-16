@@ -171,21 +171,27 @@ export function FilterSection({
           </Button>
 
           {/* Period */}
-          <div className="flex items-center bg-default-100 rounded-lg p-0.5">
-            <Icon icon="solar:clock-circle-linear" width={14} className="text-default-400 ml-1.5 mr-0.5" />
+          <Select
+            className="w-[110px]"
+            aria-label="周期"
+            placeholder="周期"
+            size="sm"
+            variant="flat"
+            selectedKeys={filters.period ? [filters.period] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0] as string;
+              handlePeriodChange(selected || '');
+            }}
+            renderValue={(items) => {
+              const item = items[0];
+              const option = PERIOD_OPTIONS.find(p => p.key === item?.key);
+              return <span className="text-xs">{option?.label}</span>;
+            }}
+          >
             {PERIOD_OPTIONS.map(p => (
-              <Button
-                key={p.key}
-                size="sm"
-                variant={filters.period === p.key ? 'solid' : 'light'}
-                color={filters.period === p.key ? 'primary' : 'default'}
-                className="min-w-0 px-2.5 h-7 text-xs"
-                onPress={() => handlePeriodChange(p.key)}
-              >
-                {p.label}
-              </Button>
+              <SelectItem key={p.key} textValue={p.label}>{p.label}</SelectItem>
             ))}
-          </div>
+          </Select>
 
           {/* Rating */}
           <Select
